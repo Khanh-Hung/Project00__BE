@@ -4,34 +4,31 @@ namespace Domain.Entities;
 
 public class User : BaseEntity
 {
-    public string Username { get; private set; } = string.Empty;
     public string Email { get; private set; } = string.Empty;
-    public int CreditsBalance { get; private set; } = 100;
+    public string PasswordHash { get; private set; } = string.Empty;
+    public string FullName { get; private set; } = string.Empty;
+    public string AvatarUrl { get; private set; } = string.Empty;
 
     private User() { } // EF Core
 
-    public User(string username, string email, int initialCredits = 100)
+    public User(string email, string passwordHash, string fullName, string? avatarUrl = null)
     {
-        Username = username;
-        Email = email;
-        CreditsBalance = initialCredits;
+        Email = email.Trim().ToLowerInvariant();
+        PasswordHash = passwordHash;
+        FullName = fullName.Trim();
+        AvatarUrl = avatarUrl?.Trim() ?? string.Empty;
     }
 
-    public void DeductCredits(int amount)
+    public void UpdateProfile(string fullName, string avatarUrl)
     {
-        if (amount <= 0) return;
-        if (CreditsBalance < amount)
-        {
-            throw new InvalidOperationException("Not enough credits.");
-        }
-        CreditsBalance -= amount;
+        FullName = fullName.Trim();
+        AvatarUrl = avatarUrl.Trim();
         Touch();
     }
 
-    public void AddCredits(int amount)
+    public void UpdatePassword(string newPasswordHash)
     {
-        if (amount <= 0) return;
-        CreditsBalance += amount;
+        PasswordHash = newPasswordHash;
         Touch();
     }
 }
