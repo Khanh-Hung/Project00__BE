@@ -1,5 +1,7 @@
 using Application;
 using Infrastructure;
+using Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,7 +27,29 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 4. Middleware Pipeline
+// 4. Auto-Apply Database Migrations on Startup
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+        if (dbContext.Database.IsRelational())
+        {
+            await dbContext.Database.MigrateAsync();
+        }
+        else
+        {
+            await dbContext.Database.EnsureCreatedAsync();
+        }
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning(ex, "Could not automatically apply migrations at startup. Ensure database server is running.");
+    }
+}
+
+// 5. Middleware Pipeline
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
