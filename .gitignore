@@ -1,0 +1,26 @@
+## .NET / C# standard gitignore
+
+# Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# User-specific & Local environment configurations (contains real API keys & DB credentials)
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/appsettings*.Development.json
+**/*.env
+**/*.env.local
+
+# IDE & Editor files
+.vs/
+.vscode/
+.idea/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Operating System files
+.DS_Store
+Thumbs.db
