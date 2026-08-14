@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Application;
 using Infrastructure;
 using Infrastructure.Persistence;
@@ -5,8 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Add Controllers & OpenAPI/Swagger
-builder.Services.AddControllers();
+// 1. Add Controllers with JsonStringEnumConverter
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
