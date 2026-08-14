@@ -6,14 +6,14 @@ namespace Domain.Entities;
 public class ChatSession : BaseEntity
 {
     public Guid CharacterId { get; private set; }
-    public Guid UserId { get; private set; }
+    public Guid? UserId { get; private set; }
     public string Title { get; private set; } = string.Empty;
 
     public List<ChatMessage> Messages { get; private set; } = [];
 
     private ChatSession() { } // EF Core
 
-    public ChatSession(Guid characterId, Guid userId, string title)
+    public ChatSession(Guid characterId, Guid? userId, string title)
     {
         CharacterId = characterId;
         UserId = userId;

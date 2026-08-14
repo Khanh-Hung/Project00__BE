@@ -20,6 +20,11 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
         return await DbContext.Set<TEntity>().FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
+    public async Task<TEntity?> GetAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken ct = default)
+    {
+        return await DbContext.Set<TEntity>().FirstOrDefaultAsync(predicate, ct);
+    }
+
     public async Task<IReadOnlyList<TEntity>> GetAllAsync(Expression<Func<TEntity, bool>>? predicate = null, CancellationToken ct = default)
     {
         IQueryable<TEntity> query = DbContext.Set<TEntity>().AsNoTracking();

@@ -3,7 +3,7 @@ namespace Domain.Common;
 public abstract class Entity
 {
     public Guid Id { get; set; }
-    public DateTime CreatedAt { get; protected set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; protected set; }
     public string? CreatedBy { get; protected set; }
     public DateTime? UpdatedAt { get; protected set; }
     public string? UpdatedBy { get; protected set; }
@@ -11,12 +11,11 @@ public abstract class Entity
     public DateTime? DeletedAt { get; protected set; }
     public string? DeletedBy { get; protected set; }
 
-    protected Entity(Guid? id = null)
+    protected Entity() { }
+
+    protected Entity(Guid id)
     {
-        if (id.HasValue && id.Value != Guid.Empty)
-        {
-            Id = id.Value;
-        }
+        Id = id;
     }
 
     public void Touch()
@@ -55,5 +54,6 @@ public abstract class Entity
 
 public abstract class BaseEntity : Entity
 {
-    protected BaseEntity(Guid? id = null) : base(id) { }
+    protected BaseEntity() { }
+    protected BaseEntity(Guid id) : base(id) { }
 }

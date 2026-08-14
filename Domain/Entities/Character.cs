@@ -12,7 +12,7 @@ public class Character : BaseEntity
     public string Category { get; private set; } = string.Empty;
     public List<string> Tags { get; private set; } = [];
     public bool IsPublic { get; private set; } = true;
-    public Guid CreatorId { get; private set; }
+    public Guid? CreatorId { get; private set; }
 
     private Character() { } // EF Core
 
@@ -35,7 +35,7 @@ public class Character : BaseEntity
         Category = category;
         Tags = tags ?? [];
         IsPublic = isPublic;
-        CreatorId = creatorId ?? Guid.Empty;
+        CreatorId = creatorId;
     }
 
     public void UpdateDetails(string name, string title, string avatarUrl, string personalityPrompt, string greeting, string category, List<string> tags)
