@@ -31,7 +31,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore Dependencies
-        run: dotnet restore Project/Project.csproj
+        run: dotnet restore Project.csproj
 
       - name: Build Project
-        run: dotnet build Project/Project.csproj --no-restore -c Release
+        run: dotnet build Project.csproj --no-restore -c Release

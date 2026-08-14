@@ -7,11 +7,11 @@
 [Ll]ogs/
 
 # User-specific & Local environment configurations (contains real API keys & DB credentials)
-**/appsettings.Development.json
-**/appsettings.Local.json
-**/appsettings*.Development.json
-**/*.env
-**/*.env.local
+appsettings.Development.json
+appsettings.Local.json
+appsettings*.Development.json
+*.env
+*.env.local
 
 # IDE & Editor files
 .vs/
