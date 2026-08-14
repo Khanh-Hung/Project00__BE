@@ -22,7 +22,8 @@ public static class DependencyInjection
         {
             if (!string.IsNullOrWhiteSpace(connectionString))
             {
-                options.UseNpgsql(connectionString);
+                options.UseNpgsql(connectionString)
+                       .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
             }
             else
             {
