@@ -1,6 +1,8 @@
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Application.Features.Characters.Commands.CreateCharacter;
+using Application.Features.Characters.Commands.DeleteCharacter;
+using Application.Features.Characters.Commands.UpdateCharacter;
 using Application.Features.Characters.Queries.GetCharacterById;
 using Application.Features.Characters.Queries.GetPublicCharacters;
 using MediatR;
@@ -46,6 +48,26 @@ public sealed class CharactersController : ControllerBase
     public async Task<IActionResult> CreateCharacter([FromBody] CreateCharacterRequest request, CancellationToken ct)
     {
         var result = await _sender.Send(new CreateCharacterCommand(request), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Updates an existing AI character
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> UpdateCharacter(Guid id, [FromBody] UpdateCharacterRequest request, CancellationToken ct)
+    {
+        var result = await _sender.Send(new UpdateCharacterCommand(id, request), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Deletes an AI character
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeleteCharacter(Guid id, CancellationToken ct)
+    {
+        var result = await _sender.Send(new DeleteCharacterCommand(id), ct);
         return result.ToActionResult();
     }
 }

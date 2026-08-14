@@ -1,8 +1,10 @@
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Application.Features.Chat.Commands.CreateChatSession;
+using Application.Features.Chat.Commands.DeleteChatSession;
 using Application.Features.Chat.Commands.SendChatMessage;
 using Application.Features.Chat.Queries.GetChatSession;
+using Application.Features.Chat.Queries.GetUserChatSessions;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,6 +19,16 @@ public sealed class ChatController : ControllerBase
     public ChatController(ISender sender)
     {
         _sender = sender;
+    }
+
+    /// <summary>
+    /// Gets all recent chat sessions
+    /// </summary>
+    [HttpGet("sessions")]
+    public async Task<IActionResult> GetSessions(CancellationToken ct)
+    {
+        var result = await _sender.Send(new GetUserChatSessionsQuery(), ct);
+        return result.ToActionResult();
     }
 
     /// <summary>
@@ -36,6 +48,16 @@ public sealed class ChatController : ControllerBase
     public async Task<IActionResult> GetSession(Guid sessionId, CancellationToken ct)
     {
         var result = await _sender.Send(new GetChatSessionQuery(sessionId), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Deletes a chat session
+    /// </summary>
+    [HttpDelete("sessions/{sessionId:guid}")]
+    public async Task<IActionResult> DeleteSession(Guid sessionId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new DeleteChatSessionCommand(sessionId), ct);
         return result.ToActionResult();
     }
 

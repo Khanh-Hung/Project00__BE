@@ -23,3 +23,14 @@ public record CreateCharacterRequest(
     List<string>? Tags = null,
     bool IsPublic = true
 );
+
+public record UpdateCharacterRequest(
+    string Name,
+    string Title,
+    string AvatarUrl,
+    string PersonalityPrompt,
+    string Greeting,
+    string Category,
+    List<string>? Tags = null,
+    bool IsPublic = true
+);

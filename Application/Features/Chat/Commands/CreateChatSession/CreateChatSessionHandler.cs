@@ -27,7 +27,7 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
             return Result<ChatSessionDto>.Failure(StatusCodes.Status404NotFound, $"Character with ID '{command.Request.CharacterId}' was not found.");
         }
 
-        var userId = command.Request.UserId ?? Guid.NewGuid();
+        var userId = command.Request.UserId;
         var title = string.IsNullOrWhiteSpace(command.Request.Title)
             ? $"Chat with {character.Name}"
             : command.Request.Title;
