@@ -1,5 +1,6 @@
 using System.Reflection;
 using Domain.Common;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,7 +20,7 @@ public class ProjectDbContext : DbContext
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var entries = ChangeTracker.Entries<Entity>();
-        var now = DateTime.UtcNow;
+        var now = Clock.Now;
 
         foreach (var entry in entries)
         {

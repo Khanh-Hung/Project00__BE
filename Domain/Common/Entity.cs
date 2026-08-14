@@ -1,3 +1,5 @@
+using Domain.Common.DateTimes;
+
 namespace Domain.Common;
 
 public abstract class Entity
@@ -20,7 +22,7 @@ public abstract class Entity
 
     public void Touch()
     {
-        UpdatedAt = DateTime.UtcNow;
+        UpdatedAt = Clock.Now;
     }
 
     public void SetCreated(DateTime createdAt, string? createdBy = null)

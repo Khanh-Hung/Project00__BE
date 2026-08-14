@@ -1,4 +1,5 @@
 using Application.Interfaces;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -39,7 +40,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             issuer: issuer,
             audience: audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddHours(expirationHours),
+            expires: Clock.Now.AddHours(expirationHours),
             signingCredentials: credentials
         );
 

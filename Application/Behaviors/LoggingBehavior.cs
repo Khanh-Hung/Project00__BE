@@ -1,3 +1,4 @@
+using Domain.Common.DateTimes;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -19,13 +20,13 @@ public class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, 
 
         _logger.LogInformation("START Handling {RequestName} || Request : {@Request}", requestName, request);
 
-        var startTime = DateTime.UtcNow;
+        var startTime = Clock.Now;
 
         try
         {
             var response = await next();
 
-            var duration = (DateTime.UtcNow - startTime).TotalMilliseconds;
+            var duration = (Clock.Now - startTime).TotalMilliseconds;
 
             if (duration > 500)
             {
