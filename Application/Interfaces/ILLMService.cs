@@ -1,3 +1,4 @@
+using Application.DTOs;
 using Domain.Entities;
 
 namespace Application.Interfaces;
@@ -8,5 +9,14 @@ public interface ILLMService
         Character character,
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
+        CancellationToken ct = default);
+
+    Task<GeneratedCharacterDto> GenerateCharacterProfileAsync(
+        string idea,
+        string? category = null,
+        CancellationToken ct = default);
+
+    Task<List<string>> GenerateRandomIdeasAsync(
+        int count = 4,
         CancellationToken ct = default);
 }
