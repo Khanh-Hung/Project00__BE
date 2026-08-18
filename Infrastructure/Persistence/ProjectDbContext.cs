@@ -1,4 +1,5 @@
 using System.Reflection;
+using Application.Abstractions.Auth;
 using Domain.Common;
 using Domain.Common.DateTimes;
 using Domain.Entities;
@@ -8,8 +9,13 @@ namespace Infrastructure.Persistence;
 
 public class ProjectDbContext : DbContext
 {
-    public ProjectDbContext(DbContextOptions<ProjectDbContext> options) : base(options)
+    private readonly ICurrentUserProvider? _currentUserProvider;
+
+    public ProjectDbContext(
+        DbContextOptions<ProjectDbContext> options,
+        ICurrentUserProvider? currentUserProvider = null) : base(options)
     {
+        _currentUserProvider = currentUserProvider;
     }
 
     public DbSet<Character> Characters { get; set; }
@@ -17,24 +23,40 @@ public class ProjectDbContext : DbContext
     public DbSet<ChatMessage> ChatMessages { get; set; }
     public DbSet<User> Users { get; set; }
 
+    private string NormalizeUserId()
+    {
+        var currentUserId = _currentUserProvider?.CurrentUserId;
+        if (Guid.TryParse(currentUserId, out var guid)) return guid.ToString();
+        return "system";
+    }
+
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var entries = ChangeTracker.Entries<Entity>();
-        var now = Clock.Now;
+        var userId = NormalizeUserId();
 
         foreach (var entry in entries)
         {
-            if (entry.State == EntityState.Added)
+            switch (entry.State)
             {
-                if (entry.Entity.Id == Guid.Empty)
-                {
-                    entry.Entity.Id = Guid.CreateVersion7();
-                }
-                entry.Property(e => e.CreatedAt).CurrentValue = now;
-            }
-            else if (entry.State == EntityState.Modified)
-            {
-                entry.Property(e => e.UpdatedAt).CurrentValue = now;
+                case EntityState.Added:
+                    if (entry.Entity.Id == Guid.Empty)
+                    {
+                        entry.Entity.Id = Guid.CreateVersion7();
+                    }
+                    entry.Entity.SetCreated(Clock.Now, userId);
+                    break;
+                case EntityState.Modified:
+                    if (!entry.Property(nameof(Entity.UpdatedAt)).IsModified &&
+                        !entry.Property(nameof(Entity.UpdatedBy)).IsModified)
+                    {
+                        entry.Entity.SetUpdated(Clock.Now, userId);
+                    }
+                    break;
+                case EntityState.Deleted:
+                    entry.State = EntityState.Modified;
+                    entry.Entity.SetDeleted(Clock.Now, userId);
+                    break;
             }
         }
 

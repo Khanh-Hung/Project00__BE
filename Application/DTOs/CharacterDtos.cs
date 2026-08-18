@@ -10,7 +10,10 @@ public record CharacterDto(
     string Category,
     List<string> Tags,
     bool IsPublic,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string? CreatedBy = null,
+    string? CreatorName = null,
+    string? CreatorAvatar = null
 );
 
 public record CreateCharacterRequest(
@@ -33,4 +36,18 @@ public record UpdateCharacterRequest(
     string Category,
     List<string>? Tags = null,
     bool IsPublic = true
+);
+
+public record GenerateCharacterAiRequest(
+    string Idea,
+    string? Category = null
+);
+
+public record GeneratedCharacterDto(
+    string Name,
+    string Title,
+    string Category,
+    string PersonalityPrompt,
+    string Greeting,
+    List<string> Tags
 );

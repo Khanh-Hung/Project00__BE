@@ -49,7 +49,8 @@ public sealed class CreateCharacterHandler : IRequestHandler<CreateCharacterComm
             character.Category,
             character.Tags,
             character.IsPublic,
-            character.CreatedAt
+            character.CreatedAt,
+            character.CreatedBy
         );
 
         return Result<CharacterDto>.Success(dto);

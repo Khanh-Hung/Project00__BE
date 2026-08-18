@@ -22,18 +22,34 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
             c => c.IsPublic && (string.IsNullOrWhiteSpace(query.Category) || c.Category.ToLower() == query.Category.ToLower()),
             cancellationToken);
 
-        var dtos = characters.Select(c => new CharacterDto(
-            c.Id,
-            c.Name,
-            c.Title,
-            c.AvatarUrl,
-            c.PersonalityPrompt,
-            c.Greeting,
-            c.Category,
-            c.Tags,
-            c.IsPublic,
-            c.CreatedAt
-        )).ToList();
+        var userRepo = _unitOfWork.GetRepository<User>();
+        var users = await userRepo.GetAllAsync(ct: cancellationToken);
+        var userMap = users.ToDictionary(u => u.Id.ToString(), u => u);
+
+        var dtos = characters.Select(c =>
+        {
+            User? creator = null;
+            if (!string.IsNullOrEmpty(c.CreatedBy))
+            {
+                userMap.TryGetValue(c.CreatedBy, out creator);
+            }
+
+            return new CharacterDto(
+                c.Id,
+                c.Name,
+                c.Title,
+                c.AvatarUrl,
+                c.PersonalityPrompt,
+                c.Greeting,
+                c.Category,
+                c.Tags,
+                c.IsPublic,
+                c.CreatedAt,
+                c.CreatedBy,
+                creator?.UserName ?? (c.CreatedBy == "system" ? "Hệ thống" : null),
+                creator?.AvatarUrl
+            );
+        }).ToList();
 
         return Result<IReadOnlyList<CharacterDto>>.Success(dtos);
     }

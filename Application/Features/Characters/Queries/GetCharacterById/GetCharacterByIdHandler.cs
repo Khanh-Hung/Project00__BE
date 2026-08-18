@@ -25,6 +25,16 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             return Result<CharacterDto>.Failure(StatusCodes.Status404NotFound, $"Character with ID '{query.Id}' was not found.");
         }
 
+        User? creator = null;
+        if (!string.IsNullOrEmpty(character.CreatedBy))
+        {
+            var userRepo = _unitOfWork.GetRepository<User>();
+            if (Guid.TryParse(character.CreatedBy, out var creatorGuid))
+            {
+                creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
+            }
+        }
+
         var dto = new CharacterDto(
             character.Id,
             character.Name,
@@ -35,7 +45,10 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.Category,
             character.Tags,
             character.IsPublic,
-            character.CreatedAt
+            character.CreatedAt,
+            character.CreatedBy,
+            creator?.UserName ?? (character.CreatedBy == "system" ? "Hệ thống" : null),
+            creator?.AvatarUrl
         );
 
         return Result<CharacterDto>.Success(dto);
