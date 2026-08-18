@@ -16,7 +16,10 @@ public record ChatSessionDto(
     string CharacterAvatar,
     string Title,
     List<ChatMessageDto> Messages,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string? CharacterTitle = null,
+    string? CharacterPersonality = null,
+    string? CharacterCategory = null
 );
 
 public record ChatSessionListItemDto(

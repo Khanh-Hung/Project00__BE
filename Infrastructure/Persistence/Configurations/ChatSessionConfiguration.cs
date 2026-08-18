@@ -14,5 +14,7 @@ public sealed class ChatSessionConfiguration : IEntityTypeConfiguration<ChatSess
                .WithOne()
                .HasForeignKey(m => m.ChatSessionId)
                .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Navigation(s => s.Messages).AutoInclude();
     }
 }

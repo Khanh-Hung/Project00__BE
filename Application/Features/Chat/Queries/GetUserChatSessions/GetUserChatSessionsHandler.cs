@@ -24,7 +24,12 @@ public sealed class GetUserChatSessionsHandler : IRequestHandler<GetUserChatSess
         var characters = await characterRepo.GetAllAsync(ct: cancellationToken);
         var charDict = characters.ToDictionary(c => c.Id);
 
-        var list = sessions
+        // Phân quyền riêng tư theo tài khoản: chỉ hiển thị session của chính user đó
+        var filteredSessions = query.UserId.HasValue
+            ? sessions.Where(s => s.UserId == query.UserId.Value)
+            : sessions.Where(s => s.UserId == null);
+
+        var list = filteredSessions
             .Where(s => charDict.ContainsKey(s.CharacterId))
             .OrderByDescending(s => s.Messages.LastOrDefault()?.CreatedAt ?? s.CreatedAt)
             .Select(s =>

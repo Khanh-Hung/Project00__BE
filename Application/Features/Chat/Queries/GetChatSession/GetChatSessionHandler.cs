@@ -46,7 +46,10 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
             character.AvatarUrl,
             session.Title,
             messages,
-            session.CreatedAt
+            session.CreatedAt,
+            character.Title,
+            character.PersonalityPrompt,
+            character.Category
         );
 
         return Result<ChatSessionDto>.Success(dto);

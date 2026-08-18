@@ -36,6 +36,17 @@ public class ChatSession : BaseEntity
         return message;
     }
 
+    public List<ChatMessage> RollbackToMessage(Guid messageId)
+    {
+        var targetIndex = Messages.FindIndex(m => m.Id == messageId);
+        if (targetIndex == -1) return [];
+
+        var removed = Messages.Skip(targetIndex + 1).ToList();
+        Messages.RemoveRange(targetIndex + 1, Messages.Count - (targetIndex + 1));
+        Touch();
+        return removed;
+    }
+
     public void SetTitle(string title)
     {
         Title = title;
