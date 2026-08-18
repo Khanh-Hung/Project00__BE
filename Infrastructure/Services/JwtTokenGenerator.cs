@@ -32,7 +32,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email),
-            new(JwtRegisteredClaimNames.Name, user.FullName),
+            new(JwtRegisteredClaimNames.Name, user.UserName),
             new(JwtRegisteredClaimNames.Jti, Guid.CreateVersion7().ToString())
         };
 

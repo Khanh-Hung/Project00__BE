@@ -43,7 +43,7 @@ public sealed class LoginHandler : IRequestHandler<LoginCommand, Result<AuthResp
         }
 
         var token = _jwtTokenGenerator.GenerateToken(user);
-        var userDto = new UserDto(user.Id, user.Email, user.FullName, user.AvatarUrl, user.CreatedAt);
+        var userDto = new UserDto(user.Id, user.Email, user.UserName, user.AvatarUrl, user.CreatedAt);
 
         return Result<AuthResponse>.Success(new AuthResponse(token, userDto));
     }

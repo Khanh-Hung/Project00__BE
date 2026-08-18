@@ -3,7 +3,7 @@ namespace Application.DTOs;
 public record UserDto(
     Guid Id,
     string Email,
-    string FullName,
+    string UserName,
     string AvatarUrl,
     DateTime CreatedAt
 );
@@ -11,7 +11,7 @@ public record UserDto(
 public record RegisterRequest(
     string Email,
     string Password,
-    string FullName,
+    string? UserName = null,
     string? AvatarUrl = null
 );
 

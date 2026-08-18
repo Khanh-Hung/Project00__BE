@@ -6,22 +6,22 @@ public class User : BaseEntity
 {
     public string Email { get; private set; } = string.Empty;
     public string PasswordHash { get; private set; } = string.Empty;
-    public string FullName { get; private set; } = string.Empty;
+    public string UserName { get; private set; } = string.Empty;
     public string AvatarUrl { get; private set; } = string.Empty;
 
     private User() { } // EF Core
 
-    public User(string email, string passwordHash, string fullName, string? avatarUrl = null)
+    public User(string email, string passwordHash, string userName, string? avatarUrl = null)
     {
         Email = email.Trim().ToLowerInvariant();
         PasswordHash = passwordHash;
-        FullName = fullName.Trim();
+        UserName = userName.Trim();
         AvatarUrl = avatarUrl?.Trim() ?? string.Empty;
     }
 
-    public void UpdateProfile(string fullName, string avatarUrl)
+    public void UpdateProfile(string userName, string avatarUrl)
     {
-        FullName = fullName.Trim();
+        UserName = userName.Trim();
         AvatarUrl = avatarUrl.Trim();
         Touch();
     }

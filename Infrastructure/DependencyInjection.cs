@@ -30,7 +30,9 @@ public static class DependencyInjection
             }
         });
 
-        // 2. Add UnitOfWork
+        // 2. Add UnitOfWork & Current User Provider
+        services.AddHttpContextAccessor();
+        services.AddScoped<Application.Abstractions.Auth.ICurrentUserProvider, CurrentUserProvider>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // 3. Add Auth Services (Hasher & JWT)
