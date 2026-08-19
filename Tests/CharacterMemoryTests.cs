@@ -331,12 +331,12 @@ public class CharacterMemoryTests
 
     private sealed class FakeLLMService : ILLMService
     {
-        public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, ChatSession? session = null, IReadOnlyCollection<CharacterMemory>? memories = null, CancellationToken ct = default)
+        public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, IReadOnlyCollection<CharacterMemory>? memories = null, CancellationToken ct = default)
         {
-            return Task.FromResult(new RoleplayTurnResult("Mock AI reply", "Vui vẻ", 2));
+            return Task.FromResult(new RoleplayTurnResult("Mock AI reply", CharacterMood.Happy, 50, 2, null));
         }
 
-        public Task<string> GenerateRoleplayResponseAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, ChatSession? session = null, CancellationToken ct = default)
+        public Task<string> GenerateRoleplayResponseAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, CancellationToken ct = default)
         {
             return Task.FromResult("Mock AI reply");
         }
