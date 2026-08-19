@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.Enums;
 
 namespace Infrastructure.LLM.Prompts;
 
@@ -6,20 +7,24 @@ public static class RoleplayPrompts
 {
     public static string BuildSystemPrompt(
         Character character,
-        ChatSession? session = null,
+        CharacterRelationship? relationship = null,
         IReadOnlyCollection<CharacterMemory>? memories = null)
     {
-        string stageName = session != null ? GetLevelName(session.RelationshipLevel) : "Người Lạ";
-        string stageGuideline = session != null ? GetLevelGuideline(session.RelationshipLevel) : "";
+        var affectionScore = relationship?.AffectionScore ?? character.DefaultAffectionScore;
+        var currentMood = relationship?.CurrentMood ?? (Enum.TryParse<CharacterMood>(character.DefaultMood, true, out var m) ? m : CharacterMood.Neutral);
+        var moodIntensity = relationship?.MoodIntensity ?? 20;
 
-        if (session != null && !string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
+        string stageName = GetLevelName(CalculateRelationshipLevel(affectionScore));
+        string stageGuideline = GetLevelGuideline(CalculateRelationshipLevel(affectionScore));
+
+        if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
         {
             try
             {
                 var customMilestones = System.Text.Json.JsonSerializer.Deserialize<List<Application.DTOs.RelationshipMilestoneDto>>(character.CustomMilestonesJson);
                 if (customMilestones != null && customMilestones.Count > 0)
                 {
-                    var matched = customMilestones.FirstOrDefault(m => session.AffectionScore >= m.MinScore && session.AffectionScore <= m.MaxScore);
+                    var matched = customMilestones.FirstOrDefault(ms => affectionScore >= ms.MinScore && affectionScore <= ms.MaxScore);
                     if (matched != null)
                     {
                         stageName = matched.Name;
@@ -33,12 +38,20 @@ public static class RoleplayPrompts
             }
         }
 
-        var relationshipSection = session == null ? "" : $"""
+        var eventsLines = "";
+        if (relationship != null && relationship.Events.Count > 0)
+        {
+            // Only inject top 2-3 most recent relationship events to avoid prompt bloat
+            var recentEvents = relationship.Events.TakeLast(3).Select(e => $"- [{e.EventKey}] {e.Context}");
+            eventsLines = $"\n- Significant Relationship Milestones & Promises:\n  {string.Join("\n  ", recentEvents)}";
+        }
+
+        var relationshipSection = relationship == null ? "" : $"""
             
-            CURRENT RELATIONSHIP & INTIMACY STATUS:
-            - Current Milestone: "{stageName}" (Affection Score: {session.AffectionScore}/100)
-            - Current Mood: "{session.CurrentMood}"
-            - Roleplay Intimacy & Behavioral Guideline for this Milestone:
+            CURRENT RELATIONSHIP & INTIMACY STATUS (DYNAMIC STATE):
+            - Intimacy Stage: "{stageName}" (Affection Score: {affectionScore}/100)
+            - Current Emotion & Mood: {currentMood} (Intensity: {moodIntensity}/100){eventsLines}
+            - Behavioral Intimacy Guideline for this Stage:
               {stageGuideline}
             """;
 
@@ -136,9 +149,17 @@ public static class RoleplayPrompts
             You MUST return a single valid JSON object with the following schema:
             {
               "reply": "Your full roleplay response containing thoughts 💭, actions *[tag]...*, and spoken words",
-              "mood": "Short emotional mood of the character after this turn in Vietnamese (2-4 words, e.g., 'Bối rối & Đỏ mặt', 'Ấm áp & Hạnh phúc', 'Cảm động sâu sắc', 'Hờn dỗi nhẹ', 'Lạnh lùng & Thận trọng', 'Ngập tràn yêu thương')",
-              "affectionDelta": 3
+              "mood": "Neutral",
+              "moodIntensity": 75,
+              "affectionDelta": 3,
+              "event": null
             }
+
+            SCHEMA FIELD DETAILS:
+            - "mood": Exactly one of ["Neutral", "Happy", "Sad", "Angry", "Excited", "Anxious", "Embarrassed", "Curious", "Affectionate", "Playful"]
+            - "moodIntensity": Integer from 0 to 100 indicating how strongly the character feels this emotion
+            - "affectionDelta": Integer from -5 to +5 indicating how this turn shifted intimacy
+            - "event": null OR an object { "key": "FirstPromise", "context": "Short description of the breakthrough event" } ONLY if a major relationship milestone, promise, conflict, or confession occurred this turn.
 
             AFFECTION DELTA EVALUATION GUIDELINE:
             - (-5 to -2): User is rude, insulting, abusive, hostile, or breaks character immersion.
@@ -149,7 +170,18 @@ public static class RoleplayPrompts
             """;
     }
 
-    private static string GetLevelName(int level) => level switch
+    public static int CalculateRelationshipLevel(int score) => score switch
+    {
+        <= -61 => -2, // Kẻ Thù Không Đội Trời Chung (Nemesis)
+        <= -21 => -1, // Thù Địch & Ác Cảm (Hostile)
+        <= 20 => 1,   // Người Lạ (Neutral / Stranger)
+        <= 45 => 2,   // Người Quen (Acquaintance)
+        <= 70 => 3,   // Bạn Thân Thiết (Close Friend)
+        <= 90 => 4,   // Tri Kỷ & Rung Động (Soulmate / Romantic)
+        _ => 5        // Gắn Kết Linh Hồn (Eternal Devotion)
+    };
+
+    public static string GetLevelName(int level) => level switch
     {
         -2 => "Kẻ Thù Không Đội Trời Chung (Cực kỳ Căm Ghét & Đe Dọa)",
         -1 => "Thù Địch & Ác Cảm (Khó Chịu & Đề Phòng)",
@@ -160,7 +192,7 @@ public static class RoleplayPrompts
         _ => "Gắn Kết Linh Hồn (Tình Cảm Bền Chặt & Tuyệt Đối)"
     };
 
-    private static string GetLevelGuideline(int level) => level switch
+    public static string GetLevelGuideline(int level) => level switch
     {
         -2 => "Nhân vật cực kỳ căm ghét bạn, dùng lời lẽ cay độc, đe dọa, khinh bỉ, sẵn sàng rút vũ khí hoặc tìm cách trừng phạt bạn.",
         -1 => "Nhân vật có ác cảm rõ rệt, hay mỉa mai, từ chối giúp đỡ, giữ khoảng cách tối đa và không tin bất cứ lời nào của bạn.",

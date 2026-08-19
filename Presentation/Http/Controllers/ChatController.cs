@@ -131,4 +131,15 @@ public sealed class ChatController : ControllerBase
         var result = await _sender.Send(new Application.Features.Chat.Queries.GetCharacterMemories.GetCharacterMemoriesQuery(characterId, userId, limit), ct);
         return result.ToActionResult();
     }
+
+    /// <summary>
+    /// Gets the dynamic relationship state, affection score, mood, and unlocked events for a character with the current user
+    /// </summary>
+    [HttpGet("relationship/{characterId:guid}")]
+    public async Task<IActionResult> GetCharacterRelationship(Guid characterId, CancellationToken ct)
+    {
+        var userId = GetCurrentUserId();
+        var result = await _sender.Send(new Application.Features.Chat.Queries.GetCharacterRelationship.GetCharacterRelationshipQuery(characterId, userId), ct);
+        return result.ToActionResult();
+    }
 }

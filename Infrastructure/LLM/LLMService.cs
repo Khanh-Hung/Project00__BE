@@ -22,21 +22,28 @@ public sealed class LLMService : ILLMService
         _imageService = imageService;
     }
 
+    private record RoleplayEventJsonDto(
+        string? Key,
+        string? Context
+    );
+
     private record RoleplayAiJsonDto(
         string Reply,
         string? Mood,
-        int AffectionDelta
+        int? MoodIntensity,
+        int? AffectionDelta,
+        RoleplayEventJsonDto? Event
     );
 
     public async Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
         Character character,
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
-        ChatSession? session = null,
+        CharacterRelationship? relationship = null,
         IReadOnlyCollection<CharacterMemory>? memories = null,
         CancellationToken ct = default)
     {
-        var systemPrompt = RoleplayPrompts.BuildSystemPrompt(character, session, memories);
+        var systemPrompt = RoleplayPrompts.BuildSystemPrompt(character, relationship, memories);
 
         var contentsList = new List<object>();
         var recentHistory = history.TakeLast(10);
@@ -95,10 +102,28 @@ public sealed class LLMService : ILLMService
 
             if (parsed != null && !string.IsNullOrWhiteSpace(parsed.Reply))
             {
+                var mood = Enum.TryParse<CharacterMood>(parsed.Mood, true, out var parsedMood)
+                    ? parsedMood
+                    : CharacterMood.Neutral;
+
+                var intensity = Math.Clamp(parsed.MoodIntensity ?? 50, 0, 100);
+                var delta = Math.Clamp(parsed.AffectionDelta ?? 2, -5, 5);
+
+                RelationshipEventProposal? eventProposal = null;
+                if (parsed.Event != null && !string.IsNullOrWhiteSpace(parsed.Event.Key))
+                {
+                    eventProposal = new RelationshipEventProposal(
+                        parsed.Event.Key.Trim(),
+                        parsed.Event.Context?.Trim() ?? string.Empty
+                    );
+                }
+
                 return new RoleplayTurnResult(
                     parsed.Reply.Trim(),
-                    string.IsNullOrWhiteSpace(parsed.Mood) ? null : parsed.Mood.Trim(),
-                    Math.Clamp(parsed.AffectionDelta, -5, 5)
+                    mood,
+                    intensity,
+                    delta,
+                    eventProposal
                 );
             }
         }
@@ -107,17 +132,17 @@ public sealed class LLMService : ILLMService
             // Fallback gracefully
         }
 
-        return new RoleplayTurnResult(rawResponse.Trim(), null, 2);
+        return new RoleplayTurnResult(rawResponse.Trim(), CharacterMood.Neutral, 20, 2, null);
     }
 
     public async Task<string> GenerateRoleplayResponseAsync(
         Character character,
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
-        ChatSession? session = null,
+        CharacterRelationship? relationship = null,
         CancellationToken ct = default)
     {
-        var turn = await GenerateRoleplayTurnAsync(character, history, newUserMessage, session, memories: null, ct: ct);
+        var turn = await GenerateRoleplayTurnAsync(character, history, newUserMessage, relationship, memories: null, ct: ct);
         return turn.Reply;
     }
 

@@ -2,6 +2,7 @@ using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Domain.Entities;
+using Infrastructure.LLM.Prompts;
 using MediatR;
 
 namespace Application.Features.Chat.Queries.GetUserChatSessions;
@@ -29,6 +30,15 @@ public sealed class GetUserChatSessionsHandler : IRequestHandler<GetUserChatSess
             ? sessions.Where(s => s.UserId == query.UserId.Value)
             : sessions.Where(s => s.UserId == null);
 
+        var userRelationships = new Dictionary<Guid, CharacterRelationship>();
+        if (query.UserId.HasValue && query.UserId.Value != Guid.Empty)
+        {
+            var rels = await _unitOfWork.GetRepository<CharacterRelationship>().GetAllAsync(ct: cancellationToken);
+            userRelationships = rels
+                .Where(r => r.UserId == query.UserId.Value)
+                .ToDictionary(r => r.CharacterId);
+        }
+
         var list = filteredSessions
             .Where(s => charDict.ContainsKey(s.CharacterId))
             .OrderByDescending(s => s.Messages.LastOrDefault()?.CreatedAt ?? s.CreatedAt)
@@ -36,6 +46,28 @@ public sealed class GetUserChatSessionsHandler : IRequestHandler<GetUserChatSess
             {
                 var character = charDict[s.CharacterId];
                 var lastMsg = s.Messages.LastOrDefault();
+
+                userRelationships.TryGetValue(s.CharacterId, out var relationship);
+                var affection = relationship?.AffectionScore ?? character.DefaultAffectionScore;
+                var level = RoleplayPrompts.CalculateRelationshipLevel(affection);
+                string stageName = RoleplayPrompts.GetLevelName(level);
+                if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
+                {
+                    try
+                    {
+                        var customMilestones = System.Text.Json.JsonSerializer.Deserialize<List<RelationshipMilestoneDto>>(character.CustomMilestonesJson);
+                        var matched = customMilestones?.FirstOrDefault(ms => affection >= ms.MinScore && affection <= ms.MaxScore);
+                        if (matched != null)
+                        {
+                            stageName = matched.Name;
+                        }
+                    }
+                    catch
+                    {
+                        // Fallback
+                    }
+                }
+
                 return new ChatSessionListItemDto(
                     s.Id,
                     s.CharacterId,
@@ -46,8 +78,9 @@ public sealed class GetUserChatSessionsHandler : IRequestHandler<GetUserChatSess
                     lastMsg?.CreatedAt,
                     s.Messages.Count,
                     s.CreatedAt,
-                    s.AffectionScore,
-                    s.RelationshipLevel
+                    affection,
+                    level,
+                    stageName
                 );
             })
             .ToList();
