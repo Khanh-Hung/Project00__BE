@@ -42,14 +42,9 @@ public sealed class MemoryService : IMemoryService
             return Array.Empty<CharacterMemory>();
         }
 
-        // 2-Phase Retrieval: Query top important and most recent separately to avoid full table scans in memory
-        var importantTask = _unitOfWork.CharacterMemories.GetTopImportantAsync(userId, characterId, minImportance: 3, limit: 20, ct: ct);
-        var recentTask = _unitOfWork.CharacterMemories.GetMostRecentAsync(userId, characterId, limit: 20, ct: ct);
-
-        await Task.WhenAll(importantTask, recentTask);
-
-        var topImportant = await importantTask;
-        var mostRecent = await recentTask;
+        // 2-Phase Retrieval: Query top important and most recent sequentially (DbContext instances are not thread-safe)
+        var topImportant = await _unitOfWork.CharacterMemories.GetTopImportantAsync(userId, characterId, minImportance: 3, limit: 20, ct: ct);
+        var mostRecent = await _unitOfWork.CharacterMemories.GetMostRecentAsync(userId, characterId, limit: 20, ct: ct);
 
         // Combine and distinct candidates in-memory (at most 40 items)
         var combinedCandidates = topImportant
