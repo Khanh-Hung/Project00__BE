@@ -28,7 +28,7 @@ public sealed class MemoryService : IMemoryService
     }
 
     /// <summary>
-    /// Phase 2.1 rule-based retrieval (Importance + Recency + Diversity).
+    /// Phase 2.1 2-Phase Retrieval (Top Important [limit 20] + Most Recent [limit 20] -> In-memory Score & Diversity -> Top 6).
     /// Semantic retrieval will be introduced when pgvector is integrated in Phase 2.2.
     /// </summary>
     public async Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(
@@ -42,12 +42,23 @@ public sealed class MemoryService : IMemoryService
             return Array.Empty<CharacterMemory>();
         }
 
-        var memoryRepo = _unitOfWork.GetRepository<CharacterMemory>();
-        var allMemories = await memoryRepo.GetAllAsync(
-            m => m.UserId == userId && m.CharacterId == characterId && !m.IsSoftDeleted,
-            ct: ct);
+        // 2-Phase Retrieval: Query top important and most recent separately to avoid full table scans in memory
+        var importantTask = _unitOfWork.CharacterMemories.GetTopImportantAsync(userId, characterId, minImportance: 3, limit: 20, ct: ct);
+        var recentTask = _unitOfWork.CharacterMemories.GetMostRecentAsync(userId, characterId, limit: 20, ct: ct);
 
-        if (allMemories.Count == 0)
+        await Task.WhenAll(importantTask, recentTask);
+
+        var topImportant = await importantTask;
+        var mostRecent = await recentTask;
+
+        // Combine and distinct candidates in-memory (at most 40 items)
+        var combinedCandidates = topImportant
+            .Concat(mostRecent)
+            .GroupBy(m => m.Id)
+            .Select(g => g.First())
+            .ToList();
+
+        if (combinedCandidates.Count == 0)
         {
             return Array.Empty<CharacterMemory>();
         }
@@ -62,7 +73,7 @@ public sealed class MemoryService : IMemoryService
             return (m.Importance * 2.0) + (double)m.Confidence + recencyBonus;
         }
 
-        var scored = allMemories
+        var scored = combinedCandidates
             .Select(m => new { Memory = m, Score = CalculateScore(m) })
             .OrderByDescending(x => x.Score)
             .ToList();
@@ -95,7 +106,7 @@ public sealed class MemoryService : IMemoryService
         foreach (var mem in selected)
         {
             mem.MarkAccessed(now);
-            memoryRepo.Update(mem);
+            _unitOfWork.CharacterMemories.Update(mem);
         }
 
         try
@@ -128,9 +139,12 @@ public sealed class MemoryService : IMemoryService
             return 0;
         }
 
-        var memoryRepo = _unitOfWork.GetRepository<CharacterMemory>();
-        var existingMemories = await memoryRepo.GetAllAsync(
-            m => m.UserId == userId && m.CharacterId == characterId && !m.IsSoftDeleted,
+        // Query only existing memories matching the candidate types instead of loading entire memory set
+        var candidateTypes = candidateList.Select(c => c.Type).Distinct().ToList();
+        var existingMemories = await _unitOfWork.CharacterMemories.GetExistingByTypesAsync(
+            userId,
+            characterId,
+            candidateTypes,
             ct: ct);
 
         // Map existing normalized content + type to memory
@@ -165,7 +179,7 @@ public sealed class MemoryService : IMemoryService
                 var newImportance = Math.Max(existing.Importance, sanitizedImportance);
                 var newConfidence = Math.Max(existing.Confidence, sanitizedConfidence);
                 existing.UpdateDetails(importance: newImportance, confidence: newConfidence);
-                memoryRepo.Update(existing);
+                _unitOfWork.CharacterMemories.Update(existing);
             }
             else
             {
@@ -179,7 +193,7 @@ public sealed class MemoryService : IMemoryService
                     sourceSessionId: sessionId
                 );
 
-                await memoryRepo.AddAsync(newMemory, ct);
+                await _unitOfWork.CharacterMemories.AddAsync(newMemory, ct);
                 existingMap[key] = newMemory;
                 addedCount++;
             }
