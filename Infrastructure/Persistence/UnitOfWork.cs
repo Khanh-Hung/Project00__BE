@@ -14,6 +14,10 @@ public class UnitOfWork : IUnitOfWork
         _dbContext = dbContext;
     }
 
+    private ICharacterMemoryRepository? _characterMemories;
+    public ICharacterMemoryRepository CharacterMemories =>
+        _characterMemories ??= new CharacterMemoryRepository(_dbContext);
+
     public IGenericRepository<TEntity> GetRepository<TEntity>() where TEntity : BaseEntity
     {
         var type = typeof(TEntity);
