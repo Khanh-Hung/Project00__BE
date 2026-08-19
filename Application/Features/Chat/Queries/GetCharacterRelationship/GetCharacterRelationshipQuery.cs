@@ -1,3 +1,4 @@
+using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
@@ -9,21 +10,32 @@ namespace Application.Features.Chat.Queries.GetCharacterRelationship;
 
 public record GetCharacterRelationshipQuery(
     Guid CharacterId,
-    Guid? UserId
+    Guid? UserId = null
 ) : IRequest<Result<CharacterRelationshipDto>>;
 
 public sealed class GetCharacterRelationshipHandler : IRequestHandler<GetCharacterRelationshipQuery, Result<CharacterRelationshipDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetCharacterRelationshipHandler(IUnitOfWork unitOfWork)
+    public GetCharacterRelationshipHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _currentUserProvider = currentUserProvider;
     }
 
     public async Task<Result<CharacterRelationshipDto>> Handle(GetCharacterRelationshipQuery query, CancellationToken cancellationToken)
     {
-        if (!query.UserId.HasValue || query.UserId.Value == Guid.Empty)
+        Guid? effectiveUserId = query.UserId;
+        if (!effectiveUserId.HasValue || effectiveUserId.Value == Guid.Empty)
+        {
+            if (!string.IsNullOrEmpty(_currentUserProvider.CurrentUserId) && Guid.TryParse(_currentUserProvider.CurrentUserId, out var uid))
+            {
+                effectiveUserId = uid;
+            }
+        }
+
+        if (!effectiveUserId.HasValue || effectiveUserId.Value == Guid.Empty)
         {
             return Result<CharacterRelationshipDto>.Failure(StatusCodes.Status401Unauthorized, "User is not authenticated.");
         }
@@ -35,7 +47,7 @@ public sealed class GetCharacterRelationshipHandler : IRequestHandler<GetCharact
         }
 
         var relationship = await _unitOfWork.Relationships.GetOrCreateAsync(
-            query.UserId.Value,
+            effectiveUserId.Value,
             query.CharacterId,
             character.DefaultAffectionScore,
             ct: cancellationToken);

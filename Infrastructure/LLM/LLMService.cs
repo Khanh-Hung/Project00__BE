@@ -107,7 +107,7 @@ public sealed class LLMService : ILLMService
                     : CharacterMood.Neutral;
 
                 var intensity = Math.Clamp(parsed.MoodIntensity ?? 50, 0, 100);
-                var delta = Math.Clamp(parsed.AffectionDelta ?? 2, -5, 5);
+                var delta = Math.Clamp(parsed.AffectionDelta ?? 0, -5, 5);
 
                 RelationshipEventProposal? eventProposal = null;
                 if (parsed.Event != null && !string.IsNullOrWhiteSpace(parsed.Event.Key))
@@ -132,7 +132,7 @@ public sealed class LLMService : ILLMService
             // Fallback gracefully
         }
 
-        return new RoleplayTurnResult(rawResponse.Trim(), CharacterMood.Neutral, 20, 2, null);
+        return new RoleplayTurnResult(rawResponse.Trim(), CharacterMood.Neutral, 20, 0, null);
     }
 
     public async Task<string> GenerateRoleplayResponseAsync(

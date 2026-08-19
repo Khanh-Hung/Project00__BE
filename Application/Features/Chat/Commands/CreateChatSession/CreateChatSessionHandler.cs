@@ -72,24 +72,7 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
         )).ToList();
 
         var affection = relationship?.AffectionScore ?? character.DefaultAffectionScore;
-        var level = RoleplayPrompts.CalculateRelationshipLevel(affection);
-        string stageName = RoleplayPrompts.GetLevelName(level);
-        if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
-        {
-            try
-            {
-                var customMilestones = System.Text.Json.JsonSerializer.Deserialize<List<RelationshipMilestoneDto>>(character.CustomMilestonesJson);
-                var matched = customMilestones?.FirstOrDefault(ms => affection >= ms.MinScore && affection <= ms.MaxScore);
-                if (matched != null)
-                {
-                    stageName = matched.Name;
-                }
-            }
-            catch
-            {
-                // Fallback to default
-            }
-        }
+        var (level, stageName, _) = Application.Common.RelationshipStageResolver.Resolve(affection, character.CustomMilestonesJson);
 
         var eventsDto = relationship?.Events.Select(e => new RelationshipEventDto(e.EventKey, e.Context, e.UnlockedAt)).ToList();
 

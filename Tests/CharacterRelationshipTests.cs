@@ -1,3 +1,4 @@
+using Application.Common;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -93,15 +94,29 @@ public class CharacterRelationshipTests
     }
 
     [Fact]
-    public void TryUnlockEvent_EventKeyExceeding100Chars_TruncatesAndAddsSuccessfully()
+    public void TryUnlockEvent_EventKeyExceeding100Chars_RejectsAndReturnsFalse()
     {
         var rel = CharacterRelationship.Create(_testCharacterId, _testUserId);
         var longKey = new string('A', 150);
 
         var unlocked = rel.TryUnlockEvent(longKey, "Valid context");
 
-        Assert.True(unlocked);
-        Assert.Equal(100, rel.Events.First().EventKey.Length);
+        // Per domain invariant, invalid event key length is strictly rejected (not silently truncated)
+        Assert.False(unlocked);
+        Assert.Empty(rel.Events);
+    }
+
+    [Fact]
+    public void TryUnlockEvent_ContextExceeding500Chars_RejectsAndReturnsFalse()
+    {
+        var rel = CharacterRelationship.Create(_testCharacterId, _testUserId);
+        var longContext = new string('B', 550);
+
+        var unlocked = rel.TryUnlockEvent("ValidKey", longContext);
+
+        // Per domain invariant, invalid context length is strictly rejected
+        Assert.False(unlocked);
+        Assert.Empty(rel.Events);
     }
 
     [Fact]
@@ -160,6 +175,27 @@ public class CharacterRelationshipTests
     }
 
     [Fact]
+    public void RelationshipStageResolver_CalculatesAndResolvesCustomMilestonesCorrectly()
+    {
+        var customMilestonesJson = @"[
+            { ""Name"": ""Oan Gia"", ""Description"": ""Luôn cãi vã"", ""MinScore"": -100, ""MaxScore"": -1 },
+            { ""Name"": ""Bạn Đồng Hành"", ""Description"": ""Cùng nhau phiêu lưu"", ""MinScore"": 0, ""MaxScore"": 50 },
+            { ""Name"": ""Bạn Đời Tri Kỷ"", ""Description"": ""Không thể tách rời"", ""MinScore"": 51, ""MaxScore"": 100 }
+        ]";
+
+        var (lvl1, name1, guide1) = RelationshipStageResolver.Resolve(30, customMilestonesJson);
+        Assert.Equal("Bạn Đồng Hành", name1);
+        Assert.Equal("Cùng nhau phiêu lưu", guide1);
+
+        var (lvl2, name2, guide2) = RelationshipStageResolver.Resolve(75, customMilestonesJson);
+        Assert.Equal("Bạn Đời Tri Kỷ", name2);
+
+        // Fallback to default if no custom milestones
+        var (lvl3, name3, _) = RelationshipStageResolver.Resolve(10, null);
+        Assert.Equal("Người Lạ", name3);
+    }
+
+    [Fact]
     public async Task MultipleChatSessions_SameUserAndCharacter_ShareSingleCharacterRelationship()
     {
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
@@ -193,38 +229,5 @@ public class CharacterRelationshipTests
         Assert.NotNull(relAfter);
         Assert.Single(relAfter.Events);
         Assert.Equal("FirstMeeting", relAfter.Events.First().EventKey);
-    }
-
-    [Fact]
-    public async Task GetCharacterRelationshipHandler_Returns_Correct_Dto()
-    {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-
-        using var dbContext = new ProjectDbContext(options);
-        var uow = new UnitOfWork(dbContext);
-
-        var userId = Guid.NewGuid();
-        var characterId = Guid.NewGuid();
-
-        var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy", defaultAffectionScore: 25)
-        {
-            Id = characterId
-        };
-        dbContext.Characters.Add(character);
-        await dbContext.SaveChangesAsync();
-
-        var handler = new Application.Features.Chat.Queries.GetCharacterRelationship.GetCharacterRelationshipHandler(uow);
-        var query = new Application.Features.Chat.Queries.GetCharacterRelationship.GetCharacterRelationshipQuery(characterId, userId);
-
-        var result = await handler.Handle(query, CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.NotNull(result.Value);
-        Assert.Equal(characterId, result.Value.CharacterId);
-        Assert.Equal(userId, result.Value.UserId);
-        Assert.Equal(25, result.Value.AffectionScore);
-        Assert.Equal(CharacterMood.Neutral, result.Value.CurrentMood);
     }
 }

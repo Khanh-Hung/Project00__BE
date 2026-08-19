@@ -132,27 +132,8 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
             }
         }
 
-        var newLevel = RoleplayPrompts.CalculateRelationshipLevel(newScore);
+        var (newLevel, stageName, _) = Application.Common.RelationshipStageResolver.Resolve(newScore, character.CustomMilestonesJson);
         var isLevelUp = newLevel > oldLevel;
-
-        // Compute Display Stage Name
-        string stageName = RoleplayPrompts.GetLevelName(newLevel);
-        if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
-        {
-            try
-            {
-                var customMilestones = System.Text.Json.JsonSerializer.Deserialize<List<RelationshipMilestoneDto>>(character.CustomMilestonesJson);
-                var matched = customMilestones?.FirstOrDefault(ms => newScore >= ms.MinScore && newScore <= ms.MaxScore);
-                if (matched != null)
-                {
-                    stageName = matched.Name;
-                }
-            }
-            catch
-            {
-                // Fallback to default
-            }
-        }
 
         // 6. Append AI Assistant Message
         var assistantMsg = session.AddAssistantMessage(aiTurn.Reply);

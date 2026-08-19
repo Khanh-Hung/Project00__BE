@@ -92,6 +92,12 @@ public sealed class CharacterRelationship : BaseEntity
         var trimmedKey = eventKey.Trim();
         var trimmedContext = context.Trim();
 
+        // Reject invalid lengths per domain invariant
+        if (trimmedKey.Length > RelationshipEvent.MaxEventKeyLength || trimmedContext.Length > RelationshipEvent.MaxContextLength)
+        {
+            return false;
+        }
+
         // Deduplicate by EventKey (case-insensitive)
         if (_events.Any(e => string.Equals(e.EventKey, trimmedKey, StringComparison.OrdinalIgnoreCase)))
         {

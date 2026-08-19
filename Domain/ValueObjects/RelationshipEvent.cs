@@ -22,11 +22,19 @@ public sealed record RelationshipEvent
         }
 
         var trimmedKey = eventKey.Trim();
-        EventKey = trimmedKey.Length > MaxEventKeyLength ? trimmedKey.Substring(0, MaxEventKeyLength) : trimmedKey;
+        if (trimmedKey.Length > MaxEventKeyLength)
+        {
+            throw new ArgumentException($"EventKey cannot exceed {MaxEventKeyLength} characters.", nameof(eventKey));
+        }
 
         var trimmedContext = context.Trim();
-        Context = trimmedContext.Length > MaxContextLength ? trimmedContext.Substring(0, MaxContextLength) : trimmedContext;
+        if (trimmedContext.Length > MaxContextLength)
+        {
+            throw new ArgumentException($"Context cannot exceed {MaxContextLength} characters.", nameof(context));
+        }
 
+        EventKey = trimmedKey;
+        Context = trimmedContext;
         UnlockedAt = unlockedAt;
     }
 }

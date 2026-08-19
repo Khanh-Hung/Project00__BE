@@ -14,29 +14,7 @@ public static class RoleplayPrompts
         var currentMood = relationship?.CurrentMood ?? (Enum.TryParse<CharacterMood>(character.DefaultMood, true, out var m) ? m : CharacterMood.Neutral);
         var moodIntensity = relationship?.MoodIntensity ?? 20;
 
-        string stageName = GetLevelName(CalculateRelationshipLevel(affectionScore));
-        string stageGuideline = GetLevelGuideline(CalculateRelationshipLevel(affectionScore));
-
-        if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
-        {
-            try
-            {
-                var customMilestones = System.Text.Json.JsonSerializer.Deserialize<List<Application.DTOs.RelationshipMilestoneDto>>(character.CustomMilestonesJson);
-                if (customMilestones != null && customMilestones.Count > 0)
-                {
-                    var matched = customMilestones.FirstOrDefault(ms => affectionScore >= ms.MinScore && affectionScore <= ms.MaxScore);
-                    if (matched != null)
-                    {
-                        stageName = matched.Name;
-                        stageGuideline = matched.Description;
-                    }
-                }
-            }
-            catch
-            {
-                // Fallback to default
-            }
-        }
+        var (level, stageName, stageGuideline) = Application.Common.RelationshipStageResolver.Resolve(affectionScore, character.CustomMilestonesJson);
 
         var eventsLines = "";
         if (relationship != null && relationship.Events.Count > 0)

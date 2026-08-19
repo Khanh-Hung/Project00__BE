@@ -49,24 +49,7 @@ public sealed class GetUserChatSessionsHandler : IRequestHandler<GetUserChatSess
 
                 userRelationships.TryGetValue(s.CharacterId, out var relationship);
                 var affection = relationship?.AffectionScore ?? character.DefaultAffectionScore;
-                var level = RoleplayPrompts.CalculateRelationshipLevel(affection);
-                string stageName = RoleplayPrompts.GetLevelName(level);
-                if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
-                {
-                    try
-                    {
-                        var customMilestones = System.Text.Json.JsonSerializer.Deserialize<List<RelationshipMilestoneDto>>(character.CustomMilestonesJson);
-                        var matched = customMilestones?.FirstOrDefault(ms => affection >= ms.MinScore && affection <= ms.MaxScore);
-                        if (matched != null)
-                        {
-                            stageName = matched.Name;
-                        }
-                    }
-                    catch
-                    {
-                        // Fallback
-                    }
-                }
+                var (level, stageName, _) = Application.Common.RelationshipStageResolver.Resolve(affection, character.CustomMilestonesJson);
 
                 return new ChatSessionListItemDto(
                     s.Id,

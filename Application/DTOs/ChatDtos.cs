@@ -93,7 +93,7 @@ public record RoleplayTurnResult(
     string Reply,
     CharacterMood Mood = CharacterMood.Neutral,
     int MoodIntensity = 20,
-    int AffectionDelta = 2,
+    int AffectionDelta = 0,
     RelationshipEventProposal? Event = null
 );
 
