@@ -56,7 +56,8 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             creator?.AvatarUrl,
             character.DefaultAffectionScore,
             character.DefaultMood,
-            customMilestones
+            customMilestones,
+            character.Blueprint
         );
 
         return Result<CharacterDto>.Success(dto);

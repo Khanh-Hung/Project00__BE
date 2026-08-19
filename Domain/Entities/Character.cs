@@ -1,4 +1,5 @@
 using Domain.Common;
+using Domain.ValueObjects;
 
 namespace Domain.Entities;
 
@@ -15,6 +16,7 @@ public class Character : BaseEntity
     public int DefaultAffectionScore { get; private set; }
     public string DefaultMood { get; private set; } = string.Empty;
     public string? CustomMilestonesJson { get; private set; }
+    public CharacterBlueprint? Blueprint { get; private set; }
 
     private Character() { } // EF Core
 
@@ -29,7 +31,8 @@ public class Character : BaseEntity
         bool isPublic = true,
         int defaultAffectionScore = 0,
         string? defaultMood = null,
-        string? customMilestonesJson = null)
+        string? customMilestonesJson = null,
+        CharacterBlueprint? blueprint = null)
     {
         Name = name;
         Title = title;
@@ -42,6 +45,7 @@ public class Character : BaseEntity
         DefaultAffectionScore = Math.Clamp(defaultAffectionScore, -100, 100);
         DefaultMood = defaultMood ?? string.Empty;
         CustomMilestonesJson = customMilestonesJson;
+        Blueprint = blueprint;
     }
 
     public void UpdateDetails(
@@ -54,7 +58,9 @@ public class Character : BaseEntity
         List<string> tags,
         int? defaultAffectionScore = null,
         string? defaultMood = null,
-        string? customMilestonesJson = null)
+        string? customMilestonesJson = null,
+        CharacterBlueprint? blueprint = null,
+        bool updateBlueprint = false)
     {
         Name = name;
         Title = title;
@@ -75,6 +81,16 @@ public class Character : BaseEntity
         {
             CustomMilestonesJson = customMilestonesJson;
         }
+        if (updateBlueprint || blueprint != null)
+        {
+            Blueprint = blueprint;
+        }
+        Touch();
+    }
+
+    public void SetBlueprint(CharacterBlueprint? blueprint)
+    {
+        Blueprint = blueprint;
         Touch();
     }
 

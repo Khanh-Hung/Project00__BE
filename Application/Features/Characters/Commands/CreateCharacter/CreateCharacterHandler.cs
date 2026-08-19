@@ -40,7 +40,8 @@ public sealed class CreateCharacterHandler : IRequestHandler<CreateCharacterComm
             req.IsPublic,
             req.DefaultAffectionScore,
             req.DefaultMood,
-            milestonesJson
+            milestonesJson,
+            req.Blueprint
         );
 
         await repo.AddAsync(character, cancellationToken);
@@ -63,7 +64,8 @@ public sealed class CreateCharacterHandler : IRequestHandler<CreateCharacterComm
             null,
             character.DefaultAffectionScore,
             character.DefaultMood,
-            req.CustomMilestones
+            req.CustomMilestones,
+            character.Blueprint
         );
 
         return Result<CharacterDto>.Success(dto);

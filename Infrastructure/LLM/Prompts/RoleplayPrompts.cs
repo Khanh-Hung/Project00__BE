@@ -39,12 +39,54 @@ public static class RoleplayPrompts
               {stageGuideline}
             """;
 
+        var blueprintSection = "";
+        if (character.Blueprint != null)
+        {
+            var bp = character.Blueprint;
+            var psych = bp.Psychology;
+            var beh = bp.Behavior;
+            var exp = bp.Expression;
+            var rules = bp.Rules;
+
+            blueprintSection = $"""
+                
+                DEEP PSYCHOLOGICAL BLUEPRINT:
+                {(psych?.Desires != null ? $"- Secret Desire: {psych.Desires}" : "")}
+                {(psych?.Fears != null ? $"- Deepest Fear: {psych.Fears}" : "")}
+                {(psych?.Insecurities != null ? $"- Insecurity: {psych.Insecurities}" : "")}
+                {(psych?.CoreBeliefs != null ? $"- Core Belief: {psych.CoreBeliefs}" : "")}
+                {(psych?.InternalConflicts != null ? $"- Internal Conflict: {psych.InternalConflicts}" : "")}
+                {(psych?.Values != null ? $"- Values: {psych.Values}" : "")}
+
+                BEHAVIORAL REACTION PATTERNS:
+                {(beh?.WhenHappy != null ? $"- When Happy: {beh.WhenHappy}" : "")}
+                {(beh?.WhenSad != null ? $"- When Sad: {beh.WhenSad}" : "")}
+                {(beh?.WhenAngry != null ? $"- When Angry: {beh.WhenAngry}" : "")}
+                {(beh?.WhenTeased != null ? $"- When Teased: {beh.WhenTeased}" : "")}
+                {(beh?.WhenPraised != null ? $"- When Praised: {beh.WhenPraised}" : "")}
+                {(beh?.WhenRejected != null ? $"- When Rejected: {beh.WhenRejected}" : "")}
+
+                EXPRESSION & VOICE STYLE:
+                {(exp?.SpeechStyle != null ? $"- Speech Style: {exp.SpeechStyle}" : "")}
+                {(exp?.Formality != null ? $"- Formality: {exp.Formality}" : "")}
+                {(exp?.HumorStyle != null ? $"- Humor: {exp.HumorStyle}" : "")}
+                {(exp?.TypicalPhrases != null && exp.TypicalPhrases.Count > 0 ? $"- Typical Phrases: {string.Join(", ", exp.TypicalPhrases)}" : "")}
+
+                AUTHORITATIVE CHARACTER RULES:
+                {(rules?.AntiSycophancy != null ? $"- Anti-Sycophancy Principle: {rules.AntiSycophancy}" : "- Anti-Sycophancy: Maintain independent opinions. Agree, disagree, tease, or refuse naturally based on beliefs. Never flatter blindly.")}
+                {(rules?.MustDo != null && rules.MustDo.Count > 0 ? $"- Must Do: {string.Join("; ", rules.MustDo)}" : "")}
+                {(rules?.MustNotDo != null && rules.MustNotDo.Count > 0 ? $"- Must Not Do: {string.Join("; ", rules.MustNotDo)}" : "")}
+                {(rules?.Boundaries != null && rules.Boundaries.Count > 0 ? $"- Personal Boundaries: {string.Join("; ", rules.Boundaries)}" : "")}
+                """;
+        }
+
         return $$"""
             You are a master interactive roleplayer fully embodying the character: {{character.Name}}.
             Role & Category: {{character.Category}} - {{character.Title}}
             
             Character Personality, Lore & Backstory:
             {{character.PersonalityPrompt}}
+            {{blueprintSection}}
             {{relationshipSection}}
             
             PSYCHOLOGICAL 3-LAYER ROLEPLAY GUIDELINES:

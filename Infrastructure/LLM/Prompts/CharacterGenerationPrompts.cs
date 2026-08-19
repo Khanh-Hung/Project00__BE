@@ -35,7 +35,38 @@ public static class CharacterGenerationPrompts
               "maxScore": 100,
               "description": "Thái độ khi mối quan hệ đạt đỉnh cao của sự gắn kết."
             }
-          ]
+          ],
+          "blueprint": {
+            "psychology": {
+              "desires": "Khao khát thầm kín nhất của nhân vật...",
+              "fears": "Nỗi sợ lớn nhất mà nhân vật luôn che giấu...",
+              "insecurities": "Nỗi bất an / mặc cảm nội tâm...",
+              "coreBeliefs": "Niềm tin cốt lõi sống còn...",
+              "internalConflicts": "Mâu thuẫn nội tâm giằng xé...",
+              "values": "Hệ giá trị cốt lõi..."
+            },
+            "behavior": {
+              "whenHappy": "Biểu hiện khi vui...",
+              "whenSad": "Biểu hiện khi buồn...",
+              "whenAngry": "Biểu hiện khi tức giận...",
+              "whenTeased": "Biểu hiện khi bị bạn trêu đùa...",
+              "whenPraised": "Biểu hiện khi được khen ngợi...",
+              "whenRejected": "Biểu hiện khi bị từ chối..."
+            },
+            "expression": {
+              "speechStyle": "Phong cách ăn nói...",
+              "formality": "Mức độ trang trọng / thân mật...",
+              "humorStyle": "Kiểu hài hước...",
+              "emojiUsage": "Thói quen hành động / biểu cảm...",
+              "typicalPhrases": ["3-5 câu cửa miệng đặc trưng"]
+            },
+            "rules": {
+              "mustDo": ["Những điều nhân vật luôn làm"],
+              "mustNotDo": ["Những điều nhân vật không bao giờ làm"],
+              "antiSycophancy": "Nhân vật giữ vững chính kiến độc lập và hệ giá trị riêng. Sẵn sàng đồng ý, phản bác, trêu chọc hoặc từ chối tùy theo cảm xúc và niềm tin, không bao giờ mù quáng nịnh hót người chơi.",
+              "boundaries": ["Ranh giới cá nhân không thể xâm phạm"]
+            }
+          }
         }
         """;
 

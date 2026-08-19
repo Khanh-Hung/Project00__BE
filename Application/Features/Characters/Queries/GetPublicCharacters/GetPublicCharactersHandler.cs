@@ -60,7 +60,8 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 creator?.AvatarUrl,
                 c.DefaultAffectionScore,
                 c.DefaultMood,
-                customMilestones
+                customMilestones,
+                c.Blueprint
             );
         }).ToList();
 
