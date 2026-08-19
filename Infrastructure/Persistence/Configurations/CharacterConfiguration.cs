@@ -16,5 +16,11 @@ public sealed class CharacterConfiguration : IEntityTypeConfiguration<Character>
         builder.Property(c => c.Greeting).HasMaxLength(1000);
         builder.Property(c => c.DefaultAffectionScore).HasDefaultValue(0);
         builder.Property(c => c.DefaultMood).HasMaxLength(100);
+
+        builder.Property(c => c.Blueprint)
+            .HasConversion(
+                v => v == null ? null : System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                v => string.IsNullOrWhiteSpace(v) ? null : System.Text.Json.JsonSerializer.Deserialize<Domain.ValueObjects.CharacterBlueprint>(v, (System.Text.Json.JsonSerializerOptions?)null)
+            );
     }
 }

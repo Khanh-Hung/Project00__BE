@@ -1,3 +1,5 @@
+using Domain.ValueObjects;
+
 namespace Application.DTOs;
 
 public record RelationshipMilestoneDto(
@@ -25,7 +27,8 @@ public record CharacterDto(
     string? CreatorAvatar = null,
     int DefaultAffectionScore = 0,
     string? DefaultMood = null,
-    List<RelationshipMilestoneDto>? CustomMilestones = null
+    List<RelationshipMilestoneDto>? CustomMilestones = null,
+    CharacterBlueprint? Blueprint = null
 );
 
 public record CreateCharacterRequest(
@@ -39,7 +42,8 @@ public record CreateCharacterRequest(
     bool IsPublic = true,
     int DefaultAffectionScore = 0,
     string? DefaultMood = null,
-    List<RelationshipMilestoneDto>? CustomMilestones = null
+    List<RelationshipMilestoneDto>? CustomMilestones = null,
+    CharacterBlueprint? Blueprint = null
 );
 
 public record UpdateCharacterRequest(
@@ -53,7 +57,8 @@ public record UpdateCharacterRequest(
     bool IsPublic = true,
     int? DefaultAffectionScore = null,
     string? DefaultMood = null,
-    List<RelationshipMilestoneDto>? CustomMilestones = null
+    List<RelationshipMilestoneDto>? CustomMilestones = null,
+    CharacterBlueprint? Blueprint = null
 );
 
 public record GenerateCharacterAiRequest(
@@ -70,7 +75,8 @@ public record GeneratedCharacterDto(
     List<string> Tags,
     int DefaultAffectionScore = 0,
     string? DefaultMood = null,
-    List<RelationshipMilestoneDto>? CustomMilestones = null
+    List<RelationshipMilestoneDto>? CustomMilestones = null,
+    CharacterBlueprint? Blueprint = null
 );
 
 public record GenerateAvatarRequest(
