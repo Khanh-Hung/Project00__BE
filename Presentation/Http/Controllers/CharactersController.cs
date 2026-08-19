@@ -32,7 +32,7 @@ public sealed class CharactersController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Idea))
         {
-            return BadRequest(Result<GeneratedCharacterDto>.Failure(StatusCodes.Status400BadRequest, "Ý tưởng nhân vật không được để trống."));
+            return BadRequest(Result<GeneratedCharacterDto>.Failure(StatusCodes.Status400BadRequest, "Character idea cannot be empty."));
         }
 
         try
@@ -100,6 +100,16 @@ public sealed class CharactersController : ControllerBase
     public async Task<IActionResult> UpdateCharacter(Guid id, [FromBody] UpdateCharacterRequest request, CancellationToken ct)
     {
         var result = await _sender.Send(new UpdateCharacterCommand(id, request), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Generates a stunning anime avatar image using AI
+    /// </summary>
+    [HttpPost("generate-avatar")]
+    public async Task<IActionResult> GenerateAvatar([FromBody] GenerateAvatarRequest request, CancellationToken ct)
+    {
+        var result = await _sender.Send(new Application.Features.Characters.Commands.GenerateAvatar.GenerateAvatarCommand(request), ct);
         return result.ToActionResult();
     }
 

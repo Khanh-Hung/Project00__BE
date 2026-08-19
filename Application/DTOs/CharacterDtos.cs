@@ -13,6 +13,7 @@ public record CharacterDto(
     DateTime CreatedAt,
     string? CreatedBy = null,
     string? CreatorName = null,
+    string? CreatorUserName = null,
     string? CreatorAvatar = null
 );
 
@@ -50,4 +51,17 @@ public record GeneratedCharacterDto(
     string PersonalityPrompt,
     string Greeting,
     List<string> Tags
+);
+
+public record GenerateAvatarRequest(
+    string? Name = null,
+    string? Title = null,
+    string? Category = null,
+    string? PersonalityPrompt = null,
+    string? Idea = null
+);
+
+public record GenerateAvatarResponse(
+    string AvatarUrl,
+    string Prompt
 );

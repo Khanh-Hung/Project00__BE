@@ -47,7 +47,8 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.IsPublic,
             character.CreatedAt,
             character.CreatedBy,
-            creator?.UserName ?? (character.CreatedBy == "system" ? "Hệ thống" : null),
+            creator?.DisplayName ?? (character.CreatedBy == "system" ? "System" : null),
+            creator?.UserName,
             creator?.AvatarUrl
         );
 
