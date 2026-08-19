@@ -174,6 +174,31 @@ public class CharacterRelationshipTests
         });
     }
 
+    [Theory]
+    [InlineData(-100, -2, "Kẻ Thù Không Đội Trời Chung")]
+    [InlineData(-61, -2, "Kẻ Thù Không Đội Trời Chung")]
+    [InlineData(-60, -1, "Thù Địch & Ác Cảm")]
+    [InlineData(-21, -1, "Thù Địch & Ác Cảm")]
+    [InlineData(-20, 1, "Người Lạ")]
+    [InlineData(0, 1, "Người Lạ")]
+    [InlineData(20, 1, "Người Lạ")]
+    [InlineData(21, 2, "Người Quen")]
+    [InlineData(45, 2, "Người Quen")]
+    [InlineData(46, 3, "Bạn Thân Thiết")]
+    [InlineData(70, 3, "Bạn Thân Thiết")]
+    [InlineData(71, 4, "Tri Kỷ & Tin Cậy")]
+    [InlineData(90, 4, "Tri Kỷ & Tin Cậy")]
+    [InlineData(91, 5, "Gắn Kết Linh Hồn")]
+    [InlineData(100, 5, "Gắn Kết Linh Hồn")]
+    public void RelationshipStageResolver_BoundaryScores_CalculateExactLevelAndName(
+        int score, int expectedLevel, string expectedName)
+    {
+        var (level, name, _) = RelationshipStageResolver.Resolve(score, customMilestonesJson: null);
+
+        Assert.Equal(expectedLevel, level);
+        Assert.Equal(expectedName, name);
+    }
+
     [Fact]
     public void RelationshipStageResolver_CalculatesAndResolvesCustomMilestonesCorrectly()
     {
@@ -193,6 +218,17 @@ public class CharacterRelationshipTests
         // Fallback to default if no custom milestones
         var (lvl3, name3, _) = RelationshipStageResolver.Resolve(10, null);
         Assert.Equal("Người Lạ", name3);
+    }
+
+    [Fact]
+    public void ChatSession_DoesNotContainRelationshipStateProperties_EnsuresSingleSourceOfTruth()
+    {
+        var sessionType = typeof(ChatSession);
+
+        Assert.Null(sessionType.GetProperty("AffectionScore"));
+        Assert.Null(sessionType.GetProperty("RelationshipLevel"));
+        Assert.Null(sessionType.GetProperty("CurrentMood"));
+        Assert.Null(sessionType.GetMethod("UpdateAffection"));
     }
 
     [Fact]
