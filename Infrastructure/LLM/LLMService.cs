@@ -33,9 +33,10 @@ public sealed class LLMService : ILLMService
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
         ChatSession? session = null,
+        IReadOnlyCollection<CharacterMemory>? memories = null,
         CancellationToken ct = default)
     {
-        var systemPrompt = RoleplayPrompts.BuildSystemPrompt(character, session);
+        var systemPrompt = RoleplayPrompts.BuildSystemPrompt(character, session, memories);
 
         var contentsList = new List<object>();
         var recentHistory = history.TakeLast(10);
@@ -116,7 +117,7 @@ public sealed class LLMService : ILLMService
         ChatSession? session = null,
         CancellationToken ct = default)
     {
-        var turn = await GenerateRoleplayTurnAsync(character, history, newUserMessage, session, ct);
+        var turn = await GenerateRoleplayTurnAsync(character, history, newUserMessage, session, memories: null, ct: ct);
         return turn.Reply;
     }
 

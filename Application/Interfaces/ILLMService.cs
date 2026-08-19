@@ -10,6 +10,7 @@ public interface ILLMService
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
         ChatSession? session = null,
+        IReadOnlyCollection<CharacterMemory>? memories = null,
         CancellationToken ct = default);
 
     Task<string> GenerateRoleplayResponseAsync(
