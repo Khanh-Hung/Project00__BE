@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using Domain.Common;
+using Domain.Common.DateTimes;
 
 namespace Domain.Entities;
 
@@ -7,22 +9,70 @@ public class User : BaseEntity
     public string Email { get; private set; } = string.Empty;
     public string PasswordHash { get; private set; } = string.Empty;
     public string UserName { get; private set; } = string.Empty;
+    public string DisplayName { get; private set; } = string.Empty;
     public string AvatarUrl { get; private set; } = string.Empty;
+    public DateTime? LastUserNameChangedAt { get; private set; }
 
     private User() { } // EF Core
 
-    public User(string email, string passwordHash, string userName, string? avatarUrl = null)
+    public User(
+        string email,
+        string passwordHash,
+        string userName,
+        string? displayName = null,
+        string? avatarUrl = null)
     {
         Email = email.Trim().ToLowerInvariant();
         PasswordHash = passwordHash;
-        UserName = userName.Trim();
+        UserName = NormalizeUserName(userName);
+        DisplayName = displayName?.Trim() ?? string.Empty;
         AvatarUrl = avatarUrl?.Trim() ?? string.Empty;
     }
 
-    public void UpdateProfile(string userName, string avatarUrl)
+    public static string NormalizeUserName(string raw)
     {
-        UserName = userName.Trim();
-        AvatarUrl = avatarUrl.Trim();
+        if (string.IsNullOrWhiteSpace(raw)) return "user_" + Guid.NewGuid().ToString("N")[..6];
+        var cleaned = Regex.Replace(raw.Trim().ToLowerInvariant(), @"[^a-z0-9_]", "");
+        if (cleaned.Length < 3) cleaned = cleaned + "_" + Guid.NewGuid().ToString("N")[..4];
+        if (cleaned.Length > 30) cleaned = cleaned[..30];
+        return cleaned;
+    }
+
+    public void UpdateProfile(string displayName, string avatarUrl)
+    {
+        DisplayName = displayName?.Trim() ?? string.Empty;
+        AvatarUrl = avatarUrl?.Trim() ?? string.Empty;
+        Touch();
+    }
+
+    public bool CanChangeUserName(int cooldownDays = 14)
+    {
+        if (!LastUserNameChangedAt.HasValue) return true;
+        return Clock.Now >= LastUserNameChangedAt.Value.AddDays(cooldownDays);
+    }
+
+    public DateTime? GetNextUserNameChangeDate(int cooldownDays = 14)
+    {
+        if (!LastUserNameChangedAt.HasValue) return null;
+        var nextDate = LastUserNameChangedAt.Value.AddDays(cooldownDays);
+        return Clock.Now >= nextDate ? null : nextDate;
+    }
+
+    public void UpdateUserName(string newUserName, int cooldownDays = 14)
+    {
+        if (!CanChangeUserName(cooldownDays))
+        {
+            throw new InvalidOperationException($"You can only change your UserName once every {cooldownDays} days.");
+        }
+
+        var normalized = NormalizeUserName(newUserName);
+        if (normalized.Length < 3 || normalized.Length > 30)
+        {
+            throw new ArgumentException("UserName must be between 3 and 30 characters.");
+        }
+
+        UserName = normalized;
+        LastUserNameChangedAt = Clock.Now;
         Touch();
     }
 

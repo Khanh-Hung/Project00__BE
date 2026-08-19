@@ -25,7 +25,17 @@ public sealed class GetCurrentUserHandler : IRequestHandler<GetCurrentUserQuery,
             return Result<UserDto>.Failure(StatusCodes.Status404NotFound, "User was not found.");
         }
 
-        var dto = new UserDto(user.Id, user.Email, user.UserName, user.AvatarUrl, user.CreatedAt);
+        var dto = new UserDto(
+            user.Id,
+            user.Email,
+            user.UserName,
+            user.DisplayName,
+            user.AvatarUrl,
+            user.CreatedAt,
+            user.LastUserNameChangedAt,
+            user.CanChangeUserName(),
+            user.GetNextUserNameChangeDate()
+        );
         return Result<UserDto>.Success(dto);
     }
 }

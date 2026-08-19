@@ -59,4 +59,23 @@ public sealed class AuthController : ControllerBase
         var result = await _sender.Send(new GetCurrentUserQuery(userId), ct);
         return result.ToActionResult();
     }
+
+    /// <summary>
+    /// Updates current authenticated user's profile (DisplayName, Avatar, UserName)
+    /// </summary>
+    [HttpPut("profile")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request, CancellationToken ct)
+    {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new { success = false, message = "Invalid token or user ID" });
+        }
+
+        var result = await _sender.Send(new Application.Features.Auth.Commands.UpdateProfile.UpdateProfileCommand(userId, request), ct);
+        return result.ToActionResult();
+    }
 }
