@@ -41,4 +41,9 @@ public interface ILLMService
     Task<GenerateAvatarResponse> GenerateSceneImageAsync(
         GenerateSceneImageRequest request,
         CancellationToken ct = default);
+
+    Task<List<MemoryCandidate>> ExtractMemoryCandidatesAsync(
+        Character character,
+        IReadOnlyCollection<ChatMessageDto> recentMessages,
+        CancellationToken ct = default);
 }

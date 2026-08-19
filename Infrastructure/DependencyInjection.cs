@@ -80,6 +80,7 @@ public static class DependencyInjection
         services.AddScoped<ILLMService, Infrastructure.LLM.LLMService>();
 
         // 8. Add Memory Services (Phase 2 - Character Memory System)
+        services.Configure<Application.DTOs.MemoryExtractionOptions>(configuration.GetSection("MemoryExtraction"));
         services.AddScoped<IMemoryService, MemoryService>();
         services.AddSingleton<MemoryExtractionBackgroundService>();
         services.AddSingleton<IMemoryExtractionTrigger>(sp => sp.GetRequiredService<MemoryExtractionBackgroundService>());

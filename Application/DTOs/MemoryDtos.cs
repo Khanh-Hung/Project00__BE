@@ -17,8 +17,15 @@ public record MemoryExtractionJob(
     Guid SessionId,
     Guid CharacterId,
     Guid UserId,
-    List<ChatMessageDto> RecentMessages
+    List<ChatMessageDto> RecentMessages,
+    int UserMessageCount = 0
 );
+
+public class MemoryExtractionOptions
+{
+    public int BatchSize { get; set; } = 5;
+    public int QueueCapacity { get; set; } = 100;
+}
 
 public record CharacterMemoryDto(
     Guid Id,

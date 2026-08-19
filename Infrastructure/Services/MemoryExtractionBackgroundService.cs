@@ -1,15 +1,12 @@
-using System.Text.Json;
 using System.Threading.Channels;
 using Application.Abstractions.Data;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Entities;
-using Domain.Enums;
-using Infrastructure.LLM.Core;
-using Infrastructure.LLM.Prompts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Services;
 
@@ -17,21 +14,23 @@ public sealed class MemoryExtractionBackgroundService : BackgroundService, IMemo
 {
     private readonly Channel<MemoryExtractionJob> _queue;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly MemoryExtractionOptions _options;
     private readonly ILogger<MemoryExtractionBackgroundService> _logger;
 
     public MemoryExtractionBackgroundService(
         IServiceScopeFactory scopeFactory,
-        ILogger<MemoryExtractionBackgroundService> logger)
+        ILogger<MemoryExtractionBackgroundService> logger,
+        IOptions<MemoryExtractionOptions>? options = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _options = options?.Value ?? new MemoryExtractionOptions();
 
-        // Bounded channel to prevent unbounded memory growth
-        var options = new BoundedChannelOptions(100)
+        var channelOptions = new BoundedChannelOptions(_options.QueueCapacity)
         {
-            FullMode = BoundedChannelFullMode.DropOldest
+            FullMode = BoundedChannelFullMode.Wait
         };
-        _queue = Channel.CreateBounded<MemoryExtractionJob>(options);
+        _queue = Channel.CreateBounded<MemoryExtractionJob>(channelOptions);
     }
 
     public bool NotifyMessageSent(MemoryExtractionJob job)
@@ -41,13 +40,27 @@ public sealed class MemoryExtractionBackgroundService : BackgroundService, IMemo
             return false;
         }
 
-        // Trigger extraction policy: When conversation has enough messages (e.g. at least 4 turns or batch)
-        return _queue.Writer.TryWrite(job);
+        // Trigger policy: Only trigger extraction when user message count reaches batch threshold (e.g. every N messages)
+        if (job.UserMessageCount > 0 && job.UserMessageCount % _options.BatchSize != 0)
+        {
+            return false;
+        }
+
+        var written = _queue.Writer.TryWrite(job);
+        if (!written)
+        {
+            _logger.LogWarning(
+                "Memory extraction queue is full (capacity: {Capacity}). Extraction job for User {UserId} / Character {CharacterId} was not enqueued.",
+                _options.QueueCapacity, job.UserId, job.CharacterId);
+        }
+
+        return written;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("MemoryExtractionBackgroundService is starting...");
+        _logger.LogInformation("MemoryExtractionBackgroundService started with BatchSize={BatchSize}, Capacity={Capacity}",
+            _options.BatchSize, _options.QueueCapacity);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -74,7 +87,7 @@ public sealed class MemoryExtractionBackgroundService : BackgroundService, IMemo
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var memoryService = scope.ServiceProvider.GetRequiredService<IMemoryService>();
-        var geminiClient = scope.ServiceProvider.GetRequiredService<GeminiApiClient>();
+        var llmService = scope.ServiceProvider.GetRequiredService<ILLMService>();
 
         var characterRepo = unitOfWork.GetRepository<Character>();
         var character = await characterRepo.GetByIdAsync(job.CharacterId, ct);
@@ -84,36 +97,18 @@ public sealed class MemoryExtractionBackgroundService : BackgroundService, IMemo
             return;
         }
 
-        // Format recent conversation window (up to last 10 messages)
-        var recentExcerpts = job.RecentMessages.TakeLast(10).ToList();
-        if (recentExcerpts.Count < 2)
+        if (job.RecentMessages == null || job.RecentMessages.Count < 2)
         {
             return;
         }
 
-        var conversationText = string.Join("\n", recentExcerpts.Select(m => $"{m.Role}: {m.Content}"));
-        var systemPrompt = MemoryExtractionPrompts.BuildExtractionSystemPrompt(character);
-
-        var contents = new List<object>
-        {
-            new
-            {
-                role = "user",
-                parts = new[] { new { text = $"Here is the recent conversation excerpt:\n\n{conversationText}\n\nExtract 0 to 2 memory candidates if applicable." } }
-            }
-        };
-
         try
         {
-            var rawJson = await geminiClient.GenerateTextAsync(
-                systemPrompt: systemPrompt,
-                contents: contents,
-                temperature: 0.2, // Low temperature for factual precision
-                maxOutputTokens: 500,
-                ct: ct
-            );
+            var candidates = await llmService.ExtractMemoryCandidatesAsync(
+                character,
+                job.RecentMessages,
+                ct);
 
-            var candidates = ParseExtractionResult(rawJson);
             if (candidates.Count > 0)
             {
                 var stored = await memoryService.StoreCandidatesAsync(
@@ -121,42 +116,18 @@ public sealed class MemoryExtractionBackgroundService : BackgroundService, IMemo
                     job.CharacterId,
                     job.SessionId,
                     candidates,
-                    ct
-                );
-                _logger.LogInformation("Extracted and stored {StoredCount} memories for User {UserId} and Character {CharacterName}",
+                    ct);
+
+                _logger.LogInformation(
+                    "Extracted and stored {StoredCount} memories for User {UserId} and Character {CharacterName}",
                     stored, job.UserId, character.Name);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Memory extraction failed for User {UserId} / Character {CharacterId}. Chat execution remains unaffected.",
+            _logger.LogWarning(ex,
+                "Memory extraction failed for User {UserId} / Character {CharacterId}. Chat execution remains unaffected.",
                 job.UserId, job.CharacterId);
-        }
-    }
-
-    private List<MemoryCandidate> ParseExtractionResult(string rawText)
-    {
-        if (string.IsNullOrWhiteSpace(rawText)) return [];
-
-        try
-        {
-            var cleanJson = rawText.Trim();
-            if (cleanJson.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-                cleanJson = cleanJson.Substring(7);
-            if (cleanJson.StartsWith("```"))
-                cleanJson = cleanJson.Substring(3);
-            if (cleanJson.EndsWith("```"))
-                cleanJson = cleanJson.Substring(0, cleanJson.Length - 3);
-            cleanJson = cleanJson.Trim();
-
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var result = JsonSerializer.Deserialize<MemoryExtractionResult>(cleanJson, options);
-            return result?.Memories ?? [];
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed deserializing extraction result JSON: {Raw}", rawText);
-            return [];
         }
     }
 }

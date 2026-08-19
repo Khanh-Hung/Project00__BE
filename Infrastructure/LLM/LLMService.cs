@@ -327,4 +327,57 @@ public sealed class LLMService : ILLMService
         var imageUrl = await _imageService.GenerateImageAsync(cleanPrompt, 896, 512, ct);
         return new GenerateAvatarResponse(imageUrl, cleanPrompt);
     }
+
+    public async Task<List<MemoryCandidate>> ExtractMemoryCandidatesAsync(
+        Character character,
+        IReadOnlyCollection<ChatMessageDto> recentMessages,
+        CancellationToken ct = default)
+    {
+        if (recentMessages == null || recentMessages.Count < 2)
+        {
+            return [];
+        }
+
+        var conversationText = string.Join("\n", recentMessages.Select(m => $"{m.Role}: {m.Content}"));
+        var systemPrompt = MemoryExtractionPrompts.BuildExtractionSystemPrompt(character);
+
+        var contents = new List<object>
+        {
+            new
+            {
+                role = "user",
+                parts = new[] { new { text = $"Here is the recent conversation excerpt:\n\n{conversationText}\n\nExtract 0 to 2 memory candidates if applicable." } }
+            }
+        };
+
+        var rawJson = await _geminiClient.GenerateTextAsync(
+            systemPrompt: systemPrompt,
+            contents: contents,
+            temperature: 0.2,
+            maxOutputTokens: 500,
+            ct: ct
+        );
+
+        if (string.IsNullOrWhiteSpace(rawJson)) return [];
+
+        try
+        {
+            var cleanJson = rawJson.Trim();
+            if (cleanJson.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+                cleanJson = cleanJson.Substring(7);
+            if (cleanJson.StartsWith("```"))
+                cleanJson = cleanJson.Substring(3);
+            if (cleanJson.EndsWith("```"))
+                cleanJson = cleanJson.Substring(0, cleanJson.Length - 3);
+            cleanJson = cleanJson.Trim();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = JsonSerializer.Deserialize<MemoryExtractionResult>(cleanJson, options);
+            return result?.Memories ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
 }

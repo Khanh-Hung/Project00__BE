@@ -27,6 +27,10 @@ public sealed class MemoryService : IMemoryService
         return Regex.Replace(lower, @"\s+", " ");
     }
 
+    /// <summary>
+    /// Phase 2.1 rule-based retrieval (Importance + Recency + Diversity).
+    /// Semantic retrieval will be introduced when pgvector is integrated in Phase 2.2.
+    /// </summary>
     public async Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(
         Guid userId,
         Guid characterId,
@@ -145,12 +149,21 @@ public sealed class MemoryService : IMemoryService
             var normalized = NormalizeContent(c.Content);
             if (string.IsNullOrEmpty(normalized)) continue;
 
+            // Application sanitization of untrusted AI candidate before persisting
+            var sanitizedContent = c.Content.Trim();
+            if (sanitizedContent.Length > 1000)
+            {
+                sanitizedContent = sanitizedContent.Substring(0, 1000).Trim();
+            }
+            var sanitizedImportance = Math.Clamp(c.Importance, 1, 5);
+            var sanitizedConfidence = Math.Clamp(c.Confidence, 0.0m, 1.0m);
+
             var key = $"{c.Type}_{normalized}";
             if (existingMap.TryGetValue(key, out var existing))
             {
                 // Update importance & confidence if candidate has higher signals
-                var newImportance = Math.Max(existing.Importance, c.Importance);
-                var newConfidence = Math.Max(existing.Confidence, c.Confidence);
+                var newImportance = Math.Max(existing.Importance, sanitizedImportance);
+                var newConfidence = Math.Max(existing.Confidence, sanitizedConfidence);
                 existing.UpdateDetails(importance: newImportance, confidence: newConfidence);
                 memoryRepo.Update(existing);
             }
@@ -159,10 +172,10 @@ public sealed class MemoryService : IMemoryService
                 var newMemory = CharacterMemory.Create(
                     characterId: characterId,
                     userId: userId,
-                    content: c.Content.Trim(),
+                    content: sanitizedContent,
                     type: c.Type,
-                    importance: c.Importance,
-                    confidence: c.Confidence,
+                    importance: sanitizedImportance,
+                    confidence: sanitizedConfidence,
                     sourceSessionId: sessionId
                 );
 

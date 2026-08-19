@@ -87,7 +87,9 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
         // 7. Non-blocking trigger notification for background memory extraction
         if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
         {
-            var messageDtos = session.Messages
+            var userMessageCount = session.Messages.Count(m => m.Role == Domain.Enums.MessageRole.User);
+            var recentMessageDtos = session.Messages
+                .TakeLast(10)
                 .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
                 .ToList();
 
@@ -95,7 +97,8 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
                 session.Id,
                 character.Id,
                 session.UserId.Value,
-                messageDtos));
+                recentMessageDtos,
+                userMessageCount));
         }
 
         var response = new SendMessageResponse(
