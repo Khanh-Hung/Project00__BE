@@ -27,7 +27,7 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
 
     public async Task<IReadOnlyList<TEntity>> GetAllAsync(Expression<Func<TEntity, bool>>? predicate = null, CancellationToken ct = default)
     {
-        IQueryable<TEntity> query = DbContext.Set<TEntity>().AsNoTracking();
+        IQueryable<TEntity> query = DbContext.Set<TEntity>();
         if (predicate != null)
         {
             query = query.Where(predicate);
@@ -42,7 +42,30 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
 
     public void Update(TEntity entity)
     {
-        DbContext.Set<TEntity>().Update(entity);
+        var local = DbContext.Set<TEntity>().Local.FirstOrDefault(e => e.Id == entity.Id);
+        if (local != null)
+        {
+            if (!ReferenceEquals(local, entity))
+            {
+                DbContext.Entry(local).CurrentValues.SetValues(entity);
+            }
+            if (DbContext.Entry(local).State != EntityState.Added)
+            {
+                DbContext.Entry(local).State = EntityState.Modified;
+            }
+            return;
+        }
+
+        var entry = DbContext.Entry(entity);
+        if (entry.State == EntityState.Detached)
+        {
+            DbContext.Set<TEntity>().Attach(entity);
+            entry.State = EntityState.Modified;
+        }
+        else if (entry.State != EntityState.Added)
+        {
+            entry.State = EntityState.Modified;
+        }
     }
 
     public void Delete(TEntity entity)
