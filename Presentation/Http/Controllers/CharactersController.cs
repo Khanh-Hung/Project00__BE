@@ -2,10 +2,12 @@ using Application.Abstractions.Responses;
 using Application.DTOs;
 using Application.Features.Characters.Commands.CreateCharacter;
 using Application.Features.Characters.Commands.DeleteCharacter;
+using Application.Features.Characters.Commands.GenerateAvatar;
+using Application.Features.Characters.Commands.GenerateCharacterAI;
 using Application.Features.Characters.Commands.UpdateCharacter;
+using Application.Features.Characters.Queries.GenerateRandomIdeas;
 using Application.Features.Characters.Queries.GetCharacterById;
 using Application.Features.Characters.Queries.GetPublicCharacters;
-using Application.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,34 +18,20 @@ namespace Presentation.Http.Controllers;
 public sealed class CharactersController : ControllerBase
 {
     private readonly ISender _sender;
-    private readonly ILLMService _llmService;
 
-    public CharactersController(ISender sender, ILLMService llmService)
+    public CharactersController(ISender sender)
     {
         _sender = sender;
-        _llmService = llmService;
     }
 
     /// <summary>
     /// Generates character profile and backstory using AI
     /// </summary>
     [HttpPost("generate-ai")]
-    public async Task<IActionResult> GenerateCharacterAi([FromBody] GenerateCharacterAiRequest request, CancellationToken ct)
+    public async Task<IActionResult> GenerateCharacterAI([FromBody] GenerateCharacterAIRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.Idea))
-        {
-            return BadRequest(Result<GeneratedCharacterDto>.Failure(StatusCodes.Status400BadRequest, "Character idea cannot be empty."));
-        }
-
-        try
-        {
-            var generated = await _llmService.GenerateCharacterProfileAsync(request.Idea, request.Category, ct);
-            return Result<GeneratedCharacterDto>.Success(generated).ToActionResult();
-        }
-        catch (Exception ex)
-        {
-            return Result<GeneratedCharacterDto>.Failure(StatusCodes.Status500InternalServerError, ex.Message).ToActionResult();
-        }
+        var result = await _sender.Send(new GenerateCharacterAICommand(request), ct);
+        return result.ToActionResult();
     }
 
     /// <summary>
@@ -52,15 +40,8 @@ public sealed class CharactersController : ControllerBase
     [HttpGet("generate-ideas")]
     public async Task<IActionResult> GenerateRandomIdeas([FromQuery] int count = 4, CancellationToken ct = default)
     {
-        try
-        {
-            var ideas = await _llmService.GenerateRandomIdeasAsync(count, ct);
-            return Result<List<string>>.Success(ideas).ToActionResult();
-        }
-        catch (Exception ex)
-        {
-            return Result<List<string>>.Failure(StatusCodes.Status500InternalServerError, ex.Message).ToActionResult();
-        }
+        var result = await _sender.Send(new GenerateRandomIdeasQuery(count), ct);
+        return result.ToActionResult();
     }
 
     /// <summary>

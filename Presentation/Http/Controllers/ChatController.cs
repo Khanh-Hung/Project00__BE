@@ -2,16 +2,16 @@ using Application.Abstractions.Responses;
 using Application.DTOs;
 using Application.Features.Chat.Commands.CreateChatSession;
 using Application.Features.Chat.Commands.DeleteChatSession;
+using Application.Features.Chat.Commands.ImagineScene;
 using Application.Features.Chat.Commands.RollbackChatMessage;
 using Application.Features.Chat.Commands.SendChatMessage;
+using Application.Features.Chat.Queries.GetCharacterMemories;
 using Application.Features.Chat.Queries.GetChatSession;
 using Application.Features.Chat.Queries.GetUserChatSessions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-
-using Application.Interfaces;
 
 namespace Presentation.Http.Controllers;
 
@@ -21,12 +21,10 @@ namespace Presentation.Http.Controllers;
 public sealed class ChatController : ControllerBase
 {
     private readonly ISender _sender;
-    private readonly ILLMService _llmService;
 
-    public ChatController(ISender sender, ILLMService llmService)
+    public ChatController(ISender sender)
     {
         _sender = sender;
-        _llmService = llmService;
     }
 
     private Guid? GetCurrentUserId()
@@ -119,19 +117,18 @@ public sealed class ChatController : ControllerBase
     [HttpPost("imagine-scene")]
     public async Task<IActionResult> ImagineScene([FromBody] GenerateSceneImageRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.MessageContent))
-        {
-            return BadRequest(Result<GenerateAvatarResponse>.Failure(StatusCodes.Status400BadRequest, "Message content cannot be empty."));
-        }
+        var result = await _sender.Send(new ImagineSceneCommand(request), ct);
+        return result.ToActionResult();
+    }
 
-        try
-        {
-            var res = await _llmService.GenerateSceneImageAsync(request, ct);
-            return Result<GenerateAvatarResponse>.Success(res).ToActionResult();
-        }
-        catch (Exception ex)
-        {
-            return Result<GenerateAvatarResponse>.Failure(StatusCodes.Status500InternalServerError, ex.Message).ToActionResult();
-        }
+    /// <summary>
+    /// Gets all long-term memories remembered by this character about the current user
+    /// </summary>
+    [HttpGet("memories/{characterId:guid}")]
+    public async Task<IActionResult> GetCharacterMemories(Guid characterId, [FromQuery] int limit = 30, CancellationToken ct = default)
+    {
+        var userId = GetCurrentUserId();
+        var result = await _sender.Send(new Application.Features.Chat.Queries.GetCharacterMemories.GetCharacterMemoriesQuery(characterId, userId, limit), ct);
+        return result.ToActionResult();
     }
 }

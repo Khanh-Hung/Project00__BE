@@ -61,7 +61,7 @@ public record UpdateCharacterRequest(
     CharacterBlueprint? Blueprint = null
 );
 
-public record GenerateCharacterAiRequest(
+public record GenerateCharacterAIRequest(
     string Idea,
     string? Category = null
 );
