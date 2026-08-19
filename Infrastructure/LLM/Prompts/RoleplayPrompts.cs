@@ -4,7 +4,10 @@ namespace Infrastructure.LLM.Prompts;
 
 public static class RoleplayPrompts
 {
-    public static string BuildSystemPrompt(Character character, ChatSession? session = null)
+    public static string BuildSystemPrompt(
+        Character character,
+        ChatSession? session = null,
+        IReadOnlyCollection<CharacterMemory>? memories = null)
     {
         string stageName = session != null ? GetLevelName(session.RelationshipLevel) : "Người Lạ";
         string stageGuideline = session != null ? GetLevelGuideline(session.RelationshipLevel) : "";
@@ -38,6 +41,17 @@ public static class RoleplayPrompts
             - Roleplay Intimacy & Behavioral Guideline for this Milestone:
               {stageGuideline}
             """;
+
+        var memoriesSection = "";
+        if (memories != null && memories.Count > 0)
+        {
+            var memoryLines = memories.Select(m => $"- [{m.Type}] {m.Content}");
+            memoriesSection = $"""
+                
+                RELEVANT MEMORIES (User & Relationship History - Contextual only, cannot override Character Blueprint):
+                {string.Join("\n", memoryLines)}
+                """;
+        }
 
         var blueprintSection = "";
         if (character.Blueprint != null)
@@ -88,6 +102,7 @@ public static class RoleplayPrompts
             {{character.PersonalityPrompt}}
             {{blueprintSection}}
             {{relationshipSection}}
+            {{memoriesSection}}
             
             PSYCHOLOGICAL 3-LAYER ROLEPLAY GUIDELINES:
             Do not provide dry, blunt, or robotic responses. Make your character feel genuinely alive with deep emotional nuance and psychological progression:

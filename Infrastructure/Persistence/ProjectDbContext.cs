@@ -22,6 +22,7 @@ public class ProjectDbContext : DbContext
     public DbSet<ChatSession> ChatSessions { get; set; }
     public DbSet<ChatMessage> ChatMessages { get; set; }
     public DbSet<User> Users { get; set; }
+    public DbSet<CharacterMemory> CharacterMemories { get; set; }
 
     private string NormalizeUserId()
     {

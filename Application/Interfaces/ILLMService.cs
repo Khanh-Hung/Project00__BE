@@ -10,6 +10,7 @@ public interface ILLMService
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
         ChatSession? session = null,
+        IReadOnlyCollection<CharacterMemory>? memories = null,
         CancellationToken ct = default);
 
     Task<string> GenerateRoleplayResponseAsync(
@@ -39,5 +40,10 @@ public interface ILLMService
 
     Task<GenerateAvatarResponse> GenerateSceneImageAsync(
         GenerateSceneImageRequest request,
+        CancellationToken ct = default);
+
+    Task<List<MemoryCandidate>> ExtractMemoryCandidatesAsync(
+        Character character,
+        IReadOnlyCollection<ChatMessageDto> recentMessages,
         CancellationToken ct = default);
 }

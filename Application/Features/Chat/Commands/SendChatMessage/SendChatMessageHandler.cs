@@ -12,11 +12,22 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILLMService _llmService;
+    private readonly IMemoryService _memoryService;
+    private readonly IMemoryExtractionTrigger _extractionTrigger;
+    private readonly ILogger<SendChatMessageHandler> _logger;
 
-    public SendChatMessageHandler(IUnitOfWork unitOfWork, ILLMService llmService)
+    public SendChatMessageHandler(
+        IUnitOfWork unitOfWork,
+        ILLMService llmService,
+        IMemoryService memoryService,
+        IMemoryExtractionTrigger extractionTrigger,
+        ILogger<SendChatMessageHandler> logger)
     {
         _unitOfWork = unitOfWork;
         _llmService = llmService;
+        _memoryService = memoryService;
+        _extractionTrigger = extractionTrigger;
+        _logger = logger;
     }
 
     public async Task<Result<SendMessageResponse>> Handle(SendChatMessageCommand command, CancellationToken cancellationToken)
@@ -37,25 +48,73 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
             return Result<SendMessageResponse>.Failure(StatusCodes.Status404NotFound, $"Character for this session was not found.");
         }
 
-        // 1. Append User Message
+        // 1. Retrieve diversity-balanced relevant memories for (UserId, CharacterId)
+        IReadOnlyList<CharacterMemory>? relevantMemories = null;
+        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
+        {
+            try
+            {
+                relevantMemories = await _memoryService.GetRelevantMemoriesAsync(
+                    session.UserId.Value,
+                    character.Id,
+                    maxCount: 6,
+                    ct: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Observability: Log degraded memory state without failing the chat response
+                _logger.LogWarning(
+                    ex,
+                    "Memory retrieval failed for Character {CharacterId}, User {UserId}. Proceeding with chat response without memories.",
+                    character.Id,
+                    session.UserId.Value);
+            }
+        }
+
+        // 2. Append User Message
         var userMsg = session.AddUserMessage(req.Content);
 
-        // 2. AI Roleplay & Real-time Emotion / Affection Analysis
+        // 3. AI Roleplay & Real-time Emotion / Affection Analysis (with Blueprint, State, and Memories)
         var aiTurn = await _llmService.GenerateRoleplayTurnAsync(
             character,
             session.Messages,
             req.Content,
             session,
+            relevantMemories,
             cancellationToken);
 
-        // 3. Update Real Affection Score & Mood evaluated dynamically by Gemini AI
+        // 4. Update Real Affection Score & Mood evaluated dynamically by Gemini AI
         var (newScore, newLevel, actualDelta, isLevelUp) = session.UpdateAffection(aiTurn.AffectionDelta, aiTurn.Mood);
 
-        // 4. Append AI Assistant Message
+        // 5. Append AI Assistant Message
         var assistantMsg = session.AddAssistantMessage(aiTurn.Reply);
 
-        // 5. Persist real state to Database
+        // 6. Persist real state to Database
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // 7. Non-blocking trigger notification for background memory extraction
+        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
+        {
+            try
+            {
+                var userMessageCount = session.Messages.Count(m => m.Role == Domain.Enums.MessageRole.User);
+                var recentMessageDtos = session.Messages
+                    .TakeLast(10)
+                    .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
+                    .ToList();
+
+                _extractionTrigger.NotifyMessageSent(new MemoryExtractionJob(
+                    session.Id,
+                    character.Id,
+                    session.UserId.Value,
+                    recentMessageDtos,
+                    userMessageCount));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Memory extraction trigger notification failed for Session {SessionId}.", session.Id);
+            }
+        }
 
         var response = new SendMessageResponse(
             new ChatMessageDto(userMsg.Id, userMsg.Role, userMsg.Content, userMsg.CreatedAt),
