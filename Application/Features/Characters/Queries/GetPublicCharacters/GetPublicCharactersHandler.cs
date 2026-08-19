@@ -39,6 +39,10 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 userMap.TryGetValue(c.CreatedBy, out creator);
             }
 
+            var customMilestones = !string.IsNullOrWhiteSpace(c.CustomMilestonesJson)
+                ? System.Text.Json.JsonSerializer.Deserialize<List<RelationshipMilestoneDto>>(c.CustomMilestonesJson)
+                : null;
+
             return new CharacterDto(
                 c.Id,
                 c.Name,
@@ -53,7 +57,10 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 c.CreatedBy,
                 creator?.DisplayName ?? (c.CreatedBy == "system" ? "System" : null),
                 creator?.UserName,
-                creator?.AvatarUrl
+                creator?.AvatarUrl,
+                c.DefaultAffectionScore,
+                c.DefaultMood,
+                customMilestones
             );
         }).ToList();
 

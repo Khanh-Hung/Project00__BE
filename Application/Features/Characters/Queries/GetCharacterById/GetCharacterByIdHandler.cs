@@ -35,6 +35,10 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             }
         }
 
+        var customMilestones = !string.IsNullOrWhiteSpace(character.CustomMilestonesJson)
+            ? System.Text.Json.JsonSerializer.Deserialize<List<RelationshipMilestoneDto>>(character.CustomMilestonesJson)
+            : null;
+
         var dto = new CharacterDto(
             character.Id,
             character.Name,
@@ -49,7 +53,10 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.CreatedBy,
             creator?.DisplayName ?? (character.CreatedBy == "system" ? "System" : null),
             creator?.UserName,
-            creator?.AvatarUrl
+            creator?.AvatarUrl,
+            character.DefaultAffectionScore,
+            character.DefaultMood,
+            customMilestones
         );
 
         return Result<CharacterDto>.Success(dto);

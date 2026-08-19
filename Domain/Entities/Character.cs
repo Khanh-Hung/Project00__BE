@@ -12,6 +12,9 @@ public class Character : BaseEntity
     public string Category { get; private set; } = string.Empty;
     public List<string> Tags { get; private set; } = [];
     public bool IsPublic { get; private set; } = true;
+    public int DefaultAffectionScore { get; private set; }
+    public string DefaultMood { get; private set; } = string.Empty;
+    public string? CustomMilestonesJson { get; private set; }
 
     private Character() { } // EF Core
 
@@ -23,7 +26,10 @@ public class Character : BaseEntity
         string greeting,
         string category,
         List<string>? tags = null,
-        bool isPublic = true)
+        bool isPublic = true,
+        int defaultAffectionScore = 0,
+        string? defaultMood = null,
+        string? customMilestonesJson = null)
     {
         Name = name;
         Title = title;
@@ -33,9 +39,22 @@ public class Character : BaseEntity
         Category = category;
         Tags = tags ?? [];
         IsPublic = isPublic;
+        DefaultAffectionScore = Math.Clamp(defaultAffectionScore, -100, 100);
+        DefaultMood = defaultMood ?? string.Empty;
+        CustomMilestonesJson = customMilestonesJson;
     }
 
-    public void UpdateDetails(string name, string title, string avatarUrl, string personalityPrompt, string greeting, string category, List<string> tags)
+    public void UpdateDetails(
+        string name,
+        string title,
+        string avatarUrl,
+        string personalityPrompt,
+        string greeting,
+        string category,
+        List<string> tags,
+        int? defaultAffectionScore = null,
+        string? defaultMood = null,
+        string? customMilestonesJson = null)
     {
         Name = name;
         Title = title;
@@ -44,6 +63,18 @@ public class Character : BaseEntity
         Greeting = greeting;
         Category = category;
         Tags = tags;
+        if (defaultAffectionScore.HasValue)
+        {
+            DefaultAffectionScore = Math.Clamp(defaultAffectionScore.Value, -100, 100);
+        }
+        if (defaultMood != null)
+        {
+            DefaultMood = defaultMood;
+        }
+        if (customMilestonesJson != null)
+        {
+            CustomMilestonesJson = customMilestonesJson;
+        }
         Touch();
     }
 

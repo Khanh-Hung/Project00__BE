@@ -14,5 +14,7 @@ public sealed class CharacterConfiguration : IEntityTypeConfiguration<Character>
         builder.Property(c => c.Title).HasMaxLength(200);
         builder.Property(c => c.PersonalityPrompt).IsRequired();
         builder.Property(c => c.Greeting).HasMaxLength(1000);
+        builder.Property(c => c.DefaultAffectionScore).HasDefaultValue(0);
+        builder.Property(c => c.DefaultMood).HasMaxLength(100);
     }
 }

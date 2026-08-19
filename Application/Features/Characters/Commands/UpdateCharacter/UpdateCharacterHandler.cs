@@ -26,6 +26,10 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
         }
 
         var req = command.Request;
+        var milestonesJson = req.CustomMilestones != null
+            ? System.Text.Json.JsonSerializer.Serialize(req.CustomMilestones)
+            : null;
+
         character.UpdateDetails(
             req.Name,
             req.Title,
@@ -33,11 +37,18 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
             req.PersonalityPrompt,
             req.Greeting,
             req.Category,
-            req.Tags ?? []
+            req.Tags ?? [],
+            req.DefaultAffectionScore,
+            req.DefaultMood,
+            milestonesJson
         );
         character.SetPublicStatus(req.IsPublic);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var customMilestones = !string.IsNullOrWhiteSpace(character.CustomMilestonesJson)
+            ? System.Text.Json.JsonSerializer.Deserialize<List<RelationshipMilestoneDto>>(character.CustomMilestonesJson)
+            : null;
 
         var dto = new CharacterDto(
             character.Id,
@@ -49,7 +60,14 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
             character.Category,
             character.Tags,
             character.IsPublic,
-            character.CreatedAt
+            character.CreatedAt,
+            character.CreatedBy,
+            null,
+            null,
+            null,
+            character.DefaultAffectionScore,
+            character.DefaultMood,
+            customMilestones
         );
 
         return Result<CharacterDto>.Success(dto);
