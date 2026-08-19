@@ -14,17 +14,20 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
     private readonly ILLMService _llmService;
     private readonly IMemoryService _memoryService;
     private readonly IMemoryExtractionTrigger _extractionTrigger;
+    private readonly ILogger<SendChatMessageHandler> _logger;
 
     public SendChatMessageHandler(
         IUnitOfWork unitOfWork,
         ILLMService llmService,
         IMemoryService memoryService,
-        IMemoryExtractionTrigger extractionTrigger)
+        IMemoryExtractionTrigger extractionTrigger,
+        ILogger<SendChatMessageHandler> logger)
     {
         _unitOfWork = unitOfWork;
         _llmService = llmService;
         _memoryService = memoryService;
         _extractionTrigger = extractionTrigger;
+        _logger = logger;
     }
 
     public async Task<Result<SendMessageResponse>> Handle(SendChatMessageCommand command, CancellationToken cancellationToken)
@@ -57,9 +60,14 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
                     maxCount: 6,
                     ct: cancellationToken);
             }
-            catch
+            catch (Exception ex)
             {
-                // Resilience: Memory retrieval failure never blocks chat execution
+                // Observability: Log degraded memory state without failing the chat response
+                _logger.LogWarning(
+                    ex,
+                    "Memory retrieval failed for Character {CharacterId}, User {UserId}. Proceeding with chat response without memories.",
+                    character.Id,
+                    session.UserId.Value);
             }
         }
 
@@ -87,18 +95,25 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
         // 7. Non-blocking trigger notification for background memory extraction
         if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
         {
-            var userMessageCount = session.Messages.Count(m => m.Role == Domain.Enums.MessageRole.User);
-            var recentMessageDtos = session.Messages
-                .TakeLast(10)
-                .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
-                .ToList();
+            try
+            {
+                var userMessageCount = session.Messages.Count(m => m.Role == Domain.Enums.MessageRole.User);
+                var recentMessageDtos = session.Messages
+                    .TakeLast(10)
+                    .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
+                    .ToList();
 
-            _extractionTrigger.NotifyMessageSent(new MemoryExtractionJob(
-                session.Id,
-                character.Id,
-                session.UserId.Value,
-                recentMessageDtos,
-                userMessageCount));
+                _extractionTrigger.NotifyMessageSent(new MemoryExtractionJob(
+                    session.Id,
+                    character.Id,
+                    session.UserId.Value,
+                    recentMessageDtos,
+                    userMessageCount));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Memory extraction trigger notification failed for Session {SessionId}.", session.Id);
+            }
         }
 
         var response = new SendMessageResponse(

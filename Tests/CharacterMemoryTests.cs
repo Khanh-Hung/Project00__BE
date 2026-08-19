@@ -260,7 +260,7 @@ public class CharacterMemoryTests
         var fakeLlmService = new FakeLLMService();
         var dummyTrigger = new DummyExtractionTrigger();
 
-        var handler = new SendChatMessageHandler(unitOfWork, fakeLlmService, failingMemoryService, dummyTrigger);
+        var handler = new SendChatMessageHandler(unitOfWork, fakeLlmService, failingMemoryService, dummyTrigger, NullLogger<SendChatMessageHandler>.Instance);
         var command = new SendChatMessageCommand(new SendMessageRequest(session.Id, "Hello Luna!"));
 
         var result = await handler.Handle(command, CancellationToken.None);
