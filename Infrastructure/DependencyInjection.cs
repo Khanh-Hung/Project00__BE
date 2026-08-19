@@ -66,8 +66,9 @@ public static class DependencyInjection
             };
         });
 
-        // 5. Add External Services (LLM)
-        services.AddHttpClient<ILLMService, LLMService>();
+        // 5. Add External Services (LLM & Gemini Client)
+        services.AddHttpClient<Infrastructure.LLM.Core.GeminiApiClient>();
+        services.AddScoped<ILLMService, Infrastructure.LLM.LLMService>();
 
         return services;
     }

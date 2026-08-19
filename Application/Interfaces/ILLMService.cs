@@ -19,4 +19,17 @@ public interface ILLMService
     Task<List<string>> GenerateRandomIdeasAsync(
         int count = 4,
         CancellationToken ct = default);
+
+    Task<List<string>> GenerateRoleplaySuggestionsAsync(
+        Character character,
+        IReadOnlyCollection<ChatMessage> history,
+        CancellationToken ct = default);
+
+    Task<GenerateAvatarResponse> GenerateAvatarAsync(
+        GenerateAvatarRequest request,
+        CancellationToken ct = default);
+
+    Task<GenerateAvatarResponse> GenerateSceneImageAsync(
+        GenerateSceneImageRequest request,
+        CancellationToken ct = default);
 }
