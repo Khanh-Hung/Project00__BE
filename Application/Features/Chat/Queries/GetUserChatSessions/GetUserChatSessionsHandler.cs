@@ -45,7 +45,9 @@ public sealed class GetUserChatSessionsHandler : IRequestHandler<GetUserChatSess
                     lastMsg?.Content,
                     lastMsg?.CreatedAt,
                     s.Messages.Count,
-                    s.CreatedAt
+                    s.CreatedAt,
+                    s.AffectionScore,
+                    s.RelationshipLevel
                 );
             })
             .ToList();

@@ -19,7 +19,10 @@ public record ChatSessionDto(
     DateTime CreatedAt,
     string? CharacterTitle = null,
     string? CharacterPersonality = null,
-    string? CharacterCategory = null
+    string? CharacterCategory = null,
+    int AffectionScore = 0,
+    int RelationshipLevel = 1,
+    string? CurrentMood = null
 );
 
 public record ChatSessionListItemDto(
@@ -31,7 +34,9 @@ public record ChatSessionListItemDto(
     string? LastMessageContent,
     DateTime? LastMessageTime,
     int MessageCount,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    int AffectionScore = 0,
+    int RelationshipLevel = 1
 );
 
 public record CreateSessionRequest(
@@ -47,7 +52,18 @@ public record SendMessageRequest(
 
 public record SendMessageResponse(
     ChatMessageDto UserMessage,
-    ChatMessageDto AssistantMessage
+    ChatMessageDto AssistantMessage,
+    int AffectionScore = 0,
+    int RelationshipLevel = 1,
+    string? CurrentMood = null,
+    int AffectionDelta = 0,
+    bool LevelUp = false
+);
+
+public record RoleplayTurnResult(
+    string Reply,
+    string? Mood = null,
+    int AffectionDelta = 2
 );
 
 public record GenerateSceneImageRequest(

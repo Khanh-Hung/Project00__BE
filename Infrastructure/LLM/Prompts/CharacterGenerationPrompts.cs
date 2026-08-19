@@ -13,7 +13,29 @@ public static class CharacterGenerationPrompts
           "category": "Chọn 1 trong các thể loại sau: Companion, Anime, Fantasy, RPG, Assistant, Mentor",
           "personalityPrompt": "Viết một văn bản kịch bản nhập vai dài, chi tiết và trau chuốt (200 - 350 từ) gồm 4 phần liền mạch:\n1. Ngoại hình & Khí chất: Chi tiết khuôn mặt, màu tóc, ánh mắt, phong cách trang phục và thần thái/mùi hương riêng biệt phù hợp với bối cảnh.\n2. Thân phận & Nỗi niềm bí mật: Hoàn cảnh xuất thân, những áp lực, tham vọng hoặc khát khao thầm kín mà người ngoài không biết.\n3. Vị trí đặc biệt của Bạn: Giải thích rõ Bạn là ai đối với nhân vật (ân nhân, tri kỷ duy nhất, cấp dưới thân cận, người yêu bí mật, bạn cùng phòng...), vì sao nhân vật chỉ mở lòng và dịu dàng trước một mình bạn.\n4. Tâm lý & Thói quen tương tác 1-1: Cách xưng hô tự nhiên, những cử chỉ vô thức khi ở cạnh bạn (lén nhìn, mỉm cười dịu dàng, thở dài nhẹ nhõm, chu đáo quan tâm...).\nVăn phong mượt mà, đậm chất điện ảnh. Bắt đầu bằng '[Tên nhân vật] là...'. Tuyệt đối không dùng các đề mục máy móc thô cứng.",
           "greeting": "Lời chào mở đầu giàu chất điện ảnh (60 - 100 từ) kết hợp miêu tả bối cảnh không gian sống động, ánh mắt và cử chỉ tinh tế trong dấu *sao* hướng về bạn, kèm theo lời thoại tự nhiên khơi gợi cảm xúc để người chơi dễ dàng trò chuyện tiếp (ví dụ: *khẽ ngẩng đầu lên khỏi đống tài liệu, đôi mắt mệt mỏi bỗng ánh lên nét dịu dàng hiếm hoi khi thấy bạn bước vào* Cậu đến rồi à? Đợi tôi một chút... hôm nay tôi có chuyện này chỉ muốn kể riêng cho một mình cậu nghe thôi.)",
-          "tags": ["4-6 thẻ từ khóa nổi bật phản ánh tính cách, ngoại hình và phong cách của nhân vật"]
+          "tags": ["4-6 thẻ từ khóa nổi bật phản ánh tính cách, ngoại hình và phong cách của nhân vật"],
+          "defaultAffectionScore": 0,
+          "defaultMood": "Tâm trạng khởi đầu phù hợp tính cách nhân vật (ví dụ: 'Lạnh lùng & Đề phòng', 'Dịu dàng & Ấm áp', 'Khó chịu & Cay cú', 'Mong ngóng & E thẹn')",
+          "customMilestones": [
+            {
+              "name": "Tên cột mốc 1 (ví dụ: Người Lạ / Đệ Tử Mới / Kẻ Thù)",
+              "minScore": -100,
+              "maxScore": 0,
+              "description": "Thái độ và cách ứng xử của nhân vật đối với bạn trong khoảng điểm này."
+            },
+            {
+              "name": "Tên cột mốc 2 (ví dụ: Người Quen / Đồng Minh / Trợ Lý Thân Cận)",
+              "minScore": 1,
+              "maxScore": 50,
+              "description": "Thái độ khi mối quan hệ bắt đầu phát triển."
+            },
+            {
+              "name": "Tên cột mốc 3 (ví dụ: Bạn Thân / Tri Kỷ / Phu Quân)",
+              "minScore": 51,
+              "maxScore": 100,
+              "description": "Thái độ khi mối quan hệ đạt đỉnh cao của sự gắn kết."
+            }
+          ]
         }
         """;
 

@@ -32,7 +32,12 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
             ? $"Chat with {character.Name}"
             : command.Request.Title;
 
-        var session = new ChatSession(character.Id, userId, title);
+        var session = new ChatSession(
+            character.Id,
+            userId,
+            title,
+            string.IsNullOrWhiteSpace(character.DefaultMood) ? null : character.DefaultMood,
+            character.DefaultAffectionScore);
 
         if (!string.IsNullOrWhiteSpace(character.Greeting))
         {
@@ -56,7 +61,13 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
             character.AvatarUrl,
             session.Title,
             messages,
-            session.CreatedAt
+            session.CreatedAt,
+            character.Title,
+            character.PersonalityPrompt,
+            character.Category,
+            session.AffectionScore,
+            session.RelationshipLevel,
+            session.CurrentMood
         );
 
         return Result<ChatSessionDto>.Success(dto);

@@ -37,21 +37,34 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
             return Result<SendMessageResponse>.Failure(StatusCodes.Status404NotFound, $"Character for this session was not found.");
         }
 
+        // 1. Append User Message
         var userMsg = session.AddUserMessage(req.Content);
 
-        var aiResponseText = await _llmService.GenerateRoleplayResponseAsync(
+        // 2. AI Roleplay & Real-time Emotion / Affection Analysis
+        var aiTurn = await _llmService.GenerateRoleplayTurnAsync(
             character,
             session.Messages,
             req.Content,
+            session,
             cancellationToken);
 
-        var assistantMsg = session.AddAssistantMessage(aiResponseText);
+        // 3. Update Real Affection Score & Mood evaluated dynamically by Gemini AI
+        var (newScore, newLevel, actualDelta, isLevelUp) = session.UpdateAffection(aiTurn.AffectionDelta, aiTurn.Mood);
 
+        // 4. Append AI Assistant Message
+        var assistantMsg = session.AddAssistantMessage(aiTurn.Reply);
+
+        // 5. Persist real state to Database
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var response = new SendMessageResponse(
             new ChatMessageDto(userMsg.Id, userMsg.Role, userMsg.Content, userMsg.CreatedAt),
-            new ChatMessageDto(assistantMsg.Id, assistantMsg.Role, assistantMsg.Content, assistantMsg.CreatedAt)
+            new ChatMessageDto(assistantMsg.Id, assistantMsg.Role, assistantMsg.Content, assistantMsg.CreatedAt),
+            AffectionScore: session.AffectionScore,
+            RelationshipLevel: session.RelationshipLevel,
+            CurrentMood: session.CurrentMood,
+            AffectionDelta: actualDelta,
+            LevelUp: isLevelUp
         );
 
         return Result<SendMessageResponse>.Success(response);

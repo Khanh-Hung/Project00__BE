@@ -5,10 +5,18 @@ namespace Application.Interfaces;
 
 public interface ILLMService
 {
+    Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
+        Character character,
+        IReadOnlyCollection<ChatMessage> history,
+        string newUserMessage,
+        ChatSession? session = null,
+        CancellationToken ct = default);
+
     Task<string> GenerateRoleplayResponseAsync(
         Character character,
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
+        ChatSession? session = null,
         CancellationToken ct = default);
 
     Task<GeneratedCharacterDto> GenerateCharacterProfileAsync(

@@ -14,19 +14,28 @@ namespace Infrastructure.LLM;
 public sealed class LLMService : ILLMService
 {
     private readonly GeminiApiClient _geminiClient;
+    private readonly IImageGenerationService _imageService;
 
-    public LLMService(GeminiApiClient geminiClient)
+    public LLMService(GeminiApiClient geminiClient, IImageGenerationService imageService)
     {
         _geminiClient = geminiClient;
+        _imageService = imageService;
     }
 
-    public async Task<string> GenerateRoleplayResponseAsync(
+    private record RoleplayAiJsonDto(
+        string Reply,
+        string? Mood,
+        int AffectionDelta
+    );
+
+    public async Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
         Character character,
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
+        ChatSession? session = null,
         CancellationToken ct = default)
     {
-        var systemPrompt = RoleplayPrompts.BuildSystemPrompt(character);
+        var systemPrompt = RoleplayPrompts.BuildSystemPrompt(character, session);
 
         var contentsList = new List<object>();
         var recentHistory = history.TakeLast(10);
@@ -54,12 +63,61 @@ public sealed class LLMService : ILLMService
             });
         }
 
-        return await _geminiClient.GenerateTextAsync(
+        var rawResponse = await _geminiClient.GenerateTextAsync(
             systemPrompt: systemPrompt,
             contents: contentsList,
             temperature: 0.85,
             maxOutputTokens: 1000,
             ct: ct);
+
+        try
+        {
+            var cleaned = rawResponse.Trim();
+            if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(7);
+            }
+            else if (cleaned.StartsWith("```", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(3);
+            }
+            if (cleaned.EndsWith("```", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(0, cleaned.Length - 3);
+            }
+            cleaned = cleaned.Trim();
+
+            var parsed = JsonSerializer.Deserialize<RoleplayAiJsonDto>(cleaned, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (parsed != null && !string.IsNullOrWhiteSpace(parsed.Reply))
+            {
+                return new RoleplayTurnResult(
+                    parsed.Reply.Trim(),
+                    string.IsNullOrWhiteSpace(parsed.Mood) ? null : parsed.Mood.Trim(),
+                    Math.Clamp(parsed.AffectionDelta, -5, 5)
+                );
+            }
+        }
+        catch
+        {
+            // Fallback gracefully
+        }
+
+        return new RoleplayTurnResult(rawResponse.Trim(), null, 2);
+    }
+
+    public async Task<string> GenerateRoleplayResponseAsync(
+        Character character,
+        IReadOnlyCollection<ChatMessage> history,
+        string newUserMessage,
+        ChatSession? session = null,
+        CancellationToken ct = default)
+    {
+        var turn = await GenerateRoleplayTurnAsync(character, history, newUserMessage, session, ct);
+        return turn.Reply;
     }
 
     public async Task<GeneratedCharacterDto> GenerateCharacterProfileAsync(
@@ -202,29 +260,7 @@ public sealed class LLMService : ILLMService
             cleanPrompt = $"masterpiece, best quality, 2d anime illustration portrait of {request.Name ?? "anime character"}, {request.Title ?? "fantasy hero"}, beautiful expressive eyes, highly detailed face, vibrant colors, cinematic lighting, 8k, pixiv trending";
         }
 
-        // Tối ưu hóa Prompt và sinh Seed ngẫu nhiên
-        var finalImagePrompt = $"{cleanPrompt}, masterpiece, best quality, ultra-detailed, sharp focus, 8k";
-        var randomSeed = Random.Shared.Next(1, 99999999);
-        var imageUrl = $"https://image.pollinations.ai/prompt/{Uri.EscapeDataString(finalImagePrompt)}?width=512&height=512&nologo=true&seed={randomSeed}";
-
-        // Tải ảnh trực tiếp từ Backend để mã hóa Base64 phục vụ render tức thì
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-            var imageBytes = await http.GetByteArrayAsync(imageUrl, ct);
-            if (imageBytes != null && imageBytes.Length > 1000)
-            {
-                var base64 = Convert.ToBase64String(imageBytes);
-                var dataUrl = $"data:image/jpeg;base64,{base64}";
-                return new GenerateAvatarResponse(dataUrl, cleanPrompt);
-            }
-        }
-        catch
-        {
-            // Fallback trả về direct URL nếu kết nối tải ảnh mất nhiều thời gian
-        }
-
+        var imageUrl = await _imageService.GenerateImageAsync(cleanPrompt, 512, 512, ct);
         return new GenerateAvatarResponse(imageUrl, cleanPrompt);
     }
 
@@ -272,12 +308,11 @@ public sealed class LLMService : ILLMService
             cleanPrompt = $"masterpiece, best quality, close up interaction portrait of {request.CharacterName ?? "anime character"}, emotional eye contact, blushing, highly detailed, dramatic lighting, 8k";
         }
 
-        var finalImagePrompt = $"{cleanPrompt}, masterpiece, best quality, scenic, detailed background, cinematic lighting, ultra-detailed, 8k";
-
-        // 1. Thử tạo ảnh bằng Google Imagen 3 chính chủ (Tỉ lệ 16:9 điện ảnh)
+        // Thử tạo ảnh bằng Imagen 3 chính chủ trước nếu khả dụng
         try
         {
-            var imagenDataUrl = await _geminiClient.GenerateImageWithImagenAsync(finalImagePrompt, "16:9", ct);
+            var finalPrompt = $"{cleanPrompt}, masterpiece, best quality, scenic, detailed background, cinematic lighting, ultra-detailed, 8k";
+            var imagenDataUrl = await _geminiClient.GenerateImageWithImagenAsync(finalPrompt, "16:9", ct);
             if (!string.IsNullOrEmpty(imagenDataUrl))
             {
                 return new GenerateAvatarResponse(imagenDataUrl, cleanPrompt);
@@ -285,30 +320,10 @@ public sealed class LLMService : ILLMService
         }
         catch
         {
-            // Fallback
+            // Fallback to configured Image Service provider
         }
 
-        // 2. Fallback sang hệ thống render dự phòng
-        var randomSeed = Random.Shared.Next(1, 99999999);
-        var imageUrl = $"https://image.pollinations.ai/prompt/{Uri.EscapeDataString(finalImagePrompt)}?width=896&height=512&nologo=true&seed={randomSeed}";
-
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-            var imageBytes = await http.GetByteArrayAsync(imageUrl, ct);
-            if (imageBytes != null && imageBytes.Length > 1000)
-            {
-                var base64 = Convert.ToBase64String(imageBytes);
-                var dataUrl = $"data:image/jpeg;base64,{base64}";
-                return new GenerateAvatarResponse(dataUrl, cleanPrompt);
-            }
-        }
-        catch
-        {
-            // Fallback
-        }
-
+        var imageUrl = await _imageService.GenerateImageAsync(cleanPrompt, 896, 512, ct);
         return new GenerateAvatarResponse(imageUrl, cleanPrompt);
     }
 }
