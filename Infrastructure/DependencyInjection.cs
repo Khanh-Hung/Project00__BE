@@ -66,7 +66,15 @@ public static class DependencyInjection
             };
         });
 
-        // 5. Add External Services (LLM & Gemini Client)
+        // 5. Add Storage Service (Local / Cloud)
+        services.AddScoped<IStorageService, Infrastructure.Storage.LocalStorageService>();
+
+        // 6. Add Image Generation Service (Pollinations / Gemini / OpenAI)
+        services.AddHttpClient<Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
+        var imageProvider = configuration["AiProviders:ImageProvider"] ?? "Pollinations";
+        services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
+
+        // 7. Add LLM Services (Gemini & Multi-modal)
         services.AddHttpClient<Infrastructure.LLM.Core.GeminiApiClient>();
         services.AddScoped<ILLMService, Infrastructure.LLM.LLMService>();
 
