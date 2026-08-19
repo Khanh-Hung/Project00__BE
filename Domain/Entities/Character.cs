@@ -59,7 +59,8 @@ public class Character : BaseEntity
         int? defaultAffectionScore = null,
         string? defaultMood = null,
         string? customMilestonesJson = null,
-        CharacterBlueprint? blueprint = null)
+        CharacterBlueprint? blueprint = null,
+        bool updateBlueprint = false)
     {
         Name = name;
         Title = title;
@@ -80,10 +81,16 @@ public class Character : BaseEntity
         {
             CustomMilestonesJson = customMilestonesJson;
         }
-        if (blueprint != null)
+        if (updateBlueprint || blueprint != null)
         {
             Blueprint = blueprint;
         }
+        Touch();
+    }
+
+    public void SetBlueprint(CharacterBlueprint? blueprint)
+    {
+        Blueprint = blueprint;
         Touch();
     }
 

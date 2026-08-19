@@ -28,6 +28,7 @@ public static class DependencyInjection
             {
                 options.UseInMemoryDatabase("ProjectDb");
             }
+            options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
         });
 
         // 2. Add UnitOfWork & Current User Provider
