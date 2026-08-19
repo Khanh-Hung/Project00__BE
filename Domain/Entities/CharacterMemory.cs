@@ -62,39 +62,62 @@ public sealed class CharacterMemory : BaseEntity
         var trimmedContent = content.Trim();
         if (trimmedContent.Length > 1000)
         {
-            trimmedContent = trimmedContent.Substring(0, 1000).Trim();
+            throw new ArgumentException("Memory content cannot exceed 1000 characters.", nameof(content));
         }
 
-        var clampedImportance = Math.Clamp(importance, 1, 5);
-        var clampedConfidence = Math.Clamp(confidence, 0.0m, 1.0m);
+        if (importance is < 1 or > 5)
+        {
+            throw new ArgumentOutOfRangeException(nameof(importance), "Importance must be between 1 and 5.");
+        }
+
+        if (confidence is < 0.0m or > 1.0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(confidence), "Confidence must be between 0.0 and 1.0.");
+        }
 
         return new CharacterMemory(
             characterId,
             userId,
             trimmedContent,
             type,
-            clampedImportance,
-            clampedConfidence,
+            importance,
+            confidence,
             sourceSessionId
         );
     }
 
     public void UpdateDetails(int? importance = null, decimal? confidence = null, string? updatedContent = null)
     {
-        if (!string.IsNullOrWhiteSpace(updatedContent))
+        if (updatedContent != null)
         {
+            if (string.IsNullOrWhiteSpace(updatedContent))
+            {
+                throw new ArgumentException("Updated content cannot be empty.", nameof(updatedContent));
+            }
             var trimmed = updatedContent.Trim();
-            Content = trimmed.Length > 1000 ? trimmed.Substring(0, 1000).Trim() : trimmed;
+            if (trimmed.Length > 1000)
+            {
+                throw new ArgumentException("Memory content cannot exceed 1000 characters.", nameof(updatedContent));
+            }
+            Content = trimmed;
         }
 
         if (importance.HasValue)
         {
-            Importance = Math.Clamp(importance.Value, 1, 5);
+            if (importance.Value is < 1 or > 5)
+            {
+                throw new ArgumentOutOfRangeException(nameof(importance), "Importance must be between 1 and 5.");
+            }
+            Importance = importance.Value;
         }
 
         if (confidence.HasValue)
         {
-            Confidence = Math.Clamp(confidence.Value, 0.0m, 1.0m);
+            if (confidence.Value is < 0.0m or > 1.0m)
+            {
+                throw new ArgumentOutOfRangeException(nameof(confidence), "Confidence must be between 0.0 and 1.0.");
+            }
+            Confidence = confidence.Value;
         }
 
         Touch();
