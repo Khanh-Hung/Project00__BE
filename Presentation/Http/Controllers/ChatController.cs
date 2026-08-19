@@ -11,6 +11,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
+using Application.Interfaces;
+
 namespace Presentation.Http.Controllers;
 
 [Authorize]
@@ -19,10 +21,12 @@ namespace Presentation.Http.Controllers;
 public sealed class ChatController : ControllerBase
 {
     private readonly ISender _sender;
+    private readonly ILLMService _llmService;
 
-    public ChatController(ISender sender)
+    public ChatController(ISender sender, ILLMService llmService)
     {
         _sender = sender;
+        _llmService = llmService;
     }
 
     private Guid? GetCurrentUserId()
@@ -89,6 +93,16 @@ public sealed class ChatController : ControllerBase
     }
 
     /// <summary>
+    /// Generates contextual roleplay suggestions based on the conversation history
+    /// </summary>
+    [HttpGet("sessions/{sessionId:guid}/suggestions")]
+    public async Task<IActionResult> GetSuggestions(Guid sessionId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new Application.Features.Chat.Queries.GetRoleplaySuggestions.GetRoleplaySuggestionsQuery(sessionId), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
     /// Sends roleplay message and receives AI response
     /// </summary>
     [HttpPost("messages")]
@@ -96,5 +110,28 @@ public sealed class ChatController : ControllerBase
     {
         var result = await _sender.Send(new SendChatMessageCommand(request), ct);
         return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Generates dynamic illustration image for a specific moment in chat
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("imagine-scene")]
+    public async Task<IActionResult> ImagineScene([FromBody] GenerateSceneImageRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.MessageContent))
+        {
+            return BadRequest(Result<GenerateAvatarResponse>.Failure(StatusCodes.Status400BadRequest, "Message content cannot be empty."));
+        }
+
+        try
+        {
+            var res = await _llmService.GenerateSceneImageAsync(request, ct);
+            return Result<GenerateAvatarResponse>.Success(res).ToActionResult();
+        }
+        catch (Exception ex)
+        {
+            return Result<GenerateAvatarResponse>.Failure(StatusCodes.Status500InternalServerError, ex.Message).ToActionResult();
+        }
     }
 }

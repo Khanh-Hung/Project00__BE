@@ -49,3 +49,12 @@ public record SendMessageResponse(
     ChatMessageDto UserMessage,
     ChatMessageDto AssistantMessage
 );
+
+public record GenerateSceneImageRequest(
+    Guid? SessionId,
+    string? CharacterName,
+    string? CharacterTitle,
+    string? CharacterPersonality,
+    string MessageContent,
+    string? UserMessageContent = null
+);
