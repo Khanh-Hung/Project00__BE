@@ -6,5 +6,6 @@ public interface IUnitOfWork
 {
     IGenericRepository<TEntity> GetRepository<TEntity>() where TEntity : BaseEntity;
     ICharacterMemoryRepository CharacterMemories { get; }
+    ICharacterRelationshipRepository Relationships { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

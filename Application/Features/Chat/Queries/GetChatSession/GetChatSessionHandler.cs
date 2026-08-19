@@ -2,7 +2,10 @@ using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Domain.Entities;
+using Domain.Enums;
+using Infrastructure.LLM.Prompts;
 using MediatR;
+using Microsoft.AspNetCore.Http;
 
 namespace Application.Features.Chat.Queries.GetChatSession;
 
@@ -32,12 +35,23 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
             return Result<ChatSessionDto>.Failure(StatusCodes.Status404NotFound, $"Character for this session was not found.");
         }
 
+        CharacterRelationship? relationship = null;
+        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
+        {
+            relationship = await _unitOfWork.Relationships.GetByPairAsync(session.UserId.Value, character.Id, cancellationToken);
+        }
+
+        var affection = relationship?.AffectionScore ?? character.DefaultAffectionScore;
+        var (level, stageName, _) = Application.Common.RelationshipStageResolver.Resolve(affection, character.CustomMilestonesJson);
+
         var messages = session.Messages.Select(m => new ChatMessageDto(
             m.Id,
             m.Role,
             m.Content,
             m.CreatedAt
         )).ToList();
+
+        var eventsDto = relationship?.Events.Select(e => new RelationshipEventDto(e.EventKey, e.Context, e.UnlockedAt)).ToList();
 
         var dto = new ChatSessionDto(
             session.Id,
@@ -50,9 +64,12 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
             character.Title,
             character.PersonalityPrompt,
             character.Category,
-            session.AffectionScore,
-            session.RelationshipLevel,
-            session.CurrentMood
+            affection,
+            level,
+            stageName,
+            relationship?.CurrentMood.ToString() ?? character.DefaultMood ?? "Neutral",
+            relationship?.MoodIntensity ?? 20,
+            eventsDto
         );
 
         return Result<ChatSessionDto>.Success(dto);

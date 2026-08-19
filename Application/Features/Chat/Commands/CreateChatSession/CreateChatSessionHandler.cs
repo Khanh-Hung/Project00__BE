@@ -2,6 +2,8 @@ using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Domain.Entities;
+using Domain.Enums;
+using Infrastructure.LLM.Prompts;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 
@@ -35,9 +37,7 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
         var session = new ChatSession(
             character.Id,
             userId,
-            title,
-            string.IsNullOrWhiteSpace(character.DefaultMood) ? null : character.DefaultMood,
-            character.DefaultAffectionScore);
+            title);
 
         if (!string.IsNullOrWhiteSpace(character.Greeting))
         {
@@ -45,6 +45,23 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
         }
 
         await sessionRepo.AddAsync(session, cancellationToken);
+
+        // Fetch or create CharacterRelationship for persistent state
+        CharacterRelationship? relationship = null;
+        if (userId.HasValue && userId.Value != Guid.Empty)
+        {
+            var defaultMood = Enum.TryParse<CharacterMood>(character.DefaultMood, true, out var dm)
+                ? dm
+                : CharacterMood.Neutral;
+
+            relationship = await _unitOfWork.Relationships.GetOrCreateAsync(
+                userId.Value,
+                character.Id,
+                character.DefaultAffectionScore,
+                defaultMood,
+                cancellationToken);
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var messages = session.Messages.Select(m => new ChatMessageDto(
@@ -53,6 +70,11 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
             m.Content,
             m.CreatedAt
         )).ToList();
+
+        var affection = relationship?.AffectionScore ?? character.DefaultAffectionScore;
+        var (level, stageName, _) = Application.Common.RelationshipStageResolver.Resolve(affection, character.CustomMilestonesJson);
+
+        var eventsDto = relationship?.Events.Select(e => new RelationshipEventDto(e.EventKey, e.Context, e.UnlockedAt)).ToList();
 
         var dto = new ChatSessionDto(
             session.Id,
@@ -65,9 +87,12 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
             character.Title,
             character.PersonalityPrompt,
             character.Category,
-            session.AffectionScore,
-            session.RelationshipLevel,
-            session.CurrentMood
+            affection,
+            level,
+            stageName,
+            relationship?.CurrentMood.ToString() ?? character.DefaultMood ?? "Neutral",
+            relationship?.MoodIntensity ?? 20,
+            eventsDto
         );
 
         return Result<ChatSessionDto>.Success(dto);

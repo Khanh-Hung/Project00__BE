@@ -18,6 +18,10 @@ public class UnitOfWork : IUnitOfWork
     public ICharacterMemoryRepository CharacterMemories =>
         _characterMemories ??= new CharacterMemoryRepository(_dbContext);
 
+    private ICharacterRelationshipRepository? _relationships;
+    public ICharacterRelationshipRepository Relationships =>
+        _relationships ??= new CharacterRelationshipRepository(_dbContext);
+
     public IGenericRepository<TEntity> GetRepository<TEntity>() where TEntity : BaseEntity
     {
         var type = typeof(TEntity);

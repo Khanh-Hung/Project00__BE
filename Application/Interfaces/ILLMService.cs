@@ -9,7 +9,7 @@ public interface ILLMService
         Character character,
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
-        ChatSession? session = null,
+        CharacterRelationship? relationship = null,
         IReadOnlyCollection<CharacterMemory>? memories = null,
         CancellationToken ct = default);
 
@@ -17,7 +17,7 @@ public interface ILLMService
         Character character,
         IReadOnlyCollection<ChatMessage> history,
         string newUserMessage,
-        ChatSession? session = null,
+        CharacterRelationship? relationship = null,
         CancellationToken ct = default);
 
     Task<GeneratedCharacterDto> GenerateCharacterProfileAsync(

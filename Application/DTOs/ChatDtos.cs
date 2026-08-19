@@ -9,6 +9,23 @@ public record ChatMessageDto(
     DateTime Timestamp
 );
 
+public record RelationshipEventDto(
+    string EventKey,
+    string Context,
+    DateTime UnlockedAt
+);
+
+public record CharacterRelationshipDto(
+    Guid Id,
+    Guid CharacterId,
+    Guid UserId,
+    int AffectionScore,
+    CharacterMood CurrentMood,
+    int MoodIntensity,
+    List<RelationshipEventDto> Events,
+    DateTime LastInteractedAt
+);
+
 public record ChatSessionDto(
     Guid Id,
     Guid CharacterId,
@@ -22,7 +39,10 @@ public record ChatSessionDto(
     string? CharacterCategory = null,
     int AffectionScore = 0,
     int RelationshipLevel = 1,
-    string? CurrentMood = null
+    string? RelationshipStage = null,
+    string? CurrentMood = null,
+    int MoodIntensity = 20,
+    List<RelationshipEventDto>? UnlockedEvents = null
 );
 
 public record ChatSessionListItemDto(
@@ -36,7 +56,8 @@ public record ChatSessionListItemDto(
     int MessageCount,
     DateTime CreatedAt,
     int AffectionScore = 0,
-    int RelationshipLevel = 1
+    int RelationshipLevel = 1,
+    string? RelationshipStage = null
 );
 
 public record CreateSessionRequest(
@@ -55,15 +76,25 @@ public record SendMessageResponse(
     ChatMessageDto AssistantMessage,
     int AffectionScore = 0,
     int RelationshipLevel = 1,
+    string? RelationshipStage = null,
     string? CurrentMood = null,
+    int MoodIntensity = 20,
     int AffectionDelta = 0,
-    bool LevelUp = false
+    bool LevelUp = false,
+    RelationshipEventDto? UnlockedEvent = null
+);
+
+public record RelationshipEventProposal(
+    string Key,
+    string Context
 );
 
 public record RoleplayTurnResult(
     string Reply,
-    string? Mood = null,
-    int AffectionDelta = 2
+    CharacterMood Mood = CharacterMood.Neutral,
+    int MoodIntensity = 20,
+    int AffectionDelta = 0,
+    RelationshipEventProposal? Event = null
 );
 
 public record GenerateSceneImageRequest(
