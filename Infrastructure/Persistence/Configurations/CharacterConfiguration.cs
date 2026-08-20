@@ -16,6 +16,8 @@ public sealed class CharacterConfiguration : IEntityTypeConfiguration<Character>
         builder.Property(c => c.Greeting).HasMaxLength(1000);
         builder.Property(c => c.DefaultAffectionScore).HasDefaultValue(0);
         builder.Property(c => c.DefaultMood).HasMaxLength(100);
+        builder.Property(c => c.WorldName).HasMaxLength(200).IsRequired(false);
+        builder.Property(c => c.WorldDescription).HasMaxLength(2000).IsRequired(false);
 
         builder.Property(c => c.Blueprint)
             .HasColumnType("jsonb")

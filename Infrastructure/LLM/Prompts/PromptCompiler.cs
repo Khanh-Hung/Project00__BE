@@ -97,6 +97,26 @@ public sealed class PromptCompiler : IPromptCompiler
 
         // 4. Format Matched World Lorebook Entries
         var lorebookSection = "";
+        var worldSettingSection = "";
+        if (!string.IsNullOrWhiteSpace(character.WorldName) || !string.IsNullOrWhiteSpace(character.WorldDescription))
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(character.WorldName))
+            {
+                parts.Add($"- Universe / World Name: {character.WorldName}");
+            }
+            if (!string.IsNullOrWhiteSpace(character.WorldDescription))
+            {
+                parts.Add($"- World Description & Reality Rules: {character.WorldDescription}");
+            }
+
+            worldSettingSection = $"""
+                
+                [LAYER 1.5: WORLD SETTING & UNIVERSE BACKGROUND]
+                {string.Join("\n", parts)}
+                """;
+        }
+
         if (context.LorebookEntries != null && context.LorebookEntries.Count > 0)
         {
             var loreLines = context.LorebookEntries.Select(l => $"- 【{l.Category}: {l.Title}】: {l.Content}");
@@ -113,6 +133,7 @@ public sealed class PromptCompiler : IPromptCompiler
             
             Character Personality, Lore & Backstory:
             {{character.PersonalityPrompt}}
+            {{worldSettingSection}}
             {{blueprintSection}}
             {{rulesSection}}
             {{lorebookSection}}
