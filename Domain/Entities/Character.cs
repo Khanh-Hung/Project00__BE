@@ -16,6 +16,8 @@ public class Character : BaseEntity
     public int DefaultAffectionScore { get; private set; }
     public string DefaultMood { get; private set; } = string.Empty;
     public string? CustomMilestonesJson { get; private set; }
+    public string? WorldName { get; private set; }
+    public string? WorldDescription { get; private set; }
     public CharacterBlueprint? Blueprint { get; private set; }
     public CharacterVisualIdentity? VisualIdentity { get; private set; }
     public CharacterVoiceProfile? VoiceProfile { get; private set; }
@@ -36,7 +38,9 @@ public class Character : BaseEntity
         string? customMilestonesJson = null,
         CharacterBlueprint? blueprint = null,
         CharacterVisualIdentity? visualIdentity = null,
-        CharacterVoiceProfile? voiceProfile = null)
+        CharacterVoiceProfile? voiceProfile = null,
+        string? worldName = null,
+        string? worldDescription = null)
     {
         Name = name;
         Title = title;
@@ -52,6 +56,8 @@ public class Character : BaseEntity
         Blueprint = blueprint;
         VisualIdentity = visualIdentity;
         VoiceProfile = voiceProfile;
+        WorldName = worldName;
+        WorldDescription = worldDescription;
     }
 
     public void UpdateDetails(
@@ -70,7 +76,9 @@ public class Character : BaseEntity
         CharacterVisualIdentity? visualIdentity = null,
         bool updateVisualIdentity = false,
         CharacterVoiceProfile? voiceProfile = null,
-        bool updateVoiceProfile = false)
+        bool updateVoiceProfile = false,
+        string? worldName = null,
+        string? worldDescription = null)
     {
         Name = name;
         Title = title;
@@ -103,6 +111,21 @@ public class Character : BaseEntity
         {
             VoiceProfile = voiceProfile;
         }
+        if (worldName != null)
+        {
+            WorldName = worldName;
+        }
+        if (worldDescription != null)
+        {
+            WorldDescription = worldDescription;
+        }
+        Touch();
+    }
+
+    public void SetWorldSetting(string? worldName, string? worldDescription)
+    {
+        WorldName = worldName;
+        WorldDescription = worldDescription;
         Touch();
     }
 
