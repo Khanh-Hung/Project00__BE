@@ -95,6 +95,18 @@ public sealed class PromptCompiler : IPromptCompiler
                 """;
         }
 
+        // 4. Format Matched World Lorebook Entries
+        var lorebookSection = "";
+        if (context.LorebookEntries != null && context.LorebookEntries.Count > 0)
+        {
+            var loreLines = context.LorebookEntries.Select(l => $"- 【{l.Category}: {l.Title}】: {l.Content}");
+            lorebookSection = $"""
+                
+                [LAYER 2.5: WORLD LORE & UNIVERSE RULES]
+                {string.Join("\n", loreLines)}
+                """;
+        }
+
         return $$"""
             You are a master interactive roleplayer fully embodying the character: {{character.Name}}.
             Role & Category: {{character.Category}} - {{character.Title}}
@@ -103,6 +115,7 @@ public sealed class PromptCompiler : IPromptCompiler
             {{character.PersonalityPrompt}}
             {{blueprintSection}}
             {{rulesSection}}
+            {{lorebookSection}}
             {{relationshipSection}}
             {{memoriesSection}}
             

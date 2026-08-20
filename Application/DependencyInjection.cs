@@ -24,8 +24,9 @@ public static class DependencyInjection
         // 2. Add FluentValidation Validators
         services.AddValidatorsFromAssembly(assembly);
 
-        // 3. Add Memory Candidate Validator, Context Engine, Visual/Voice Compilers & Character Runtime
+        // 3. Add Memory Candidate Validator, Context Engine, Lorebook, Visual/Voice Compilers & Character Runtime
         services.AddSingleton<Interfaces.IMemoryCandidateValidator, Services.MemoryCandidateValidator>();
+        services.AddScoped<Interfaces.ILorebookEngine, Services.LorebookEngine>();
         services.AddScoped<Interfaces.IRoleplayContextEngine, Services.RoleplayContextEngine>();
         services.AddSingleton<Interfaces.IVisualPromptCompiler, Services.VisualPromptCompiler>();
         services.AddSingleton<Interfaces.IVoicePromptCompiler, Services.VoicePromptCompiler>();
