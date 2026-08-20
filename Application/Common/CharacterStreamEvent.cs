@@ -4,13 +4,15 @@ using Application.DTOs;
 
 namespace Application.Common;
 
+public sealed record CharacterStreamTokenData(string Delta);
+
 public sealed record CharacterStreamEvent(
     [property: JsonPropertyName("event")] string Event,
     [property: JsonPropertyName("data")] object Data
 )
 {
     public static CharacterStreamEvent Token(string delta) =>
-        new("token", new { delta });
+        new("token", new CharacterStreamTokenData(delta));
 
     public static CharacterStreamEvent Metadata(
         string mood,

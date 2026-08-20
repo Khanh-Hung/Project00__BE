@@ -163,7 +163,7 @@ public sealed class ChatController : ControllerBase
             CharacterId: Guid.Empty,
             SessionId: sessionId,
             UserMessage: request.Content,
-            TurnId: Guid.NewGuid()
+            TurnId: request.TurnId ?? Guid.NewGuid()
         );
 
         await foreach (var streamEvent in characterRuntime.ProcessTurnStreamAsync(turnRequest, ct))

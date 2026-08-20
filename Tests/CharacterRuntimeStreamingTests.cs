@@ -86,9 +86,11 @@ public class CharacterRuntimeStreamingTests
 
         Assert.NotEmpty(receivedEvents);
 
-        // Verify token events were emitted
+        // Verify clean text token events were emitted without raw JSON syntax leakage
         var tokenEvents = receivedEvents.Where(e => e.Event == "token").ToList();
-        Assert.Equal(streamedChunks.Length, tokenEvents.Count);
+        Assert.NotEmpty(tokenEvents);
+        var streamedDialogue = string.Join("", tokenEvents.Select(e => ((CharacterStreamTokenData)e.Data).Delta));
+        Assert.Equal("Chào ngươi, kẻ tìm kiếm tri thức.", streamedDialogue);
 
         // Verify metadata event
         var metadataEvent = receivedEvents.FirstOrDefault(e => e.Event == "metadata");

@@ -385,16 +385,21 @@ public sealed class CharacterRuntime : ICharacterRuntime
             yield break;
         }
 
-        // 3. Stream LLM Tokens in Realtime
-        var fullReplyBuilder = new System.Text.StringBuilder();
+        // 3. Stream LLM Tokens in Realtime via Incremental Reply Extractor
+        var replyExtractor = new IncrementalJsonReplyExtractor();
 
         await foreach (var chunk in _llmService.GenerateRoleplayTurnStreamAsync(context, ct))
         {
-            fullReplyBuilder.Append(chunk);
-            yield return CharacterStreamEvent.Token(chunk);
+            foreach (var token in replyExtractor.PushChunk(chunk))
+            {
+                if (!string.IsNullOrEmpty(token))
+                {
+                    yield return CharacterStreamEvent.Token(token);
+                }
+            }
         }
 
-        var rawFullText = fullReplyBuilder.ToString().Trim();
+        var rawFullText = replyExtractor.GetFullRawAccumulatedText().Trim();
 
         // 4. Parse Structured Roleplay Turn from Accumulated Text
         var aiTurn = ParseAiTurn(rawFullText);

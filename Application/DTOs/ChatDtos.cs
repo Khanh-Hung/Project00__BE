@@ -69,7 +69,8 @@ public record CreateSessionRequest(
 
 public record SendMessageRequest(
     Guid SessionId,
-    string Content
+    string Content,
+    Guid? TurnId = null
 );
 
 public record SendMessageResponse(
