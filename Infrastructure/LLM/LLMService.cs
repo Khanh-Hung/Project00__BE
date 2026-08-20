@@ -419,12 +419,24 @@ public sealed class LLMService : ILLMService
             {
                 if (string.IsNullOrWhiteSpace(item.Content)) continue;
 
-                var type = Enum.TryParse<MemoryType>(item.Type, true, out var parsedType)
-                    ? parsedType
-                    : MemoryType.Fact;
+                if (!Enum.TryParse<MemoryType>(item.Type, true, out var type))
+                {
+                    continue;
+                }
 
-                var importance = Math.Clamp(item.Importance ?? 3, 1, 5);
-                var confidence = Math.Clamp(item.Confidence ?? 0.85m, 0.0m, 1.0m);
+                var importance = item.Importance ?? 3;
+                if (importance < 1 || importance > 5)
+                {
+                    // Strict reject invalid importance
+                    continue;
+                }
+
+                var confidence = item.Confidence ?? 0.85m;
+                if (confidence < 0.0m || confidence > 1.0m)
+                {
+                    // Strict reject invalid confidence
+                    continue;
+                }
 
                 try
                 {
@@ -436,7 +448,7 @@ public sealed class LLMService : ILLMService
                 }
                 catch
                 {
-                    // Skip invalid candidate
+                    // Skip candidate that fails invariant checks
                 }
             }
 
