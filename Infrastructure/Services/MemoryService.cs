@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Application.Abstractions.Data;
+using Application.Common;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
@@ -13,15 +14,18 @@ public sealed class MemoryService : IMemoryService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMemoryCandidateValidator _validator;
+    private readonly IEmbeddingService _embeddingService;
     private readonly ILogger<MemoryService> _logger;
 
     public MemoryService(
         IUnitOfWork unitOfWork,
         IMemoryCandidateValidator validator,
+        IEmbeddingService embeddingService,
         ILogger<MemoryService> logger)
     {
         _unitOfWork = unitOfWork;
         _validator = validator;
+        _embeddingService = embeddingService;
         _logger = logger;
     }
 
@@ -33,12 +37,13 @@ public sealed class MemoryService : IMemoryService
     }
 
     /// <summary>
-    /// Phase 2.1 2-Phase Retrieval (Top Important [limit 20] + Most Recent [limit 20] -> In-memory Score & Diversity -> Top 6).
+    /// Semantic Hybrid Retrieval: Combines Vector Similarity + Importance + Recency + Category Diversity.
     /// </summary>
     public async Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(
         Guid userId,
         Guid characterId,
         int maxCount = 6,
+        string? queryText = null,
         CancellationToken ct = default)
     {
         if (userId == Guid.Empty || characterId == Guid.Empty || maxCount <= 0)
@@ -60,14 +65,40 @@ public sealed class MemoryService : IMemoryService
             return Array.Empty<CharacterMemory>();
         }
 
+        float[]? queryEmbedding = null;
+        if (!string.IsNullOrWhiteSpace(queryText))
+        {
+            try
+            {
+                queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(queryText, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to generate query embedding for memory retrieval");
+            }
+        }
+
         var now = Clock.Now;
 
-        // Score = (Importance * 2.0) + RecencyBonus
+        // Calculate Hybrid Semantic Score
         double CalculateScore(CharacterMemory m)
         {
             var ageDays = Math.Max(0.0, (now - m.CreatedAt).TotalDays);
             var recencyBonus = Math.Max(0.0, 5.0 - (ageDays * 0.25)); // +5 for today, decaying gradually
-            return (m.Importance * 2.0) + (double)m.Confidence + recencyBonus;
+            var baseScore = (m.Importance * 2.0) + (double)m.Confidence + recencyBonus;
+
+            if (queryEmbedding != null && queryEmbedding.Length > 0)
+            {
+                var memEmbedding = m.GetEmbedding();
+                if (memEmbedding != null && memEmbedding.Length > 0)
+                {
+                    var sim = CosineSimilarityCalculator.Calculate(queryEmbedding, memEmbedding);
+                    // Cosine similarity gives up to +12 bonus points (heavily boosting semantically aligned memories)
+                    return baseScore + (sim * 12.0);
+                }
+            }
+
+            return baseScore;
         }
 
         var scored = combinedCandidates
@@ -179,7 +210,7 @@ public sealed class MemoryService : IMemoryService
             existingMap[key] = m;
         }
 
-        // 3. Process deduplication and persistence
+        // 3. Process deduplication, vector embedding and persistence
         foreach (var c in validCandidates)
         {
             var normalized = NormalizeContent(c.Content);
@@ -188,14 +219,21 @@ public sealed class MemoryService : IMemoryService
             if (existingMap.TryGetValue(key, out var existing))
             {
                 duplicateCount++;
-                // Update importance & confidence if candidate has stronger signals
                 var newImportance = Math.Max(existing.Importance, c.Importance);
                 var newConfidence = Math.Max(existing.Confidence, c.Confidence);
                 existing.UpdateDetails(importance: newImportance, confidence: newConfidence);
+
+                if (string.IsNullOrWhiteSpace(existing.EmbeddingJson))
+                {
+                    var emb = await _embeddingService.GenerateEmbeddingAsync(existing.Content, ct);
+                    existing.SetEmbedding(emb);
+                }
+
                 _unitOfWork.CharacterMemories.Update(existing);
             }
             else
             {
+                var emb = await _embeddingService.GenerateEmbeddingAsync(c.Content, ct);
                 var newMemory = CharacterMemory.Create(
                     characterId: characterId,
                     userId: userId,
@@ -205,6 +243,7 @@ public sealed class MemoryService : IMemoryService
                     confidence: c.Confidence,
                     sourceSessionId: sessionId
                 );
+                newMemory.SetEmbedding(emb);
 
                 await _unitOfWork.CharacterMemories.AddAsync(newMemory, ct);
                 existingMap[key] = newMemory;

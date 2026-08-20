@@ -86,6 +86,7 @@ public static class DependencyInjection
 
         // 8. Add Memory Services (Phase 2 - Character Memory System)
         services.Configure<Application.DTOs.MemoryExtractionOptions>(configuration.GetSection("MemoryExtraction"));
+        services.AddHttpClient<IEmbeddingService, EmbeddingService>();
         services.AddScoped<IMemoryService, MemoryService>();
         services.AddSingleton<MemoryExtractionBackgroundService>();
         services.AddSingleton<IMemoryExtractionTrigger>(sp => sp.GetRequiredService<MemoryExtractionBackgroundService>());

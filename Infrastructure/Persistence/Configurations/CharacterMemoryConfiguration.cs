@@ -17,6 +17,7 @@ public sealed class CharacterMemoryConfiguration : IEntityTypeConfiguration<Char
         builder.Property(m => m.Type).IsRequired();
         builder.Property(m => m.Importance).IsRequired().HasDefaultValue(3);
         builder.Property(m => m.Confidence).HasPrecision(5, 4).HasDefaultValue(0.9m);
+        builder.Property(m => m.EmbeddingJson).HasColumnType("jsonb").IsRequired(false);
 
         // Optimized composite indexes for retrieval queries
         builder.HasIndex(m => new { m.UserId, m.CharacterId })

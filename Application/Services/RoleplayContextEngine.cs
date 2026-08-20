@@ -109,6 +109,7 @@ public sealed class RoleplayContextEngine : IRoleplayContextEngine
                     effectiveUserId.Value,
                     character.Id,
                     maxCount: MaxMemoriesBudget,
+                    queryText: userMessage,
                     ct: ct);
             }
             catch (Exception ex)
