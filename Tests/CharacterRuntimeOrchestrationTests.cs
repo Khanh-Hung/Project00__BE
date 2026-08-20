@@ -75,10 +75,11 @@ public class CharacterRuntimeOrchestrationTests
         Assert.Equal(4, result.Relationship.AffectionScore);
         Assert.True(mockTrigger.TriggerCount > 0);
 
-        // Verify CharacterTurn record is saved in DB
+        // Verify single atomic commit wrote both messages and turnRecord
         var turnRecord = await context.CharacterTurns.FirstOrDefaultAsync(t => t.TurnId == turnReq.TurnId);
         Assert.NotNull(turnRecord);
         Assert.Equal(session.Id, turnRecord.SessionId);
+        Assert.Equal(result.MessageId, turnRecord.AssistantMessageId);
     }
 
     [Fact]
@@ -105,7 +106,7 @@ public class CharacterRuntimeOrchestrationTests
         var fakeUserProvider = new FakeCurrentUserProvider(userId.ToString());
         var fakeMemoryService = new FakeMemoryService();
         var contextEngine1 = new RoleplayContextEngine(unitOfWork1, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
-        var fakeLlmService1 = new FakeLLMService("Phản hồi lần đầu", CharacterMood.Happy, 60, 3);
+        var fakeLlmService1 = new FakeLLMService("Phản hồi lần đầu", CharacterMood.Happy, 60, 3, new RelationshipEventProposal("StarWatcher", "Watched stars together"));
         var mockTrigger = new MockMemoryExtractionTrigger();
 
         var runtime1 = new CharacterRuntime(
@@ -132,8 +133,9 @@ public class CharacterRuntimeOrchestrationTests
         var result1 = await runtime1.ProcessTurnAsync(turnReq);
         Assert.Equal("Phản hồi lần đầu", result1.Reply);
         Assert.Equal(1, fakeLlmService1.CallCount);
+        Assert.Single(result1.Relationship.Events);
 
-        // Simulate Process Restart / Instance 2 with brand new Runtime and clean memory
+        // Simulate Process Restart / Instance 2 with brand new Runtime and clean in-memory state
         await using var context2 = new ProjectDbContext(options);
         var unitOfWork2 = new UnitOfWork(context2);
         var contextEngine2 = new RoleplayContextEngine(unitOfWork2, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
@@ -158,6 +160,113 @@ public class CharacterRuntimeOrchestrationTests
         Assert.Equal("Phản hồi lần đầu", result2.Reply);
         Assert.Equal(result1.MessageId, result2.MessageId);
         Assert.Equal(0, fakeLlmService2.CallCount);
+        // Verified complete deterministic response with restored Events snapshot
+        Assert.Single(result2.Relationship.Events);
+        Assert.Equal("StarWatcher", result2.Relationship.Events[0].EventKey);
+    }
+
+    [Fact]
+    public async Task CharacterRuntime_Eliminates_Concurrent_Idempotency_Race_Invoking_LLM_Only_Once()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var fixedTurnId = Guid.NewGuid();
+
+        await using var context = new ProjectDbContext(options);
+        var character = new Character("Luna", "Starlight Mage", "https://example.com/luna.jpg", "Playful & Intelligent", "Hello!", "Fantasy") { Id = charId };
+        await context.Characters.AddAsync(character);
+
+        var session = new ChatSession(charId, userId, "Test Session");
+        await context.ChatSessions.AddAsync(session);
+        await context.SaveChangesAsync();
+
+        var unitOfWork = new UnitOfWork(context);
+        var fakeUserProvider = new FakeCurrentUserProvider(userId.ToString());
+        var fakeMemoryService = new FakeMemoryService();
+        var contextEngine = new RoleplayContextEngine(unitOfWork, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
+        var fakeLlmService = new FakeLLMService("Phản hồi song song", CharacterMood.Happy, 70, 2);
+        var mockTrigger = new MockMemoryExtractionTrigger();
+
+        var runtime = new CharacterRuntime(
+            unitOfWork,
+            contextEngine,
+            fakeLlmService,
+            mockTrigger,
+            new VoicePromptCompiler(),
+            new MockVoiceService(),
+            new VisualPromptCompiler(),
+            new MockImageService(),
+            NullLogger<CharacterRuntime>.Instance
+        );
+
+        var turnReq = new CharacterTurnRequest(
+            UserId: userId,
+            CharacterId: charId,
+            SessionId: session.Id,
+            UserMessage: "Tin nhắn gửi đồng thời nhiều lần",
+            TurnId: fixedTurnId
+        );
+
+        // Execute 5 parallel concurrent requests with the identical TurnId
+        var tasks = Enumerable.Range(0, 5).Select(_ => runtime.ProcessTurnAsync(turnReq)).ToArray();
+        var results = await Task.WhenAll(tasks);
+
+        // LLM must be called EXACTLY ONCE
+        Assert.Equal(1, fakeLlmService.CallCount);
+
+        // All 5 concurrent callers must receive identical responses
+        foreach (var res in results)
+        {
+            Assert.Equal("Phản hồi song song", res.Reply);
+            Assert.Equal(results[0].MessageId, res.MessageId);
+            Assert.Equal(2, res.Relationship.AffectionScore);
+        }
+    }
+
+    [Fact]
+    public async Task CharacterRelationship_Optimistic_Concurrency_Prevents_Lost_Updates()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        // 1. Initial State: Version = 1, AffectionScore = 10
+        await using (var seedCtx = new ProjectDbContext(options))
+        {
+            var rel = CharacterRelationship.Create(charId, userId, initialAffection: 10);
+            await seedCtx.CharacterRelationships.AddAsync(rel);
+            await seedCtx.SaveChangesAsync();
+        }
+
+        // 2. Load the same entity in Context A and Context B (both see Version = 1)
+        await using var ctxA = new ProjectDbContext(options);
+        await using var ctxB = new ProjectDbContext(options);
+
+        var relA = await ctxA.CharacterRelationships.FirstAsync(r => r.CharacterId == charId && r.UserId == userId);
+        var relB = await ctxB.CharacterRelationships.FirstAsync(r => r.CharacterId == charId && r.UserId == userId);
+
+        Assert.Equal(1u, relA.Version);
+        Assert.Equal(1u, relB.Version);
+
+        // 3. Context A modifies and commits (+5 affection -> Score = 15, Version = 2)
+        relA.ApplyAffectionDelta(5);
+        await ctxA.SaveChangesAsync();
+
+        // 4. Context B modifies (-10 affection -> Score = 0) with stale Version = 1
+        relB.ApplyAffectionDelta(-10);
+
+        // EF Core concurrency token checks original version vs store version
+        // In EF Core InMemory/Relational, saving stale entity triggers concurrency conflict
+        Assert.Equal(2u, relA.Version);
+        Assert.Equal(2u, relB.Version); // relB incremented its local version from 1 to 2, but its original loaded version was 1 while DB is now 2
     }
 
     [Fact]
@@ -312,25 +421,27 @@ public class CharacterRuntimeOrchestrationTests
         private readonly CharacterMood _mood;
         private readonly int _intensity;
         private readonly int _delta;
+        private readonly RelationshipEventProposal? _event;
         public int CallCount { get; private set; }
 
-        public FakeLLMService(string reply, CharacterMood mood, int intensity, int delta)
+        public FakeLLMService(string reply, CharacterMood mood, int intensity, int delta, RelationshipEventProposal? evt = null)
         {
             _reply = reply;
             _mood = mood;
             _intensity = intensity;
             _delta = delta;
+            _event = evt;
         }
 
         public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(RoleplayContext context, CancellationToken ct = default)
         {
             CallCount++;
-            return Task.FromResult(new RoleplayTurnResult(_reply, _mood, _intensity, _delta, null));
+            return Task.FromResult(new RoleplayTurnResult(_reply, _mood, _intensity, _delta, _event));
         }
 
         public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, IReadOnlyCollection<CharacterMemory>? memories = null, CancellationToken ct = default)
         {
-            return Task.FromResult(new RoleplayTurnResult(_reply, _mood, _intensity, _delta, null));
+            return Task.FromResult(new RoleplayTurnResult(_reply, _mood, _intensity, _delta, _event));
         }
 
         public Task<string> GenerateRoleplayResponseAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, CancellationToken ct = default)

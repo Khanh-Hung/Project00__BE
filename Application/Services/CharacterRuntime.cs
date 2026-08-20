@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.Json;
 using Application.Abstractions.Data;
 using Application.Common;
 using Application.DTOs;
@@ -7,6 +9,7 @@ using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Application.Services;
@@ -22,6 +25,9 @@ public sealed class CharacterRuntime : ICharacterRuntime
     private readonly IVisualPromptCompiler _visualCompiler;
     private readonly IImageGenerationService _imageService;
     private readonly ILogger<CharacterRuntime> _logger;
+
+    // Concurrent in-flight gates to eliminate duplicate LLM execution on concurrent identical TurnIds
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> InFlightTurnLocks = new();
 
     public CharacterRuntime(
         IUnitOfWork unitOfWork,
@@ -48,37 +54,35 @@ public sealed class CharacterRuntime : ICharacterRuntime
     public async Task<CharacterTurnResult> ProcessTurnAsync(CharacterTurnRequest request, CancellationToken ct = default)
     {
         var turnId = request.TurnId ?? Guid.NewGuid();
-        var traceStopwatch = Stopwatch.StartNew();
+        var turnLock = InFlightTurnLocks.GetOrAdd(turnId, _ => new SemaphoreSlim(1, 1));
 
-        // 1. Persistent Database-Backed Idempotency Check: Return existing turn on retry
+        await turnLock.WaitAsync(ct);
+        try
+        {
+            return await ExecuteTurnPipelineAsync(turnId, request, ct);
+        }
+        finally
+        {
+            turnLock.Release();
+            // Clean up completed turn lock if no other callers are waiting
+            if (turnLock.CurrentCount == 1)
+            {
+                InFlightTurnLocks.TryRemove(turnId, out _);
+            }
+        }
+    }
+
+    private async Task<CharacterTurnResult> ExecuteTurnPipelineAsync(Guid turnId, CharacterTurnRequest request, CancellationToken ct)
+    {
+        var traceStopwatch = Stopwatch.StartNew();
         var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
+
+        // 1. Persistent Database-Backed Idempotency Check: Return full deterministic response on retry
         var existingTurn = await turnRepo.GetAsync(t => t.TurnId == turnId, ct);
         if (existingTurn != null)
         {
             _logger.LogInformation("Persistent idempotency hit for TurnId '{TurnId}'. Returning previous response from database without re-executing LLM.", turnId);
-            
-            var (relLevel, stageName, _) = RelationshipStageResolver.Resolve(existingTurn.AffectionScore);
-            var cachedRelationshipDto = new CharacterRelationshipDto(
-                Id: Guid.Empty,
-                CharacterId: existingTurn.CharacterId,
-                UserId: existingTurn.UserId,
-                AffectionScore: existingTurn.AffectionScore,
-                CurrentMood: Enum.TryParse<CharacterMood>(existingTurn.Mood, out var parsedCachedMood) ? parsedCachedMood : CharacterMood.Neutral,
-                MoodIntensity: existingTurn.MoodIntensity,
-                Events: new List<RelationshipEventDto>(),
-                LastInteractedAt: existingTurn.CreatedAt
-            );
-
-            return new CharacterTurnResult(
-                MessageId: existingTurn.AssistantMessageId,
-                TurnId: existingTurn.TurnId,
-                Reply: existingTurn.AssistantReply,
-                Relationship: cachedRelationshipDto,
-                ActiveMemories: new List<CharacterMemoryDto>(),
-                Mood: existingTurn.Mood,
-                MoodIntensity: existingTurn.MoodIntensity,
-                AffectionDelta: existingTurn.AffectionDelta
-            );
+            return MapExistingTurnToResult(existingTurn);
         }
 
         _logger.LogInformation("Starting Character Turn {TurnId} for User {UserId}, Session {SessionId}",
@@ -101,22 +105,41 @@ public sealed class CharacterRuntime : ICharacterRuntime
         var aiTurn = await _llmService.GenerateRoleplayTurnAsync(context, ct);
         llmStopwatch.Stop();
 
-        // 4. Critical Path: Mutate Session, Relationship & Persistent Turn Record atomically in DB
+        // 4. Critical Path: Prepare Session, Relationship & Persistent Turn Record
         var userMsg = session.AddUserMessage(request.UserMessage);
         var assistantMessage = session.AddAssistantMessage(aiTurn.Reply);
 
-        var relationshipRepo = _unitOfWork.GetRepository<CharacterRelationship>();
-        if (relationship == null && request.UserId != Guid.Empty)
-        {
-            relationship = CharacterRelationship.Create(character.Id, request.UserId, character.DefaultAffectionScore);
-            await relationshipRepo.AddAsync(relationship, ct);
-        }
+        var messageRepo = _unitOfWork.GetRepository<ChatMessage>();
+        await messageRepo.AddAsync(userMsg, ct);
+        await messageRepo.AddAsync(assistantMessage, ct);
 
+        var relationshipRepo = _unitOfWork.GetRepository<CharacterRelationship>();
         int appliedDelta = 0;
         CharacterMood currentMood = aiTurn.Mood;
         int currentIntensity = Math.Clamp(aiTurn.MoodIntensity, 0, 100);
 
-        if (relationship != null)
+        if (relationship == null && request.UserId != Guid.Empty)
+        {
+            var clampedDelta = Math.Clamp(aiTurn.AffectionDelta, -5, 5);
+            var initialScore = Math.Clamp(character.DefaultAffectionScore + clampedDelta, -100, 100);
+            appliedDelta = initialScore - character.DefaultAffectionScore;
+
+            relationship = CharacterRelationship.Create(
+                character.Id,
+                request.UserId,
+                initialAffection: initialScore,
+                initialMood: currentMood,
+                initialMoodIntensity: currentIntensity,
+                initialTimestamp: Clock.Now);
+
+            if (aiTurn.Event != null && !string.IsNullOrWhiteSpace(aiTurn.Event.Key))
+            {
+                relationship.TryUnlockEvent(aiTurn.Event.Key, aiTurn.Event.Context, Clock.Now);
+            }
+
+            await relationshipRepo.AddAsync(relationship, ct);
+        }
+        else if (relationship != null)
         {
             var clampedDelta = Math.Clamp(aiTurn.AffectionDelta, -5, 5);
             var (_, _, delta) = relationship.ApplyAffectionDelta(clampedDelta, Clock.Now);
@@ -130,12 +153,22 @@ public sealed class CharacterRuntime : ICharacterRuntime
             }
         }
 
-        var (level, currentStageName, _) = RelationshipStageResolver.Resolve(relationship?.AffectionScore ?? character.DefaultAffectionScore, character.CustomMilestonesJson);
+        var (level, currentStageName, _) = RelationshipStageResolver.Resolve(
+            relationship?.AffectionScore ?? character.DefaultAffectionScore,
+            character.CustomMilestonesJson);
 
-        // Commit DB transaction for messages and relationship state
-        await _unitOfWork.SaveChangesAsync(ct);
+        var eventsDto = relationship?.Events
+            .Select(e => new RelationshipEventDto(e.EventKey, e.Context, e.UnlockedAt))
+            .ToList() ?? new List<RelationshipEventDto>();
 
-        // Create persistent idempotency record with verified message IDs
+        var activeMemoriesDto = context.Memories
+            .Select(m => new CharacterMemoryDto(m.Id, m.Content, m.Type, m.Importance, 1.0m, m.CreatedAt))
+            .ToList();
+
+        var eventsJson = JsonSerializer.Serialize(eventsDto);
+        var memoriesJson = JsonSerializer.Serialize(activeMemoriesDto);
+
+        // Prepare persistent idempotency record with verified message IDs
         var turnRecord = new CharacterTurn(
             turnId: turnId,
             sessionId: session.Id,
@@ -149,10 +182,49 @@ public sealed class CharacterRuntime : ICharacterRuntime
             moodIntensity: currentIntensity,
             affectionDelta: appliedDelta,
             affectionScore: relationship?.AffectionScore ?? character.DefaultAffectionScore,
-            relationshipStage: currentStageName
+            relationshipStage: currentStageName,
+            eventsJson: eventsJson,
+            activeMemoriesJson: memoriesJson
         );
         await turnRepo.AddAsync(turnRecord, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+
+        // 5. Truly Atomic Single SaveChanges with Optimistic Concurrency Reconciliation
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            var conflictEntities = string.Join(", ", ex.Entries.Select(e => $"{e.Entity.GetType().Name} (State: {e.State})"));
+            _logger.LogWarning(ex, "Optimistic concurrency conflict on entries [{Entries}] for Turn {TurnId}. Reconciling state...", conflictEntities, turnId);
+
+            // Reconcile: Reload fresh relationship from DB and re-apply mutations
+            var freshRelationship = await relationshipRepo.GetAsync(r => r.CharacterId == character.Id && r.UserId == request.UserId, ct);
+            if (freshRelationship != null)
+            {
+                freshRelationship.ApplyAffectionDelta(Math.Clamp(aiTurn.AffectionDelta, -5, 5), Clock.Now);
+                freshRelationship.UpdateMood(currentMood, currentIntensity, Clock.Now);
+                if (aiTurn.Event != null && !string.IsNullOrWhiteSpace(aiTurn.Event.Key))
+                {
+                    freshRelationship.TryUnlockEvent(aiTurn.Event.Key, aiTurn.Event.Context, Clock.Now);
+                }
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+            else
+            {
+                throw;
+            }
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("IX_CharacterTurns_TurnId") == true || ex.Message.Contains("IX_CharacterTurns_TurnId"))
+        {
+            _logger.LogInformation("Concurrent duplicate TurnId detected on DB insert for Turn {TurnId}. Fetching committed record.", turnId);
+            var committedTurn = await turnRepo.GetAsync(t => t.TurnId == turnId, ct);
+            if (committedTurn != null)
+            {
+                return MapExistingTurnToResult(committedTurn);
+            }
+            throw;
+        }
 
         var relationshipDto = new CharacterRelationshipDto(
             Id: relationship?.Id ?? Guid.Empty,
@@ -161,20 +233,11 @@ public sealed class CharacterRuntime : ICharacterRuntime
             AffectionScore: relationship?.AffectionScore ?? character.DefaultAffectionScore,
             CurrentMood: currentMood,
             MoodIntensity: currentIntensity,
-            Events: relationship?.Events.Select(e => new RelationshipEventDto(e.EventKey, e.Context, e.UnlockedAt)).ToList() ?? new List<RelationshipEventDto>(),
+            Events: eventsDto,
             LastInteractedAt: relationship?.LastInteractedAt ?? Clock.Now
         );
 
-        var activeMemoriesDto = context.Memories.Select(m => new CharacterMemoryDto(
-            Id: m.Id,
-            Content: m.Content,
-            Type: m.Type,
-            Importance: m.Importance,
-            Confidence: 1.0m,
-            CreatedAt: m.CreatedAt
-        )).ToList();
-
-        // 5. Asynchronous & Failure-Isolated Side Effects (Triggered post-commit, non-blocking)
+        // 6. Asynchronous & Failure-Isolated Side Effects (Dispatched post-commit, non-blocking)
         
         // Side effect 1: Long-term memory extraction trigger (Background Worker)
         try
@@ -248,7 +311,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
         }
 
         traceStopwatch.Stop();
-        _logger.LogInformation("Turn {TurnId} committed in {TotalMs}ms (LLM: {LlmMs}ms). AffectionDelta: {Delta}, Mood: {Mood}",
+        _logger.LogInformation("Turn {TurnId} committed atomically in {TotalMs}ms (LLM: {LlmMs}ms). AffectionDelta: {Delta}, Mood: {Mood}",
             turnId, traceStopwatch.ElapsedMilliseconds, llmStopwatch.ElapsedMilliseconds, appliedDelta, currentMood);
 
         return new CharacterTurnResult(
@@ -257,11 +320,45 @@ public sealed class CharacterRuntime : ICharacterRuntime
             Reply: aiTurn.Reply,
             Relationship: relationshipDto,
             ActiveMemories: activeMemoriesDto,
-            AudioUrl: null, // Audio and Image are generated asynchronously in background
+            AudioUrl: null,
             ImageUrl: null,
             Mood: currentMood.ToString(),
             MoodIntensity: currentIntensity,
             AffectionDelta: appliedDelta
+        );
+    }
+
+    private static CharacterTurnResult MapExistingTurnToResult(CharacterTurn existingTurn)
+    {
+        var (relLevel, stageName, _) = RelationshipStageResolver.Resolve(existingTurn.AffectionScore);
+        var restoredEvents = string.IsNullOrWhiteSpace(existingTurn.EventsJson)
+            ? new List<RelationshipEventDto>()
+            : JsonSerializer.Deserialize<List<RelationshipEventDto>>(existingTurn.EventsJson) ?? new List<RelationshipEventDto>();
+
+        var restoredMemories = string.IsNullOrWhiteSpace(existingTurn.ActiveMemoriesJson)
+            ? new List<CharacterMemoryDto>()
+            : JsonSerializer.Deserialize<List<CharacterMemoryDto>>(existingTurn.ActiveMemoriesJson) ?? new List<CharacterMemoryDto>();
+
+        var cachedRelationshipDto = new CharacterRelationshipDto(
+            Id: Guid.Empty,
+            CharacterId: existingTurn.CharacterId,
+            UserId: existingTurn.UserId,
+            AffectionScore: existingTurn.AffectionScore,
+            CurrentMood: Enum.TryParse<CharacterMood>(existingTurn.Mood, out var parsedCachedMood) ? parsedCachedMood : CharacterMood.Neutral,
+            MoodIntensity: existingTurn.MoodIntensity,
+            Events: restoredEvents,
+            LastInteractedAt: existingTurn.CreatedAt
+        );
+
+        return new CharacterTurnResult(
+            MessageId: existingTurn.AssistantMessageId,
+            TurnId: existingTurn.TurnId,
+            Reply: existingTurn.AssistantReply,
+            Relationship: cachedRelationshipDto,
+            ActiveMemories: restoredMemories,
+            Mood: existingTurn.Mood,
+            MoodIntensity: existingTurn.MoodIntensity,
+            AffectionDelta: existingTurn.AffectionDelta
         );
     }
 }

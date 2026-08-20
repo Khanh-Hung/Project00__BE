@@ -47,7 +47,10 @@ public class ProjectDbContext : DbContext
                     {
                         entry.Entity.Id = Guid.CreateVersion7();
                     }
-                    entry.Entity.SetCreated(Clock.Now, userId);
+                    if (entry.Entity.CreatedAt == default)
+                    {
+                        entry.Entity.SetCreated(Clock.Now, userId);
+                    }
                     break;
                 case EntityState.Modified:
                     if (!entry.Property(nameof(Entity.UpdatedAt)).IsModified &&

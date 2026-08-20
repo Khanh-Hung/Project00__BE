@@ -17,6 +17,8 @@ public sealed class CharacterTurn : BaseEntity
     public int AffectionDelta { get; private set; }
     public int AffectionScore { get; private set; }
     public string RelationshipStage { get; private set; } = "Stranger";
+    public string? EventsJson { get; private set; }
+    public string? ActiveMemoriesJson { get; private set; }
 
     private CharacterTurn() { } // EF Core
 
@@ -33,7 +35,9 @@ public sealed class CharacterTurn : BaseEntity
         int moodIntensity,
         int affectionDelta,
         int affectionScore,
-        string relationshipStage)
+        string relationshipStage,
+        string? eventsJson = null,
+        string? activeMemoriesJson = null)
     {
         TurnId = turnId;
         SessionId = sessionId;
@@ -48,5 +52,7 @@ public sealed class CharacterTurn : BaseEntity
         AffectionDelta = affectionDelta;
         AffectionScore = affectionScore;
         RelationshipStage = relationshipStage;
+        EventsJson = eventsJson;
+        ActiveMemoriesJson = activeMemoriesJson;
     }
 }
