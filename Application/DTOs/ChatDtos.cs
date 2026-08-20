@@ -43,7 +43,10 @@ public record ChatSessionDto(
     string? RelationshipStage = null,
     string? CurrentMood = null,
     int MoodIntensity = 20,
-    List<RelationshipEventDto>? UnlockedEvents = null
+    List<RelationshipEventDto>? UnlockedEvents = null,
+    SessionStatus Status = SessionStatus.Active,
+    string? WalkOutReason = null,
+    DateTime? WalkedOutAt = null
 );
 
 public record ChatSessionListItemDto(
@@ -58,7 +61,9 @@ public record ChatSessionListItemDto(
     DateTime CreatedAt,
     int AffectionScore = 0,
     int RelationshipLevel = 1,
-    string? RelationshipStage = null
+    string? RelationshipStage = null,
+    SessionStatus Status = SessionStatus.Active,
+    string? WalkOutReason = null
 );
 
 public record CreateSessionRequest(
@@ -83,7 +88,10 @@ public record SendMessageResponse(
     int MoodIntensity = 20,
     int AffectionDelta = 0,
     bool LevelUp = false,
-    RelationshipEventDto? UnlockedEvent = null
+    RelationshipEventDto? UnlockedEvent = null,
+    bool HasWalkedOut = false,
+    string? WalkOutReason = null,
+    SessionStatus SessionStatus = SessionStatus.Active
 );
 
 public record RelationshipEventProposal(
@@ -96,14 +104,19 @@ public record RoleplayTurnResult(
     CharacterMood Mood = CharacterMood.Neutral,
     int MoodIntensity = 20,
     int AffectionDelta = 0,
-    RelationshipEventProposal? Event = null
+    RelationshipEventProposal? Event = null,
+    bool HasWalkedOut = false,
+    string? WalkOutReason = null
 );
 
-public record GenerateSceneImageRequest(
-    Guid? SessionId,
-    string? CharacterName,
-    string? CharacterTitle,
-    string? CharacterPersonality,
-    string MessageContent,
-    string? UserMessageContent = null
+public record RegenerateResponse(
+    ChatMessageDto NewAssistantMessage,
+    int AffectionScore = 0,
+    int RelationshipLevel = 1,
+    string? RelationshipStage = null,
+    string? CurrentMood = null,
+    int MoodIntensity = 20,
+    int AffectionDelta = 0,
+    bool LevelUp = false,
+    RelationshipEventDto? UnlockedEvent = null
 );

@@ -63,7 +63,9 @@ public sealed class GetUserChatSessionsHandler : IRequestHandler<GetUserChatSess
                     s.CreatedAt,
                     affection,
                     level,
-                    stageName
+                    stageName,
+                    s.Status,
+                    s.WalkOutReason
                 );
             })
             .ToList();

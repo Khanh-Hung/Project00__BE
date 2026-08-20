@@ -318,9 +318,14 @@ public sealed class CharacterRuntime : ICharacterRuntime
             RelationshipStage: currentStageName
         );
 
+        if (aiTurn.HasWalkedOut)
+        {
+            session.WalkOut(aiTurn.WalkOutReason ?? "Nhân vật đã rời khỏi cuộc trò chuyện do bị xúc phạm hoặc vi phạm ranh giới.", Clock.Now);
+        }
+
         traceStopwatch.Stop();
-        _logger.LogInformation("Turn {TurnId} committed atomically with Outbox in {TotalMs}ms (LLM: {LlmMs}ms). AffectionDelta: {Delta}, Mood: {Mood}",
-            turnId, traceStopwatch.ElapsedMilliseconds, llmStopwatch.ElapsedMilliseconds, appliedDelta, currentMood);
+        _logger.LogInformation("Turn {TurnId} committed atomically with Outbox in {TotalMs}ms (LLM: {LlmMs}ms). AffectionDelta: {Delta}, Mood: {Mood}, WalkedOut: {WalkedOut}",
+            turnId, traceStopwatch.ElapsedMilliseconds, llmStopwatch.ElapsedMilliseconds, appliedDelta, currentMood, aiTurn.HasWalkedOut);
 
         return new CharacterTurnResult(
             MessageId: assistantMessage.Id,
@@ -332,7 +337,10 @@ public sealed class CharacterRuntime : ICharacterRuntime
             ImageUrl: null,
             Mood: currentMood.ToString(),
             MoodIntensity: currentIntensity,
-            AffectionDelta: appliedDelta
+            AffectionDelta: appliedDelta,
+            HasWalkedOut: aiTurn.HasWalkedOut,
+            WalkOutReason: aiTurn.WalkOutReason,
+            SessionStatus: session.Status
         );
     }
 
@@ -569,6 +577,11 @@ public sealed class CharacterRuntime : ICharacterRuntime
             RelationshipStage: currentStageName
         );
 
+        if (aiTurn.HasWalkedOut)
+        {
+            session.WalkOut(aiTurn.WalkOutReason ?? "Nhân vật đã rời khỏi cuộc trò chuyện do bị xúc phạm hoặc vi phạm ranh giới.", Clock.Now);
+        }
+
         // 8. Emit Lifecycle Events
         yield return CharacterStreamEvent.Metadata(
             currentMood.ToString(),
@@ -629,7 +642,10 @@ public sealed class CharacterRuntime : ICharacterRuntime
                     proposal = new RelationshipEventProposal(kProp.GetString()!, ctx);
                 }
 
-                return new RoleplayTurnResult(reply, mood, intensity, delta, proposal);
+                var hasWalkedOut = root.TryGetProperty("hasWalkedOut", out var woProp) && (woProp.ValueKind == JsonValueKind.True || (woProp.ValueKind == JsonValueKind.String && bool.TryParse(woProp.GetString(), out var bw) && bw));
+                var walkOutReason = root.TryGetProperty("walkOutReason", out var wrProp) && wrProp.ValueKind == JsonValueKind.String ? wrProp.GetString() : null;
+
+                return new RoleplayTurnResult(reply, mood, intensity, delta, proposal, hasWalkedOut, walkOutReason);
             }
         }
         catch

@@ -77,7 +77,10 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
             MoodIntensity: turnResult.MoodIntensity,
             AffectionDelta: turnResult.AffectionDelta,
             LevelUp: false,
-            UnlockedEvent: null
+            UnlockedEvent: null,
+            HasWalkedOut: turnResult.HasWalkedOut,
+            WalkOutReason: turnResult.WalkOutReason,
+            SessionStatus: turnResult.SessionStatus
         ));
     }
 }

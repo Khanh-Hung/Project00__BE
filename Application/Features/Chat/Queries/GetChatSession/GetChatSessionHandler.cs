@@ -69,7 +69,10 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
             stageName,
             relationship?.CurrentMood.ToString() ?? character.DefaultMood ?? "Neutral",
             relationship?.MoodIntensity ?? 20,
-            eventsDto
+            eventsDto,
+            session.Status,
+            session.WalkOutReason,
+            session.WalkedOutAt
         );
 
         return Result<ChatSessionDto>.Success(dto);

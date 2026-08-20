@@ -1,5 +1,6 @@
 using Application.Common;
 using Application.DTOs;
+using Domain.Enums;
 
 namespace Application.Interfaces;
 
@@ -27,7 +28,10 @@ public sealed record CharacterTurnResult(
     string? ImageUrl = null,
     string Mood = "Neutral",
     int MoodIntensity = 50,
-    int AffectionDelta = 0
+    int AffectionDelta = 0,
+    bool HasWalkedOut = false,
+    string? WalkOutReason = null,
+    SessionStatus SessionStatus = SessionStatus.Active
 );
 
 public interface ICharacterRuntime
