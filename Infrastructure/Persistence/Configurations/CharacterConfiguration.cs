@@ -30,5 +30,12 @@ public sealed class CharacterConfiguration : IEntityTypeConfiguration<Character>
                 v => v == null ? null : System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
                 v => string.IsNullOrWhiteSpace(v) ? null : System.Text.Json.JsonSerializer.Deserialize<Domain.ValueObjects.CharacterVisualIdentity>(v, (System.Text.Json.JsonSerializerOptions?)null)
             );
+
+        builder.Property(c => c.VoiceProfile)
+            .HasColumnType("jsonb")
+            .HasConversion(
+                v => v == null ? null : System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                v => string.IsNullOrWhiteSpace(v) ? null : System.Text.Json.JsonSerializer.Deserialize<Domain.ValueObjects.CharacterVoiceProfile>(v, (System.Text.Json.JsonSerializerOptions?)null)
+            );
     }
 }

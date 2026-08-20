@@ -75,6 +75,10 @@ public static class DependencyInjection
         var imageProvider = configuration["AiProviders:ImageProvider"] ?? "Pollinations";
         services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
 
+        // 7. Add Voice Generation Service (Phase 7 - Character Voice & Audio)
+        services.AddHttpClient<Infrastructure.Services.VoiceGenerationService>();
+        services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
+
         // 7. Add LLM Services & Prompt Compiler
         services.AddSingleton<IPromptCompiler, Infrastructure.LLM.Prompts.PromptCompiler>();
         services.AddHttpClient<Infrastructure.LLM.Core.GeminiApiClient>();
