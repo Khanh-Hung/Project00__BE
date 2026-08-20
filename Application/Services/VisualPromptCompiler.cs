@@ -7,8 +7,6 @@ namespace Application.Services;
 
 public sealed class VisualPromptCompiler : IVisualPromptCompiler
 {
-    private const string BaseQualityTags = "masterpiece, best quality, highly detailed, anime aesthetic, 8k, sharp focus, vibrant colors";
-
     public string CompileAvatarPrompt(Character character)
     {
         var identity = character.VisualIdentity;
@@ -28,14 +26,13 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         }
         else
         {
-            // Fallback derived from character basic metadata
             traits.Add($"1girl, {character.Name}");
             if (!string.IsNullOrWhiteSpace(character.Category)) traits.Add(character.Category);
             if (!string.IsNullOrWhiteSpace(character.Title)) traits.Add(character.Title);
         }
 
         var identityTags = string.Join(", ", traits.Where(t => !string.IsNullOrWhiteSpace(t)));
-        return $"solo, close-up portrait, {identityTags}, looking at viewer, gentle smile, atmospheric lighting, beautiful detailed background, {BaseQualityTags}";
+        return $"solo, close-up portrait, {identityTags}, looking at viewer, gentle smile, atmospheric lighting, detailed background";
     }
 
     public string CompileScenePrompt(Character character, SceneContext scene, CharacterRelationship? relationship = null)
@@ -43,7 +40,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         var identity = character.VisualIdentity;
         var characterTags = new List<string>();
 
-        // 1. Immutable Visual Foundation (Preserved in every scene)
+        // 1. Immutable Visual Foundation (Hierarchy: Identity > Scene > Mood > Relationship)
         if (identity != null)
         {
             if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) characterTags.Add(identity.AgeAppearance);
@@ -52,6 +49,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             if (!string.IsNullOrWhiteSpace(identity.Face)) characterTags.Add(identity.Face);
             if (!string.IsNullOrWhiteSpace(identity.Skin)) characterTags.Add(identity.Skin);
             if (!string.IsNullOrWhiteSpace(identity.Body)) characterTags.Add(identity.Body);
+            
             // Default clothing if scene doesn't specify specific outfit
             if (string.IsNullOrWhiteSpace(scene.Outfit) && !string.IsNullOrWhiteSpace(identity.ClothingStyle))
             {
@@ -66,15 +64,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             if (!string.IsNullOrWhiteSpace(character.Title)) characterTags.Add(character.Title);
         }
 
-        // 2. Dynamic Scene Context & Interaction
-        var sceneTags = new List<string>();
-        if (!string.IsNullOrWhiteSpace(scene.Outfit)) sceneTags.Add($"wearing {scene.Outfit}");
-        if (!string.IsNullOrWhiteSpace(scene.Pose)) sceneTags.Add(scene.Pose);
-        if (!string.IsNullOrWhiteSpace(scene.Action)) sceneTags.Add(scene.Action);
-        if (!string.IsNullOrWhiteSpace(scene.Location)) sceneTags.Add($"in {scene.Location}");
-        if (!string.IsNullOrWhiteSpace(scene.TimeOfDay)) sceneTags.Add(scene.TimeOfDay);
-
-        // 3. Dynamic Emotional Expression from Scene & Relationship Mood
+        // 2. Dynamic Emotional Expression from Scene & Relationship Mood
         var expressionTags = new List<string>();
         if (!string.IsNullOrWhiteSpace(scene.Expression))
         {
@@ -90,17 +80,25 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             expressionTags.Add("gentle expression, soft gaze");
         }
 
-        // 4. Intimacy Aura from Relationship Affection
+        // 3. Dynamic Scene Context & Interaction
+        var sceneTags = new List<string>();
+        if (!string.IsNullOrWhiteSpace(scene.Outfit)) sceneTags.Add($"wearing {scene.Outfit}");
+        if (!string.IsNullOrWhiteSpace(scene.Pose)) sceneTags.Add(scene.Pose);
+        if (!string.IsNullOrWhiteSpace(scene.Action)) sceneTags.Add(scene.Action);
+        if (!string.IsNullOrWhiteSpace(scene.Location)) sceneTags.Add($"in {scene.Location}");
+        if (!string.IsNullOrWhiteSpace(scene.TimeOfDay)) sceneTags.Add(scene.TimeOfDay);
+
+        // 4. Intimacy Aura from Relationship Affection (Affects interaction atmosphere only, never physical identity)
         if (relationship != null && relationship.AffectionScore >= 70)
         {
             expressionTags.Add("loving eye contact, intimate atmosphere, subtle blush");
         }
 
         var identityPart = string.Join(", ", characterTags.Where(t => !string.IsNullOrWhiteSpace(t)));
-        var scenePart = string.Join(", ", sceneTags.Where(t => !string.IsNullOrWhiteSpace(t)));
         var expressionPart = string.Join(", ", expressionTags.Where(t => !string.IsNullOrWhiteSpace(t)));
+        var scenePart = string.Join(", ", sceneTags.Where(t => !string.IsNullOrWhiteSpace(t)));
 
-        var parts = new List<string> { identityPart, expressionPart, scenePart, "cinematic composition, dramatic lighting, detailed background", BaseQualityTags };
+        var parts = new List<string> { identityPart, expressionPart, scenePart, "cinematic composition, dramatic lighting, detailed background" };
         return string.Join(", ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 
