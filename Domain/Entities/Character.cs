@@ -1,4 +1,5 @@
 using Domain.Common;
+using Domain.Enums;
 using Domain.ValueObjects;
 
 namespace Domain.Entities;
@@ -18,6 +19,7 @@ public class Character : BaseEntity
     public string? CustomMilestonesJson { get; private set; }
     public string? WorldName { get; private set; }
     public string? WorldDescription { get; private set; }
+    public WorldGenre WorldGenre { get; private set; } = WorldGenre.MundaneSliceOfLife;
     public CharacterBlueprint? Blueprint { get; private set; }
     public CharacterVisualIdentity? VisualIdentity { get; private set; }
     public CharacterVoiceProfile? VoiceProfile { get; private set; }
@@ -40,7 +42,8 @@ public class Character : BaseEntity
         CharacterVisualIdentity? visualIdentity = null,
         CharacterVoiceProfile? voiceProfile = null,
         string? worldName = null,
-        string? worldDescription = null)
+        string? worldDescription = null,
+        WorldGenre worldGenre = WorldGenre.MundaneSliceOfLife)
     {
         Name = name;
         Title = title;
@@ -58,6 +61,7 @@ public class Character : BaseEntity
         VoiceProfile = voiceProfile;
         WorldName = worldName;
         WorldDescription = worldDescription;
+        WorldGenre = worldGenre;
     }
 
     public void UpdateDetails(
@@ -78,7 +82,8 @@ public class Character : BaseEntity
         CharacterVoiceProfile? voiceProfile = null,
         bool updateVoiceProfile = false,
         string? worldName = null,
-        string? worldDescription = null)
+        string? worldDescription = null,
+        WorldGenre? worldGenre = null)
     {
         Name = name;
         Title = title;
@@ -119,13 +124,21 @@ public class Character : BaseEntity
         {
             WorldDescription = worldDescription;
         }
+        if (worldGenre.HasValue)
+        {
+            WorldGenre = worldGenre.Value;
+        }
         Touch();
     }
 
-    public void SetWorldSetting(string? worldName, string? worldDescription)
+    public void SetWorldSetting(string? worldName, string? worldDescription, WorldGenre? worldGenre = null)
     {
         WorldName = worldName;
         WorldDescription = worldDescription;
+        if (worldGenre.HasValue)
+        {
+            WorldGenre = worldGenre.Value;
+        }
         Touch();
     }
 
