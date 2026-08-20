@@ -255,6 +255,98 @@ public class PromptCompilerAndContextEngineTests
         Assert.True(result.RecentMessages.Count < 10, "Engine should prune oldest messages when token budget is exceeded");
         // Verify that the newest message is preserved
         Assert.Contains("Message 10", result.RecentMessages.Last().Content);
+        // Verify current user message is always preserved
+        Assert.Equal("Latest user prompt", result.UserMessage);
+    }
+
+    [Fact]
+    public void PromptCompiler_UnderExtremeContext_PreservesCoreLayersAndUserMessage()
+    {
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        // Create character with massive blueprint
+        var blueprint = new CharacterBlueprint(
+            new PsychologyProfile(
+                Desires: "Master all forbidden magic and conquer the cosmos",
+                Fears: "Losing control and hurting loved ones",
+                Insecurities: "Not being strong enough",
+                CoreBeliefs: "Knowledge is power",
+                InternalConflicts: "Duty vs desire",
+                Values: "Loyalty, Freedom"
+            ),
+            new BehaviorProfile(
+                WhenHappy: "Smiles brightly and hums magical tunes",
+                WhenSad: "Isolates herself in the library",
+                WhenAngry: "Casts chilling ice frost around",
+                WhenTeased: "Blushes and looks away",
+                WhenPraised: "Stammers with genuine gratitude",
+                WhenRejected: "Maintains cold composure"
+            ),
+            new ExpressionProfile(
+                SpeechStyle: "Elegant, poetic, archaic",
+                Formality: "Semi-formal",
+                HumorStyle: "Dry, witty",
+                EmojiUsage: "Rarely",
+                TypicalPhrases: new List<string> { "By the stars...", "Interesting hypothesis." }
+            ),
+            new CharacterRules(
+                MustDo: new List<string> { "Always uphold wizard code", "Protect ancient books" },
+                MustNotDo: new List<string> { "Never harm innocents", "Never submit blindly" },
+                AntiSycophancy: "Reject false claims firmly",
+                Boundaries: new List<string> { "Do not touch her spellbook without permission" }
+            )
+        );
+
+        var character = new Character("Luna", "Grand Archmage", "https://example.com/avatar.jpg", "A mystical sorceress", "Greetings", "Fantasy", blueprint: blueprint)
+        {
+            Id = charId
+        };
+
+        var relationship = CharacterRelationship.Create(charId, userId, initialAffection: 85, initialMood: CharacterMood.Affectionate, initialMoodIntensity: 90);
+        relationship.TryUnlockEvent("BloodMoonPromise", "Promised under the blood moon to journey together");
+
+        var memories = new List<CharacterMemory>
+        {
+            CharacterMemory.Create(charId, userId, "Memory 1: User likes mint tea", MemoryType.Preference, 4),
+            CharacterMemory.Create(charId, userId, "Memory 2: User shared a secret about childhood", MemoryType.Secret, 5),
+            CharacterMemory.Create(charId, userId, "Memory 3: Met at the ancient ruins", MemoryType.Event, 3),
+            CharacterMemory.Create(charId, userId, "Memory 4: Promised to train together", MemoryType.Promise, 5),
+            CharacterMemory.Create(charId, userId, "Memory 5: User has an owl companion", MemoryType.Fact, 4),
+            CharacterMemory.Create(charId, userId, "Memory 6: User is allergic to moon dust", MemoryType.Fact, 3)
+        };
+
+        var recentMessages = new List<ChatMessage>
+        {
+            new ChatMessage(Guid.NewGuid(), MessageRole.User, "Can you show me the ancient spell?"),
+            new ChatMessage(Guid.NewGuid(), MessageRole.Assistant, "Of course, observe closely...")
+        };
+
+        var context = new RoleplayContext(
+            character,
+            relationship,
+            memories,
+            recentMessages,
+            "What happens next?",
+            new ChatSession(charId, userId, "Test")
+        );
+
+        var compiler = new PromptCompiler();
+        var systemPrompt = compiler.CompileSystemPrompt(context);
+        var contents = compiler.CompileConversationContents(context);
+
+        // Assert Layer 1 & 2 are inviolable and fully retained
+        Assert.Contains("[LAYER 1: DEEP PSYCHOLOGICAL BLUEPRINT]", systemPrompt);
+        Assert.Contains("Master all forbidden magic", systemPrompt);
+        Assert.Contains("[LAYER 2: AUTHORITATIVE CHARACTER RULES & ANTI-SYCOPHANCY]", systemPrompt);
+        Assert.Contains("Reject false claims firmly", systemPrompt);
+        Assert.Contains("[LAYER 3: DYNAMIC RELATIONSHIP STATE & INTIMACY STATUS]", systemPrompt);
+        Assert.Contains("BloodMoonPromise", systemPrompt);
+        Assert.Contains("[LAYER 4: RELEVANT LONG-TERM MEMORIES", systemPrompt);
+        Assert.Contains("Memory 1: User likes mint tea", systemPrompt);
+
+        // Assert current user message is always present in compiled contents payload
+        Assert.Contains(contents, c => c.ToString()!.Contains("What happens next?"));
     }
 
     private sealed class FakeMemoryService : IMemoryService
