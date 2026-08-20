@@ -63,7 +63,8 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 customMilestones,
                 c.Blueprint,
                 c.WorldName,
-                c.WorldDescription
+                c.WorldDescription,
+                c.WorldGenre
             );
         }).ToList();
 

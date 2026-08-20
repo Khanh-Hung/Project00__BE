@@ -40,7 +40,8 @@ public record CharacterDto(
     List<RelationshipMilestoneDto>? CustomMilestones = null,
     CharacterBlueprint? Blueprint = null,
     string? WorldName = null,
-    string? WorldDescription = null
+    string? WorldDescription = null,
+    WorldGenre WorldGenre = WorldGenre.MundaneSliceOfLife
 );
 
 public record CreateCharacterRequest(
@@ -58,6 +59,7 @@ public record CreateCharacterRequest(
     CharacterBlueprint? Blueprint = null,
     string? WorldName = null,
     string? WorldDescription = null,
+    WorldGenre WorldGenre = WorldGenre.MundaneSliceOfLife,
     List<GeneratedLorebookDto>? InitialLorebookEntries = null
 );
 
@@ -75,7 +77,8 @@ public record UpdateCharacterRequest(
     List<RelationshipMilestoneDto>? CustomMilestones = null,
     CharacterBlueprint? Blueprint = null,
     string? WorldName = null,
-    string? WorldDescription = null
+    string? WorldDescription = null,
+    WorldGenre? WorldGenre = null
 );
 
 public record GenerateCharacterAIRequest(
@@ -96,6 +99,7 @@ public record GeneratedCharacterDto(
     CharacterBlueprint? Blueprint = null,
     string? WorldName = null,
     string? WorldDescription = null,
+    WorldGenre WorldGenre = WorldGenre.MundaneSliceOfLife,
     List<GeneratedLorebookDto>? InitialLorebookEntries = null
 );
 

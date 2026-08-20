@@ -44,7 +44,8 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
             req.Blueprint,
             updateBlueprint: req.Blueprint != null,
             worldName: req.WorldName,
-            worldDescription: req.WorldDescription
+            worldDescription: req.WorldDescription,
+            worldGenre: req.WorldGenre
         );
         character.SetPublicStatus(req.IsPublic);
 
@@ -74,7 +75,8 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
             customMilestones,
             character.Blueprint,
             character.WorldName,
-            character.WorldDescription
+            character.WorldDescription,
+            character.WorldGenre
         );
 
         return Result<CharacterDto>.Success(dto);

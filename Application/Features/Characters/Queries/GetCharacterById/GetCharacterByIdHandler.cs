@@ -59,7 +59,8 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             customMilestones,
             character.Blueprint,
             character.WorldName,
-            character.WorldDescription
+            character.WorldDescription,
+            character.WorldGenre
         );
 
         return Result<CharacterDto>.Success(dto);
