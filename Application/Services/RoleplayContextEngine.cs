@@ -13,21 +13,25 @@ public sealed class RoleplayContextEngine : IRoleplayContextEngine
 {
     private const int MaxRecentMessagesBudget = 10;
     private const int MaxMemoriesBudget = 6;
+    private const int MaxLorebookTokenBudget = 800;
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMemoryService _memoryService;
     private readonly ICurrentUserProvider _currentUserProvider;
+    private readonly ILorebookEngine? _lorebookEngine;
     private readonly ILogger<RoleplayContextEngine> _logger;
 
     public RoleplayContextEngine(
         IUnitOfWork unitOfWork,
         IMemoryService memoryService,
         ICurrentUserProvider currentUserProvider,
-        ILogger<RoleplayContextEngine> logger)
+        ILogger<RoleplayContextEngine> logger,
+        ILorebookEngine? lorebookEngine = null)
     {
         _unitOfWork = unitOfWork;
         _memoryService = memoryService;
         _currentUserProvider = currentUserProvider;
+        _lorebookEngine = lorebookEngine;
         _logger = logger;
     }
 
@@ -137,13 +141,33 @@ public sealed class RoleplayContextEngine : IRoleplayContextEngine
             accumulatedTokens += msgTokens;
         }
 
+        // 7. Retrieve Relevant World Lorebook Entries within Budget
+        IReadOnlyList<LorebookEntry> matchedLore = Array.Empty<LorebookEntry>();
+        if (_lorebookEngine != null)
+        {
+            try
+            {
+                matchedLore = await _lorebookEngine.MatchLorebookEntriesAsync(
+                    character.Id,
+                    userMessage,
+                    boundedMessages,
+                    maxTokenBudget: MaxLorebookTokenBudget,
+                    ct: ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lorebook matching failed for Character {CharacterId}. Continuing without lorebook entries.", character.Id);
+            }
+        }
+
         return new RoleplayContext(
             character,
             relationship,
             relevantMemories,
             boundedMessages,
             userMessage,
-            session
+            session,
+            matchedLore
         );
     }
 }

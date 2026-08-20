@@ -8,5 +8,6 @@ public sealed record RoleplayContext(
     IReadOnlyList<CharacterMemory> Memories,
     IReadOnlyList<ChatMessage> RecentMessages,
     string UserMessage,
-    ChatSession Session
+    ChatSession Session,
+    IReadOnlyList<LorebookEntry>? LorebookEntries = null
 );
