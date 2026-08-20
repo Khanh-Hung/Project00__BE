@@ -16,15 +16,22 @@ public sealed class PollinationsImageGenerationService : IImageGenerationService
         _logger = logger;
     }
 
-    public async Task<string> GenerateImageAsync(
+    public Task<string> GenerateImageAsync(
         string prompt,
         int width = 512,
         int height = 512,
         CancellationToken ct = default)
     {
-        var finalPrompt = $"{prompt.Trim()}, masterpiece, best quality, ultra-detailed, sharp focus, 8k";
+        return GenerateImageAsync(new ImageGenerationRequest(prompt, width, height), ct);
+    }
+
+    public async Task<string> GenerateImageAsync(
+        ImageGenerationRequest request,
+        CancellationToken ct = default)
+    {
+        var finalPrompt = $"{request.Prompt.Trim()}, masterpiece, best quality, ultra-detailed, sharp focus, 8k";
         var randomSeed = Random.Shared.Next(1, 99999999);
-        var imageUrl = $"https://image.pollinations.ai/prompt/{Uri.EscapeDataString(finalPrompt)}?width={width}&height={height}&nologo=true&seed={randomSeed}";
+        var imageUrl = $"https://image.pollinations.ai/prompt/{Uri.EscapeDataString(finalPrompt)}?width={request.Width}&height={request.Height}&nologo=true&seed={randomSeed}";
 
         try
         {

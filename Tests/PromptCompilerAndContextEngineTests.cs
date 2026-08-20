@@ -346,7 +346,8 @@ public class PromptCompilerAndContextEngineTests
         Assert.Contains("Memory 1: User likes mint tea", systemPrompt);
 
         // Assert current user message is always present in compiled contents payload
-        Assert.Contains(contents, c => c.ToString()!.Contains("What happens next?"));
+        var serialized = System.Text.Json.JsonSerializer.Serialize(contents);
+        Assert.Contains("What happens next?", serialized);
     }
 
     private sealed class FakeMemoryService : IMemoryService
