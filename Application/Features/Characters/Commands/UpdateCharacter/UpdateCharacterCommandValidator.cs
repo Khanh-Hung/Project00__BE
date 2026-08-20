@@ -24,8 +24,7 @@ public sealed class UpdateCharacterCommandValidator : AbstractValidator<UpdateCh
             .MaximumLength(1000).WithMessage("Greeting message cannot exceed 1000 characters.")
             .When(x => !string.IsNullOrEmpty(x.Request.Greeting));
 
-        RuleFor(x => x.Request.Category)
-            .NotEmpty().WithMessage("Character category is required.");
+
 
         When(x => x.Request.DefaultAffectionScore.HasValue, () =>
         {

@@ -21,8 +21,7 @@ public sealed class CreateCharacterCommandValidator : AbstractValidator<CreateCh
             .MaximumLength(1000).WithMessage("Greeting message cannot exceed 1000 characters.")
             .When(x => !string.IsNullOrEmpty(x.Request.Greeting));
 
-        RuleFor(x => x.Request.Category)
-            .NotEmpty().WithMessage("Character category is required.");
+
 
         RuleFor(x => x.Request.DefaultAffectionScore)
             .InclusiveBetween(-100, 100).WithMessage("Initial affection score must be between -100 and 100.");
