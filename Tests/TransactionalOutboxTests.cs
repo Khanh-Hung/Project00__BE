@@ -148,7 +148,7 @@ public class TransactionalOutboxTests
 
     private sealed class FakeMemoryService : IMemoryService
     {
-        public Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(Guid userId, Guid characterId, int maxCount = 6, CancellationToken ct = default) =>
+        public Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(Guid userId, Guid characterId, int maxCount = 6, string? queryText = null, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<CharacterMemory>>(new List<CharacterMemory>());
 
         public Task<MemoryExtractionMetrics> StoreCandidatesAsync(Guid userId, Guid characterId, Guid? sessionId, IEnumerable<MemoryCandidate> candidates, CancellationToken ct = default) =>

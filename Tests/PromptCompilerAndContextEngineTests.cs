@@ -352,7 +352,7 @@ public class PromptCompilerAndContextEngineTests
 
     private sealed class FakeMemoryService : IMemoryService
     {
-        public Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(Guid userId, Guid characterId, int maxCount = 6, CancellationToken ct = default)
+        public Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(Guid userId, Guid characterId, int maxCount = 6, string? queryText = null, CancellationToken ct = default)
         {
             var list = new List<CharacterMemory>();
             for (int i = 1; i <= maxCount; i++)

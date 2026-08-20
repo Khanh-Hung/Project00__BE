@@ -480,7 +480,7 @@ public class CharacterRuntimeOrchestrationTests
 
     private sealed class FakeMemoryService : IMemoryService
     {
-        public Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(Guid userId, Guid characterId, int maxCount = 6, CancellationToken ct = default)
+        public Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(Guid userId, Guid characterId, int maxCount = 6, string? queryText = null, CancellationToken ct = default)
         {
             return Task.FromResult<IReadOnlyList<CharacterMemory>>(new List<CharacterMemory>());
         }
