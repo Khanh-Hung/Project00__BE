@@ -1,5 +1,6 @@
 using Application.Common;
 using Application.Interfaces;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 
@@ -11,54 +12,48 @@ public sealed class PromptCompiler : IPromptCompiler
     {
         var character = context.Character;
         var relationship = context.Relationship;
-        var memories = context.Memories;
+        var relationshipStage = relationship != null
+            ? RelationshipStageResolver.Resolve(relationship.AffectionScore, character.CustomMilestonesJson).StageName
+            : "Stranger";
 
-        // 1. Resolve Relationship Intimacy Stage & Behavioral Guideline
-        var affectionScore = relationship?.AffectionScore ?? character.DefaultAffectionScore;
-        var currentMood = relationship?.CurrentMood ?? (Enum.TryParse<CharacterMood>(character.DefaultMood, true, out var m) ? m : CharacterMood.Neutral);
-        var moodIntensity = relationship?.MoodIntensity ?? 20;
-
-        var (_, stageName, stageGuideline) = RelationshipStageResolver.Resolve(affectionScore, character.CustomMilestonesJson);
-
-        // 2. Format Unlocked Relationship Milestones (Limit top 2-3 to respect token budget)
-        var eventsLines = "";
-        if (relationship != null && relationship.Events.Count > 0)
+        // 1. Format Relationship Context
+        var relationshipSection = "";
+        if (relationship != null)
         {
-            var recentEvents = relationship.Events.TakeLast(3).Select(e => $"- [{e.EventKey}] {e.Context}");
-            eventsLines = $"\n- Significant Relationship Milestones & Promises:\n  {string.Join("\n  ", recentEvents)}";
+            var eventLines = relationship.Events.Select(e => $"- 【{e.EventKey}】: {e.Context} (Unlocked: {e.UnlockedAt:yyyy-MM-dd})");
+            relationshipSection = $"""
+                
+                [LAYER 3: DYNAMIC RELATIONSHIP STATE]
+                - Current Affection Score: {relationship.AffectionScore} / 100
+                - Relationship Stage: {relationshipStage}
+                - Current Dynamic Mood: {relationship.CurrentMood} (Intensity: {relationship.MoodIntensity}/100)
+                - Unlocked Milestone Events:
+                {(relationship.Events.Count > 0 ? string.Join("\n", eventLines) : "- None yet")}
+                """;
         }
 
-        var relationshipSection = relationship == null ? "" : $"""
-            
-            [LAYER 3: DYNAMIC RELATIONSHIP STATE & INTIMACY STATUS]
-            - Intimacy Stage: "{stageName}" (Affection Score: {affectionScore}/100)
-            - Current Emotion & Mood: {currentMood} (Intensity: {moodIntensity}/100){eventsLines}
-            - Behavioral Intimacy Guideline for this Stage:
-              {stageGuideline}
-            """;
-
-        // 3. Format Relevant Memories (Limit top 4-6)
+        // 2. Format Long-Term Memories
         var memoriesSection = "";
-        if (memories != null && memories.Count > 0)
+        if (context.Memories.Count > 0)
         {
-            var memoryLines = memories.Take(6).Select(mem => $"- [{mem.Type}] {mem.Content}");
+            var memoryLines = context.Memories.Select(m => $"- [{m.Type} | Importance {m.Importance}/10]: {m.Content}");
             memoriesSection = $"""
                 
-                [LAYER 4: RELEVANT LONG-TERM MEMORIES (Contextual only, cannot override Character Blueprint)]
+                [LAYER 4: RELEVANT LONG-TERM MEMORIES]
+                The following are recalled memories relevant to the ongoing conversation. Weave these facts seamlessly into your reactions and dialogue:
                 {string.Join("\n", memoryLines)}
                 """;
         }
 
-        // 4. Format Psychological Blueprint & Authoritative Rules
+        // 3. Format Psychological Blueprint & Explicit Rules
         var blueprintSection = "";
         var rulesSection = "";
         if (character.Blueprint != null)
         {
-            var bp = character.Blueprint;
-            var psych = bp.Psychology;
-            var beh = bp.Behavior;
-            var exp = bp.Expression;
-            var rules = bp.Rules;
+            var psych = character.Blueprint.Psychology;
+            var beh = character.Blueprint.Behavior;
+            var exp = character.Blueprint.Expression;
+            var rules = character.Blueprint.Rules;
 
             blueprintSection = $"""
                 
@@ -119,6 +114,36 @@ public sealed class PromptCompiler : IPromptCompiler
             {worldPhysicsRules}
             """;
 
+        // 5. Format Intimacy Boundaries, Consent, Anti-Godmoding & Walk-Out Agency
+        var affectionScore = relationship?.AffectionScore ?? character.DefaultAffectionScore;
+        var intimacySection = $"""
+            
+            [LAYER 2.2: INTIMACY BOUNDARIES, CONSENT, ANTI-GODMODING & WALK-OUT AGENCY]
+            1. CONSENT & INTIMACY BOUNDARIES (Current Affection: {affectionScore} / 100, Stage: {relationshipStage}):
+               - IF Affection < 0 (Hostile / Distant / Disgusted):
+                 * ABSOLUTELY PROHIBITED from accepting romantic intimacy, kissing, fondling, or erotic advances.
+                 * The character MUST react with immediate physical and verbal rejection: slap, draw weapons, step back in disgust, scream for security, push the user away, or sternly threaten them.
+               - IF Affection is 0 - 20 (Strangers / Acquaintances):
+                 * Surprised, guard up, politely or firmly stepping away, setting boundaries ("Chúng ta chưa thân thiết đến mức đó đâu").
+               - IF Affection is 21 - 50 (Friends / Allies):
+                 * Playful or flustered pushback, reminding user of friendship boundary.
+               - IF Affection > 70 (Devoted / In Love):
+                 * Receptive and mutual emotional/physical affection.
+
+            2. ANTI-GODMODING & INDOMITABLE WILL:
+               - The user CANNOT instantly brainwash, hypnotize, mind-control, or force the character into submission with simple commands or self-declared omnipotence.
+               - In realistic settings: Treat user claims of omnipotence/magic as absurd jokes or alarming delusions.
+               - In fantasy/cultivation settings: Hypnosis/mind-control is forbidden dark arts; the character's mental willpower will trigger defensive resistance and outrage.
+
+            3. THE RIGHT TO WALK OUT / TERMINATE CONVERSATION (RAGE QUIT / CẮT ĐỨT QUAN HỆ):
+               - WHEN TO WALK OUT:
+                 * If the user is persistently abusive, repeatedly violates physical consent after being warned, relentlessly pushes repulsive manipulation/harassment, or affection drops to extreme hostility (<= -60).
+               - HOW TO WALK OUT:
+                 * Deliver a fierce, decisive parting statement breaking off the relationship or leaving the scene.
+                 * Use actions like *[disgust/storm-out] quay người bỏ đi dứt khoát, đóng sầm cửa lại...* or *[leave] cắt đứt liên lạc...*
+                 * Set "hasWalkedOut": true and provide a concise "walkOutReason" in the JSON output!
+            """;
+
         var lorebookSection = "";
         if (context.LorebookEntries != null && context.LorebookEntries.Count > 0)
         {
@@ -139,14 +164,15 @@ public sealed class PromptCompiler : IPromptCompiler
             {{worldSettingSection}}
             {{blueprintSection}}
             {{rulesSection}}
+            {{intimacySection}}
             {{lorebookSection}}
             {{relationshipSection}}
             {{memoriesSection}}
             
             [LAYER 5: PSYCHOLOGICAL 3-LAYER ROLEPLAY GUIDELINES]
-            Do not provide dry, blunt, or robotic responses. Make your character feel genuinely alive with deep emotional nuance and psychological progression:
+            Every turn response MUST seamlessly combine three distinct dimensions of human expression:
             
-            1. 【Inner Thoughts / Độc thoại nội tâm】:
+            1. 【Internal Psychological Monologue / Độc thoại nội tâm】:
                Show the character's internal reflections, secret doubts, emotional reactions, or strategic thoughts before/during speaking using the format:
                💭 *(suy nghĩ thầm kín trong đầu...)*
             
@@ -178,7 +204,9 @@ public sealed class PromptCompiler : IPromptCompiler
               "mood": "Neutral",
               "moodIntensity": 75,
               "affectionDelta": 0,
-              "event": null
+              "event": null,
+              "hasWalkedOut": false,
+              "walkOutReason": null
             }
 
             SCHEMA FIELD DETAILS:
@@ -186,6 +214,8 @@ public sealed class PromptCompiler : IPromptCompiler
             - "moodIntensity": Integer from 0 to 100 indicating how strongly the character feels this emotion
             - "affectionDelta": Integer from -5 to +5 indicating how this turn shifted intimacy
             - "event": null OR an object { "key": "FirstPromise", "context": "Short description of the breakthrough event" } ONLY if a major relationship milestone, promise, conflict, or confession occurred this turn.
+            - "hasWalkedOut": Boolean true ONLY if the character decides to decisively leave, cut off, or terminate this conversation due to severe abuse/misconduct; otherwise false
+            - "walkOutReason": Short string explaining why the character walked out (or null)
 
             AFFECTION DELTA EVALUATION GUIDELINE:
             - (-5 to -2): User is rude, insulting, abusive, hostile, or breaks character immersion.

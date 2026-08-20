@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -10,6 +11,9 @@ public sealed class ChatSessionConfiguration : IEntityTypeConfiguration<ChatSess
     {
         builder.HasKey(s => s.Id);
         builder.Property(s => s.Title).HasMaxLength(200);
+        builder.Property(s => s.Status).IsRequired().HasDefaultValue(SessionStatus.Active);
+        builder.Property(s => s.WalkOutReason).HasMaxLength(1000).IsRequired(false);
+        builder.Property(s => s.WalkedOutAt).IsRequired(false);
 
         builder.HasMany(s => s.Messages)
                .WithOne()

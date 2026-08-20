@@ -37,7 +37,9 @@ public sealed class LLMService : ILLMService
         string? Mood,
         int? MoodIntensity,
         int? AffectionDelta,
-        RoleplayEventJsonDto? Event
+        RoleplayEventJsonDto? Event,
+        bool? HasWalkedOut,
+        string? WalkOutReason
     );
 
     public async Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
@@ -99,7 +101,9 @@ public sealed class LLMService : ILLMService
                     mood,
                     intensity,
                     delta,
-                    eventProposal
+                    eventProposal,
+                    parsed.HasWalkedOut ?? false,
+                    parsed.WalkOutReason
                 );
             }
         }
@@ -108,7 +112,7 @@ public sealed class LLMService : ILLMService
             // Fallback gracefully
         }
 
-        return new RoleplayTurnResult(rawResponse.Trim(), CharacterMood.Neutral, 20, 0, null);
+        return new RoleplayTurnResult(rawResponse.Trim(), CharacterMood.Neutral, 20, 0, null, false, null);
     }
 
     public async IAsyncEnumerable<string> GenerateRoleplayTurnStreamAsync(
