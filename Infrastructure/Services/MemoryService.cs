@@ -29,6 +29,14 @@ public sealed class MemoryService : IMemoryService
         _logger = logger;
     }
 
+    public MemoryService(
+        IUnitOfWork unitOfWork,
+        IMemoryCandidateValidator validator,
+        ILogger<MemoryService> logger)
+        : this(unitOfWork, validator, new EmbeddingService(new HttpClient(), new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), Microsoft.Extensions.Logging.Abstractions.NullLogger<EmbeddingService>.Instance), logger)
+    {
+    }
+
     public static string NormalizeContent(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;

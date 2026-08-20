@@ -109,6 +109,15 @@ public record RoleplayTurnResult(
     string? WalkOutReason = null
 );
 
+public record GenerateSceneImageRequest(
+    Guid? SessionId,
+    string? CharacterName,
+    string? CharacterTitle,
+    string? CharacterPersonality,
+    string MessageContent,
+    string? UserMessageContent = null
+);
+
 public record RegenerateResponse(
     ChatMessageDto NewAssistantMessage,
     int AffectionScore = 0,
