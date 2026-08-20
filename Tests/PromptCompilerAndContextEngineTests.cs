@@ -111,6 +111,41 @@ public class PromptCompilerAndContextEngineTests
     }
 
     [Fact]
+    public async Task RoleplayContextEngine_Rejects_Unauthorized_Access_To_Another_Users_Session()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var charId = Guid.NewGuid();
+        var legitimateUser = Guid.NewGuid();
+        var attackerUser = Guid.NewGuid();
+
+        await using var context = new ProjectDbContext(options);
+        var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = charId };
+        await context.Characters.AddAsync(character);
+
+        var legitimateSession = new ChatSession(charId, legitimateUser, "Legitimate User Session");
+        await context.ChatSessions.AddAsync(legitimateSession);
+        await context.SaveChangesAsync();
+
+        var unitOfWork = new UnitOfWork(context);
+        var fakeMemoryService = new FakeMemoryService();
+        var attackerProvider = new FakeCurrentUserProvider(attackerUser.ToString());
+
+        var engine = new RoleplayContextEngine(
+            unitOfWork,
+            fakeMemoryService,
+            attackerProvider,
+            NullLogger<RoleplayContextEngine>.Instance
+        );
+
+        // Attacker attempts to build context on legitimateUser's session
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            engine.BuildContextAsync(legitimateSession.Id, "Malicious attempt", attackerUser));
+    }
+
+    [Fact]
     public void PromptCompiler_Compiles_All_6_Layers_In_Correct_Priority()
     {
         var charId = Guid.NewGuid();

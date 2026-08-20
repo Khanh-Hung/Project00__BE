@@ -54,7 +54,7 @@ public sealed class RoleplayContextEngine : IRoleplayContextEngine
             throw new KeyNotFoundException($"Character with ID '{session.CharacterId}' for session '{sessionId}' was not found.");
         }
 
-        // 3. Resolve Effective User ID with Strict User Isolation
+        // 3. Resolve Effective User ID with Strict User Ownership Enforcement
         Guid? effectiveUserId = currentUserId;
         if (!effectiveUserId.HasValue || effectiveUserId.Value == Guid.Empty)
         {
@@ -66,6 +66,14 @@ public sealed class RoleplayContextEngine : IRoleplayContextEngine
             {
                 effectiveUserId = session.UserId;
             }
+        }
+
+        // Strict Ownership Check: Prevent cross-tenant access to another user's session
+        if (session.UserId.HasValue && effectiveUserId.HasValue && session.UserId.Value != effectiveUserId.Value)
+        {
+            _logger.LogWarning("Unauthorized session access attempt. Session User: {SessionUserId}, Request User: {RequestUserId}",
+                session.UserId.Value, effectiveUserId.Value);
+            throw new UnauthorizedAccessException("You do not have permission to access this chat session.");
         }
 
         // 4. Retrieve or initialize CharacterRelationship

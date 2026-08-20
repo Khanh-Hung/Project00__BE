@@ -48,6 +48,10 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
         {
             return Result<SendMessageResponse>.Failure(StatusCodes.Status404NotFound, ex.Message);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Result<SendMessageResponse>.Failure(StatusCodes.Status403Forbidden, ex.Message);
+        }
 
         var session = context.Session;
         var character = context.Character;
