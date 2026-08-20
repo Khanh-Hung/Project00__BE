@@ -73,6 +73,31 @@ public sealed class CharacterRuntime : ICharacterRuntime
         }
     }
 
+    public async IAsyncEnumerable<CharacterStreamEvent> ProcessTurnStreamAsync(
+        CharacterTurnRequest request,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var turnId = request.TurnId ?? Guid.NewGuid();
+        var turnLock = InFlightTurnLocks.GetOrAdd(turnId, _ => new SemaphoreSlim(1, 1));
+
+        await turnLock.WaitAsync(ct);
+        try
+        {
+            await foreach (var streamEvent in ExecuteTurnStreamPipelineAsync(turnId, request, ct))
+            {
+                yield return streamEvent;
+            }
+        }
+        finally
+        {
+            turnLock.Release();
+            if (turnLock.CurrentCount == 1)
+            {
+                InFlightTurnLocks.TryRemove(turnId, out _);
+            }
+        }
+    }
+
     private async Task<CharacterTurnResult> ExecuteTurnPipelineAsync(Guid turnId, CharacterTurnRequest request, CancellationToken ct)
     {
         var traceStopwatch = Stopwatch.StartNew();
@@ -191,7 +216,76 @@ public sealed class CharacterRuntime : ICharacterRuntime
         );
         await turnRepo.AddAsync(turnRecord, ct);
 
-        // 5. Truly Atomic Single SaveChanges
+        // 5. Enqueue Durable Outbox Messages for Side Effects
+        var outboxRepo = _unitOfWork.GetRepository<OutboxMessage>();
+
+        // Outbox Job 1: Long-term Memory Extraction
+        if (request.UserId != Guid.Empty)
+        {
+            var recentMessagesDto = session.Messages
+                .TakeLast(10)
+                .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
+                .ToList();
+
+            var memoryPayload = new MemoryExtractionOutboxPayload(
+                SessionId: session.Id,
+                CharacterId: character.Id,
+                UserId: request.UserId,
+                RecentMessages: recentMessagesDto,
+                UserMessageCount: session.Messages.Count(m => m.Role == MessageRole.User)
+            );
+            var memoryOutbox = new OutboxMessage(
+                eventType: OutboxEventTypes.MemoryExtraction,
+                payloadJson: JsonSerializer.Serialize(memoryPayload)
+            );
+            await outboxRepo.AddAsync(memoryOutbox, ct);
+        }
+
+        // Outbox Job 2: Voice Generation (if requested)
+        if (request.Options?.GenerateVoice == true && character.VoiceProfile != null)
+        {
+            var voicePayload = new VoiceGenerationOutboxPayload(
+                TurnId: turnId,
+                CharacterId: character.Id,
+                UserId: request.UserId,
+                VoiceProfile: character.VoiceProfile,
+                Mood: currentMood,
+                MoodIntensity: currentIntensity,
+                AffectionScore: relationship?.AffectionScore ?? 0,
+                RelationshipStage: currentStageName,
+                RawText: aiTurn.Reply
+            );
+            var voiceOutbox = new OutboxMessage(
+                eventType: OutboxEventTypes.VoiceGeneration,
+                payloadJson: JsonSerializer.Serialize(voicePayload)
+            );
+            await outboxRepo.AddAsync(voiceOutbox, ct);
+        }
+
+        // Outbox Job 3: Scene Image Generation (if requested)
+        if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
+        {
+            var scene = new SceneContext(
+                Location: character.Title,
+                Expression: currentMood.ToString()
+            );
+            var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
+            var scenePayload = new SceneImageGenerationOutboxPayload(
+                TurnId: turnId,
+                CharacterId: character.Id,
+                UserId: request.UserId,
+                CharacterTitle: character.Title,
+                Mood: currentMood.ToString(),
+                Prompt: prompt
+            );
+            var sceneOutbox = new OutboxMessage(
+                eventType: OutboxEventTypes.SceneImageGeneration,
+                payloadJson: JsonSerializer.Serialize(scenePayload)
+            );
+            await outboxRepo.AddAsync(sceneOutbox, ct);
+        }
+
+        // 6. Truly Atomic Single SaveChanges (Session + Messages + Relationship + CharacterTurn + OutboxMessages)
         try
         {
             await _unitOfWork.SaveChangesAsync(ct);
@@ -224,81 +318,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
             RelationshipStage: currentStageName
         );
 
-        // 6. Asynchronous & Failure-Isolated Side Effects (Dispatched post-commit, non-blocking)
-        
-        // Side effect 1: Long-term memory extraction trigger (Background Worker)
-        try
-        {
-            if (request.UserId != Guid.Empty)
-            {
-                var recentMessagesDto = session.Messages
-                    .TakeLast(10)
-                    .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
-                    .ToList();
-
-                var extractionJob = new MemoryExtractionJob(
-                    SessionId: session.Id,
-                    CharacterId: character.Id,
-                    UserId: request.UserId,
-                    RecentMessages: recentMessagesDto,
-                    UserMessageCount: session.Messages.Count(m => m.Role == MessageRole.User)
-                );
-                _extractionTrigger.NotifyMessageSent(extractionJob);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Memory extraction trigger failed for Turn {TurnId}. Chat completed successfully.", turnId);
-        }
-
-        // Side effect 2: Optional Non-blocking Background Voice Audio Generation
-        if (request.Options?.GenerateVoice == true && character.VoiceProfile != null)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var voiceContext = new VoiceContext(
-                        Voice: character.VoiceProfile,
-                        Mood: relationship?.CurrentMood ?? CharacterMood.Neutral,
-                        MoodIntensity: currentIntensity,
-                        AffectionScore: relationship?.AffectionScore ?? 0,
-                        RelationshipStage: currentStageName,
-                        RawText: aiTurn.Reply
-                    );
-                    var voiceReq = _voiceCompiler.CompileVoiceRequest(voiceContext);
-                    await _voiceService.GenerateVoiceAsync(voiceReq, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Background voice generation failed for Turn {TurnId}", turnId);
-                }
-            });
-        }
-
-        // Side effect 3: Optional Non-blocking Background Scene Image Generation
-        if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var scene = new SceneContext(
-                        Location: character.Title,
-                        Expression: currentMood.ToString()
-                    );
-                    var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
-                    await _imageService.GenerateImageAsync(new ImageGenerationRequest(prompt), CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Background scene image generation failed for Turn {TurnId}", turnId);
-                }
-            });
-        }
-
         traceStopwatch.Stop();
-        _logger.LogInformation("Turn {TurnId} committed atomically in {TotalMs}ms (LLM: {LlmMs}ms). AffectionDelta: {Delta}, Mood: {Mood}",
+        _logger.LogInformation("Turn {TurnId} committed atomically with Outbox in {TotalMs}ms (LLM: {LlmMs}ms). AffectionDelta: {Delta}, Mood: {Mood}",
             turnId, traceStopwatch.ElapsedMilliseconds, llmStopwatch.ElapsedMilliseconds, appliedDelta, currentMood);
 
         return new CharacterTurnResult(
@@ -313,6 +334,305 @@ public sealed class CharacterRuntime : ICharacterRuntime
             MoodIntensity: currentIntensity,
             AffectionDelta: appliedDelta
         );
+    }
+
+    private async IAsyncEnumerable<CharacterStreamEvent> ExecuteTurnStreamPipelineAsync(
+        Guid turnId,
+        CharacterTurnRequest request,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
+
+        // 1. Persistent Database-Backed Idempotency Check: Return full deterministic stream on retry
+        var existingTurn = await turnRepo.GetAsync(t => t.TurnId == turnId, ct);
+        if (existingTurn != null)
+        {
+            _logger.LogInformation("Persistent idempotency stream hit for TurnId '{TurnId}'. Returning previous response.", turnId);
+            var res = MapExistingTurnToResult(existingTurn);
+            yield return CharacterStreamEvent.Token(res.Reply);
+            yield return CharacterStreamEvent.Metadata(
+                res.Mood,
+                res.MoodIntensity,
+                res.AffectionDelta,
+                res.Relationship.AffectionScore,
+                res.Relationship.RelationshipStage ?? "Stranger",
+                res.Relationship.CharacterId,
+                res.Relationship.UserId
+            );
+            foreach (var evt in res.Relationship.Events)
+            {
+                yield return CharacterStreamEvent.EventUnlocked(evt.EventKey, evt.Context);
+            }
+            yield return CharacterStreamEvent.Done(
+                res.TurnId,
+                res.MessageId,
+                res.Reply,
+                res.Relationship,
+                res.ActiveMemories
+            );
+            yield break;
+        }
+
+        // 2. Build Context via Context Engine
+        var context = await _contextEngine.BuildContextAsync(request.SessionId, request.UserMessage, request.UserId, ct);
+        var session = context.Session;
+        var character = context.Character;
+        var relationship = context.Relationship;
+
+        if (request.CharacterId != Guid.Empty && request.CharacterId != character.Id)
+        {
+            yield return CharacterStreamEvent.Error(400, $"Requested CharacterId '{request.CharacterId}' does not match Session character '{character.Id}'.");
+            yield break;
+        }
+
+        // 3. Stream LLM Tokens in Realtime
+        var fullReplyBuilder = new System.Text.StringBuilder();
+
+        await foreach (var chunk in _llmService.GenerateRoleplayTurnStreamAsync(context, ct))
+        {
+            fullReplyBuilder.Append(chunk);
+            yield return CharacterStreamEvent.Token(chunk);
+        }
+
+        var rawFullText = fullReplyBuilder.ToString().Trim();
+
+        // 4. Parse Structured Roleplay Turn from Accumulated Text
+        var aiTurn = ParseAiTurn(rawFullText);
+
+        // 5. Critical Path: Prepare Session, Relationship & Persistent Turn Record
+        var userMsg = session.AddUserMessage(request.UserMessage);
+        var assistantMessage = session.AddAssistantMessage(aiTurn.Reply);
+
+        var messageRepo = _unitOfWork.GetRepository<ChatMessage>();
+        await messageRepo.AddAsync(userMsg, ct);
+        await messageRepo.AddAsync(assistantMessage, ct);
+
+        var relationshipRepo = _unitOfWork.GetRepository<CharacterRelationship>();
+        int appliedDelta = 0;
+        CharacterMood currentMood = aiTurn.Mood;
+        int currentIntensity = Math.Clamp(aiTurn.MoodIntensity, 0, 100);
+
+        if (relationship == null && request.UserId != Guid.Empty)
+        {
+            var clampedDelta = Math.Clamp(aiTurn.AffectionDelta, -5, 5);
+            var initialScore = Math.Clamp(character.DefaultAffectionScore + clampedDelta, -100, 100);
+            appliedDelta = initialScore - character.DefaultAffectionScore;
+
+            relationship = CharacterRelationship.Create(
+                character.Id,
+                request.UserId,
+                initialAffection: initialScore,
+                initialMood: currentMood,
+                initialMoodIntensity: currentIntensity,
+                initialTimestamp: Clock.Now);
+
+            if (aiTurn.Event != null && !string.IsNullOrWhiteSpace(aiTurn.Event.Key))
+            {
+                relationship.TryUnlockEvent(aiTurn.Event.Key, aiTurn.Event.Context, Clock.Now);
+            }
+
+            await relationshipRepo.AddAsync(relationship, ct);
+        }
+        else if (relationship != null)
+        {
+            var clampedDelta = Math.Clamp(aiTurn.AffectionDelta, -5, 5);
+            var (_, _, delta) = relationship.ApplyAffectionDelta(clampedDelta, Clock.Now);
+            appliedDelta = delta;
+
+            relationship.UpdateMood(currentMood, currentIntensity, Clock.Now);
+
+            if (aiTurn.Event != null && !string.IsNullOrWhiteSpace(aiTurn.Event.Key))
+            {
+                relationship.TryUnlockEvent(aiTurn.Event.Key, aiTurn.Event.Context, Clock.Now);
+            }
+        }
+
+        var (level, currentStageName, _) = RelationshipStageResolver.Resolve(
+            relationship?.AffectionScore ?? character.DefaultAffectionScore,
+            character.CustomMilestonesJson);
+
+        var eventsDto = relationship?.Events
+            .Select(e => new RelationshipEventDto(e.EventKey, e.Context, e.UnlockedAt))
+            .ToList() ?? new List<RelationshipEventDto>();
+
+        var activeMemoriesDto = context.Memories
+            .Select(m => new CharacterMemoryDto(m.Id, m.Content, m.Type, m.Importance, 1.0m, m.CreatedAt))
+            .ToList();
+
+        var eventsJson = JsonSerializer.Serialize(eventsDto);
+        var memoriesJson = JsonSerializer.Serialize(activeMemoriesDto);
+
+        // Prepare persistent idempotency record
+        var turnRecord = new CharacterTurn(
+            turnId: turnId,
+            sessionId: session.Id,
+            userId: request.UserId,
+            characterId: character.Id,
+            userMessageId: userMsg.Id,
+            assistantMessageId: assistantMessage.Id,
+            userMessage: request.UserMessage,
+            assistantReply: aiTurn.Reply,
+            mood: currentMood.ToString(),
+            moodIntensity: currentIntensity,
+            affectionDelta: appliedDelta,
+            affectionScore: relationship?.AffectionScore ?? character.DefaultAffectionScore,
+            relationshipStage: currentStageName,
+            relationshipId: relationship?.Id ?? Guid.Empty,
+            lastInteractedAt: relationship?.LastInteractedAt ?? Clock.Now,
+            eventsJson: eventsJson,
+            activeMemoriesJson: memoriesJson
+        );
+        await turnRepo.AddAsync(turnRecord, ct);
+
+        // 6. Enqueue Outbox Messages for Side Effects
+        var outboxRepo = _unitOfWork.GetRepository<OutboxMessage>();
+        if (request.UserId != Guid.Empty)
+        {
+            var recentMessagesDto = session.Messages
+                .TakeLast(10)
+                .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
+                .ToList();
+
+            var memoryPayload = new MemoryExtractionOutboxPayload(
+                SessionId: session.Id,
+                CharacterId: character.Id,
+                UserId: request.UserId,
+                RecentMessages: recentMessagesDto,
+                UserMessageCount: session.Messages.Count(m => m.Role == MessageRole.User)
+            );
+            await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.MemoryExtraction, JsonSerializer.Serialize(memoryPayload)), ct);
+        }
+
+        if (request.Options?.GenerateVoice == true && character.VoiceProfile != null)
+        {
+            var voicePayload = new VoiceGenerationOutboxPayload(
+                TurnId: turnId,
+                CharacterId: character.Id,
+                UserId: request.UserId,
+                VoiceProfile: character.VoiceProfile,
+                Mood: currentMood,
+                MoodIntensity: currentIntensity,
+                AffectionScore: relationship?.AffectionScore ?? 0,
+                RelationshipStage: currentStageName,
+                RawText: aiTurn.Reply
+            );
+            await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(voicePayload)), ct);
+        }
+
+        if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
+        {
+            var scene = new SceneContext(Location: character.Title, Expression: currentMood.ToString());
+            var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
+            var scenePayload = new SceneImageGenerationOutboxPayload(
+                TurnId: turnId,
+                CharacterId: character.Id,
+                UserId: request.UserId,
+                CharacterTitle: character.Title,
+                Mood: currentMood.ToString(),
+                Prompt: prompt
+            );
+            await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(scenePayload)), ct);
+        }
+
+        // 7. Atomic Commit
+        CharacterStreamEvent? concurrencyError = null;
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger.LogWarning(ex, "Optimistic concurrency conflict on streaming turn {TurnId}", turnId);
+            concurrencyError = CharacterStreamEvent.Error(409, "A concurrent update conflicted on the character relationship. Please retry with the same TurnId.");
+        }
+
+        if (concurrencyError != null)
+        {
+            yield return concurrencyError;
+            yield break;
+        }
+
+        var relationshipDto = new CharacterRelationshipDto(
+            Id: relationship?.Id ?? Guid.Empty,
+            CharacterId: character.Id,
+            UserId: request.UserId,
+            AffectionScore: relationship?.AffectionScore ?? character.DefaultAffectionScore,
+            CurrentMood: currentMood,
+            MoodIntensity: currentIntensity,
+            Events: eventsDto,
+            LastInteractedAt: relationship?.LastInteractedAt ?? Clock.Now,
+            RelationshipStage: currentStageName
+        );
+
+        // 8. Emit Lifecycle Events
+        yield return CharacterStreamEvent.Metadata(
+            currentMood.ToString(),
+            currentIntensity,
+            appliedDelta,
+            relationshipDto.AffectionScore,
+            currentStageName,
+            character.Id,
+            request.UserId
+        );
+
+        if (aiTurn.Event != null && !string.IsNullOrWhiteSpace(aiTurn.Event.Key))
+        {
+            yield return CharacterStreamEvent.EventUnlocked(aiTurn.Event.Key, aiTurn.Event.Context);
+        }
+
+        yield return CharacterStreamEvent.Done(
+            turnId,
+            assistantMessage.Id,
+            aiTurn.Reply,
+            relationshipDto,
+            activeMemoriesDto
+        );
+    }
+
+    private static RoleplayTurnResult ParseAiTurn(string raw)
+    {
+        try
+        {
+            var cleaned = raw.Trim();
+            if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(7);
+            }
+            else if (cleaned.StartsWith("```", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(3);
+            }
+            if (cleaned.EndsWith("```", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(0, cleaned.Length - 3);
+            }
+            cleaned = cleaned.Trim();
+
+            using var doc = JsonDocument.Parse(cleaned);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("reply", out var replyProp))
+            {
+                var reply = replyProp.GetString() ?? raw;
+                var mood = root.TryGetProperty("mood", out var moodProp) && Enum.TryParse<CharacterMood>(moodProp.GetString(), true, out var pm) ? pm : CharacterMood.Neutral;
+                var intensity = root.TryGetProperty("moodIntensity", out var intProp) ? intProp.GetInt32() : 50;
+                var delta = root.TryGetProperty("affectionDelta", out var delProp) ? delProp.GetInt32() : 0;
+
+                RelationshipEventProposal? proposal = null;
+                if (root.TryGetProperty("event", out var evtProp) && evtProp.TryGetProperty("key", out var kProp) && !string.IsNullOrWhiteSpace(kProp.GetString()))
+                {
+                    var ctx = evtProp.TryGetProperty("context", out var cProp) ? cProp.GetString() ?? string.Empty : string.Empty;
+                    proposal = new RelationshipEventProposal(kProp.GetString()!, ctx);
+                }
+
+                return new RoleplayTurnResult(reply, mood, intensity, delta, proposal);
+            }
+        }
+        catch
+        {
+            // Fallback to plain text reply
+        }
+
+        return new RoleplayTurnResult(raw, CharacterMood.Neutral, 50, 0, null);
     }
 
     private static CharacterTurnResult MapExistingTurnToResult(CharacterTurn existingTurn)
