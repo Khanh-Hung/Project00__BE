@@ -17,6 +17,7 @@ public class Character : BaseEntity
     public string DefaultMood { get; private set; } = string.Empty;
     public string? CustomMilestonesJson { get; private set; }
     public CharacterBlueprint? Blueprint { get; private set; }
+    public CharacterVisualIdentity? VisualIdentity { get; private set; }
 
     private Character() { } // EF Core
 
@@ -32,7 +33,8 @@ public class Character : BaseEntity
         int defaultAffectionScore = 0,
         string? defaultMood = null,
         string? customMilestonesJson = null,
-        CharacterBlueprint? blueprint = null)
+        CharacterBlueprint? blueprint = null,
+        CharacterVisualIdentity? visualIdentity = null)
     {
         Name = name;
         Title = title;
@@ -46,6 +48,7 @@ public class Character : BaseEntity
         DefaultMood = defaultMood ?? string.Empty;
         CustomMilestonesJson = customMilestonesJson;
         Blueprint = blueprint;
+        VisualIdentity = visualIdentity;
     }
 
     public void UpdateDetails(
@@ -60,7 +63,9 @@ public class Character : BaseEntity
         string? defaultMood = null,
         string? customMilestonesJson = null,
         CharacterBlueprint? blueprint = null,
-        bool updateBlueprint = false)
+        bool updateBlueprint = false,
+        CharacterVisualIdentity? visualIdentity = null,
+        bool updateVisualIdentity = false)
     {
         Name = name;
         Title = title;
@@ -85,6 +90,10 @@ public class Character : BaseEntity
         {
             Blueprint = blueprint;
         }
+        if (updateVisualIdentity || visualIdentity != null)
+        {
+            VisualIdentity = visualIdentity;
+        }
         Touch();
     }
 
@@ -94,9 +103,21 @@ public class Character : BaseEntity
         Touch();
     }
 
+    public void SetVisualIdentity(CharacterVisualIdentity? visualIdentity)
+    {
+        VisualIdentity = visualIdentity;
+        Touch();
+    }
+
     public void SetPublicStatus(bool isPublic)
     {
         IsPublic = isPublic;
+        Touch();
+    }
+
+    public void UpdateAvatar(string newAvatarUrl)
+    {
+        AvatarUrl = newAvatarUrl;
         Touch();
     }
 }
