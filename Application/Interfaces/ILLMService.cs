@@ -56,4 +56,9 @@ public interface ILLMService
         Character character,
         IReadOnlyCollection<ChatMessageDto> recentMessages,
         CancellationToken ct = default);
+
+    Task<ProactiveAiReachoutResult> GenerateProactiveReachoutAsync(
+        Character character,
+        UserProfile userProfile,
+        CancellationToken ct = default);
 }
