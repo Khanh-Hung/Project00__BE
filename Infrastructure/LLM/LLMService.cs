@@ -111,6 +111,19 @@ public sealed class LLMService : ILLMService
         return new RoleplayTurnResult(rawResponse.Trim(), CharacterMood.Neutral, 20, 0, null);
     }
 
+    public async IAsyncEnumerable<string> GenerateRoleplayTurnStreamAsync(
+        Application.Common.RoleplayContext context,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var systemPrompt = _promptCompiler.CompileSystemPrompt(context);
+        var contentsList = _promptCompiler.CompileConversationContents(context);
+
+        await foreach (var chunk in _geminiClient.StreamTextAsync(systemPrompt, contentsList, ct: ct))
+        {
+            yield return chunk;
+        }
+    }
+
     public async Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
         Character character,
         IReadOnlyCollection<ChatMessage> history,

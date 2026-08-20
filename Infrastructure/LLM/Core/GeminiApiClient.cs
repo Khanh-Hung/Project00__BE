@@ -117,6 +117,93 @@ public sealed class GeminiApiClient
         throw new InvalidOperationException("Failed to receive response from Gemini AI models. Please try again.");
     }
 
+    public async IAsyncEnumerable<string> StreamTextAsync(
+        string systemPrompt,
+        IEnumerable<object> contents,
+        double temperature = 0.85,
+        int maxOutputTokens = 1000,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var apiKey = GetApiKey();
+        var models = GetCandidateModels();
+
+        var requestPayload = new
+        {
+            systemInstruction = new
+            {
+                parts = new[] { new { text = systemPrompt } }
+            },
+            contents = contents,
+            generationConfig = new
+            {
+                temperature = temperature,
+                maxOutputTokens = maxOutputTokens
+            }
+        };
+
+        foreach (var modelName in models)
+        {
+            var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{modelName}:streamGenerateContent?alt=sse&key={apiKey}";
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            request.Content = JsonContent.Create(requestPayload);
+
+            HttpResponseMessage? response = null;
+            try
+            {
+                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Model {ModelName} failed to start streaming", modelName);
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errBody = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("Model {ModelName} streaming failed with status {StatusCode}: {ErrorBody}", modelName, response.StatusCode, errBody);
+                continue;
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(ct);
+            using var reader = new System.IO.StreamReader(stream);
+
+            string? line;
+            while (!ct.IsCancellationRequested && (line = await reader.ReadLineAsync(ct)) != null)
+            {
+                if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: ")) continue;
+
+                var jsonChunk = line.Substring(6).Trim();
+                if (string.IsNullOrWhiteSpace(jsonChunk) || jsonChunk == "[DONE]") continue;
+
+                string? chunkText = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(jsonChunk);
+                    if (doc.RootElement.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
+                    {
+                        var parts = candidates[0].GetProperty("content").GetProperty("parts");
+                        if (parts.GetArrayLength() > 0)
+                        {
+                            chunkText = parts[0].GetProperty("text").GetString();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogTrace(ex, "Failed to parse streaming JSON chunk: {Chunk}", jsonChunk);
+                }
+
+                if (!string.IsNullOrEmpty(chunkText))
+                {
+                    yield return chunkText;
+                }
+            }
+
+            yield break;
+        }
+    }
+
     public async Task<T?> GenerateJsonAsync<T>(
         string systemPrompt,
         string userPrompt,

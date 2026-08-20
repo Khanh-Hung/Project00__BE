@@ -91,6 +91,9 @@ public static class DependencyInjection
         services.AddSingleton<IMemoryExtractionTrigger>(sp => sp.GetRequiredService<MemoryExtractionBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<MemoryExtractionBackgroundService>());
 
+        // 9. Add Transactional Outbox Background Processor (Phase 9)
+        services.AddHostedService<OutboxProcessorBackgroundService>();
+
         return services;
     }
 }
