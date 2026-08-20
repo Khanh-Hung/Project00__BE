@@ -24,6 +24,9 @@ public static class DependencyInjection
         // 2. Add FluentValidation Validators
         services.AddValidatorsFromAssembly(assembly);
 
+        // 3. Add Memory Candidate Validator
+        services.AddSingleton<Interfaces.IMemoryCandidateValidator, Services.MemoryCandidateValidator>();
+
         return services;
     }
 }
