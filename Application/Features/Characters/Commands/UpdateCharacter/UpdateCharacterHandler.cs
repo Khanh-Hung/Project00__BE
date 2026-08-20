@@ -45,7 +45,8 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
             updateBlueprint: req.Blueprint != null,
             worldName: req.WorldName,
             worldDescription: req.WorldDescription,
-            worldGenre: req.WorldGenre
+            worldGenre: req.WorldGenre,
+            customPhysicsRules: req.CustomPhysicsRules
         );
         character.SetPublicStatus(req.IsPublic);
 
@@ -76,7 +77,8 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
             character.Blueprint,
             character.WorldName,
             character.WorldDescription,
-            character.WorldGenre
+            character.WorldGenre,
+            character.CustomPhysicsRules
         );
 
         return Result<CharacterDto>.Success(dto);

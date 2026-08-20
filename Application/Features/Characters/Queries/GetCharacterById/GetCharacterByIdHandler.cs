@@ -60,7 +60,8 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.Blueprint,
             character.WorldName,
             character.WorldDescription,
-            character.WorldGenre
+            character.WorldGenre,
+            character.CustomPhysicsRules
         );
 
         return Result<CharacterDto>.Success(dto);

@@ -41,7 +41,8 @@ public record CharacterDto(
     CharacterBlueprint? Blueprint = null,
     string? WorldName = null,
     string? WorldDescription = null,
-    WorldGenre WorldGenre = WorldGenre.MundaneSliceOfLife
+    WorldGenre WorldGenre = WorldGenre.MundaneSliceOfLife,
+    string? CustomPhysicsRules = null
 );
 
 public record CreateCharacterRequest(
@@ -60,6 +61,7 @@ public record CreateCharacterRequest(
     string? WorldName = null,
     string? WorldDescription = null,
     WorldGenre WorldGenre = WorldGenre.MundaneSliceOfLife,
+    string? CustomPhysicsRules = null,
     List<GeneratedLorebookDto>? InitialLorebookEntries = null
 );
 
@@ -78,7 +80,8 @@ public record UpdateCharacterRequest(
     CharacterBlueprint? Blueprint = null,
     string? WorldName = null,
     string? WorldDescription = null,
-    WorldGenre? WorldGenre = null
+    WorldGenre? WorldGenre = null,
+    string? CustomPhysicsRules = null
 );
 
 public record GenerateCharacterAIRequest(
@@ -100,6 +103,7 @@ public record GeneratedCharacterDto(
     string? WorldName = null,
     string? WorldDescription = null,
     WorldGenre WorldGenre = WorldGenre.MundaneSliceOfLife,
+    string? CustomPhysicsRules = null,
     List<GeneratedLorebookDto>? InitialLorebookEntries = null
 );
 

@@ -46,7 +46,8 @@ public sealed class CreateCharacterHandler : IRequestHandler<CreateCharacterComm
             null,
             req.WorldName,
             req.WorldDescription,
-            req.WorldGenre
+            req.WorldGenre,
+            req.CustomPhysicsRules
         );
 
         await repo.AddAsync(character, cancellationToken);
@@ -96,7 +97,8 @@ public sealed class CreateCharacterHandler : IRequestHandler<CreateCharacterComm
             character.Blueprint,
             character.WorldName,
             character.WorldDescription,
-            character.WorldGenre
+            character.WorldGenre,
+            character.CustomPhysicsRules
         );
 
         return Result<CharacterDto>.Success(dto);

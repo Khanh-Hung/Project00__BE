@@ -64,7 +64,8 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 c.Blueprint,
                 c.WorldName,
                 c.WorldDescription,
-                c.WorldGenre
+                c.WorldGenre,
+                c.CustomPhysicsRules
             );
         }).ToList();
 

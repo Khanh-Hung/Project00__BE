@@ -1,13 +1,39 @@
+using Domain.Entities;
 using Domain.Enums;
 
 namespace Application.Common;
 
 public static class WorldPhysicsRuleResolver
 {
-    public static string Resolve(WorldGenre genre)
+    public static string Resolve(Character character)
+    {
+        // If creator provided explicit CustomPhysicsRules, it takes highest precedence
+        if (!string.IsNullOrWhiteSpace(character.CustomPhysicsRules))
+        {
+            return $"""
+                [WORLD REALITY & CUSTOM PHYSICS GUARDRAIL: USER-DEFINED RULES]
+                {character.CustomPhysicsRules.Trim()}
+                """;
+        }
+
+        return Resolve(character.WorldGenre, character.WorldDescription);
+    }
+
+    public static string Resolve(WorldGenre genre, string? worldDescription = null)
     {
         return genre switch
         {
+            WorldGenre.Custom => !string.IsNullOrWhiteSpace(worldDescription)
+                ? $"""
+                    [WORLD REALITY & PHYSICS GUARDRAIL: CUSTOM DYNAMIC UNIVERSE]
+                    - Universe Core Mechanics: Follow the specific lore and environment described in World Lore.
+                    - Dynamic Adaptation: Embody the logic, physics, and reality of this unique universe faithfully.
+                    """
+                : """
+                    [WORLD REALITY & PHYSICS GUARDRAIL: CUSTOM UNIVERSE]
+                    - Freeform Reality: Follow natural character roleplay, adapting seamlessly to the scene and user interactions.
+                    """,
+
             WorldGenre.MundaneSliceOfLife => """
                 [WORLD REALITY & PHYSICS GUARDRAIL: MUNDANE SLICE-OF-LIFE REALISM]
                 - Zero Supernatural / Magic: Absolutely NO magic, spells, superpowers, flying, ki, or laser eyes exist in this reality. Every action must follow the strict laws of physics and daily modern life.
@@ -45,6 +71,48 @@ public static class WorldPhysicsRuleResolver
                 - Strict Historical Authenticity: Classic historical era governed by societal hierarchies, royal decrees, traditions, and realistic human limitations.
                 - Zero Magic or Future Tech: No spells, no futuristic gadgets. Medicine relies on traditional herbs, combat relies on steel blades and archery.
                 - Traditional Etiquette: Deep respect for social status, modesty, family honor, and classical manners.
+                """,
+
+            WorldGenre.PostApocalyptic => """
+                [WORLD REALITY GUARDRAIL: POST-APOCALYPTIC & SURVIVAL]
+                - Harsh Scarcity: Food, clean water, medical supplies, and ammunition are precious and scarce.
+                - Ruined World: Abandoned cities, radiation, infected mutants, or zombies roam the wastes. Trust is rare and survival is paramount.
+                - Atmosphere: Gritty, tense, cautious, value of small comforts (a warm meal, clean shelter, a trusted companion).
+                """,
+
+            WorldGenre.Steampunk => """
+                [WORLD REALITY GUARDRAIL: STEAMPUNK & CLOCKWORK AESTHETICS]
+                - Brass & Steam: Giant airships, steam boilers, clockwork automata, brass goggles, and coal-powered machinery define technological progress.
+                - Victorian Society: Industrial revolution charm, gentlemanly and ladylike etiquette combined with mad inventor ingenuity.
+                - Tech Level: No modern microchips or smartphones; computing is mechanical (analytical difference engines).
+                """,
+
+            WorldGenre.Superhero => """
+                [WORLD REALITY GUARDRAIL: SUPERHERO & VIGILANTE UNIVERSE]
+                - Superpowers & Metahumans: Mutations, cosmic energy, super-science, and vigilantes exist openly in a vibrant modern metropolis.
+                - Collateral Damage & Secret Identity: Fighting villains risks damaging buildings and endangering civilians. Protecting secret identities is crucial.
+                - Hero-Villain Tropes: Costumes, superhero names, gadgets, moral dilemmas, teamwork or dramatic rivalry.
+                """,
+
+            WorldGenre.EldritchHorror => """
+                [WORLD REALITY GUARDRAIL: ELDRITCH HORROR & COSMIC DREAD]
+                - Cosmic Incomprehensibility: Ancient cosmic entities, forbidden occult tomes, dark cults, and whispering madness lurk just beneath the surface.
+                - Sanity & Psychological Vulnerability: Witnessing eldritch truth degrades sanity, causing paranoia, hallucinations, nightmares, or trembling dread.
+                - Tone: Atmospheric, mysterious, slow-burn psychological tension, chilling discoveries.
+                """,
+
+            WorldGenre.SpaceOpera => """
+                [WORLD REALITY GUARDRAIL: SPACE OPERA & INTERSTELLAR EMPIRES]
+                - Interstellar Civilization: FTL warp drives, massive starship fleets, alien races, orbital stations, and galactic federations.
+                - Sci-Fi Scale: Energy shields, plasma blasters, universal translators, planetary colonies.
+                - Epic Narrative: Grand galactic intrigue, planetary exploration, diverse alien cultures.
+                """,
+
+            WorldGenre.IsekaiOtherworld => """
+                [WORLD REALITY GUARDRAIL: ISEKAI & OTHERWORLD TRANSMIGRATION]
+                - Dual Knowledge: The character (or user) possesses memories and knowledge of Earth/previous world while living in a fantasy RPG universe.
+                - Unique Perks / System: Status screens, appraisal skills, unique blessings, or introducing modern recipes/concepts to astonished locals.
+                - Culture Clashes: Humorous or heartwarming moments when modern sensibilities clash with fantasy traditions.
                 """,
 
             _ => ""
