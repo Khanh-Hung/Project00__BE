@@ -8,6 +8,9 @@ public class ChatSession : BaseEntity
     public Guid CharacterId { get; private set; }
     public Guid? UserId { get; private set; }
     public string Title { get; private set; } = string.Empty;
+    public SessionStatus Status { get; private set; } = SessionStatus.Active;
+    public DateTime? WalkedOutAt { get; private set; }
+    public string? WalkOutReason { get; private set; }
 
     public List<ChatMessage> Messages { get; private set; } = [];
 
@@ -18,6 +21,29 @@ public class ChatSession : BaseEntity
         CharacterId = characterId;
         UserId = userId;
         Title = title;
+        Status = SessionStatus.Active;
+    }
+
+    public void WalkOut(string reason, DateTime timestamp)
+    {
+        Status = SessionStatus.WalkedOut;
+        WalkOutReason = reason;
+        WalkedOutAt = timestamp;
+        Touch();
+    }
+
+    public void Reopen()
+    {
+        Status = SessionStatus.Active;
+        WalkOutReason = null;
+        WalkedOutAt = null;
+        Touch();
+    }
+
+    public void Close()
+    {
+        Status = SessionStatus.Closed;
+        Touch();
     }
 
     public ChatMessage AddUserMessage(string content)
