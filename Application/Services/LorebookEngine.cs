@@ -27,7 +27,7 @@ public sealed class LorebookEngine : ILorebookEngine
         var repo = _unitOfWork.GetRepository<LorebookEntry>();
         
         // Fetch enabled lorebook entries for this character + universal lore (CharacterId == null)
-        var allEntries = await repo.FindAsync(
+        var allEntries = await repo.GetAllAsync(
             e => e.IsEnabled && (e.CharacterId == characterId || e.CharacterId == null),
             ct);
 
@@ -66,7 +66,7 @@ public sealed class LorebookEngine : ILorebookEngine
 
         foreach (var entry in constantEntries)
         {
-            var cost = TokenEstimator.EstimateTokenCount(entry.Title + " " + entry.Content);
+            var cost = TokenEstimator.Estimate(entry.Title + " " + entry.Content);
             if (currentTokens + cost <= maxTokenBudget)
             {
                 result.Add(entry);
@@ -76,7 +76,7 @@ public sealed class LorebookEngine : ILorebookEngine
 
         foreach (var entry in matchedDynamic)
         {
-            var cost = TokenEstimator.EstimateTokenCount(entry.Title + " " + entry.Content);
+            var cost = TokenEstimator.Estimate(entry.Title + " " + entry.Content);
             if (currentTokens + cost <= maxTokenBudget)
             {
                 result.Add(entry);

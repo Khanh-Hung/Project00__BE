@@ -20,7 +20,7 @@ public sealed class GetCharacterLorebookHandler : IRequestHandler<GetCharacterLo
     public async Task<Result<List<LorebookEntryDto>>> Handle(GetCharacterLorebookQuery query, CancellationToken cancellationToken)
     {
         var repo = _unitOfWork.GetRepository<LorebookEntry>();
-        var entries = await repo.FindAsync(
+        var entries = await repo.GetAllAsync(
             e => (query.CharacterId == null || e.CharacterId == query.CharacterId || e.CharacterId == null),
             cancellationToken);
 
