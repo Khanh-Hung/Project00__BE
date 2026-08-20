@@ -20,6 +20,7 @@ public class Character : BaseEntity
     public string? WorldName { get; private set; }
     public string? WorldDescription { get; private set; }
     public WorldGenre WorldGenre { get; private set; } = WorldGenre.MundaneSliceOfLife;
+    public string? CustomPhysicsRules { get; private set; }
     public CharacterBlueprint? Blueprint { get; private set; }
     public CharacterVisualIdentity? VisualIdentity { get; private set; }
     public CharacterVoiceProfile? VoiceProfile { get; private set; }
@@ -43,7 +44,8 @@ public class Character : BaseEntity
         CharacterVoiceProfile? voiceProfile = null,
         string? worldName = null,
         string? worldDescription = null,
-        WorldGenre worldGenre = WorldGenre.MundaneSliceOfLife)
+        WorldGenre worldGenre = WorldGenre.MundaneSliceOfLife,
+        string? customPhysicsRules = null)
     {
         Name = name;
         Title = title;
@@ -62,6 +64,7 @@ public class Character : BaseEntity
         WorldName = worldName;
         WorldDescription = worldDescription;
         WorldGenre = worldGenre;
+        CustomPhysicsRules = customPhysicsRules;
     }
 
     public void UpdateDetails(
@@ -83,7 +86,8 @@ public class Character : BaseEntity
         bool updateVoiceProfile = false,
         string? worldName = null,
         string? worldDescription = null,
-        WorldGenre? worldGenre = null)
+        WorldGenre? worldGenre = null,
+        string? customPhysicsRules = null)
     {
         Name = name;
         Title = title;
@@ -128,16 +132,24 @@ public class Character : BaseEntity
         {
             WorldGenre = worldGenre.Value;
         }
+        if (customPhysicsRules != null)
+        {
+            CustomPhysicsRules = customPhysicsRules;
+        }
         Touch();
     }
 
-    public void SetWorldSetting(string? worldName, string? worldDescription, WorldGenre? worldGenre = null)
+    public void SetWorldSetting(string? worldName, string? worldDescription, WorldGenre? worldGenre = null, string? customPhysicsRules = null)
     {
         WorldName = worldName;
         WorldDescription = worldDescription;
         if (worldGenre.HasValue)
         {
             WorldGenre = worldGenre.Value;
+        }
+        if (customPhysicsRules != null)
+        {
+            CustomPhysicsRules = customPhysicsRules;
         }
         Touch();
     }
