@@ -11,6 +11,10 @@ public interface ILLMService
         RoleplayContext context,
         CancellationToken ct = default);
 
+    IAsyncEnumerable<string> GenerateRoleplayTurnStreamAsync(
+        RoleplayContext context,
+        CancellationToken ct = default);
+
     Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
         Character character,
         IReadOnlyCollection<ChatMessage> history,

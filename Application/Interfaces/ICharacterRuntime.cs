@@ -1,3 +1,4 @@
+using Application.Common;
 using Application.DTOs;
 
 namespace Application.Interfaces;
@@ -32,6 +33,10 @@ public sealed record CharacterTurnResult(
 public interface ICharacterRuntime
 {
     Task<CharacterTurnResult> ProcessTurnAsync(
+        CharacterTurnRequest request,
+        CancellationToken ct = default);
+
+    IAsyncEnumerable<CharacterStreamEvent> ProcessTurnStreamAsync(
         CharacterTurnRequest request,
         CancellationToken ct = default);
 }
