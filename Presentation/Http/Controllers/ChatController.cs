@@ -142,4 +142,35 @@ public sealed class ChatController : ControllerBase
         var result = await _sender.Send(new Application.Features.Chat.Queries.GetCharacterRelationship.GetCharacterRelationshipQuery(characterId, userId), ct);
         return result.ToActionResult();
     }
+
+    /// <summary>
+    /// Sends roleplay message and streams AI response tokens in real-time via Server-Sent Events (SSE)
+    /// </summary>
+    [HttpPost("sessions/{sessionId:guid}/stream")]
+    public async Task StreamMessage(
+        Guid sessionId,
+        [FromBody] SendMessageRequest request,
+        [FromServices] Application.Interfaces.ICharacterRuntime characterRuntime,
+        CancellationToken ct)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.Headers.Append("Cache-Control", "no-cache");
+        Response.Headers.Append("Connection", "keep-alive");
+
+        var userId = GetCurrentUserId() ?? Guid.Empty;
+        var turnRequest = new Application.Interfaces.CharacterTurnRequest(
+            UserId: userId,
+            CharacterId: Guid.Empty,
+            SessionId: sessionId,
+            UserMessage: request.Content,
+            TurnId: Guid.NewGuid()
+        );
+
+        await foreach (var streamEvent in characterRuntime.ProcessTurnStreamAsync(turnRequest, ct))
+        {
+            var sseText = streamEvent.ToSseString();
+            await Response.WriteAsync(sseText, ct);
+            await Response.Body.FlushAsync(ct);
+        }
+    }
 }
