@@ -96,7 +96,7 @@ public sealed class PromptCompiler : IPromptCompiler
         }
 
         // 4. Format World Setting, Reality Rules & Physics Guardrails
-        var worldPhysicsRules = Application.Common.WorldPhysicsRuleResolver.Resolve(character.WorldGenre);
+        var worldPhysicsRules = Application.Common.WorldPhysicsRuleResolver.Resolve(character);
         var parts = new List<string>
         {
             $"- Universe Reality & Genre: {character.WorldGenre}"
