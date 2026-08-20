@@ -21,8 +21,8 @@ public sealed class UpdateCharacterCommandValidator : AbstractValidator<UpdateCh
             .NotEmpty().WithMessage("Personality prompt is required.");
 
         RuleFor(x => x.Request.Greeting)
-            .NotEmpty().WithMessage("Greeting message is required.")
-            .MaximumLength(1000).WithMessage("Greeting message cannot exceed 1000 characters.");
+            .MaximumLength(1000).WithMessage("Greeting message cannot exceed 1000 characters.")
+            .When(x => !string.IsNullOrEmpty(x.Request.Greeting));
 
         RuleFor(x => x.Request.Category)
             .NotEmpty().WithMessage("Character category is required.");

@@ -39,11 +39,6 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
             userId,
             title);
 
-        if (!string.IsNullOrWhiteSpace(character.Greeting))
-        {
-            session.AddAssistantMessage(character.Greeting);
-        }
-
         await sessionRepo.AddAsync(session, cancellationToken);
 
         // Fetch or create CharacterRelationship for persistent state
