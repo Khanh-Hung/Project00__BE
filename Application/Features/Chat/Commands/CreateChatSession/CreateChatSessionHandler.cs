@@ -34,14 +34,29 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
             ? $"Chat with {character.Name}"
             : command.Request.Title;
 
-        var session = new ChatSession(
-            character.Id,
-            userId,
-            title);
+        // 1. Check if an active session already exists for this (UserId, CharacterId) pair
+        ChatSession? session = null;
+        if (userId.HasValue && userId.Value != Guid.Empty)
+        {
+            var userSessions = await sessionRepo.GetAllAsync(
+                s => s.UserId == userId.Value && s.CharacterId == character.Id && s.Status != SessionStatus.WalkedOut,
+                cancellationToken);
 
-        await sessionRepo.AddAsync(session, cancellationToken);
+            session = userSessions.OrderByDescending(s => s.CreatedAt).FirstOrDefault();
+        }
 
-        // Fetch or create CharacterRelationship for persistent state
+        // 2. If no active session exists, create a new unique session
+        if (session == null)
+        {
+            session = new ChatSession(
+                character.Id,
+                userId,
+                title);
+
+            await sessionRepo.AddAsync(session, cancellationToken);
+        }
+
+        // 3. Fetch or create CharacterRelationship for persistent state
         CharacterRelationship? relationship = null;
         if (userId.HasValue && userId.Value != Guid.Empty)
         {
@@ -87,7 +102,10 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
             stageName,
             relationship?.CurrentMood.ToString() ?? character.DefaultMood ?? "Neutral",
             relationship?.MoodIntensity ?? 20,
-            eventsDto
+            eventsDto,
+            session.Status,
+            session.WalkOutReason,
+            session.WalkedOutAt
         );
 
         return Result<ChatSessionDto>.Success(dto);

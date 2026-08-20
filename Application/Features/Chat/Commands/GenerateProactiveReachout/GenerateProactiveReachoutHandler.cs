@@ -53,15 +53,24 @@ public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateP
         // 1. Generate Proactive Reachout Message from AI embodying the Character reading the User's Profile
         var aiResult = await _llmService.GenerateProactiveReachoutAsync(character, profile, cancellationToken);
 
-        // 2. Create new ChatSession with this proactive opening message
-        var session = new ChatSession(
-            character.Id,
-            command.Request.UserId,
-            $"Trò chuyện cùng {character.Name}"
-        );
+        // 2. Reuse active session or create new unique ChatSession
+        var existingSessions = await sessionRepo.GetAllAsync(
+            s => s.UserId == command.Request.UserId && s.CharacterId == character.Id && s.Status != SessionStatus.WalkedOut,
+            cancellationToken);
+
+        var session = existingSessions.OrderByDescending(s => s.CreatedAt).FirstOrDefault();
+
+        if (session == null)
+        {
+            session = new ChatSession(
+                character.Id,
+                command.Request.UserId,
+                $"Trò chuyện cùng {character.Name}"
+            );
+            await sessionRepo.AddAsync(session, cancellationToken);
+        }
 
         session.AddAssistantMessage(aiResult.OpeningMessage);
-        await sessionRepo.AddAsync(session, cancellationToken);
 
         // 3. Initialize or retrieve relationship
         var defaultMood = Enum.TryParse<CharacterMood>(character.DefaultMood, true, out var dm)
