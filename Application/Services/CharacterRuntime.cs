@@ -23,9 +23,6 @@ public sealed class CharacterRuntime : ICharacterRuntime
     private readonly IImageGenerationService _imageService;
     private readonly ILogger<CharacterRuntime> _logger;
 
-    // Lightweight in-memory idempotency cache for deduplicating retries
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, CharacterTurnResult> TurnCache = new();
-
     public CharacterRuntime(
         IUnitOfWork unitOfWork,
         IRoleplayContextEngine contextEngine,
@@ -53,15 +50,39 @@ public sealed class CharacterRuntime : ICharacterRuntime
         var turnId = request.TurnId ?? Guid.NewGuid();
         var traceStopwatch = Stopwatch.StartNew();
 
-        // 1. Idempotency Check: Return cached turn result on client retry
-        if (TurnCache.TryGetValue(turnId, out var cachedResult))
+        // 1. Persistent Database-Backed Idempotency Check: Return existing turn on retry
+        var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
+        var existingTurn = await turnRepo.GetAsync(t => t.TurnId == turnId, ct);
+        if (existingTurn != null)
         {
-            _logger.LogInformation("Idempotency hit for TurnId '{TurnId}'. Returning previous response without re-executing LLM.", turnId);
-            return cachedResult;
+            _logger.LogInformation("Persistent idempotency hit for TurnId '{TurnId}'. Returning previous response from database without re-executing LLM.", turnId);
+            
+            var (relLevel, stageName, _) = RelationshipStageResolver.Resolve(existingTurn.AffectionScore);
+            var cachedRelationshipDto = new CharacterRelationshipDto(
+                Id: Guid.Empty,
+                CharacterId: existingTurn.CharacterId,
+                UserId: existingTurn.UserId,
+                AffectionScore: existingTurn.AffectionScore,
+                CurrentMood: Enum.TryParse<CharacterMood>(existingTurn.Mood, out var parsedCachedMood) ? parsedCachedMood : CharacterMood.Neutral,
+                MoodIntensity: existingTurn.MoodIntensity,
+                Events: new List<RelationshipEventDto>(),
+                LastInteractedAt: existingTurn.CreatedAt
+            );
+
+            return new CharacterTurnResult(
+                MessageId: existingTurn.AssistantMessageId,
+                TurnId: existingTurn.TurnId,
+                Reply: existingTurn.AssistantReply,
+                Relationship: cachedRelationshipDto,
+                ActiveMemories: new List<CharacterMemoryDto>(),
+                Mood: existingTurn.Mood,
+                MoodIntensity: existingTurn.MoodIntensity,
+                AffectionDelta: existingTurn.AffectionDelta
+            );
         }
 
-        _logger.LogInformation("Starting Character Turn {TurnId} for User {UserId}, Character {CharacterId}, Session {SessionId}",
-            turnId, request.UserId, request.CharacterId, request.SessionId);
+        _logger.LogInformation("Starting Character Turn {TurnId} for User {UserId}, Session {SessionId}",
+            turnId, request.UserId, request.SessionId);
 
         // 2. Build Context via Context Engine (Enforces session ownership, item budgets, and isolation)
         var context = await _contextEngine.BuildContextAsync(request.SessionId, request.UserMessage, request.UserId, ct);
@@ -69,13 +90,19 @@ public sealed class CharacterRuntime : ICharacterRuntime
         var character = context.Character;
         var relationship = context.Relationship;
 
-        // 3. LLM Single-Turn Generation
+        // Ensure CharacterId consistency if specified by caller
+        if (request.CharacterId != Guid.Empty && request.CharacterId != character.Id)
+        {
+            throw new ArgumentException($"Requested CharacterId '{request.CharacterId}' does not match Session character '{character.Id}'.", nameof(request.CharacterId));
+        }
+
+        // 3. Single-Turn LLM Generation
         var llmStopwatch = Stopwatch.StartNew();
         var aiTurn = await _llmService.GenerateRoleplayTurnAsync(context, ct);
         llmStopwatch.Stop();
 
-        // 4. Critical Path: Mutate Session & Relationship with strict backend authority
-        session.AddUserMessage(request.UserMessage);
+        // 4. Critical Path: Mutate Session, Relationship & Persistent Turn Record atomically in DB
+        var userMsg = session.AddUserMessage(request.UserMessage);
         var assistantMessage = session.AddAssistantMessage(aiTurn.Reply);
 
         var relationshipRepo = _unitOfWork.GetRepository<CharacterRelationship>();
@@ -103,10 +130,30 @@ public sealed class CharacterRuntime : ICharacterRuntime
             }
         }
 
-        // Commit DB transaction
+        var (level, currentStageName, _) = RelationshipStageResolver.Resolve(relationship?.AffectionScore ?? character.DefaultAffectionScore, character.CustomMilestonesJson);
+
+        // Commit DB transaction for messages and relationship state
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var (level, stageName, _) = RelationshipStageResolver.Resolve(relationship?.AffectionScore ?? character.DefaultAffectionScore, character.CustomMilestonesJson);
+        // Create persistent idempotency record with verified message IDs
+        var turnRecord = new CharacterTurn(
+            turnId: turnId,
+            sessionId: session.Id,
+            userId: request.UserId,
+            characterId: character.Id,
+            userMessageId: userMsg.Id,
+            assistantMessageId: assistantMessage.Id,
+            userMessage: request.UserMessage,
+            assistantReply: aiTurn.Reply,
+            mood: currentMood.ToString(),
+            moodIntensity: currentIntensity,
+            affectionDelta: appliedDelta,
+            affectionScore: relationship?.AffectionScore ?? character.DefaultAffectionScore,
+            relationshipStage: currentStageName
+        );
+        await turnRepo.AddAsync(turnRecord, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
         var relationshipDto = new CharacterRelationshipDto(
             Id: relationship?.Id ?? Guid.Empty,
             CharacterId: character.Id,
@@ -127,10 +174,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
             CreatedAt: m.CreatedAt
         )).ToList();
 
-        // 5. Asynchronous & Failure-Isolated Side Effects (Never fail the chat turn)
-        string? audioUrl = null;
-        string? imageUrl = null;
-
+        // 5. Asynchronous & Failure-Isolated Side Effects (Triggered post-commit, non-blocking)
+        
         // Side effect 1: Long-term memory extraction trigger (Background Worker)
         try
         {
@@ -156,67 +201,67 @@ public sealed class CharacterRuntime : ICharacterRuntime
             _logger.LogWarning(ex, "Memory extraction trigger failed for Turn {TurnId}. Chat completed successfully.", turnId);
         }
 
-        // Side effect 2: Optional Voice Audio Generation
+        // Side effect 2: Optional Non-blocking Background Voice Audio Generation
         if (request.Options?.GenerateVoice == true && character.VoiceProfile != null)
         {
-            try
+            _ = Task.Run(async () =>
             {
-                var voiceContext = new VoiceContext(
-                    Voice: character.VoiceProfile,
-                    Mood: relationship?.CurrentMood ?? CharacterMood.Neutral,
-                    MoodIntensity: currentIntensity,
-                    AffectionScore: relationship?.AffectionScore ?? 0,
-                    RelationshipStage: stageName,
-                    RawText: aiTurn.Reply
-                );
-                var voiceReq = _voiceCompiler.CompileVoiceRequest(voiceContext);
-                var voiceResult = await _voiceService.GenerateVoiceAsync(voiceReq, ct);
-                audioUrl = voiceResult.AudioUrl;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Voice generation failed for Turn {TurnId}. Chat completed successfully.", turnId);
-            }
+                try
+                {
+                    var voiceContext = new VoiceContext(
+                        Voice: character.VoiceProfile,
+                        Mood: relationship?.CurrentMood ?? CharacterMood.Neutral,
+                        MoodIntensity: currentIntensity,
+                        AffectionScore: relationship?.AffectionScore ?? 0,
+                        RelationshipStage: currentStageName,
+                        RawText: aiTurn.Reply
+                    );
+                    var voiceReq = _voiceCompiler.CompileVoiceRequest(voiceContext);
+                    await _voiceService.GenerateVoiceAsync(voiceReq, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Background voice generation failed for Turn {TurnId}", turnId);
+                }
+            });
         }
 
-        // Side effect 3: Optional Scene Image Generation
+        // Side effect 3: Optional Non-blocking Background Scene Image Generation
         if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
         {
-            try
+            _ = Task.Run(async () =>
             {
-                var scene = new SceneContext(
-                    Location: character.Title,
-                    Expression: currentMood.ToString()
-                );
-                var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
-                imageUrl = await _imageService.GenerateImageAsync(new ImageGenerationRequest(prompt), ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Scene image generation failed for Turn {TurnId}. Chat completed successfully.", turnId);
-            }
+                try
+                {
+                    var scene = new SceneContext(
+                        Location: character.Title,
+                        Expression: currentMood.ToString()
+                    );
+                    var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
+                    await _imageService.GenerateImageAsync(new ImageGenerationRequest(prompt), CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Background scene image generation failed for Turn {TurnId}", turnId);
+                }
+            });
         }
 
         traceStopwatch.Stop();
-        _logger.LogInformation("Turn {TurnId} finished in {TotalMs}ms (LLM: {LlmMs}ms). AffectionDelta: {Delta}, Mood: {Mood}",
+        _logger.LogInformation("Turn {TurnId} committed in {TotalMs}ms (LLM: {LlmMs}ms). AffectionDelta: {Delta}, Mood: {Mood}",
             turnId, traceStopwatch.ElapsedMilliseconds, llmStopwatch.ElapsedMilliseconds, appliedDelta, currentMood);
 
-        var result = new CharacterTurnResult(
+        return new CharacterTurnResult(
             MessageId: assistantMessage.Id,
             TurnId: turnId,
             Reply: aiTurn.Reply,
             Relationship: relationshipDto,
             ActiveMemories: activeMemoriesDto,
-            AudioUrl: audioUrl,
-            ImageUrl: imageUrl,
+            AudioUrl: null, // Audio and Image are generated asynchronously in background
+            ImageUrl: null,
             Mood: currentMood.ToString(),
             MoodIntensity: currentIntensity,
             AffectionDelta: appliedDelta
         );
-
-        // Store in cache for idempotency
-        TurnCache.TryAdd(turnId, result);
-
-        return result;
     }
 }

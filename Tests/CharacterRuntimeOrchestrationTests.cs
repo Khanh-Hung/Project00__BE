@@ -74,13 +74,19 @@ public class CharacterRuntimeOrchestrationTests
         Assert.Equal(4, result.AffectionDelta);
         Assert.Equal(4, result.Relationship.AffectionScore);
         Assert.True(mockTrigger.TriggerCount > 0);
+
+        // Verify CharacterTurn record is saved in DB
+        var turnRecord = await context.CharacterTurns.FirstOrDefaultAsync(t => t.TurnId == turnReq.TurnId);
+        Assert.NotNull(turnRecord);
+        Assert.Equal(session.Id, turnRecord.SessionId);
     }
 
     [Fact]
-    public async Task CharacterRuntime_Enforces_Idempotency_On_TurnId_Retries()
+    public async Task CharacterRuntime_Enforces_Persistent_Database_Idempotency_Across_Process_Restart()
     {
+        var dbName = Guid.NewGuid().ToString();
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
         var charId = Guid.NewGuid();
@@ -95,26 +101,22 @@ public class CharacterRuntimeOrchestrationTests
         await context.ChatSessions.AddAsync(session);
         await context.SaveChangesAsync();
 
-        var unitOfWork = new UnitOfWork(context);
+        var unitOfWork1 = new UnitOfWork(context);
         var fakeUserProvider = new FakeCurrentUserProvider(userId.ToString());
         var fakeMemoryService = new FakeMemoryService();
-        var contextEngine = new RoleplayContextEngine(unitOfWork, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
-        var fakeLlmService = new FakeLLMService("Phản hồi lần đầu", CharacterMood.Happy, 60, 3);
+        var contextEngine1 = new RoleplayContextEngine(unitOfWork1, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
+        var fakeLlmService1 = new FakeLLMService("Phản hồi lần đầu", CharacterMood.Happy, 60, 3);
         var mockTrigger = new MockMemoryExtractionTrigger();
-        var voiceCompiler = new VoicePromptCompiler();
-        var mockVoiceService = new MockVoiceService();
-        var visualCompiler = new VisualPromptCompiler();
-        var mockImageService = new MockImageService();
 
-        var runtime = new CharacterRuntime(
-            unitOfWork,
-            contextEngine,
-            fakeLlmService,
+        var runtime1 = new CharacterRuntime(
+            unitOfWork1,
+            contextEngine1,
+            fakeLlmService1,
             mockTrigger,
-            voiceCompiler,
-            mockVoiceService,
-            visualCompiler,
-            mockImageService,
+            new VoicePromptCompiler(),
+            new MockVoiceService(),
+            new VisualPromptCompiler(),
+            new MockImageService(),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -126,17 +128,83 @@ public class CharacterRuntimeOrchestrationTests
             TurnId: fixedTurnId
         );
 
-        // Turn 1
-        var result1 = await runtime.ProcessTurnAsync(turnReq);
+        // Process Turn on Instance 1
+        var result1 = await runtime1.ProcessTurnAsync(turnReq);
         Assert.Equal("Phản hồi lần đầu", result1.Reply);
-        Assert.Equal(1, fakeLlmService.CallCount);
+        Assert.Equal(1, fakeLlmService1.CallCount);
 
-        // Turn 2: Retry with exact same TurnId
-        var result2 = await runtime.ProcessTurnAsync(turnReq);
+        // Simulate Process Restart / Instance 2 with brand new Runtime and clean memory
+        await using var context2 = new ProjectDbContext(options);
+        var unitOfWork2 = new UnitOfWork(context2);
+        var contextEngine2 = new RoleplayContextEngine(unitOfWork2, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
+        var fakeLlmService2 = new FakeLLMService("Phản hồi lần hai (không được gọi)", CharacterMood.Angry, 90, 0);
+
+        var runtime2 = new CharacterRuntime(
+            unitOfWork2,
+            contextEngine2,
+            fakeLlmService2,
+            mockTrigger,
+            new VoicePromptCompiler(),
+            new MockVoiceService(),
+            new VisualPromptCompiler(),
+            new MockImageService(),
+            NullLogger<CharacterRuntime>.Instance
+        );
+
+        // Process same TurnId on Instance 2
+        var result2 = await runtime2.ProcessTurnAsync(turnReq);
+
+        // Must read from database idempotency table and NOT invoke LLM on Instance 2
         Assert.Equal("Phản hồi lần đầu", result2.Reply);
         Assert.Equal(result1.MessageId, result2.MessageId);
-        // LLM must NOT be called again
-        Assert.Equal(1, fakeLlmService.CallCount);
+        Assert.Equal(0, fakeLlmService2.CallCount);
+    }
+
+    [Fact]
+    public async Task CharacterRuntime_Rejects_Mismatched_CharacterId()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var actualCharId = Guid.NewGuid();
+        var mismatchedCharId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        await using var context = new ProjectDbContext(options);
+        var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = actualCharId };
+        await context.Characters.AddAsync(character);
+
+        var session = new ChatSession(actualCharId, userId, "Test Session");
+        await context.ChatSessions.AddAsync(session);
+        await context.SaveChangesAsync();
+
+        var unitOfWork = new UnitOfWork(context);
+        var fakeUserProvider = new FakeCurrentUserProvider(userId.ToString());
+        var fakeMemoryService = new FakeMemoryService();
+        var contextEngine = new RoleplayContextEngine(unitOfWork, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
+        var fakeLlmService = new FakeLLMService("Reply", CharacterMood.Neutral, 50, 0);
+
+        var runtime = new CharacterRuntime(
+            unitOfWork,
+            contextEngine,
+            fakeLlmService,
+            new MockMemoryExtractionTrigger(),
+            new VoicePromptCompiler(),
+            new MockVoiceService(),
+            new VisualPromptCompiler(),
+            new MockImageService(),
+            NullLogger<CharacterRuntime>.Instance
+        );
+
+        var turnReq = new CharacterTurnRequest(
+            UserId: userId,
+            CharacterId: mismatchedCharId,
+            SessionId: session.Id,
+            UserMessage: "Hello"
+        );
+
+        await Assert.ThrowsAsync<ArgumentException>(() => runtime.ProcessTurnAsync(turnReq));
     }
 
     [Fact]
@@ -198,8 +266,6 @@ public class CharacterRuntimeOrchestrationTests
 
         Assert.NotNull(result);
         Assert.Equal("Chat thành công dù side effect lỗi", result.Reply);
-        Assert.Null(result.AudioUrl);
-        Assert.Null(result.ImageUrl);
     }
 
     [Fact]

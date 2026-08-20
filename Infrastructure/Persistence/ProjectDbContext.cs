@@ -24,6 +24,7 @@ public class ProjectDbContext : DbContext
     public DbSet<User> Users { get; set; }
     public DbSet<CharacterMemory> CharacterMemories { get; set; }
     public DbSet<CharacterRelationship> CharacterRelationships { get; set; }
+    public DbSet<CharacterTurn> CharacterTurns { get; set; }
 
     private string NormalizeUserId()
     {
