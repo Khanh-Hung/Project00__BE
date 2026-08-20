@@ -59,8 +59,9 @@ public sealed class MemoryExtractionBackgroundService : BackgroundService, IMemo
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("MemoryExtractionBackgroundService started with BatchSize={BatchSize}, Capacity={Capacity}",
-            _options.BatchSize, _options.QueueCapacity);
+        _logger.LogInformation(
+            "MemoryExtractionBackgroundService started with BatchSize={BatchSize}, WindowSize={WindowSize}, MinConfidence={MinConfidence:P0}, Capacity={Capacity}",
+            _options.BatchSize, _options.WindowSize, _options.MinConfidence, _options.QueueCapacity);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -102,25 +103,31 @@ public sealed class MemoryExtractionBackgroundService : BackgroundService, IMemo
             return;
         }
 
+        // Apply Window Size configuration (take at most WindowSize recent messages)
+        var windowMessages = job.RecentMessages.TakeLast(_options.WindowSize).ToList();
+
         try
         {
             var candidates = await llmService.ExtractMemoryCandidatesAsync(
                 character,
-                job.RecentMessages,
+                windowMessages,
                 ct);
 
             if (candidates.Count > 0)
             {
-                var stored = await memoryService.StoreCandidatesAsync(
+                // Apply Max Candidates configuration cap
+                var cappedCandidates = candidates.Take(_options.MaxCandidates).ToList();
+
+                var metrics = await memoryService.StoreCandidatesAsync(
                     job.UserId,
                     job.CharacterId,
                     job.SessionId,
-                    candidates,
+                    cappedCandidates,
                     ct);
 
                 _logger.LogInformation(
-                    "Extracted and stored {StoredCount} memories for User {UserId} and Character {CharacterName}",
-                    stored, job.UserId, character.Name);
+                    "MemoryExtraction completed for Session {SessionId}, User {UserId}. Candidates: {ExtractedCount}, Accepted: {AcceptedCount}, Rejected: {RejectedCount}, Duplicates: {DuplicateCount}, Persisted: {PersistedCount}",
+                    job.SessionId, job.UserId, metrics.ExtractedCount, metrics.AcceptedCount, metrics.RejectedCount, metrics.DuplicateCount, metrics.PersistedCount);
             }
         }
         catch (Exception ex)

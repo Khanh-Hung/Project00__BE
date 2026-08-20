@@ -4,7 +4,7 @@ using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
-using Domain.Enums;
+using Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services;
@@ -12,11 +12,16 @@ namespace Infrastructure.Services;
 public sealed class MemoryService : IMemoryService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IMemoryCandidateValidator _validator;
     private readonly ILogger<MemoryService> _logger;
 
-    public MemoryService(IUnitOfWork unitOfWork, ILogger<MemoryService> logger)
+    public MemoryService(
+        IUnitOfWork unitOfWork,
+        IMemoryCandidateValidator validator,
+        ILogger<MemoryService> logger)
     {
         _unitOfWork = unitOfWork;
+        _validator = validator;
         _logger = logger;
     }
 
@@ -29,7 +34,6 @@ public sealed class MemoryService : IMemoryService
 
     /// <summary>
     /// Phase 2.1 2-Phase Retrieval (Top Important [limit 20] + Most Recent [limit 20] -> In-memory Score & Diversity -> Top 6).
-    /// Semantic retrieval will be introduced when pgvector is integrated in Phase 2.2.
     /// </summary>
     public async Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(
         Guid userId,
@@ -42,11 +46,9 @@ public sealed class MemoryService : IMemoryService
             return Array.Empty<CharacterMemory>();
         }
 
-        // 2-Phase Retrieval: Query top important and most recent sequentially (DbContext instances are not thread-safe)
         var topImportant = await _unitOfWork.CharacterMemories.GetTopImportantAsync(userId, characterId, minImportance: 3, limit: 20, ct: ct);
         var mostRecent = await _unitOfWork.CharacterMemories.GetMostRecentAsync(userId, characterId, limit: 20, ct: ct);
 
-        // Combine and distinct candidates in-memory (at most 40 items)
         var combinedCandidates = topImportant
             .Concat(mostRecent)
             .GroupBy(m => m.Id)
@@ -116,7 +118,7 @@ public sealed class MemoryService : IMemoryService
         return selected;
     }
 
-    public async Task<int> StoreCandidatesAsync(
+    public async Task<MemoryExtractionMetrics> StoreCandidatesAsync(
         Guid userId,
         Guid characterId,
         Guid? sessionId,
@@ -125,24 +127,51 @@ public sealed class MemoryService : IMemoryService
     {
         if (userId == Guid.Empty || characterId == Guid.Empty)
         {
-            return 0;
+            return new MemoryExtractionMetrics(0, 0, 0, 0, 0);
         }
 
         var candidateList = candidates?.ToList() ?? new List<MemoryCandidate>();
-        if (candidateList.Count == 0)
+        int extractedCount = candidateList.Count;
+        if (extractedCount == 0)
         {
-            return 0;
+            return new MemoryExtractionMetrics(0, 0, 0, 0, 0);
         }
 
-        // Query only existing memories matching the candidate types instead of loading entire memory set
-        var candidateTypes = candidateList.Select(c => c.Type).Distinct().ToList();
+        int acceptedCount = 0;
+        int rejectedCount = 0;
+        int duplicateCount = 0;
+        int persistedCount = 0;
+
+        // 1. Filter valid candidates through IMemoryCandidateValidator
+        var validCandidates = new List<MemoryCandidate>();
+        foreach (var candidate in candidateList)
+        {
+            if (_validator.Validate(candidate, out var failureReason))
+            {
+                validCandidates.Add(candidate);
+                acceptedCount++;
+            }
+            else
+            {
+                rejectedCount++;
+                _logger.LogDebug("Memory candidate rejected during validation. Reason: {Reason}", failureReason);
+            }
+        }
+
+        if (validCandidates.Count == 0)
+        {
+            return new MemoryExtractionMetrics(extractedCount, acceptedCount, rejectedCount, duplicateCount, persistedCount);
+        }
+
+        // 2. Query only existing memories matching candidate types
+        var candidateTypes = validCandidates.Select(c => c.Type).Distinct().ToList();
         var existingMemories = await _unitOfWork.CharacterMemories.GetExistingByTypesAsync(
             userId,
             characterId,
             candidateTypes,
             ct: ct);
 
-        // Map existing normalized content + type to memory
+        // Map existing normalized content + type to memory for targeted deduplication
         var existingMap = new Dictionary<string, CharacterMemory>();
         foreach (var m in existingMemories)
         {
@@ -150,29 +179,18 @@ public sealed class MemoryService : IMemoryService
             existingMap[key] = m;
         }
 
-        int addedCount = 0;
-        foreach (var c in candidateList)
+        // 3. Process deduplication and persistence
+        foreach (var c in validCandidates)
         {
-            if (string.IsNullOrWhiteSpace(c.Content)) continue;
-
             var normalized = NormalizeContent(c.Content);
-            if (string.IsNullOrEmpty(normalized)) continue;
-
-            // Application sanitization of untrusted AI candidate before persisting
-            var sanitizedContent = c.Content.Trim();
-            if (sanitizedContent.Length > 1000)
-            {
-                sanitizedContent = sanitizedContent.Substring(0, 1000).Trim();
-            }
-            var sanitizedImportance = Math.Clamp(c.Importance, 1, 5);
-            var sanitizedConfidence = Math.Clamp(c.Confidence, 0.0m, 1.0m);
-
             var key = $"{c.Type}_{normalized}";
+
             if (existingMap.TryGetValue(key, out var existing))
             {
-                // Update importance & confidence if candidate has higher signals
-                var newImportance = Math.Max(existing.Importance, sanitizedImportance);
-                var newConfidence = Math.Max(existing.Confidence, sanitizedConfidence);
+                duplicateCount++;
+                // Update importance & confidence if candidate has stronger signals
+                var newImportance = Math.Max(existing.Importance, c.Importance);
+                var newConfidence = Math.Max(existing.Confidence, c.Confidence);
                 existing.UpdateDetails(importance: newImportance, confidence: newConfidence);
                 _unitOfWork.CharacterMemories.Update(existing);
             }
@@ -181,20 +199,20 @@ public sealed class MemoryService : IMemoryService
                 var newMemory = CharacterMemory.Create(
                     characterId: characterId,
                     userId: userId,
-                    content: sanitizedContent,
+                    content: c.Content,
                     type: c.Type,
-                    importance: sanitizedImportance,
-                    confidence: sanitizedConfidence,
+                    importance: c.Importance,
+                    confidence: c.Confidence,
                     sourceSessionId: sessionId
                 );
 
                 await _unitOfWork.CharacterMemories.AddAsync(newMemory, ct);
                 existingMap[key] = newMemory;
-                addedCount++;
+                persistedCount++;
             }
         }
 
         await _unitOfWork.SaveChangesAsync(ct);
-        return addedCount;
+        return new MemoryExtractionMetrics(extractedCount, acceptedCount, rejectedCount, duplicateCount, persistedCount);
     }
 }

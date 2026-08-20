@@ -1,13 +1,7 @@
 using Domain.Enums;
+using Domain.ValueObjects;
 
 namespace Application.DTOs;
-
-public record MemoryCandidate(
-    string Content,
-    MemoryType Type,
-    int Importance = 3,
-    decimal Confidence = 0.9m
-);
 
 public record MemoryExtractionResult(
     List<MemoryCandidate> Memories
@@ -24,8 +18,19 @@ public record MemoryExtractionJob(
 public class MemoryExtractionOptions
 {
     public int BatchSize { get; set; } = 5;
+    public int WindowSize { get; set; } = 10;
+    public decimal MinConfidence { get; set; } = 0.60m;
+    public int MaxCandidates { get; set; } = 3;
     public int QueueCapacity { get; set; } = 100;
 }
+
+public record MemoryExtractionMetrics(
+    int ExtractedCount,
+    int AcceptedCount,
+    int RejectedCount,
+    int DuplicateCount,
+    int PersistedCount
+);
 
 public record CharacterMemoryDto(
     Guid Id,

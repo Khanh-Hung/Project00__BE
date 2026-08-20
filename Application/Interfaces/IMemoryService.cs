@@ -1,5 +1,6 @@
 using Application.DTOs;
 using Domain.Entities;
+using Domain.ValueObjects;
 
 namespace Application.Interfaces;
 
@@ -17,8 +18,9 @@ public interface IMemoryService
 
     /// <summary>
     /// Validates, normalizes, deduplicates, and persists memory candidates.
+    /// Returns detailed metrics on accepted, rejected, duplicate, and persisted counts.
     /// </summary>
-    Task<int> StoreCandidatesAsync(
+    Task<MemoryExtractionMetrics> StoreCandidatesAsync(
         Guid userId,
         Guid characterId,
         Guid? sessionId,
