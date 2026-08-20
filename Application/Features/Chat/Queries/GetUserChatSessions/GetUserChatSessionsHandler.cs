@@ -39,8 +39,11 @@ public sealed class GetUserChatSessionsHandler : IRequestHandler<GetUserChatSess
                 .ToDictionary(r => r.CharacterId);
         }
 
+        // Group by CharacterId so each character represents 1 continuous unique conversation
         var list = filteredSessions
             .Where(s => charDict.ContainsKey(s.CharacterId))
+            .GroupBy(s => s.CharacterId)
+            .Select(g => g.OrderByDescending(s => s.Messages.LastOrDefault()?.CreatedAt ?? s.CreatedAt).First())
             .OrderByDescending(s => s.Messages.LastOrDefault()?.CreatedAt ?? s.CreatedAt)
             .Select(s =>
             {
