@@ -23,7 +23,8 @@ public record CharacterRelationshipDto(
     CharacterMood CurrentMood,
     int MoodIntensity,
     List<RelationshipEventDto> Events,
-    DateTime LastInteractedAt
+    DateTime LastInteractedAt,
+    string? RelationshipStage = null
 );
 
 public record ChatSessionDto(

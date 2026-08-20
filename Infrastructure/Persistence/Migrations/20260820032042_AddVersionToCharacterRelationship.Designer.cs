@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Project.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ProjectDbContext))]
-    partial class ProjectDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260820032042_AddVersionToCharacterRelationship")]
+    partial class AddVersionToCharacterRelationship
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -253,101 +256,6 @@ namespace Project.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_CharacterRelationships_UserId_CharacterId");
 
                     b.ToTable("CharacterRelationships");
-                });
-
-            modelBuilder.Entity("Domain.Entities.CharacterTurn", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ActiveMemoriesJson")
-                        .HasColumnType("jsonb");
-
-                    b.Property<int>("AffectionDelta")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("AffectionScore")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("AssistantMessageId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AssistantReply")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("CharacterId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DeletedBy")
-                        .HasColumnType("text");
-
-                    b.Property<string>("EventsJson")
-                        .HasColumnType("jsonb");
-
-                    b.Property<bool>("IsSoftDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("LastInteractedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Mood")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<int>("MoodIntensity")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("RelationshipId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("RelationshipStage")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid>("SessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TurnId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("UserMessage")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserMessageId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TurnId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_CharacterTurns_TurnId");
-
-                    b.HasIndex("SessionId", "UserId");
-
-                    b.ToTable("CharacterTurns");
                 });
 
             modelBuilder.Entity("Domain.Entities.ChatMessage", b =>

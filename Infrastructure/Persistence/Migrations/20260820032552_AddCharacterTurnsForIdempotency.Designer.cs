@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Project.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ProjectDbContext))]
-    partial class ProjectDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260820032552_AddCharacterTurnsForIdempotency")]
+    partial class AddCharacterTurnsForIdempotency
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -261,9 +264,6 @@ namespace Project.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("ActiveMemoriesJson")
-                        .HasColumnType("jsonb");
-
                     b.Property<int>("AffectionDelta")
                         .HasColumnType("integer");
 
@@ -292,14 +292,8 @@ namespace Project.Infrastructure.Persistence.Migrations
                     b.Property<string>("DeletedBy")
                         .HasColumnType("text");
 
-                    b.Property<string>("EventsJson")
-                        .HasColumnType("jsonb");
-
                     b.Property<bool>("IsSoftDeleted")
                         .HasColumnType("boolean");
-
-                    b.Property<DateTime>("LastInteractedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Mood")
                         .IsRequired()
@@ -308,9 +302,6 @@ namespace Project.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("MoodIntensity")
                         .HasColumnType("integer");
-
-                    b.Property<Guid>("RelationshipId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("RelationshipStage")
                         .IsRequired()

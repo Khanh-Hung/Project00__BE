@@ -13,11 +13,16 @@ public abstract class Entity
     public DateTime? DeletedAt { get; protected set; }
     public string? DeletedBy { get; protected set; }
 
-    protected Entity() { }
+    protected Entity()
+    {
+        Id = Guid.CreateVersion7();
+        CreatedAt = Clock.Now;
+    }
 
     protected Entity(Guid id)
     {
-        Id = id;
+        Id = id == Guid.Empty ? Guid.CreateVersion7() : id;
+        CreatedAt = Clock.Now;
     }
 
     public void Touch()
@@ -56,6 +61,6 @@ public abstract class Entity
 
 public abstract class BaseEntity : Entity
 {
-    protected BaseEntity() { }
+    protected BaseEntity() : base() { }
     protected BaseEntity(Guid id) : base(id) { }
 }

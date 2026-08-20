@@ -332,12 +332,21 @@ public class CharacterMemoryTests
             currentUserProvider,
             NullLogger<RoleplayContextEngine>.Instance
         );
+        var runtime = new CharacterRuntime(
+            unitOfWork,
+            contextEngine,
+            fakeLLM,
+            extractionTrigger,
+            new VoicePromptCompiler(),
+            new DummyVoiceService(),
+            new VisualPromptCompiler(),
+            new DummyImageService(),
+            NullLogger<CharacterRuntime>.Instance
+        );
 
         var handler = new SendChatMessageHandler(
-            unitOfWork,
-            fakeLLM,
-            contextEngine,
-            extractionTrigger,
+            runtime,
+            currentUserProvider,
             NullLogger<SendChatMessageHandler>.Instance
         );
 
@@ -399,5 +408,19 @@ public class CharacterMemoryTests
         public Task<GenerateAvatarResponse> GenerateAvatarAsync(GenerateAvatarRequest request, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<GenerateAvatarResponse> GenerateSceneImageAsync(GenerateSceneImageRequest request, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<List<MemoryCandidate>> ExtractMemoryCandidatesAsync(Character character, IReadOnlyCollection<ChatMessageDto> recentMessages, CancellationToken ct = default) => Task.FromResult(new List<MemoryCandidate>());
+    }
+
+    private sealed class DummyVoiceService : IVoiceGenerationService
+    {
+        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceGenerationRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new VoiceGenerationResult("/uploads/audio/dummy.mp3", "audio/mpeg", 2));
+    }
+
+    private sealed class DummyImageService : IImageGenerationService
+    {
+        public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default) =>
+            Task.FromResult("https://example.com/dummy.jpg");
+        public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default) =>
+            Task.FromResult("https://example.com/dummy.jpg");
     }
 }

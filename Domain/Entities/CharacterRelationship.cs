@@ -13,6 +13,7 @@ public sealed class CharacterRelationship : BaseEntity
     public CharacterMood CurrentMood { get; private set; } = CharacterMood.Neutral;
     public int MoodIntensity { get; private set; } = 20;
     public DateTime LastInteractedAt { get; private set; }
+    public uint Version { get; private set; } = 1;
 
     private readonly List<RelationshipEvent> _events = [];
     public IReadOnlyCollection<RelationshipEvent> Events => _events.AsReadOnly();
@@ -33,6 +34,7 @@ public sealed class CharacterRelationship : BaseEntity
         CurrentMood = initialMood;
         MoodIntensity = Math.Clamp(initialMoodIntensity, 0, 100);
         LastInteractedAt = initialTimestamp;
+        Version = 1;
     }
 
     public static CharacterRelationship Create(
@@ -70,6 +72,7 @@ public sealed class CharacterRelationship : BaseEntity
         AffectionScore = Math.Clamp(AffectionScore + delta, -100, 100);
         var actualDelta = AffectionScore - oldScore;
         LastInteractedAt = utcNow ?? DateTime.UtcNow;
+        Version++;
         Touch();
         return (oldScore, AffectionScore, actualDelta);
     }
@@ -79,6 +82,7 @@ public sealed class CharacterRelationship : BaseEntity
         CurrentMood = mood;
         MoodIntensity = Math.Clamp(intensity, 0, 100);
         LastInteractedAt = utcNow ?? DateTime.UtcNow;
+        Version++;
         Touch();
     }
 
@@ -107,6 +111,7 @@ public sealed class CharacterRelationship : BaseEntity
         var timestamp = utcNow ?? DateTime.UtcNow;
         _events.Add(new RelationshipEvent(trimmedKey, trimmedContext, timestamp));
         LastInteractedAt = timestamp;
+        Version++;
         Touch();
         return true;
     }
@@ -117,6 +122,7 @@ public sealed class CharacterRelationship : BaseEntity
         {
             CurrentMood = defaultMood;
             MoodIntensity = 20;
+            Version++;
             Touch();
         }
     }

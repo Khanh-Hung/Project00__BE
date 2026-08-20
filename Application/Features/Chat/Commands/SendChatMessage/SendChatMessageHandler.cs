@@ -1,10 +1,10 @@
-using Application.Abstractions.Data;
+using Application.Abstractions.Auth;
 using Application.Abstractions.Responses;
 using Application.Common;
+using Application.Common.Exceptions;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
-using Domain.Entities;
 using Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -14,23 +14,17 @@ namespace Application.Features.Chat.Commands.SendChatMessage;
 
 public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageCommand, Result<SendMessageResponse>>
 {
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly ILLMService _llmService;
-    private readonly IRoleplayContextEngine _contextEngine;
-    private readonly IMemoryExtractionTrigger _extractionTrigger;
+    private readonly ICharacterRuntime _characterRuntime;
+    private readonly ICurrentUserProvider _currentUserProvider;
     private readonly ILogger<SendChatMessageHandler> _logger;
 
     public SendChatMessageHandler(
-        IUnitOfWork unitOfWork,
-        ILLMService llmService,
-        IRoleplayContextEngine contextEngine,
-        IMemoryExtractionTrigger extractionTrigger,
+        ICharacterRuntime characterRuntime,
+        ICurrentUserProvider currentUserProvider,
         ILogger<SendChatMessageHandler> logger)
     {
-        _unitOfWork = unitOfWork;
-        _llmService = llmService;
-        _contextEngine = contextEngine;
-        _extractionTrigger = extractionTrigger;
+        _characterRuntime = characterRuntime;
+        _currentUserProvider = currentUserProvider;
         _logger = logger;
     }
 
@@ -38,11 +32,24 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
     {
         var req = command.Request;
 
-        // 1. Build Isolated & Budget-Constrained Roleplay Context via Context Engine
-        RoleplayContext context;
+        Guid effectiveUserId = Guid.Empty;
+        if (!string.IsNullOrEmpty(_currentUserProvider.CurrentUserId) && Guid.TryParse(_currentUserProvider.CurrentUserId, out var uid))
+        {
+            effectiveUserId = uid;
+        }
+
+        var turnRequest = new CharacterTurnRequest(
+            UserId: effectiveUserId,
+            CharacterId: Guid.Empty, // Will be resolved by Runtime via Session
+            SessionId: req.SessionId,
+            UserMessage: req.Content,
+            TurnId: Guid.NewGuid()
+        );
+
+        CharacterTurnResult turnResult;
         try
         {
-            context = await _contextEngine.BuildContextAsync(req.SessionId, req.Content, ct: cancellationToken);
+            turnResult = await _characterRuntime.ProcessTurnAsync(turnRequest, cancellationToken);
         }
         catch (KeyNotFoundException ex)
         {
@@ -52,90 +59,25 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
         {
             return Result<SendMessageResponse>.Failure(StatusCodes.Status403Forbidden, ex.Message);
         }
-
-        var session = context.Session;
-        var character = context.Character;
-        var relationship = context.Relationship;
-
-        // 2. Append User Message to session
-        var userMsg = session.AddUserMessage(req.Content);
-
-        // 3. Single-Turn AI Roleplay with 6-Layer Compiled Context
-        var aiTurn = await _llmService.GenerateRoleplayTurnAsync(context, cancellationToken);
-
-        // 4. Backend Validates & Mutates Dynamic Relationship State
-        var (oldLevel, _, _) = RelationshipStageResolver.Resolve(relationship?.AffectionScore ?? character.DefaultAffectionScore, character.CustomMilestonesJson);
-        int actualDelta = aiTurn.AffectionDelta;
-        int newScore = relationship?.AffectionScore ?? character.DefaultAffectionScore;
-        RelationshipEventDto? unlockedEventDto = null;
-
-        if (relationship != null)
+        catch (CharacterTurnConcurrencyException ex)
         {
-            var (_, scoreAfterDelta, deltaApplied) = relationship.ApplyAffectionDelta(aiTurn.AffectionDelta);
-            newScore = scoreAfterDelta;
-            actualDelta = deltaApplied;
-
-            relationship.UpdateMood(aiTurn.Mood, aiTurn.MoodIntensity);
-
-            if (aiTurn.Event != null && !string.IsNullOrWhiteSpace(aiTurn.Event.Key))
-            {
-                var unlocked = relationship.TryUnlockEvent(aiTurn.Event.Key, aiTurn.Event.Context);
-                if (unlocked)
-                {
-                    unlockedEventDto = new RelationshipEventDto(
-                        aiTurn.Event.Key,
-                        aiTurn.Event.Context,
-                        Clock.Now);
-                }
-            }
+            _logger.LogWarning(ex, "Character turn concurrency conflict for Turn {TurnId}", turnRequest.TurnId);
+            return Result<SendMessageResponse>.Failure(StatusCodes.Status409Conflict, ex.Message);
         }
 
-        var (newLevel, stageName, _) = RelationshipStageResolver.Resolve(newScore, character.CustomMilestonesJson);
-        var isLevelUp = newLevel > oldLevel;
-
-        // 5. Append AI Assistant Message
-        var assistantMsg = session.AddAssistantMessage(aiTurn.Reply);
-
-        // 6. Persist changes to Database
-        var sessionRepo = _unitOfWork.GetRepository<ChatSession>();
-        sessionRepo.Update(session);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        // 7. Non-blocking Asynchronous Trigger for Long-term Memory Extraction
-        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
-        {
-            var recentMessagesDto = session.Messages
-                .TakeLast(10)
-                .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
-                .ToList();
-
-            var userMsgCount = session.Messages.Count(m => m.Role == MessageRole.User);
-
-            var job = new MemoryExtractionJob(
-                SessionId: session.Id,
-                CharacterId: character.Id,
-                UserId: session.UserId.Value,
-                RecentMessages: recentMessagesDto,
-                UserMessageCount: userMsgCount
-            );
-
-            _extractionTrigger.NotifyMessageSent(job);
-        }
-
-        var characterMood = relationship?.CurrentMood ?? (Enum.TryParse<CharacterMood>(character.DefaultMood, true, out var m) ? m : CharacterMood.Neutral);
-        var moodIntensity = relationship?.MoodIntensity ?? 20;
+        var (level, stageName, _) = RelationshipStageResolver.Resolve(turnResult.Relationship.AffectionScore);
 
         return Result<SendMessageResponse>.Success(new SendMessageResponse(
-            UserMessage: new ChatMessageDto(userMsg.Id, userMsg.Role, userMsg.Content, userMsg.CreatedAt),
-            AssistantMessage: new ChatMessageDto(assistantMsg.Id, assistantMsg.Role, assistantMsg.Content, assistantMsg.CreatedAt),
-            AffectionScore: newScore,
-            RelationshipLevel: newLevel,
+            UserMessage: new ChatMessageDto(Guid.NewGuid(), MessageRole.User, req.Content, Clock.Now),
+            AssistantMessage: new ChatMessageDto(turnResult.MessageId, MessageRole.Assistant, turnResult.Reply, Clock.Now),
+            AffectionScore: turnResult.Relationship.AffectionScore,
+            RelationshipLevel: level,
             RelationshipStage: stageName,
-            CurrentMood: characterMood.ToString(),
-            MoodIntensity: moodIntensity,
-            AffectionDelta: actualDelta,
-            LevelUp: isLevelUp,
-            UnlockedEvent: unlockedEventDto
+            CurrentMood: turnResult.Mood,
+            MoodIntensity: turnResult.MoodIntensity,
+            AffectionDelta: turnResult.AffectionDelta,
+            LevelUp: false,
+            UnlockedEvent: null
         ));
     }
 }
