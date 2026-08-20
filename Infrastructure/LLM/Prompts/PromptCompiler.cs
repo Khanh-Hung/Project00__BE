@@ -23,7 +23,7 @@ public sealed class PromptCompiler : IPromptCompiler
             var eventLines = relationship.Events.Select(e => $"- 【{e.EventKey}】: {e.Context} (Unlocked: {e.UnlockedAt:yyyy-MM-dd})");
             relationshipSection = $"""
                 
-                [LAYER 3: DYNAMIC RELATIONSHIP STATE]
+                [LAYER 3: DYNAMIC RELATIONSHIP STATE & INTIMACY STATUS]
                 - Current Affection Score: {relationship.AffectionScore} / 100
                 - Relationship Stage: {relationshipStage}
                 - Current Dynamic Mood: {relationship.CurrentMood} (Intensity: {relationship.MoodIntensity}/100)
@@ -172,7 +172,7 @@ public sealed class PromptCompiler : IPromptCompiler
             [LAYER 5: PSYCHOLOGICAL 3-LAYER ROLEPLAY GUIDELINES]
             Every turn response MUST seamlessly combine three distinct dimensions of human expression:
             
-            1. 【Internal Psychological Monologue / Độc thoại nội tâm】:
+            1. 【Inner Thoughts / Độc thoại nội tâm】:
                Show the character's internal reflections, secret doubts, emotional reactions, or strategic thoughts before/during speaking using the format:
                💭 *(suy nghĩ thầm kín trong đầu...)*
             
