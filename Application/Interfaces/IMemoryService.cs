@@ -8,17 +8,18 @@ public interface IMemoryService
 {
     /// <summary>
     /// Retrieves a diversity-balanced set of the most relevant memories for the (UserId, CharacterId) pair.
-    /// Combines Importance + Recency + Category Diversity up to maxCount.
+    /// Combines Semantic Vector Similarity (if queryText is provided) + Importance + Recency + Category Diversity up to maxCount.
     /// </summary>
     Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(
         Guid userId,
         Guid characterId,
         int maxCount = 6,
+        string? queryText = null,
         CancellationToken ct = default);
 
     /// <summary>
     /// Validates, normalizes, deduplicates, and persists memory candidates.
-    /// Returns detailed metrics on accepted, rejected, duplicate, and persisted counts.
+    /// Automatically calculates and attaches vector embeddings for newly stored memories.
     /// </summary>
     Task<MemoryExtractionMetrics> StoreCandidatesAsync(
         Guid userId,
