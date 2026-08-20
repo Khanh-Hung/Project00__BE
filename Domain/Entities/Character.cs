@@ -18,6 +18,7 @@ public class Character : BaseEntity
     public string? CustomMilestonesJson { get; private set; }
     public CharacterBlueprint? Blueprint { get; private set; }
     public CharacterVisualIdentity? VisualIdentity { get; private set; }
+    public CharacterVoiceProfile? VoiceProfile { get; private set; }
 
     private Character() { } // EF Core
 
@@ -34,7 +35,8 @@ public class Character : BaseEntity
         string? defaultMood = null,
         string? customMilestonesJson = null,
         CharacterBlueprint? blueprint = null,
-        CharacterVisualIdentity? visualIdentity = null)
+        CharacterVisualIdentity? visualIdentity = null,
+        CharacterVoiceProfile? voiceProfile = null)
     {
         Name = name;
         Title = title;
@@ -49,6 +51,7 @@ public class Character : BaseEntity
         CustomMilestonesJson = customMilestonesJson;
         Blueprint = blueprint;
         VisualIdentity = visualIdentity;
+        VoiceProfile = voiceProfile;
     }
 
     public void UpdateDetails(
@@ -65,7 +68,9 @@ public class Character : BaseEntity
         CharacterBlueprint? blueprint = null,
         bool updateBlueprint = false,
         CharacterVisualIdentity? visualIdentity = null,
-        bool updateVisualIdentity = false)
+        bool updateVisualIdentity = false,
+        CharacterVoiceProfile? voiceProfile = null,
+        bool updateVoiceProfile = false)
     {
         Name = name;
         Title = title;
@@ -94,6 +99,10 @@ public class Character : BaseEntity
         {
             VisualIdentity = visualIdentity;
         }
+        if (updateVoiceProfile || voiceProfile != null)
+        {
+            VoiceProfile = voiceProfile;
+        }
         Touch();
     }
 
@@ -106,6 +115,12 @@ public class Character : BaseEntity
     public void SetVisualIdentity(CharacterVisualIdentity? visualIdentity)
     {
         VisualIdentity = visualIdentity;
+        Touch();
+    }
+
+    public void SetVoiceProfile(CharacterVoiceProfile? voiceProfile)
+    {
+        VoiceProfile = voiceProfile;
         Touch();
     }
 
