@@ -1,3 +1,4 @@
+using Application.Common;
 using Application.DTOs;
 using Domain.Entities;
 using Domain.ValueObjects;
@@ -6,6 +7,10 @@ namespace Application.Interfaces;
 
 public interface ILLMService
 {
+    Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
+        RoleplayContext context,
+        CancellationToken ct = default);
+
     Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
         Character character,
         IReadOnlyCollection<ChatMessage> history,

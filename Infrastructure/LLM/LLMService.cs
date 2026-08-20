@@ -15,11 +15,16 @@ public sealed class LLMService : ILLMService
 {
     private readonly GeminiApiClient _geminiClient;
     private readonly IImageGenerationService _imageService;
+    private readonly IPromptCompiler _promptCompiler;
 
-    public LLMService(GeminiApiClient geminiClient, IImageGenerationService imageService)
+    public LLMService(
+        GeminiApiClient geminiClient,
+        IImageGenerationService imageService,
+        IPromptCompiler promptCompiler)
     {
         _geminiClient = geminiClient;
         _imageService = imageService;
+        _promptCompiler = promptCompiler;
     }
 
     private record RoleplayEventJsonDto(
@@ -36,40 +41,11 @@ public sealed class LLMService : ILLMService
     );
 
     public async Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
-        Character character,
-        IReadOnlyCollection<ChatMessage> history,
-        string newUserMessage,
-        CharacterRelationship? relationship = null,
-        IReadOnlyCollection<CharacterMemory>? memories = null,
+        Application.Common.RoleplayContext context,
         CancellationToken ct = default)
     {
-        var systemPrompt = RoleplayPrompts.BuildSystemPrompt(character, relationship, memories);
-
-        var contentsList = new List<object>();
-        var recentHistory = history.TakeLast(10);
-        foreach (var msg in recentHistory)
-        {
-            var roleStr = msg.Role switch
-            {
-                MessageRole.User => "user",
-                MessageRole.Assistant => "model",
-                _ => "user"
-            };
-            contentsList.Add(new
-            {
-                role = roleStr,
-                parts = new[] { new { text = msg.Content } }
-            });
-        }
-
-        if (!recentHistory.Any(m => m.Content == newUserMessage && m.Role == MessageRole.User))
-        {
-            contentsList.Add(new
-            {
-                role = "user",
-                parts = new[] { new { text = newUserMessage } }
-            });
-        }
+        var systemPrompt = _promptCompiler.CompileSystemPrompt(context);
+        var contentsList = _promptCompiler.CompileConversationContents(context);
 
         var rawResponse = await _geminiClient.GenerateTextAsync(
             systemPrompt: systemPrompt,
@@ -133,6 +109,27 @@ public sealed class LLMService : ILLMService
         }
 
         return new RoleplayTurnResult(rawResponse.Trim(), CharacterMood.Neutral, 20, 0, null);
+    }
+
+    public async Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(
+        Character character,
+        IReadOnlyCollection<ChatMessage> history,
+        string newUserMessage,
+        CharacterRelationship? relationship = null,
+        IReadOnlyCollection<CharacterMemory>? memories = null,
+        CancellationToken ct = default)
+    {
+        var dummySession = new ChatSession(character.Id, relationship?.UserId, "Session");
+        var context = new Application.Common.RoleplayContext(
+            character,
+            relationship,
+            memories?.ToList() ?? new List<CharacterMemory>(),
+            history?.ToList() ?? new List<ChatMessage>(),
+            newUserMessage,
+            dummySession
+        );
+
+        return await GenerateRoleplayTurnAsync(context, ct);
     }
 
     public async Task<string> GenerateRoleplayResponseAsync(
