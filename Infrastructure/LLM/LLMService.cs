@@ -353,7 +353,21 @@ public sealed class LLMService : ILLMService
         return new GenerateAvatarResponse(imageUrl, cleanPrompt);
     }
 
-    public async Task<List<MemoryCandidate>> ExtractMemoryCandidatesAsync(
+    private sealed class RawMemoryExtractionDto
+    {
+        public List<RawCandidateDto>? Candidates { get; set; }
+        public List<RawCandidateDto>? Memories { get; set; }
+    }
+
+    private sealed class RawCandidateDto
+    {
+        public string? Content { get; set; }
+        public string? Type { get; set; }
+        public int? Importance { get; set; }
+        public decimal? Confidence { get; set; }
+    }
+
+    public async Task<List<Domain.ValueObjects.MemoryCandidate>> ExtractMemoryCandidatesAsync(
         Character character,
         IReadOnlyCollection<ChatMessageDto> recentMessages,
         CancellationToken ct = default)
@@ -371,7 +385,7 @@ public sealed class LLMService : ILLMService
             new
             {
                 role = "user",
-                parts = new[] { new { text = $"Here is the recent conversation excerpt:\n\n{conversationText}\n\nExtract 0 to 2 memory candidates if applicable." } }
+                parts = new[] { new { text = $"Here is the recent conversation excerpt:\n\n{conversationText}\n\nExtract 0 to 3 memory candidates if applicable." } }
             }
         };
 
@@ -397,8 +411,36 @@ public sealed class LLMService : ILLMService
             cleanJson = cleanJson.Trim();
 
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var result = JsonSerializer.Deserialize<MemoryExtractionResult>(cleanJson, options);
-            return result?.Memories ?? [];
+            var result = JsonSerializer.Deserialize<RawMemoryExtractionDto>(cleanJson, options);
+            var rawList = result?.Candidates ?? result?.Memories ?? [];
+
+            var candidates = new List<Domain.ValueObjects.MemoryCandidate>();
+            foreach (var item in rawList)
+            {
+                if (string.IsNullOrWhiteSpace(item.Content)) continue;
+
+                var type = Enum.TryParse<MemoryType>(item.Type, true, out var parsedType)
+                    ? parsedType
+                    : MemoryType.Fact;
+
+                var importance = Math.Clamp(item.Importance ?? 3, 1, 5);
+                var confidence = Math.Clamp(item.Confidence ?? 0.85m, 0.0m, 1.0m);
+
+                try
+                {
+                    candidates.Add(new Domain.ValueObjects.MemoryCandidate(
+                        item.Content.Trim(),
+                        type,
+                        importance,
+                        confidence));
+                }
+                catch
+                {
+                    // Skip invalid candidate
+                }
+            }
+
+            return candidates;
         }
         catch
         {
