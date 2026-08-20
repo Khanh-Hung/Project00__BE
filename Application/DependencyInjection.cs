@@ -24,8 +24,9 @@ public static class DependencyInjection
         // 2. Add FluentValidation Validators
         services.AddValidatorsFromAssembly(assembly);
 
-        // 3. Add Memory Candidate Validator
+        // 3. Add Memory Candidate Validator & Context Engine
         services.AddSingleton<Interfaces.IMemoryCandidateValidator, Services.MemoryCandidateValidator>();
+        services.AddScoped<Interfaces.IRoleplayContextEngine, Services.RoleplayContextEngine>();
 
         return services;
     }

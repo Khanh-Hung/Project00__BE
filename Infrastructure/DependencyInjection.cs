@@ -75,7 +75,8 @@ public static class DependencyInjection
         var imageProvider = configuration["AiProviders:ImageProvider"] ?? "Pollinations";
         services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
 
-        // 7. Add LLM Services (Gemini & Multi-modal)
+        // 7. Add LLM Services & Prompt Compiler
+        services.AddSingleton<IPromptCompiler, Infrastructure.LLM.Prompts.PromptCompiler>();
         services.AddHttpClient<Infrastructure.LLM.Core.GeminiApiClient>();
         services.AddScoped<ILLMService, Infrastructure.LLM.LLMService>();
 

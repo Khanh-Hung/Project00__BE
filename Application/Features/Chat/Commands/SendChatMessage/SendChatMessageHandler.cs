@@ -1,11 +1,11 @@
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
+using Application.Common;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
-using Infrastructure.LLM.Prompts;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -16,20 +16,20 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILLMService _llmService;
-    private readonly IMemoryService _memoryService;
+    private readonly IRoleplayContextEngine _contextEngine;
     private readonly IMemoryExtractionTrigger _extractionTrigger;
     private readonly ILogger<SendChatMessageHandler> _logger;
 
     public SendChatMessageHandler(
         IUnitOfWork unitOfWork,
         ILLMService llmService,
-        IMemoryService memoryService,
+        IRoleplayContextEngine contextEngine,
         IMemoryExtractionTrigger extractionTrigger,
         ILogger<SendChatMessageHandler> logger)
     {
         _unitOfWork = unitOfWork;
         _llmService = llmService;
-        _memoryService = memoryService;
+        _contextEngine = contextEngine;
         _extractionTrigger = extractionTrigger;
         _logger = logger;
     }
@@ -37,76 +37,34 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
     public async Task<Result<SendMessageResponse>> Handle(SendChatMessageCommand command, CancellationToken cancellationToken)
     {
         var req = command.Request;
-        var sessionRepo = _unitOfWork.GetRepository<ChatSession>();
-        var characterRepo = _unitOfWork.GetRepository<Character>();
 
-        var session = await sessionRepo.GetByIdAsync(req.SessionId, cancellationToken);
-        if (session == null)
+        // 1. Build Isolated & Budget-Constrained Roleplay Context via Context Engine
+        RoleplayContext context;
+        try
         {
-            return Result<SendMessageResponse>.Failure(StatusCodes.Status404NotFound, $"Chat session with ID '{req.SessionId}' was not found.");
+            context = await _contextEngine.BuildContextAsync(req.SessionId, req.Content, ct: cancellationToken);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Result<SendMessageResponse>.Failure(StatusCodes.Status404NotFound, ex.Message);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Result<SendMessageResponse>.Failure(StatusCodes.Status403Forbidden, ex.Message);
         }
 
-        var character = await characterRepo.GetByIdAsync(session.CharacterId, cancellationToken);
-        if (character == null)
-        {
-            return Result<SendMessageResponse>.Failure(StatusCodes.Status404NotFound, $"Character for this session was not found.");
-        }
+        var session = context.Session;
+        var character = context.Character;
+        var relationship = context.Relationship;
 
-        // 1. Retrieve or initialize CharacterRelationship (Single Source of Truth for State)
-        CharacterRelationship? relationship = null;
-        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
-        {
-            var defaultMood = Enum.TryParse<CharacterMood>(character.DefaultMood, true, out var dm)
-                ? dm
-                : CharacterMood.Neutral;
-
-            relationship = await _unitOfWork.Relationships.GetOrCreateAsync(
-                session.UserId.Value,
-                character.Id,
-                character.DefaultAffectionScore,
-                defaultMood,
-                cancellationToken);
-
-            // Soften transient mood after > 24 hours of inactivity
-            relationship.SoftenMoodIfInactive(Clock.Now, TimeSpan.FromHours(24), defaultMood);
-        }
-
-        // 2. Retrieve diversity-balanced relevant memories for (UserId, CharacterId)
-        IReadOnlyList<CharacterMemory>? relevantMemories = null;
-        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
-        {
-            try
-            {
-                relevantMemories = await _memoryService.GetRelevantMemoriesAsync(
-                    session.UserId.Value,
-                    character.Id,
-                    maxCount: 6,
-                    ct: cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "Memory retrieval failed for Character {CharacterId}, User {UserId}. Proceeding without memories.",
-                    character.Id,
-                    session.UserId.Value);
-            }
-        }
-
-        // 3. Append User Message to session
+        // 2. Append User Message to session
         var userMsg = session.AddUserMessage(req.Content);
 
-        // 4. Single-Turn AI Roleplay with Blueprint, Relationship State & Memories
-        var aiTurn = await _llmService.GenerateRoleplayTurnAsync(
-            character,
-            session.Messages,
-            req.Content,
-            relationship,
-            relevantMemories,
-            cancellationToken);
+        // 3. Single-Turn AI Roleplay with 6-Layer Compiled Context
+        var aiTurn = await _llmService.GenerateRoleplayTurnAsync(context, cancellationToken);
 
-        // 5. Backend Validates & Mutates Relationship State
-        var oldLevel = RoleplayPrompts.CalculateRelationshipLevel(relationship?.AffectionScore ?? character.DefaultAffectionScore);
+        // 4. Backend Validates & Mutates Dynamic Relationship State
+        var (oldLevel, _, _) = RelationshipStageResolver.Resolve(relationship?.AffectionScore ?? character.DefaultAffectionScore, character.CustomMilestonesJson);
         int actualDelta = aiTurn.AffectionDelta;
         int newScore = relationship?.AffectionScore ?? character.DefaultAffectionScore;
         RelationshipEventDto? unlockedEventDto = null;
@@ -132,52 +90,52 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
             }
         }
 
-        var (newLevel, stageName, _) = Application.Common.RelationshipStageResolver.Resolve(newScore, character.CustomMilestonesJson);
+        var (newLevel, stageName, _) = RelationshipStageResolver.Resolve(newScore, character.CustomMilestonesJson);
         var isLevelUp = newLevel > oldLevel;
 
-        // 6. Append AI Assistant Message
+        // 5. Append AI Assistant Message
         var assistantMsg = session.AddAssistantMessage(aiTurn.Reply);
 
-        // 7. Persist both Session and Relationship state changes
+        // 6. Persist changes to Database
+        var sessionRepo = _unitOfWork.GetRepository<ChatSession>();
+        sessionRepo.Update(session);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 8. Non-blocking trigger notification for background memory extraction
+        // 7. Non-blocking Asynchronous Trigger for Long-term Memory Extraction
         if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
         {
-            try
-            {
-                var userMessageCount = session.Messages.Count(m => m.Role == MessageRole.User);
-                var recentMessageDtos = session.Messages
-                    .TakeLast(10)
-                    .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
-                    .ToList();
+            var recentMessagesDto = session.Messages
+                .TakeLast(10)
+                .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAt))
+                .ToList();
 
-                _extractionTrigger.NotifyMessageSent(new MemoryExtractionJob(
-                    session.Id,
-                    character.Id,
-                    session.UserId.Value,
-                    recentMessageDtos,
-                    userMessageCount));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Memory extraction trigger notification failed for Session {SessionId}.", session.Id);
-            }
+            var userMsgCount = session.Messages.Count(m => m.Role == MessageRole.User);
+
+            var job = new MemoryExtractionJob(
+                SessionId: session.Id,
+                CharacterId: character.Id,
+                UserId: session.UserId.Value,
+                RecentMessages: recentMessagesDto,
+                UserMessageCount: userMsgCount
+            );
+
+            _extractionTrigger.NotifyMessageSent(job);
         }
 
-        var response = new SendMessageResponse(
-            new ChatMessageDto(userMsg.Id, userMsg.Role, userMsg.Content, userMsg.CreatedAt),
-            new ChatMessageDto(assistantMsg.Id, assistantMsg.Role, assistantMsg.Content, assistantMsg.CreatedAt),
-            newScore,
-            newLevel,
-            stageName,
-            relationship?.CurrentMood.ToString() ?? character.DefaultMood ?? "Neutral",
-            relationship?.MoodIntensity ?? 20,
-            actualDelta,
-            isLevelUp,
-            unlockedEventDto
-        );
+        var characterMood = relationship?.CurrentMood ?? (Enum.TryParse<CharacterMood>(character.DefaultMood, true, out var m) ? m : CharacterMood.Neutral);
+        var moodIntensity = relationship?.MoodIntensity ?? 20;
 
-        return Result<SendMessageResponse>.Success(response);
+        return Result<SendMessageResponse>.Success(new SendMessageResponse(
+            UserMessage: new ChatMessageDto(userMsg.Id, userMsg.Role, userMsg.Content, userMsg.CreatedAt),
+            AssistantMessage: new ChatMessageDto(assistantMsg.Id, assistantMsg.Role, assistantMsg.Content, assistantMsg.CreatedAt),
+            AffectionScore: newScore,
+            RelationshipLevel: newLevel,
+            RelationshipStage: stageName,
+            CurrentMood: characterMood.ToString(),
+            MoodIntensity: moodIntensity,
+            AffectionDelta: actualDelta,
+            LevelUp: isLevelUp,
+            UnlockedEvent: unlockedEventDto
+        ));
     }
 }

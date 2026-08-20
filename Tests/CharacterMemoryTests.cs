@@ -1,4 +1,5 @@
 using Application.Abstractions.Data;
+using Application.Common;
 using Application.DTOs;
 using Application.Features.Chat.Commands.SendChatMessage;
 using Application.Interfaces;
@@ -324,11 +325,18 @@ public class CharacterMemoryTests
         var failingMemoryService = new FailingMemoryService();
         var fakeLLM = new FakeLLMService();
         var extractionTrigger = new DummyExtractionTrigger();
+        var currentUserProvider = new DummyCurrentUserProvider(userId.ToString());
+        var contextEngine = new RoleplayContextEngine(
+            unitOfWork,
+            failingMemoryService,
+            currentUserProvider,
+            NullLogger<RoleplayContextEngine>.Instance
+        );
 
         var handler = new SendChatMessageHandler(
             unitOfWork,
             fakeLLM,
-            failingMemoryService,
+            contextEngine,
             extractionTrigger,
             NullLogger<SendChatMessageHandler>.Instance
         );
@@ -341,6 +349,13 @@ public class CharacterMemoryTests
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value);
         Assert.Equal("Mock AI reply", result.Value.AssistantMessage.Content);
+    }
+
+    private sealed class DummyCurrentUserProvider : Application.Abstractions.Auth.ICurrentUserProvider
+    {
+        public string? CurrentUserId { get; }
+        public string? CurrentUserEmail => "test@example.com";
+        public DummyCurrentUserProvider(string? currentUserId) => CurrentUserId = currentUserId;
     }
 
     private sealed class FailingMemoryService : IMemoryService
@@ -363,6 +378,11 @@ public class CharacterMemoryTests
 
     private sealed class FakeLLMService : ILLMService
     {
+        public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(RoleplayContext context, CancellationToken ct = default)
+        {
+            return Task.FromResult(new RoleplayTurnResult("Mock AI reply", CharacterMood.Happy, 50, 0, null));
+        }
+
         public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, IReadOnlyCollection<CharacterMemory>? memories = null, CancellationToken ct = default)
         {
             return Task.FromResult(new RoleplayTurnResult("Mock AI reply", CharacterMood.Happy, 50, 0, null));
