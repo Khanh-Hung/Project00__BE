@@ -95,28 +95,31 @@ public sealed class PromptCompiler : IPromptCompiler
                 """;
         }
 
-        // 4. Format Matched World Lorebook Entries
-        var lorebookSection = "";
-        var worldSettingSection = "";
-        if (!string.IsNullOrWhiteSpace(character.WorldName) || !string.IsNullOrWhiteSpace(character.WorldDescription))
+        // 4. Format World Setting, Reality Rules & Physics Guardrails
+        var worldPhysicsRules = Application.Common.WorldPhysicsRuleResolver.Resolve(character.WorldGenre);
+        var parts = new List<string>
         {
-            var parts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(character.WorldName))
-            {
-                parts.Add($"- Universe / World Name: {character.WorldName}");
-            }
-            if (!string.IsNullOrWhiteSpace(character.WorldDescription))
-            {
-                parts.Add($"- World Description & Reality Rules: {character.WorldDescription}");
-            }
+            $"- Universe Reality & Genre: {character.WorldGenre}"
+        };
 
-            worldSettingSection = $"""
-                
-                [LAYER 1.5: WORLD SETTING & UNIVERSE BACKGROUND]
-                {string.Join("\n", parts)}
-                """;
+        if (!string.IsNullOrWhiteSpace(character.WorldName))
+        {
+            parts.Add($"- Universe / Realm Name: {character.WorldName}");
+        }
+        if (!string.IsNullOrWhiteSpace(character.WorldDescription))
+        {
+            parts.Add($"- World Lore & Environment: {character.WorldDescription}");
         }
 
+        var worldSettingSection = $"""
+            
+            [LAYER 1.5: WORLD SETTING & UNIVERSE BACKGROUND]
+            {string.Join("\n", parts)}
+
+            {worldPhysicsRules}
+            """;
+
+        var lorebookSection = "";
         if (context.LorebookEntries != null && context.LorebookEntries.Count > 0)
         {
             var loreLines = context.LorebookEntries.Select(l => $"- 【{l.Category}: {l.Title}】: {l.Content}");
