@@ -117,14 +117,31 @@ public sealed class RoleplayContextEngine : IRoleplayContextEngine
             }
         }
 
-        // 6. Slice Recent Conversation Messages within Budget (Max 10)
-        var recentMessages = session.Messages.TakeLast(MaxRecentMessagesBudget).ToList();
+        // 6. Dynamic Token Budget Pruning for Working Memory / History (Max 10 messages and max 2,400 history tokens)
+        var messageWindow = session.Messages.TakeLast(MaxRecentMessagesBudget).ToList();
+        var boundedMessages = new List<ChatMessage>();
+        var accumulatedTokens = 0;
+        const int MaxHistoryTokenBudget = 2400;
+
+        // Iterate backwards (newest to oldest) to preserve the most recent context within budget
+        for (int i = messageWindow.Count - 1; i >= 0; i--)
+        {
+            var msg = messageWindow[i];
+            var msgTokens = TokenEstimator.Estimate(msg.Content);
+            if (accumulatedTokens + msgTokens > MaxHistoryTokenBudget && boundedMessages.Count > 0)
+            {
+                break;
+            }
+
+            boundedMessages.Insert(0, msg);
+            accumulatedTokens += msgTokens;
+        }
 
         return new RoleplayContext(
             character,
             relationship,
             relevantMemories,
-            recentMessages,
+            boundedMessages,
             userMessage,
             session
         );

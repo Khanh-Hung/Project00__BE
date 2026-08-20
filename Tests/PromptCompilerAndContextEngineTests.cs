@@ -216,6 +216,47 @@ public class PromptCompilerAndContextEngineTests
         Assert.Equal(3, conversationContents.Count); // 2 previous messages + 1 current user prompt
     }
 
+    [Fact]
+    public async Task RoleplayContextEngine_Prunes_Oldest_Messages_When_Exceeding_Token_Budget()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        await using var context = new ProjectDbContext(options);
+        var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = charId };
+        var session = new ChatSession(charId, userId, "Session 1");
+
+        // Add 10 messages with huge contents (e.g. 1500 chars / ~500 tokens each)
+        for (int i = 1; i <= 10; i++)
+        {
+            var longText = $"Message {i}: " + new string('X', 1200);
+            session.AddUserMessage(longText);
+        }
+
+        context.Characters.Add(character);
+        context.ChatSessions.Add(session);
+        await context.SaveChangesAsync();
+
+        var uow = new UnitOfWork(context);
+        var engine = new RoleplayContextEngine(
+            uow,
+            new FakeMemoryService(),
+            new FakeCurrentUserProvider(userId.ToString()),
+            NullLogger<RoleplayContextEngine>.Instance
+        );
+
+        var result = await engine.BuildContextAsync(session.Id, "Latest user prompt", userId);
+
+        // Assert that older messages were pruned to fit the 2,400 token history budget
+        Assert.True(result.RecentMessages.Count < 10, "Engine should prune oldest messages when token budget is exceeded");
+        // Verify that the newest message is preserved
+        Assert.Contains("Message 10", result.RecentMessages.Last().Content);
+    }
+
     private sealed class FakeMemoryService : IMemoryService
     {
         public Task<IReadOnlyList<CharacterMemory>> GetRelevantMemoriesAsync(Guid userId, Guid characterId, int maxCount = 6, CancellationToken ct = default)
