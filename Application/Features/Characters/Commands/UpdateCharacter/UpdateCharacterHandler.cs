@@ -41,7 +41,10 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
             req.DefaultAffectionScore,
             req.DefaultMood,
             milestonesJson,
-            req.Blueprint
+            req.Blueprint,
+            updateBlueprint: req.Blueprint != null,
+            worldName: req.WorldName,
+            worldDescription: req.WorldDescription
         );
         character.SetPublicStatus(req.IsPublic);
 
@@ -69,7 +72,9 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
             character.DefaultAffectionScore,
             character.DefaultMood,
             customMilestones,
-            character.Blueprint
+            character.Blueprint,
+            character.WorldName,
+            character.WorldDescription
         );
 
         return Result<CharacterDto>.Success(dto);

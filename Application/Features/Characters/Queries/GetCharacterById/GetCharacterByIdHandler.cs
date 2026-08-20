@@ -57,7 +57,9 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.DefaultAffectionScore,
             character.DefaultMood,
             customMilestones,
-            character.Blueprint
+            character.Blueprint,
+            character.WorldName,
+            character.WorldDescription
         );
 
         return Result<CharacterDto>.Success(dto);

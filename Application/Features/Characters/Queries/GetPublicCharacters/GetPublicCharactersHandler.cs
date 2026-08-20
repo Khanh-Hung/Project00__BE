@@ -61,7 +61,9 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 c.DefaultAffectionScore,
                 c.DefaultMood,
                 customMilestones,
-                c.Blueprint
+                c.Blueprint,
+                c.WorldName,
+                c.WorldDescription
             );
         }).ToList();
 

@@ -1,3 +1,4 @@
+using Domain.Enums;
 using Domain.ValueObjects;
 
 namespace Application.DTOs;
@@ -8,6 +9,15 @@ public record RelationshipMilestoneDto(
     int MaxScore,
     string Description,
     string? Icon = null
+);
+
+public record GeneratedLorebookDto(
+    string Title,
+    string Content,
+    List<string> Keywords,
+    LorebookCategory Category = LorebookCategory.Other,
+    bool IsConstant = false,
+    int Priority = 100
 );
 
 public record CharacterDto(
@@ -28,7 +38,9 @@ public record CharacterDto(
     int DefaultAffectionScore = 0,
     string? DefaultMood = null,
     List<RelationshipMilestoneDto>? CustomMilestones = null,
-    CharacterBlueprint? Blueprint = null
+    CharacterBlueprint? Blueprint = null,
+    string? WorldName = null,
+    string? WorldDescription = null
 );
 
 public record CreateCharacterRequest(
@@ -43,7 +55,10 @@ public record CreateCharacterRequest(
     int DefaultAffectionScore = 0,
     string? DefaultMood = null,
     List<RelationshipMilestoneDto>? CustomMilestones = null,
-    CharacterBlueprint? Blueprint = null
+    CharacterBlueprint? Blueprint = null,
+    string? WorldName = null,
+    string? WorldDescription = null,
+    List<GeneratedLorebookDto>? InitialLorebookEntries = null
 );
 
 public record UpdateCharacterRequest(
@@ -58,7 +73,9 @@ public record UpdateCharacterRequest(
     int? DefaultAffectionScore = null,
     string? DefaultMood = null,
     List<RelationshipMilestoneDto>? CustomMilestones = null,
-    CharacterBlueprint? Blueprint = null
+    CharacterBlueprint? Blueprint = null,
+    string? WorldName = null,
+    string? WorldDescription = null
 );
 
 public record GenerateCharacterAIRequest(
@@ -76,7 +93,10 @@ public record GeneratedCharacterDto(
     int DefaultAffectionScore = 0,
     string? DefaultMood = null,
     List<RelationshipMilestoneDto>? CustomMilestones = null,
-    CharacterBlueprint? Blueprint = null
+    CharacterBlueprint? Blueprint = null,
+    string? WorldName = null,
+    string? WorldDescription = null,
+    List<GeneratedLorebookDto>? InitialLorebookEntries = null
 );
 
 public record GenerateAvatarRequest(
@@ -88,6 +108,6 @@ public record GenerateAvatarRequest(
 );
 
 public record GenerateAvatarResponse(
-    string AvatarUrl,
-    string Prompt
+    string ImageUrl,
+    string RevisedPrompt
 );

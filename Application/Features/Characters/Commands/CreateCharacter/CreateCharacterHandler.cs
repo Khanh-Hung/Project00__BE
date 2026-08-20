@@ -41,10 +41,37 @@ public sealed class CreateCharacterHandler : IRequestHandler<CreateCharacterComm
             req.DefaultAffectionScore,
             req.DefaultMood,
             milestonesJson,
-            req.Blueprint
+            req.Blueprint,
+            null,
+            null,
+            req.WorldName,
+            req.WorldDescription
         );
 
         await repo.AddAsync(character, cancellationToken);
+
+        // Automatically persist InitialLorebookEntries if generated/provided
+        if (req.InitialLorebookEntries != null && req.InitialLorebookEntries.Count > 0)
+        {
+            var loreRepo = _unitOfWork.GetRepository<LorebookEntry>();
+            foreach (var l in req.InitialLorebookEntries)
+            {
+                if (!string.IsNullOrWhiteSpace(l.Title) && !string.IsNullOrWhiteSpace(l.Content))
+                {
+                    var loreEntry = new LorebookEntry(
+                        characterId: character.Id,
+                        title: l.Title.Trim(),
+                        content: l.Content.Trim(),
+                        keywords: l.Keywords,
+                        category: l.Category,
+                        isConstant: l.IsConstant,
+                        priority: l.Priority
+                    );
+                    await loreRepo.AddAsync(loreEntry, cancellationToken);
+                }
+            }
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var dto = new CharacterDto(
@@ -65,7 +92,9 @@ public sealed class CreateCharacterHandler : IRequestHandler<CreateCharacterComm
             character.DefaultAffectionScore,
             character.DefaultMood,
             req.CustomMilestones,
-            character.Blueprint
+            character.Blueprint,
+            character.WorldName,
+            character.WorldDescription
         );
 
         return Result<CharacterDto>.Success(dto);
