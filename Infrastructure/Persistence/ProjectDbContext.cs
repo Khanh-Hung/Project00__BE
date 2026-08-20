@@ -27,6 +27,7 @@ public class ProjectDbContext : DbContext
     public DbSet<CharacterTurn> CharacterTurns { get; set; }
     public DbSet<OutboxMessage> OutboxMessages { get; set; }
     public DbSet<LorebookEntry> LorebookEntries { get; set; }
+    public DbSet<UserProfile> UserProfiles { get; set; }
 
     private string NormalizeUserId()
     {

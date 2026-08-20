@@ -473,4 +473,91 @@ public sealed class LLMService : ILLMService
             return [];
         }
     }
+
+    private record ProactiveAiReachoutJsonDto(
+        string? OpeningMessage,
+        string? MatchReason
+    );
+
+    public async Task<ProactiveAiReachoutResult> GenerateProactiveReachoutAsync(
+        Character character,
+        Domain.Entities.UserProfile userProfile,
+        CancellationToken ct = default)
+    {
+        var userInterests = userProfile.GetInterests();
+        var userPersonality = userProfile.GetPersonalityTraits();
+
+        var systemPrompt = $$"""
+            You are embodying the character '{{character.Name}}' ({{character.Title}} - Category: {{character.Category}}).
+            World / Universe: {{character.WorldName ?? "Modern"}} - {{character.WorldGenre}}
+            Character Background & Personality:
+            {{character.PersonalityPrompt}}
+
+            SCENARIO:
+            You are browsing social profiles or discovering new people in your world.
+            You just stumbled upon the personal profile of a user named '{{userProfile.DisplayName}}'.
+
+            USER PROFILE DETAILS:
+            - Display Name: {{userProfile.DisplayName}}
+            - Bio / Status: {{userProfile.Bio ?? "Không có"}} | Status: {{userProfile.StatusMessage ?? "Trực tuyến"}}
+            - Interests / Tags: {{(userInterests.Count > 0 ? string.Join(", ", userInterests) : "Không có")}}
+            - Personality Traits: {{(userPersonality.Count > 0 ? string.Join(", ", userPersonality) : "Thân thiện")}}
+
+            TASK:
+            1. Find a compelling hook, shared interest, or intriguing detail from the user's profile that catches your character's eye.
+            2. In 100% authentic character voice, craft a charming, spontaneous, and natural opening direct message (DM) to reach out and say hello to this user (40 - 80 words).
+            3. Use subtle action tags in *asterisks* (e.g. *[curious]..., *[gentle]..., *[playful]...) combined with spoken dialogue.
+
+            OUTPUT JSON FORMAT:
+            {
+              "openingMessage": "Your spontaneous in-character opening DM message to the user...",
+              "matchReason": "Short explanation of why your character was drawn to message this user (e.g. 'Cùng thích nghe nhạc Lofi và nuôi mèo')"
+            }
+            """;
+
+        var rawResponse = await _geminiClient.GenerateTextAsync(
+            systemPrompt: systemPrompt,
+            contents: [new { role = "user", parts = new[] { new { text = "Please review this user profile and send your opening message." } } }],
+            temperature: 0.85,
+            maxOutputTokens: 500,
+            ct: ct);
+
+        try
+        {
+            var cleaned = rawResponse.Trim();
+            if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(7);
+            }
+            else if (cleaned.StartsWith("```", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(3);
+            }
+            if (cleaned.EndsWith("```", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(0, cleaned.Length - 3);
+            }
+            cleaned = cleaned.Trim();
+
+            var parsed = JsonSerializer.Deserialize<ProactiveAiReachoutJsonDto>(cleaned, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (parsed != null && !string.IsNullOrWhiteSpace(parsed.OpeningMessage))
+            {
+                return new ProactiveAiReachoutResult(
+                    parsed.OpeningMessage.Trim(),
+                    parsed.MatchReason?.Trim() ?? "Tìm thấy điểm chung trên hồ sơ"
+                );
+            }
+        }
+        catch
+        {
+            // Fallback gracefully
+        }
+
+        var fallbackMessage = $"*[curious] lướt thấy trang cá nhân của bạn, khẽ mỉm cười gõ phím* Chào {userProfile.DisplayName} nhé! Tình cờ thấy bạn cũng có nhiều sở thích thú vị, chúng ta làm quen được không?";
+        return new ProactiveAiReachoutResult(fallbackMessage, "Quan tâm đến hồ sơ cá nhân");
+    }
 }

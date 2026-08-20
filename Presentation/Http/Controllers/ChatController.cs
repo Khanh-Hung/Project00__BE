@@ -122,6 +122,17 @@ public sealed class ChatController : ControllerBase
     }
 
     /// <summary>
+    /// Triggers character to browse user profile and proactively send an opening DM message
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("proactive-reachout")]
+    public async Task<IActionResult> ProactiveReachout([FromBody] ProactiveReachoutRequest request, CancellationToken ct)
+    {
+        var result = await _sender.Send(new Application.Features.Chat.Commands.GenerateProactiveReachout.GenerateProactiveReachoutCommand(request), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
     /// Gets all long-term memories remembered by this character about the current user
     /// </summary>
     [HttpGet("memories/{characterId:guid}")]
