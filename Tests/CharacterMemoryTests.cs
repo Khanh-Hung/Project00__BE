@@ -392,6 +392,9 @@ public class CharacterMemoryTests
             return Task.FromResult(new RoleplayTurnResult("Mock AI reply", CharacterMood.Happy, 50, 0, null));
         }
 
+        public IAsyncEnumerable<string> GenerateRoleplayTurnStreamAsync(RoleplayContext context, CancellationToken ct = default) =>
+            throw new NotImplementedException();
+
         public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, IReadOnlyCollection<CharacterMemory>? memories = null, CancellationToken ct = default)
         {
             return Task.FromResult(new RoleplayTurnResult("Mock AI reply", CharacterMood.Happy, 50, 0, null));

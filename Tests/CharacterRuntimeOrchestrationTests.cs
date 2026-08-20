@@ -74,7 +74,9 @@ public class CharacterRuntimeOrchestrationTests
         Assert.Equal(80, result.MoodIntensity);
         Assert.Equal(4, result.AffectionDelta);
         Assert.Equal(4, result.Relationship.AffectionScore);
-        Assert.True(mockTrigger.TriggerCount > 0);
+        
+        var outboxMessage = await context.OutboxMessages.FirstOrDefaultAsync(m => m.EventType == OutboxEventTypes.MemoryExtraction);
+        Assert.NotNull(outboxMessage);
 
         // Verify single atomic commit wrote both messages and turnRecord
         var turnRecord = await context.CharacterTurns.FirstOrDefaultAsync(t => t.TurnId == turnReq.TurnId);
@@ -455,6 +457,16 @@ public class CharacterRuntimeOrchestrationTests
                 "Concurrent update conflict"
             );
         }
+
+        public IAsyncEnumerable<CharacterStreamEvent> ProcessTurnStreamAsync(CharacterTurnRequest request, CancellationToken ct = default)
+        {
+            throw new CharacterTurnConcurrencyException(
+                request.TurnId ?? Guid.NewGuid(),
+                request.CharacterId,
+                request.UserId,
+                "Concurrent update conflict"
+            );
+        }
     }
 
     private sealed class FakeCurrentUserProvider : ICurrentUserProvider
@@ -502,6 +514,9 @@ public class CharacterRuntimeOrchestrationTests
             CallCount++;
             return Task.FromResult(new RoleplayTurnResult(_reply, _mood, _intensity, _delta, _event));
         }
+
+        public IAsyncEnumerable<string> GenerateRoleplayTurnStreamAsync(RoleplayContext context, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, IReadOnlyCollection<CharacterMemory>? memories = null, CancellationToken ct = default)
         {
