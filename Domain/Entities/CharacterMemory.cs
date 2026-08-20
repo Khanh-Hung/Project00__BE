@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.Common;
 using Domain.Enums;
 
@@ -14,6 +15,7 @@ public sealed class CharacterMemory : BaseEntity
     public int Importance { get; private set; }
     public decimal Confidence { get; private set; }
     public DateTime? LastAccessedAt { get; private set; }
+    public string? EmbeddingJson { get; private set; }
 
     private CharacterMemory() { } // EF Core
 
@@ -24,7 +26,8 @@ public sealed class CharacterMemory : BaseEntity
         MemoryType type,
         int importance,
         decimal confidence,
-        Guid? sourceSessionId = null)
+        Guid? sourceSessionId = null,
+        string? embeddingJson = null)
     {
         CharacterId = characterId;
         UserId = userId;
@@ -33,6 +36,7 @@ public sealed class CharacterMemory : BaseEntity
         Importance = importance;
         Confidence = confidence;
         SourceSessionId = sourceSessionId;
+        EmbeddingJson = embeddingJson;
     }
 
     public static CharacterMemory Create(
@@ -42,7 +46,8 @@ public sealed class CharacterMemory : BaseEntity
         MemoryType type,
         int importance = 3,
         decimal confidence = 0.9m,
-        Guid? sourceSessionId = null)
+        Guid? sourceSessionId = null,
+        string? embeddingJson = null)
     {
         if (characterId == Guid.Empty)
         {
@@ -82,8 +87,30 @@ public sealed class CharacterMemory : BaseEntity
             type,
             importance,
             confidence,
-            sourceSessionId
+            sourceSessionId,
+            embeddingJson
         );
+    }
+
+    public void SetEmbedding(float[]? embedding)
+    {
+        EmbeddingJson = embedding != null && embedding.Length > 0
+            ? JsonSerializer.Serialize(embedding)
+            : null;
+        Touch();
+    }
+
+    public float[]? GetEmbedding()
+    {
+        if (string.IsNullOrWhiteSpace(EmbeddingJson)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<float[]>(EmbeddingJson);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public void UpdateDetails(int? importance = null, decimal? confidence = null, string? updatedContent = null)
