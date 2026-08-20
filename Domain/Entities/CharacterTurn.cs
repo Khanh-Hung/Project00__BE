@@ -17,6 +17,8 @@ public sealed class CharacterTurn : BaseEntity
     public int AffectionDelta { get; private set; }
     public int AffectionScore { get; private set; }
     public string RelationshipStage { get; private set; } = "Stranger";
+    public Guid RelationshipId { get; private set; }
+    public DateTime LastInteractedAt { get; private set; }
     public string? EventsJson { get; private set; }
     public string? ActiveMemoriesJson { get; private set; }
 
@@ -36,6 +38,8 @@ public sealed class CharacterTurn : BaseEntity
         int affectionDelta,
         int affectionScore,
         string relationshipStage,
+        Guid relationshipId = default,
+        DateTime lastInteractedAt = default,
         string? eventsJson = null,
         string? activeMemoriesJson = null)
     {
@@ -52,6 +56,8 @@ public sealed class CharacterTurn : BaseEntity
         AffectionDelta = affectionDelta;
         AffectionScore = affectionScore;
         RelationshipStage = relationshipStage;
+        RelationshipId = relationshipId;
+        LastInteractedAt = lastInteractedAt;
         EventsJson = eventsJson;
         ActiveMemoriesJson = activeMemoriesJson;
     }

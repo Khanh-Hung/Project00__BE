@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Application.Abstractions.Data;
 using Application.Common;
+using Application.Common.Exceptions;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
@@ -168,7 +169,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
         var eventsJson = JsonSerializer.Serialize(eventsDto);
         var memoriesJson = JsonSerializer.Serialize(activeMemoriesDto);
 
-        // Prepare persistent idempotency record with verified message IDs
+        // Prepare persistent idempotency record with verified message IDs and full deterministic snapshot
         var turnRecord = new CharacterTurn(
             turnId: turnId,
             sessionId: session.Id,
@@ -183,37 +184,22 @@ public sealed class CharacterRuntime : ICharacterRuntime
             affectionDelta: appliedDelta,
             affectionScore: relationship?.AffectionScore ?? character.DefaultAffectionScore,
             relationshipStage: currentStageName,
+            relationshipId: relationship?.Id ?? Guid.Empty,
+            lastInteractedAt: relationship?.LastInteractedAt ?? Clock.Now,
             eventsJson: eventsJson,
             activeMemoriesJson: memoriesJson
         );
         await turnRepo.AddAsync(turnRecord, ct);
 
-        // 5. Truly Atomic Single SaveChanges with Optimistic Concurrency Reconciliation
+        // 5. Truly Atomic Single SaveChanges
         try
         {
             await _unitOfWork.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            var conflictEntities = string.Join(", ", ex.Entries.Select(e => $"{e.Entity.GetType().Name} (State: {e.State})"));
-            _logger.LogWarning(ex, "Optimistic concurrency conflict on entries [{Entries}] for Turn {TurnId}. Reconciling state...", conflictEntities, turnId);
-
-            // Reconcile: Reload fresh relationship from DB and re-apply mutations
-            var freshRelationship = await relationshipRepo.GetAsync(r => r.CharacterId == character.Id && r.UserId == request.UserId, ct);
-            if (freshRelationship != null)
-            {
-                freshRelationship.ApplyAffectionDelta(Math.Clamp(aiTurn.AffectionDelta, -5, 5), Clock.Now);
-                freshRelationship.UpdateMood(currentMood, currentIntensity, Clock.Now);
-                if (aiTurn.Event != null && !string.IsNullOrWhiteSpace(aiTurn.Event.Key))
-                {
-                    freshRelationship.TryUnlockEvent(aiTurn.Event.Key, aiTurn.Event.Context, Clock.Now);
-                }
-                await _unitOfWork.SaveChangesAsync(ct);
-            }
-            else
-            {
-                throw;
-            }
+            _logger.LogWarning(ex, "Optimistic concurrency conflict on CharacterRelationship for Turn {TurnId}.", turnId);
+            throw new CharacterTurnConcurrencyException(turnId, character.Id, request.UserId, "A concurrent update conflicted on the character relationship. Please retry with the same TurnId.", ex);
         }
         catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("IX_CharacterTurns_TurnId") == true || ex.Message.Contains("IX_CharacterTurns_TurnId"))
         {
@@ -234,7 +220,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
             CurrentMood: currentMood,
             MoodIntensity: currentIntensity,
             Events: eventsDto,
-            LastInteractedAt: relationship?.LastInteractedAt ?? Clock.Now
+            LastInteractedAt: relationship?.LastInteractedAt ?? Clock.Now,
+            RelationshipStage: currentStageName
         );
 
         // 6. Asynchronous & Failure-Isolated Side Effects (Dispatched post-commit, non-blocking)
@@ -330,7 +317,6 @@ public sealed class CharacterRuntime : ICharacterRuntime
 
     private static CharacterTurnResult MapExistingTurnToResult(CharacterTurn existingTurn)
     {
-        var (relLevel, stageName, _) = RelationshipStageResolver.Resolve(existingTurn.AffectionScore);
         var restoredEvents = string.IsNullOrWhiteSpace(existingTurn.EventsJson)
             ? new List<RelationshipEventDto>()
             : JsonSerializer.Deserialize<List<RelationshipEventDto>>(existingTurn.EventsJson) ?? new List<RelationshipEventDto>();
@@ -340,14 +326,15 @@ public sealed class CharacterRuntime : ICharacterRuntime
             : JsonSerializer.Deserialize<List<CharacterMemoryDto>>(existingTurn.ActiveMemoriesJson) ?? new List<CharacterMemoryDto>();
 
         var cachedRelationshipDto = new CharacterRelationshipDto(
-            Id: Guid.Empty,
+            Id: existingTurn.RelationshipId,
             CharacterId: existingTurn.CharacterId,
             UserId: existingTurn.UserId,
             AffectionScore: existingTurn.AffectionScore,
             CurrentMood: Enum.TryParse<CharacterMood>(existingTurn.Mood, out var parsedCachedMood) ? parsedCachedMood : CharacterMood.Neutral,
             MoodIntensity: existingTurn.MoodIntensity,
             Events: restoredEvents,
-            LastInteractedAt: existingTurn.CreatedAt
+            LastInteractedAt: existingTurn.LastInteractedAt,
+            RelationshipStage: existingTurn.RelationshipStage
         );
 
         return new CharacterTurnResult(

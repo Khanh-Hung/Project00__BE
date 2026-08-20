@@ -1,6 +1,7 @@
 using Application.Abstractions.Auth;
 using Application.Abstractions.Responses;
 using Application.Common;
+using Application.Common.Exceptions;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
@@ -57,6 +58,11 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
         catch (UnauthorizedAccessException ex)
         {
             return Result<SendMessageResponse>.Failure(StatusCodes.Status403Forbidden, ex.Message);
+        }
+        catch (CharacterTurnConcurrencyException ex)
+        {
+            _logger.LogWarning(ex, "Character turn concurrency conflict for Turn {TurnId}", turnRequest.TurnId);
+            return Result<SendMessageResponse>.Failure(StatusCodes.Status409Conflict, ex.Message);
         }
 
         var (level, stageName, _) = RelationshipStageResolver.Resolve(turnResult.Relationship.AffectionScore);

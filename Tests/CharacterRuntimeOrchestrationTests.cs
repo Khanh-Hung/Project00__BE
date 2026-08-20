@@ -1,5 +1,6 @@
 using Application.Abstractions.Auth;
 using Application.Common;
+using Application.Common.Exceptions;
 using Application.DTOs;
 using Application.Interfaces;
 using Application.Services;
@@ -83,7 +84,7 @@ public class CharacterRuntimeOrchestrationTests
     }
 
     [Fact]
-    public async Task CharacterRuntime_Enforces_Persistent_Database_Idempotency_Across_Process_Restart()
+    public async Task Retry_Returns_Exactly_The_Original_Response_With_Custom_Milestones_And_Snapshots()
     {
         var dbName = Guid.NewGuid().ToString();
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
@@ -94,8 +95,23 @@ public class CharacterRuntimeOrchestrationTests
         var userId = Guid.NewGuid();
         var fixedTurnId = Guid.NewGuid();
 
+        var customMilestones = new List<RelationshipMilestoneDto>
+        {
+            new("Stranger", -100, 9, "Vừa mới gặp"),
+            new("Soulmate", 10, 100, "Tri kỷ đặc biệt")
+        };
+
         await using var context = new ProjectDbContext(options);
-        var character = new Character("Luna", "Starlight Mage", "https://example.com/luna.jpg", "Playful & Intelligent", "Hello!", "Fantasy") { Id = charId };
+        var character = new Character(
+            name: "Luna",
+            title: "Starlight Mage",
+            avatarUrl: "https://example.com/luna.jpg",
+            personalityPrompt: "Playful & Intelligent",
+            greeting: "Hello!",
+            category: "Fantasy",
+            customMilestonesJson: System.Text.Json.JsonSerializer.Serialize(customMilestones),
+            defaultAffectionScore: 7
+        ) { Id = charId };
         await context.Characters.AddAsync(character);
 
         var session = new ChatSession(charId, userId, "Test Session");
@@ -106,7 +122,13 @@ public class CharacterRuntimeOrchestrationTests
         var fakeUserProvider = new FakeCurrentUserProvider(userId.ToString());
         var fakeMemoryService = new FakeMemoryService();
         var contextEngine1 = new RoleplayContextEngine(unitOfWork1, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
-        var fakeLlmService1 = new FakeLLMService("Phản hồi lần đầu", CharacterMood.Happy, 60, 3, new RelationshipEventProposal("StarWatcher", "Watched stars together"));
+        var fakeLlmService1 = new FakeLLMService(
+            reply: "Cảm ơn anh đã luôn bên em!",
+            mood: CharacterMood.Happy,
+            intensity: 95,
+            delta: 5,
+            evt: new RelationshipEventProposal("DeepConnection", "Shared deepest secret")
+        );
         var mockTrigger = new MockMemoryExtractionTrigger();
 
         var runtime1 = new CharacterRuntime(
@@ -125,21 +147,22 @@ public class CharacterRuntimeOrchestrationTests
             UserId: userId,
             CharacterId: charId,
             SessionId: session.Id,
-            UserMessage: "Em nhớ anh",
+            UserMessage: "Anh luôn ở đây với em",
             TurnId: fixedTurnId
         );
 
-        // Process Turn on Instance 1
-        var result1 = await runtime1.ProcessTurnAsync(turnReq);
-        Assert.Equal("Phản hồi lần đầu", result1.Reply);
-        Assert.Equal(1, fakeLlmService1.CallCount);
-        Assert.Single(result1.Relationship.Events);
+        // Turn 1: Initial Turn execution
+        var first = await runtime1.ProcessTurnAsync(turnReq);
+        Assert.Equal("Cảm ơn anh đã luôn bên em!", first.Reply);
+        Assert.Equal("Soulmate", first.Relationship.RelationshipStage); // Resolved via custom milestones: 7 + 5 = 12 -> Soulmate
+        Assert.Single(first.Relationship.Events);
+        Assert.Equal("DeepConnection", first.Relationship.Events[0].EventKey);
 
-        // Simulate Process Restart / Instance 2 with brand new Runtime and clean in-memory state
+        // Turn 2: Simulate Process Restart / Different context instance with brand new Runtime
         await using var context2 = new ProjectDbContext(options);
         var unitOfWork2 = new UnitOfWork(context2);
         var contextEngine2 = new RoleplayContextEngine(unitOfWork2, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
-        var fakeLlmService2 = new FakeLLMService("Phản hồi lần hai (không được gọi)", CharacterMood.Angry, 90, 0);
+        var fakeLlmService2 = new FakeLLMService("Phản hồi không được gọi", CharacterMood.Angry, 10, 0);
 
         var runtime2 = new CharacterRuntime(
             unitOfWork2,
@@ -153,16 +176,24 @@ public class CharacterRuntimeOrchestrationTests
             NullLogger<CharacterRuntime>.Instance
         );
 
-        // Process same TurnId on Instance 2
-        var result2 = await runtime2.ProcessTurnAsync(turnReq);
+        var retry = await runtime2.ProcessTurnAsync(turnReq);
 
-        // Must read from database idempotency table and NOT invoke LLM on Instance 2
-        Assert.Equal("Phản hồi lần đầu", result2.Reply);
-        Assert.Equal(result1.MessageId, result2.MessageId);
+        // Assert 100% exact equality on all fields
         Assert.Equal(0, fakeLlmService2.CallCount);
-        // Verified complete deterministic response with restored Events snapshot
-        Assert.Single(result2.Relationship.Events);
-        Assert.Equal("StarWatcher", result2.Relationship.Events[0].EventKey);
+        Assert.Equal(first.Reply, retry.Reply);
+        Assert.Equal(first.MessageId, retry.MessageId);
+        Assert.Equal(first.TurnId, retry.TurnId);
+        Assert.Equal(first.Relationship.AffectionScore, retry.Relationship.AffectionScore);
+        Assert.Equal(first.Relationship.RelationshipStage, retry.Relationship.RelationshipStage);
+        Assert.Equal(first.Relationship.CurrentMood, retry.Relationship.CurrentMood);
+        Assert.Equal(first.Relationship.MoodIntensity, retry.Relationship.MoodIntensity);
+        Assert.Equal(first.Relationship.Events.Count, retry.Relationship.Events.Count);
+        Assert.Equal(first.Relationship.Events[0].EventKey, retry.Relationship.Events[0].EventKey);
+        Assert.Equal(first.Relationship.Events[0].Context, retry.Relationship.Events[0].Context);
+        Assert.Equal(first.ActiveMemories.Count, retry.ActiveMemories.Count);
+        Assert.Equal(first.Mood, retry.Mood);
+        Assert.Equal(first.MoodIntensity, retry.MoodIntensity);
+        Assert.Equal(first.AffectionDelta, retry.AffectionDelta);
     }
 
     [Fact]
@@ -264,9 +295,8 @@ public class CharacterRuntimeOrchestrationTests
         relB.ApplyAffectionDelta(-10);
 
         // EF Core concurrency token checks original version vs store version
-        // In EF Core InMemory/Relational, saving stale entity triggers concurrency conflict
         Assert.Equal(2u, relA.Version);
-        Assert.Equal(2u, relB.Version); // relB incremented its local version from 1 to 2, but its original loaded version was 1 while DB is now 2
+        Assert.Equal(2u, relB.Version);
     }
 
     [Fact]
@@ -391,6 +421,40 @@ public class CharacterRuntimeOrchestrationTests
 
         rel.TryUnlockEvent("FirstStar", "Looked at stars together");
         Assert.Equal(4u, rel.Version);
+    }
+
+    [Fact]
+    public async Task SendChatMessageHandler_Returns_Conflict_When_CharacterTurnConcurrencyException_Occurs()
+    {
+        var mockRuntime = new FailingConcurrencyRuntime();
+        var fakeUserProvider = new FakeCurrentUserProvider(Guid.NewGuid().ToString());
+        var handler = new Application.Features.Chat.Commands.SendChatMessage.SendChatMessageHandler(
+            mockRuntime,
+            fakeUserProvider,
+            NullLogger<Application.Features.Chat.Commands.SendChatMessage.SendChatMessageHandler>.Instance
+        );
+
+        var command = new Application.Features.Chat.Commands.SendChatMessage.SendChatMessageCommand(
+            new SendMessageRequest(Guid.NewGuid(), "Hello")
+        );
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(409, result.StatusCode);
+    }
+
+    private sealed class FailingConcurrencyRuntime : ICharacterRuntime
+    {
+        public Task<CharacterTurnResult> ProcessTurnAsync(CharacterTurnRequest request, CancellationToken ct = default)
+        {
+            throw new CharacterTurnConcurrencyException(
+                request.TurnId ?? Guid.NewGuid(),
+                request.CharacterId,
+                request.UserId,
+                "Concurrent update conflict"
+            );
+        }
     }
 
     private sealed class FakeCurrentUserProvider : ICurrentUserProvider

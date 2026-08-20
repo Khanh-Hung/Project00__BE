@@ -19,6 +19,8 @@ public sealed class CharacterTurnConfiguration : IEntityTypeConfiguration<Charac
         builder.Property(t => t.AssistantReply).IsRequired();
         builder.Property(t => t.Mood).HasMaxLength(50);
         builder.Property(t => t.RelationshipStage).HasMaxLength(100);
+        builder.Property(t => t.RelationshipId);
+        builder.Property(t => t.LastInteractedAt);
         builder.Property(t => t.EventsJson).HasColumnType("jsonb");
         builder.Property(t => t.ActiveMemoriesJson).HasColumnType("jsonb");
 
