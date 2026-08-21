@@ -32,9 +32,9 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
 
         var baseState = currentState ?? new SessionSceneState(
             CurrentLocation: defaultLocation,
+            CurrentPosition: "Đại điện",
             CurrentOutfit: defaultOutfit,
             CurrentTimeOfDay: defaultTime,
-            CurrentPose: "Trang nhã",
             HeldItems: null,
             Atmosphere: "Thanh tịnh",
             LastUpdatedAt: DateTime.UtcNow
@@ -69,9 +69,9 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
             
             CURRENT PERSISTENT STATE (Source of Truth):
             - Current Location: {baseState.CurrentLocation}
+            - Current Position: {baseState.CurrentPosition}
             - Current Outfit: {baseState.CurrentOutfit}
             - Current Time: {baseState.CurrentTimeOfDay}
-            - Current Pose: {baseState.CurrentPose}
             - Held Items: {baseState.HeldItems ?? "None"}
             
             LATEST DIALOGUE TURN:
