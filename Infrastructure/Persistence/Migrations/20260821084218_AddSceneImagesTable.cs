@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -11,12 +11,6 @@ namespace Project.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "SceneState",
-                table: "ChatSessions",
-                type: "jsonb",
-                nullable: true);
-
             migrationBuilder.CreateTable(
                 name: "SceneImages",
                 columns: table => new
