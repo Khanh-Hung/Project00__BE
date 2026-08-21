@@ -138,17 +138,44 @@ public sealed class CharacterRuntime : ICharacterRuntime
         var userMsg = session.AddUserMessage(request.UserMessage);
         var assistantMessage = session.AddAssistantMessage(aiTurn.Reply);
 
+        SessionSceneState effectiveSceneState = session.SceneState ?? new SessionSceneState(
+            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
+            CurrentPosition: "Central Area",
+            CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
+            CurrentTimeOfDay: "Daytime",
+            HeldItems: null,
+            Atmosphere: "Peaceful",
+            SceneRevision: 1,
+            LastUpdatedAt: Clock.Now
+        );
+        TransientVisualState effectiveTransientState = new TransientVisualState(
+            Pose: "Graceful posture",
+            Expression: aiTurn.Mood.ToString()
+        );
+
         if (_sceneStateTracker != null)
         {
             try
             {
-                var updatedSceneState = await _sceneStateTracker.TrackAndExtractStateAsync(
+                var delta = await _sceneStateTracker.TrackAndExtractDeltaAsync(
                     character,
                     session.SceneState,
                     request.UserMessage,
                     aiTurn.Reply,
                     ct);
-                session.UpdateSceneState(updatedSceneState);
+
+                if (delta != null)
+                {
+                    var targetRevision = (session.SceneState?.SceneRevision ?? 1) + 1;
+                    effectiveSceneState = effectiveSceneState.ApplyDelta(delta, explicitRevision: targetRevision);
+                    session.UpdateSceneState(effectiveSceneState);
+
+                    effectiveTransientState = TransientVisualState.FromDelta(
+                        delta,
+                        defaultPose: "Graceful posture",
+                        defaultExpression: aiTurn.Mood.ToString()
+                    );
+                }
             }
             catch (Exception ex)
             {
@@ -286,17 +313,32 @@ public sealed class CharacterRuntime : ICharacterRuntime
         // Outbox Job 3: Scene Image Generation (if requested)
         if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
         {
+            var visualSnapshot = VisualSnapshot.Create(
+                turnId: turnId,
+                sessionId: session.Id,
+                characterId: character.Id,
+                sceneRevision: effectiveSceneState.SceneRevision,
+                visualIdentity: character.VisualIdentity,
+                characterAvatarUrl: character.AvatarUrl,
+                sceneState: effectiveSceneState,
+                transientState: effectiveTransientState,
+                previousSceneImageUrl: null
+            );
+
             var scene = new SceneContext(
-                Location: character.Title,
-                Expression: currentMood.ToString()
+                Location: effectiveSceneState.CurrentLocation,
+                Outfit: effectiveSceneState.CurrentOutfit,
+                Pose: effectiveTransientState.Pose,
+                Action: effectiveTransientState.Action,
+                Expression: effectiveTransientState.Expression,
+                TimeOfDay: effectiveSceneState.CurrentTimeOfDay
             );
             var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
             var scenePayload = new SceneImageGenerationOutboxPayload(
                 TurnId: turnId,
                 CharacterId: character.Id,
                 UserId: request.UserId,
-                CharacterTitle: character.Title,
-                Mood: currentMood.ToString(),
+                Snapshot: visualSnapshot,
                 Prompt: prompt
             );
             var sceneOutbox = new OutboxMessage(
@@ -553,16 +595,79 @@ public sealed class CharacterRuntime : ICharacterRuntime
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(voicePayload)), ct);
         }
 
+        SessionSceneState effectiveStreamSceneState = session.SceneState ?? new SessionSceneState(
+            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
+            CurrentPosition: "Central Area",
+            CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
+            CurrentTimeOfDay: "Daytime",
+            HeldItems: null,
+            Atmosphere: "Peaceful",
+            SceneRevision: 1,
+            LastUpdatedAt: Clock.Now
+        );
+        TransientVisualState effectiveStreamTransientState = new TransientVisualState(
+            Pose: "Graceful posture",
+            Expression: currentMood.ToString()
+        );
+
+        if (_sceneStateTracker != null)
+        {
+            try
+            {
+                var delta = await _sceneStateTracker.TrackAndExtractDeltaAsync(
+                    character,
+                    session.SceneState,
+                    request.UserMessage,
+                    aiTurn.Reply,
+                    ct);
+
+                if (delta != null)
+                {
+                    var targetRevision = (session.SceneState?.SceneRevision ?? 1) + 1;
+                    effectiveStreamSceneState = effectiveStreamSceneState.ApplyDelta(delta, explicitRevision: targetRevision);
+                    session.UpdateSceneState(effectiveStreamSceneState);
+
+                    effectiveStreamTransientState = TransientVisualState.FromDelta(
+                        delta,
+                        defaultPose: "Graceful posture",
+                        defaultExpression: currentMood.ToString()
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to track dynamic scene state during streaming turn.");
+            }
+        }
+
         if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
         {
-            var scene = new SceneContext(Location: character.Title, Expression: currentMood.ToString());
+            var visualSnapshot = VisualSnapshot.Create(
+                turnId: turnId,
+                sessionId: session.Id,
+                characterId: character.Id,
+                sceneRevision: effectiveStreamSceneState.SceneRevision,
+                visualIdentity: character.VisualIdentity,
+                characterAvatarUrl: character.AvatarUrl,
+                sceneState: effectiveStreamSceneState,
+                transientState: effectiveStreamTransientState,
+                previousSceneImageUrl: null
+            );
+
+            var scene = new SceneContext(
+                Location: effectiveStreamSceneState.CurrentLocation,
+                Outfit: effectiveStreamSceneState.CurrentOutfit,
+                Pose: effectiveStreamTransientState.Pose,
+                Action: effectiveStreamTransientState.Action,
+                Expression: effectiveStreamTransientState.Expression,
+                TimeOfDay: effectiveStreamSceneState.CurrentTimeOfDay
+            );
             var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
             var scenePayload = new SceneImageGenerationOutboxPayload(
                 TurnId: turnId,
                 CharacterId: character.Id,
                 UserId: request.UserId,
-                CharacterTitle: character.Title,
-                Mood: currentMood.ToString(),
+                Snapshot: visualSnapshot,
                 Prompt: prompt
             );
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(scenePayload)), ct);
