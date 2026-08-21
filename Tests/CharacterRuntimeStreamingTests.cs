@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Application.Abstractions.Auth;
 using Application.Common;
 using Application.DTOs;
@@ -110,6 +111,114 @@ public class CharacterRuntimeStreamingTests
         Assert.Equal("Chào ngươi, kẻ tìm kiếm tri thức.", committedTurn.AssistantReply);
         Assert.Equal("Happy", committedTurn.Mood);
         Assert.Equal(4, committedTurn.AffectionDelta);
+    }
+
+    [Fact]
+    public async Task CharacterRuntime_Streams_With_Nested_Event_And_Mood_Before_Reply_Successfully()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var fixedTurnId = Guid.NewGuid();
+
+        await using var context = new ProjectDbContext(options);
+        var character = new Character("Eldrin", "Ancient Sage", "https://example.com/eldrin.jpg", "Wise", "Greetings", "Fantasy") { Id = charId };
+        await context.Characters.AddAsync(character);
+
+        var session = new ChatSession(charId, userId, "Nested Stream Session");
+        await context.ChatSessions.AddAsync(session);
+        await context.SaveChangesAsync();
+
+        var unitOfWork = new UnitOfWork(context);
+        var fakeUserProvider = new FakeCurrentUserProvider(userId.ToString());
+        var fakeMemoryService = new FakeMemoryService();
+        var contextEngine = new RoleplayContextEngine(unitOfWork, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
+
+        // Chunks with nested event and mood BEFORE reply field
+        var streamedChunks = new[]
+        {
+            "```json\n{\n  \"event\": {\"key\": \"TRUST_CONFIDANT\", \"context\": \"User shared secret\"},\n",
+            "  \"mood\": \"Affectionate\",\n",
+            "  \"moodIntensity\": 90,\n",
+            "  \"affectionDelta\": 5,\n",
+            "  \"reply\": \"Ta rất cảm động ",
+            "khi ngươi mở lòng chia sẻ điều bí mật này.\"\n}\n```"
+        };
+
+        var fakeLlmService = new FakeStreamingLLMService(streamedChunks);
+        var mockTrigger = new MockMemoryExtractionTrigger();
+        var voiceCompiler = new VoicePromptCompiler();
+        var mockVoiceService = new MockVoiceService();
+        var visualCompiler = new VisualPromptCompiler();
+        var mockImageService = new MockImageService();
+
+        var runtime = new CharacterRuntime(
+            unitOfWork,
+            contextEngine,
+            fakeLlmService,
+            mockTrigger,
+            voiceCompiler,
+            mockVoiceService,
+            visualCompiler,
+            mockImageService,
+            NullLogger<CharacterRuntime>.Instance
+        );
+
+        var turnReq = new CharacterTurnRequest(
+            UserId: userId,
+            CharacterId: charId,
+            SessionId: session.Id,
+            UserMessage: "Ta có một bí mật muốn nói với người...",
+            TurnId: fixedTurnId
+        );
+
+        var receivedEvents = new List<CharacterStreamEvent>();
+        await foreach (var streamEvent in runtime.ProcessTurnStreamAsync(turnReq))
+        {
+            receivedEvents.Add(streamEvent);
+        }
+
+        Assert.NotEmpty(receivedEvents);
+
+        // 1. Verify token events: strictly speech text only
+        var tokenEvents = receivedEvents.Where(e => e.Event == "token").ToList();
+        Assert.NotEmpty(tokenEvents);
+        var streamedDialogue = string.Join("", tokenEvents.Select(e => ((CharacterStreamTokenData)e.Data).Delta));
+        Assert.Equal("Ta rất cảm động khi ngươi mở lòng chia sẻ điều bí mật này.", streamedDialogue);
+
+        // 2. Verify metadata event
+        var metadataEvent = receivedEvents.FirstOrDefault(e => e.Event == "metadata");
+        Assert.NotNull(metadataEvent);
+        var metaJson = JsonSerializer.Serialize(metadataEvent.Data);
+        using var metaDoc = JsonDocument.Parse(metaJson);
+        Assert.Equal("Affectionate", metaDoc.RootElement.GetProperty("mood").GetString());
+        Assert.Equal(90, metaDoc.RootElement.GetProperty("intensity").GetInt32());
+        Assert.Equal(5, metaDoc.RootElement.GetProperty("affectionDelta").GetInt32());
+
+        // 3. Verify event_unlocked event
+        var unlockedEvent = receivedEvents.FirstOrDefault(e => e.Event == "event_unlocked");
+        Assert.NotNull(unlockedEvent);
+        var eventJson = JsonSerializer.Serialize(unlockedEvent.Data);
+        using var eventDoc = JsonDocument.Parse(eventJson);
+        Assert.Equal("TRUST_CONFIDANT", eventDoc.RootElement.GetProperty("eventKey").GetString());
+
+        // 4. Verify done event
+        var doneEvent = receivedEvents.FirstOrDefault(e => e.Event == "done");
+        Assert.NotNull(doneEvent);
+
+        // 5. Verify DB persistence
+        var committedTurn = await context.CharacterTurns.FirstOrDefaultAsync(t => t.TurnId == fixedTurnId);
+        Assert.NotNull(committedTurn);
+        Assert.Equal("Ta rất cảm động khi ngươi mở lòng chia sẻ điều bí mật này.", committedTurn.AssistantReply);
+        Assert.Equal("Affectionate", committedTurn.Mood);
+        Assert.Equal(5, committedTurn.AffectionDelta);
+
+        var rel = await context.CharacterRelationships.FirstOrDefaultAsync(r => r.UserId == userId && r.CharacterId == charId);
+        Assert.NotNull(rel);
+        Assert.Contains(rel.Events, e => e.EventKey == "TRUST_CONFIDANT");
     }
 
     [Fact]
