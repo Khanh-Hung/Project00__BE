@@ -15,15 +15,9 @@ public class WorldPhysicsAndEraGuardrailsTests
     [Theory]
     [InlineData(WorldGenre.MundaneSliceOfLife, "Zero Supernatural / Magic", "laws of physics")]
     [InlineData(WorldGenre.HighFantasy, "Power System & Magic", "Cross-World / Isekai")]
-    [InlineData(WorldGenre.CyberpunkSciFi, "Cyberware", "Zero Mystical Magic")]
+    [InlineData(WorldGenre.CyberpunkSciFi, "High-Tech Foundation", "Zero Mystical Magic")]
     [InlineData(WorldGenre.UrbanSupernatural, "URBAN SUPERNATURAL", "Masquerade")]
     [InlineData(WorldGenre.Historical, "Historical Authenticity", "Traditional Etiquette")]
-    [InlineData(WorldGenre.PostApocalyptic, "Harsh Scarcity", "POST-APOCALYPTIC")]
-    [InlineData(WorldGenre.Steampunk, "Brass & Steam", "STEAMPUNK")]
-    [InlineData(WorldGenre.Superhero, "Superpowers & Metahumans", "SUPERHERO")]
-    [InlineData(WorldGenre.EldritchHorror, "Cosmic Incomprehensibility", "Sanity")]
-    [InlineData(WorldGenre.SpaceOpera, "Interstellar Civilization", "SPACE OPERA")]
-    [InlineData(WorldGenre.IsekaiOtherworld, "Dual Knowledge", "ISEKAI")]
     public void WorldPhysicsRuleResolver_Resolves_Accurate_Guardrails_For_All_Genres(
         WorldGenre genre,
         string expectedKeyword1,

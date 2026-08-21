@@ -196,7 +196,7 @@ public class PromptCompilerAndContextEngineTests
 
         // 3. Layer 3: Dynamic Relationship State
         Assert.Contains("[LAYER 3: DYNAMIC RELATIONSHIP STATE & INTIMACY STATUS]", systemPrompt);
-        Assert.Contains("Tri Kỷ & Tin Cậy", systemPrompt);
+        Assert.Contains("Tri Kỷ & Rung Động", systemPrompt);
         Assert.Contains("FirstMagicDuel", systemPrompt);
 
         // 4. Layer 4: Relevant Long-Term Memories

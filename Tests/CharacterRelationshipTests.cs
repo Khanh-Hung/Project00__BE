@@ -175,20 +175,21 @@ public class CharacterRelationshipTests
     }
 
     [Theory]
-    [InlineData(-100, -2, "Kẻ Thù Không Đội Trời Chung")]
-    [InlineData(-61, -2, "Kẻ Thù Không Đội Trời Chung")]
-    [InlineData(-60, -1, "Thù Địch & Ác Cảm")]
-    [InlineData(-21, -1, "Thù Địch & Ác Cảm")]
-    [InlineData(-20, 1, "Người Lạ")]
+    [InlineData(-100, -4, "Kẻ Thù Truyền Kiếp")]
+    [InlineData(-76, -4, "Kẻ Thù Truyền Kiếp")]
+    [InlineData(-75, -3, "Căm Ghét & Khinh Bỉ")]
+    [InlineData(-51, -3, "Căm Ghét & Khinh Bỉ")]
+    [InlineData(-50, -2, "Ác Cảm & Đề Phòng")]
+    [InlineData(-26, -2, "Ác Cảm & Đề Phòng")]
+    [InlineData(-25, 1, "Người Lạ")]
     [InlineData(0, 1, "Người Lạ")]
-    [InlineData(20, 1, "Người Lạ")]
-    [InlineData(21, 2, "Người Quen")]
-    [InlineData(45, 2, "Người Quen")]
-    [InlineData(46, 3, "Bạn Thân Thiết")]
-    [InlineData(70, 3, "Bạn Thân Thiết")]
-    [InlineData(71, 4, "Tri Kỷ & Tin Cậy")]
-    [InlineData(90, 4, "Tri Kỷ & Tin Cậy")]
-    [InlineData(91, 5, "Gắn Kết Linh Hồn")]
+    [InlineData(1, 2, "Người Quen & Cởi Mở")]
+    [InlineData(25, 2, "Người Quen & Cởi Mở")]
+    [InlineData(26, 3, "Bạn Thân Thiết")]
+    [InlineData(50, 3, "Bạn Thân Thiết")]
+    [InlineData(51, 4, "Tri Kỷ & Rung Động")]
+    [InlineData(75, 4, "Tri Kỷ & Rung Động")]
+    [InlineData(76, 5, "Gắn Kết Linh Hồn")]
     [InlineData(100, 5, "Gắn Kết Linh Hồn")]
     public void RelationshipStageResolver_BoundaryScores_CalculateExactLevelAndName(
         int score, int expectedLevel, string expectedName)
@@ -216,7 +217,7 @@ public class CharacterRelationshipTests
         Assert.Equal("Bạn Đời Tri Kỷ", name2);
 
         // Fallback to default if no custom milestones
-        var (lvl3, name3, _) = RelationshipStageResolver.Resolve(10, null);
+        var (lvl3, name3, _) = RelationshipStageResolver.Resolve(0, null);
         Assert.Equal("Người Lạ", name3);
     }
 
