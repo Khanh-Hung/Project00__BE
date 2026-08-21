@@ -21,6 +21,11 @@ appsettings*.Development.json
 *.userosscache
 *.sln.docstates
 
+# Benchmark and Python artifacts
+benchmark_outputs/
+__pycache__/
+*.pyc
+
 # Operating System files
 .DS_Store
 Thumbs.db

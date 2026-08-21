@@ -23,7 +23,7 @@ public class DedicatedImageGenerationService : IImageGenerationService
         _configuration = configuration;
         _logger = logger;
         _fallbackService = fallbackService;
-        _httpClient.Timeout = TimeSpan.FromSeconds(60);
+        _httpClient.Timeout = TimeSpan.FromSeconds(90);
     }
 
     public Task<string> GenerateImageAsync(
@@ -51,16 +51,25 @@ public class DedicatedImageGenerationService : IImageGenerationService
         try
         {
             var endpoint = serverUrl.TrimEnd('/') + "/generate";
+            
+            float defaultIdentityScale = 0.65f;
+            float defaultSceneScale = 0.20f;
+            if (float.TryParse(_configuration["AiProviders:DefaultIdentityScale"], out var parsedIdScale)) defaultIdentityScale = parsedIdScale;
+            if (float.TryParse(_configuration["AiProviders:DefaultSceneScale"], out var parsedSceneScale)) defaultSceneScale = parsedSceneScale;
+
             var payload = new DedicatedServerRequest
             {
                 Prompt = request.Prompt,
                 NegativePrompt = request.NegativePrompt ?? "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name",
                 Width = request.Width > 0 ? request.Width : 1024,
                 Height = request.Height > 0 ? request.Height : 1024,
-                NumInferenceSteps = 28,
-                GuidanceScale = 7.0f,
+                NumInferenceSteps = request.Steps ?? 28,
+                GuidanceScale = request.GuidanceScale ?? 7.0f,
                 ReferenceImage = request.ReferenceImageUrl,
-                PreviousSceneImage = request.PreviousSceneImageUrl
+                PreviousSceneImage = request.PreviousSceneImageUrl,
+                IdentityScale = request.IdentityScale ?? defaultIdentityScale,
+                SceneScale = request.SceneScale ?? defaultSceneScale,
+                Seed = request.Seed
             };
 
             var res = await _httpClient.PostAsJsonAsync(endpoint, payload, ct);
@@ -69,7 +78,7 @@ public class DedicatedImageGenerationService : IImageGenerationService
                 var body = await res.Content.ReadFromJsonAsync<DedicatedServerResponse>(cancellationToken: ct);
                 if (body != null && !string.IsNullOrWhiteSpace(body.Image))
                 {
-                    _logger.LogInformation("Successfully generated image via Dedicated AI server!");
+                    _logger.LogInformation("Successfully generated image via Dedicated AI server! (IdentityScale={IdScale}, SceneScale={SceneScale})", payload.IdentityScale, payload.SceneScale);
                     return body.Image;
                 }
             }
@@ -111,6 +120,15 @@ public class DedicatedImageGenerationService : IImageGenerationService
 
         [JsonPropertyName("previous_scene_image")]
         public string? PreviousSceneImage { get; set; }
+
+        [JsonPropertyName("identity_scale")]
+        public float IdentityScale { get; set; } = 0.65f;
+
+        [JsonPropertyName("scene_scale")]
+        public float SceneScale { get; set; } = 0.20f;
+
+        [JsonPropertyName("seed")]
+        public long? Seed { get; set; }
     }
 
     private sealed class DedicatedServerResponse
