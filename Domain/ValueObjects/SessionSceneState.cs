@@ -13,7 +13,8 @@ public sealed record SessionSceneState(
     string? CurrentTimeOfDay = null,
     string? HeldItems = null,
     string? Atmosphere = null,
-    int SceneRevision = 1,
+    int SceneRevision = 0,
+    string? LastSceneImageUrl = null,
     DateTime? LastUpdatedAt = null
 )
 {
@@ -23,7 +24,10 @@ public sealed record SessionSceneState(
     /// SceneRevision identifies the committed turn/frame, not the number of persistent-field mutations.
     /// Revision is controlled authoritatively by the application commit boundary.
     /// </summary>
-    public SessionSceneState ApplyDelta(SceneStateDelta delta, int? explicitRevision = null)
+    public SessionSceneState ApplyDelta(
+        SceneStateDelta delta,
+        int? explicitRevision = null,
+        string? newSceneImageUrl = null)
     {
         if (delta == null) return this;
 
@@ -53,6 +57,7 @@ public sealed record SessionSceneState(
             HeldItems: resolvedHeldItems,
             Atmosphere: !string.IsNullOrWhiteSpace(delta.AtmosphereChange) ? delta.AtmosphereChange.Trim() : this.Atmosphere,
             SceneRevision: explicitRevision ?? (this.SceneRevision + 1),
+            LastSceneImageUrl: newSceneImageUrl ?? this.LastSceneImageUrl,
             LastUpdatedAt: DateTime.UtcNow
         );
     }
