@@ -1,20 +1,27 @@
 namespace Domain.ValueObjects;
 
+/// <summary>
+/// Persistent Scene State represents the durable spatial, environmental, and clothing context.
+/// Visual Continuity Invariant: "Nothing changes unless explicitly changed."
+/// NewState = OldState ⊕ Delta
+/// </summary>
 public sealed record SessionSceneState(
     string? CurrentLocation = null,
+    string? CurrentPosition = null,
     string? CurrentOutfit = null,
     string? CurrentTimeOfDay = null,
     string? CurrentPose = null,
     string? HeldItems = null,
     string? Atmosphere = null,
+    int SceneRevision = 1,
     DateTime? LastUpdatedAt = null
 )
 {
     /// <summary>
-    /// Implements the Visual Continuity Invariant: "Nothing changes unless explicitly changed."
-    /// NewState = OldState ⊕ Delta
+    /// Applies delta changes onto the current persistent scene state.
+    /// Any field omitted or null in delta remains strictly unchanged (Invariance).
     /// </summary>
-    public SessionSceneState ApplyDelta(SceneStateDelta delta)
+    public SessionSceneState ApplyDelta(SceneStateDelta delta, int? newRevision = null)
     {
         if (delta == null) return this;
 
@@ -38,11 +45,13 @@ public sealed record SessionSceneState(
 
         return new SessionSceneState(
             CurrentLocation: !string.IsNullOrWhiteSpace(delta.LocationChange) ? delta.LocationChange.Trim() : this.CurrentLocation,
+            CurrentPosition: !string.IsNullOrWhiteSpace(delta.PositionChange) ? delta.PositionChange.Trim() : this.CurrentPosition,
             CurrentOutfit: !string.IsNullOrWhiteSpace(delta.OutfitChange) ? delta.OutfitChange.Trim() : this.CurrentOutfit,
             CurrentTimeOfDay: !string.IsNullOrWhiteSpace(delta.TimeOfDayChange) ? delta.TimeOfDayChange.Trim() : this.CurrentTimeOfDay,
             CurrentPose: !string.IsNullOrWhiteSpace(delta.PoseChange) ? delta.PoseChange.Trim() : this.CurrentPose,
             HeldItems: resolvedHeldItems,
             Atmosphere: !string.IsNullOrWhiteSpace(delta.AtmosphereChange) ? delta.AtmosphereChange.Trim() : this.Atmosphere,
+            SceneRevision: newRevision ?? (this.SceneRevision + 1),
             LastUpdatedAt: DateTime.UtcNow
         );
     }
