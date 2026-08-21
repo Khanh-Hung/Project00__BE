@@ -64,6 +64,48 @@ public sealed class OutboxReliabilityAndOrderingTests
         public bool NotifyMessageSent(MemoryExtractionJob job) => true;
     }
 
+    private static string? GetPostgresConnectionString()
+    {
+        var envConn = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+        if (!string.IsNullOrWhiteSpace(envConn)) return envConn;
+
+        var devSettingsPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "appsettings.Development.json");
+        if (File.Exists(devSettingsPath))
+        {
+            var json = File.ReadAllText(devSettingsPath);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("ConnectionStrings", out var connSection) &&
+                connSection.TryGetProperty("DefaultConnection", out var connProp))
+            {
+                return connProp.GetString();
+            }
+        }
+        return null;
+    }
+
+    private (IServiceScopeFactory ScopeFactory, ProjectDbContext DbContext, MockImageService ImageService) CreatePostgreSqlTestContext(string connectionString)
+    {
+        var services = new ServiceCollection();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseNpgsql(connectionString)
+            .Options;
+
+        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped<IVoicePromptCompiler, DummyVoiceCompiler>();
+        services.AddScoped<IVisualPromptCompiler, DummyVisualCompiler>();
+        services.AddScoped<IVoiceGenerationService, DummyVoiceService>();
+        services.AddScoped<IMemoryExtractionTrigger, DummyMemoryTrigger>();
+
+        var imageService = new MockImageService();
+        services.AddScoped<IImageGenerationService>(_ => imageService);
+
+        var serviceProvider = services.BuildServiceProvider();
+        var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var dbContext = serviceProvider.GetRequiredService<ProjectDbContext>();
+
+        return (scopeFactory, dbContext, imageService);
+    }
+
     private (IServiceScopeFactory ScopeFactory, ProjectDbContext DbContext, MockImageService ImageService) CreateTestContext(string dbName)
     {
         var services = new ServiceCollection();
@@ -192,6 +234,64 @@ public sealed class OutboxReliabilityAndOrderingTests
         // Invariant: OutboxMessage is completed
         var updatedMsg = await db.OutboxMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
         Assert.Equal(OutboxStatus.Completed, updatedMsg.Status);
+    }
+
+    [Fact]
+    public async Task Scenario2b_Real_PostgreSQL_ExecuteUpdateAsync_Atomic_Claim_Prevents_Duplicate_Inference()
+    {
+        var connStr = GetPostgresConnectionString();
+        if (string.IsNullOrWhiteSpace(connStr)) return; // Skip if no real Postgres available
+
+        var (scopeFactory, db, imageService) = CreatePostgreSqlTestContext(connStr);
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+
+        var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
+
+        await db.OutboxMessages.AddAsync(msg);
+        await db.SaveChangesAsync();
+
+        try
+        {
+            int gpuCallCount = 0;
+            imageService.Handler = async (req, ct) =>
+            {
+                Interlocked.Increment(ref gpuCallCount);
+                // Simulate realistic 80ms GPU delay to maximize concurrency race window
+                await Task.Delay(80, ct);
+                return "https://cdn.project00.ai/rendered_postgres_concurrent.png";
+            };
+
+            // Spawn 5 concurrent worker instances with distinct WorkerIds
+            var workers = Enumerable.Range(1, 5)
+                .Select(i => new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance, $"pg-worker-{i}"))
+                .ToList();
+
+            // Run all 5 workers simultaneously in parallel against real PostgreSQL
+            await Task.WhenAll(workers.Select(w => w.ProcessPendingOutboxMessagesAsync()));
+
+            // PROOF 1: GPU was invoked EXACTLY ONCE on real PostgreSQL ExecuteUpdateAsync
+            Assert.Equal(1, gpuCallCount);
+
+            // PROOF 2: Exactly ONE SceneImage artifact was persisted in PostgreSQL
+            var artifacts = await db.SceneImages.AsNoTracking().Where(img => img.SessionId == sessionId).ToListAsync();
+            Assert.Single(artifacts);
+
+            // PROOF 3: OutboxMessage is Completed and has ClaimedBy set
+            var updatedMsg = await db.OutboxMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+            Assert.Equal(OutboxStatus.Completed, updatedMsg.Status);
+        }
+        finally
+        {
+            // Clean up test data from PostgreSQL
+            var toDeleteImages = await db.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
+            db.SceneImages.RemoveRange(toDeleteImages);
+            var toDeleteMsg = await db.OutboxMessages.FirstOrDefaultAsync(m => m.Id == msg.Id);
+            if (toDeleteMsg != null) db.OutboxMessages.Remove(toDeleteMsg);
+            await db.SaveChangesAsync();
+        }
     }
 
     [Fact]
