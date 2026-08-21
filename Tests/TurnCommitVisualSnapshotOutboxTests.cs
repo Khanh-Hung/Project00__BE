@@ -60,7 +60,6 @@ public class TurnCommitVisualSnapshotOutboxTests
         var contextEngine = new RoleplayContextEngine(unitOfWork, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
         var mockTrigger = new MockMemoryExtractionTrigger();
 
-        // Sequential state tracker simulating multi-turn physical progression
         var sequentialTracker = new SequentialSceneStateTracker();
 
         var runtime = new CharacterRuntime(
@@ -76,7 +75,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             sequentialTracker
         );
 
-        // Turn 1: Initial state -> Living Room, Sofa, White Dress, Revision 2 (1 + 1)
+        // Turn 1: Initial state -> Living Room, Sofa, White Dress, Revision = 1 (0 + 1)
         sequentialTracker.NextDelta = new SceneStateDelta(
             LocationChange: "Living Room",
             PositionChange: "Sofa",
@@ -91,7 +90,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             Options: new CharacterTurnOptions(GenerateImage: true)
         ));
 
-        // Turn 2: Move to Window -> Position = Beside Window, Location and Outfit stay identical
+        // Turn 2: Move to Window -> Position = Beside Window, Location and Outfit stay identical, Revision = 2
         sequentialTracker.NextDelta = new SceneStateDelta(
             PositionChange: "Beside Window",
             ActionChange: "Walking toward window",
@@ -106,7 +105,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             Options: new CharacterTurnOptions(GenerateImage: true)
         ));
 
-        // Turn 3: Change outfit -> Outfit = Black Dress, Position stays Beside Window, Location stays Living Room
+        // Turn 3: Change outfit -> Outfit = Black Dress, Position stays Beside Window, Location stays Living Room, Revision = 3
         sequentialTracker.NextDelta = new SceneStateDelta(
             OutfitChange: "Black Dress"
         );
@@ -135,32 +134,37 @@ public class TurnCommitVisualSnapshotOutboxTests
         Assert.NotNull(payload2?.Snapshot);
         Assert.NotNull(payload3?.Snapshot);
 
-        // Assert Invariant: Snapshot 1 MUST retain Living Room, Sofa, White Dress
+        // Turn 1 Invariant: Revision = 1, Living Room, Sofa, White Dress
+        Assert.Equal(1, payload1.Snapshot.SceneRevision);
         Assert.Equal("Living Room", payload1.Snapshot.SceneState.CurrentLocation);
         Assert.Equal("Sofa", payload1.Snapshot.SceneState.CurrentPosition);
         Assert.Equal("White Dress", payload1.Snapshot.SceneState.CurrentOutfit);
         Assert.Equal("https://cloud.storage/elysia_canonical.png", payload1.Snapshot.IdentityReferenceUrl);
+        Assert.Null(payload1.Snapshot.PreviousSceneImageUrl);
 
-        // Assert Invariant: Snapshot 2 MUST retain Living Room, Beside Window, White Dress
+        // Turn 2 Invariant: Revision = 2, Living Room, Beside Window, White Dress
+        Assert.Equal(2, payload2.Snapshot.SceneRevision);
         Assert.Equal("Living Room", payload2.Snapshot.SceneState.CurrentLocation);
         Assert.Equal("Beside Window", payload2.Snapshot.SceneState.CurrentPosition);
         Assert.Equal("White Dress", payload2.Snapshot.SceneState.CurrentOutfit);
         Assert.Equal("Walking toward window", payload2.Snapshot.TransientState?.Action);
         Assert.Equal("Gentle smile", payload2.Snapshot.TransientState?.Expression);
 
-        // Assert Invariant: Snapshot 3 MUST retain Living Room, Beside Window, Black Dress
+        // Turn 3 Invariant: Revision = 3, Living Room, Beside Window, Black Dress
+        Assert.Equal(3, payload3.Snapshot.SceneRevision);
         Assert.Equal("Living Room", payload3.Snapshot.SceneState.CurrentLocation);
         Assert.Equal("Beside Window", payload3.Snapshot.SceneState.CurrentPosition);
         Assert.Equal("Black Dress", payload3.Snapshot.SceneState.CurrentOutfit);
     }
 
     [Fact]
-    public async Task Worker_Processes_From_Snapshot_Without_Reading_Current_Session()
+    public async Task Worker_Compiles_Prompt_Deterministically_From_Snapshot_Without_Reading_Current_Session()
     {
         var dbName = Guid.NewGuid().ToString();
         var services = new ServiceCollection();
         services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
         services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
+        services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
         services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
 
         var capturedImageRequests = new List<ImageGenerationRequest>();
@@ -181,22 +185,26 @@ public class TurnCommitVisualSnapshotOutboxTests
             SessionId: sessionId,
             CharacterId: charId,
             SceneRevision: 1,
-            VisualIdentity: new CharacterVisualIdentity(CanonicalReferenceUrl: "https://cloud.storage/elysia.png"),
+            VisualIdentity: new CharacterVisualIdentity(
+                Hair: "platinum blonde hair",
+                ClothingStyle: "White Dress",
+                CanonicalReferenceUrl: "https://cloud.storage/elysia_canonical.png"
+            ),
             SceneState: new SessionSceneState(
                 CurrentLocation: "Living Room",
                 CurrentPosition: "Sofa",
-                CurrentOutfit: "White Dress",
+                CurrentOutfit: "White Silk Dress",
                 SceneRevision: 1
             ),
-            TransientState: new TransientVisualState(Pose: "Sitting", Expression: "Smiling"),
-            IdentityReferenceUrl: "https://cloud.storage/elysia.png"
+            TransientState: new TransientVisualState(Pose: "Sitting gracefully", Expression: "Gentle smile"),
+            IdentityReferenceUrl: "https://cloud.storage/elysia_canonical.png"
         );
 
         using (var seedScope = scopeFactory.CreateScope())
         {
             var ctx = seedScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
 
-            // The session in database has EVOLVED far ahead to Turn 10: Crimson Castle, Red Dress, Standing
+            // The session in database has EVOLVED far ahead to Turn 10: Crimson Castle, Red Empress Gown
             var evolvedSession = new ChatSession(charId, Guid.NewGuid(), "Evolved Session") { Id = sessionId };
             evolvedSession.UpdateSceneState(new SessionSceneState(
                 CurrentLocation: "Crimson Castle",
@@ -210,8 +218,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 TurnId: snapshotTurn1.TurnId,
                 CharacterId: charId,
                 UserId: Guid.NewGuid(),
-                Snapshot: snapshotTurn1,
-                Prompt: "1girl, elysia, white dress, sitting on sofa, gentle smile"
+                Snapshot: snapshotTurn1
             );
             await ctx.OutboxMessages.AddAsync(new OutboxMessage(
                 eventType: OutboxEventTypes.SceneImageGeneration,
@@ -227,12 +234,174 @@ public class TurnCommitVisualSnapshotOutboxTests
         Assert.Equal(1, processed);
         Assert.Single(capturedImageRequests);
 
-        // 3. STRICT ASSERTION: Worker generated image using Turn 1 snapshot prompt & reference, NOT the evolved database state!
+        // 3. STRICT ASSERTION: Worker generated image using compiled prompt directly from Turn 1 snapshot, NOT the evolved database state!
         var generatedReq = capturedImageRequests[0];
-        Assert.Contains("white dress", generatedReq.Prompt);
-        Assert.Contains("sofa", generatedReq.Prompt);
+        Assert.Contains("White Silk Dress", generatedReq.Prompt);
+        Assert.Contains("Sofa", generatedReq.Prompt);
+        Assert.Contains("Living Room", generatedReq.Prompt);
+        Assert.Equal("https://cloud.storage/elysia_canonical.png", generatedReq.ReferenceImageUrl);
         Assert.DoesNotContain("Crimson Castle", generatedReq.Prompt);
         Assert.DoesNotContain("Red Empress Gown", generatedReq.Prompt);
+    }
+
+    [Fact]
+    public async Task PreviousSceneImageUrl_Resolves_From_Exact_Revision_N_Minus_1()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        await using var context = new ProjectDbContext(options);
+        var character = new Character(
+            name: "Elysia",
+            title: "Herrscher of Human: Ego",
+            avatarUrl: "https://cloud.storage/elysia_avatar.png",
+            personalityPrompt: "Gentle and loving",
+            greeting: "Hi there!",
+            category: "Anime",
+            visualIdentity: new CharacterVisualIdentity(ClothingStyle: "White Dress")
+        ) { Id = charId };
+        await context.Characters.AddAsync(character);
+
+        // Session at Revision 1 having a committed scene image
+        var initialScene = new SessionSceneState(
+            CurrentLocation: "Living Room",
+            CurrentPosition: "Sofa",
+            CurrentOutfit: "White Dress",
+            SceneRevision: 1,
+            LastSceneImageUrl: "https://cloud.storage/scene_rev1.png"
+        );
+
+        var session = new ChatSession(charId, userId, "Continuity Session", sceneState: initialScene);
+        await context.ChatSessions.AddAsync(session);
+        await context.SaveChangesAsync();
+
+        var unitOfWork = new UnitOfWork(context);
+        var fakeUserProvider = new FakeUserProvider(userId.ToString());
+        var fakeMemoryService = new FakeMemoryService();
+        var contextEngine = new RoleplayContextEngine(unitOfWork, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
+        var mockTrigger = new MockMemoryExtractionTrigger();
+        var sequentialTracker = new SequentialSceneStateTracker();
+
+        var runtime = new CharacterRuntime(
+            unitOfWork,
+            contextEngine,
+            new ConfigurableLLMService("Ta đang đi tới cửa sổ."),
+            mockTrigger,
+            new VoicePromptCompiler(),
+            new MockVoiceService(),
+            new VisualPromptCompiler(),
+            new MockImageService(),
+            NullLogger<CharacterRuntime>.Instance,
+            sequentialTracker
+        );
+
+        // Turn 2 executes: Target Revision is 2 (1 + 1). Previous scene image from Revision 1 MUST be resolved!
+        sequentialTracker.NextDelta = new SceneStateDelta(PositionChange: "Beside Window");
+        await runtime.ProcessTurnAsync(new CharacterTurnRequest(
+            UserId: userId,
+            CharacterId: charId,
+            SessionId: session.Id,
+            UserMessage: "Em đứng đó làm gì?",
+            TurnId: Guid.NewGuid(),
+            Options: new CharacterTurnOptions(GenerateImage: true)
+        ));
+
+        var outboxMsg = await context.OutboxMessages.FirstOrDefaultAsync(m => m.EventType == OutboxEventTypes.SceneImageGeneration);
+        Assert.NotNull(outboxMsg);
+
+        var payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(outboxMsg.PayloadJson);
+        Assert.NotNull(payload?.Snapshot);
+        Assert.Equal(2, payload.Snapshot.SceneRevision);
+        Assert.Equal("https://cloud.storage/scene_rev1.png", payload.Snapshot.PreviousSceneImageUrl);
+    }
+
+    [Fact]
+    public async Task Streaming_And_NonStreaming_Produce_Identical_VisualSnapshot_Semantics()
+    {
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var character = new Character(
+            name: "Elysia",
+            title: "Herrscher of Human: Ego",
+            avatarUrl: "https://cloud.storage/elysia_avatar.png",
+            personalityPrompt: "Gentle and loving",
+            greeting: "Hi there!",
+            category: "Anime",
+            visualIdentity: new CharacterVisualIdentity(
+                Gender: "Female",
+                Hair: "Pink",
+                ClothingStyle: "Holy Silk Dress",
+                CanonicalReferenceUrl: "https://cloud.storage/canonical.png"
+            )
+        ) { Id = charId };
+
+        // Test Non-streaming turn
+        var db1 = Guid.NewGuid().ToString();
+        await using var ctx1 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(db1).Options);
+        await ctx1.Characters.AddAsync(character);
+        var session1 = new ChatSession(charId, userId, "Session 1");
+        await ctx1.ChatSessions.AddAsync(session1);
+        await ctx1.SaveChangesAsync();
+
+        var tracker1 = new SequentialSceneStateTracker { NextDelta = new SceneStateDelta(PositionChange: "Grand Altar", ExpressionChange: "Warm smile") };
+        var runtime1 = new CharacterRuntime(
+            new UnitOfWork(ctx1),
+            new RoleplayContextEngine(new UnitOfWork(ctx1), new FakeMemoryService(), new FakeUserProvider(userId.ToString()), NullLogger<RoleplayContextEngine>.Instance),
+            new ConfigurableLLMService("```json\n{\"reply\": \"Chào anh!\", \"mood\": \"Happy\", \"moodIntensity\": 80, \"affectionDelta\": 2}\n```"),
+            new MockMemoryExtractionTrigger(),
+            new VoicePromptCompiler(),
+            new MockVoiceService(),
+            new VisualPromptCompiler(),
+            new MockImageService(),
+            NullLogger<CharacterRuntime>.Instance,
+            tracker1
+        );
+
+        await runtime1.ProcessTurnAsync(new CharacterTurnRequest(userId, charId, session1.Id, "Hello", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true)));
+        var msg1 = await ctx1.OutboxMessages.FirstAsync(m => m.EventType == OutboxEventTypes.SceneImageGeneration);
+        var snapshot1 = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg1.PayloadJson)!.Snapshot;
+
+        // Test Streaming turn
+        var db2 = Guid.NewGuid().ToString();
+        await using var ctx2 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(db2).Options);
+        await ctx2.Characters.AddAsync(character);
+        var session2 = new ChatSession(charId, userId, "Session 2");
+        await ctx2.ChatSessions.AddAsync(session2);
+        await ctx2.SaveChangesAsync();
+
+        var tracker2 = new SequentialSceneStateTracker { NextDelta = new SceneStateDelta(PositionChange: "Grand Altar", ExpressionChange: "Warm smile") };
+        var runtime2 = new CharacterRuntime(
+            new UnitOfWork(ctx2),
+            new RoleplayContextEngine(new UnitOfWork(ctx2), new FakeMemoryService(), new FakeUserProvider(userId.ToString()), NullLogger<RoleplayContextEngine>.Instance),
+            new ConfigurableLLMService("```json\n{\"reply\": \"Chào anh!\", \"mood\": \"Happy\", \"moodIntensity\": 80, \"affectionDelta\": 2}\n```"),
+            new MockMemoryExtractionTrigger(),
+            new VoicePromptCompiler(),
+            new MockVoiceService(),
+            new VisualPromptCompiler(),
+            new MockImageService(),
+            NullLogger<CharacterRuntime>.Instance,
+            tracker2
+        );
+
+        await foreach (var _ in runtime2.ProcessTurnStreamAsync(new CharacterTurnRequest(userId, charId, session2.Id, "Hello", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true))))
+        {
+        }
+        var msg2 = await ctx2.OutboxMessages.FirstAsync(m => m.EventType == OutboxEventTypes.SceneImageGeneration);
+        var snapshot2 = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg2.PayloadJson)!.Snapshot;
+
+        // Assert 100% semantic identity between streaming and non-streaming
+        Assert.Equal(snapshot1.SceneRevision, snapshot2.SceneRevision);
+        Assert.Equal(snapshot1.SceneState.CurrentLocation, snapshot2.SceneState.CurrentLocation);
+        Assert.Equal(snapshot1.SceneState.CurrentPosition, snapshot2.SceneState.CurrentPosition);
+        Assert.Equal(snapshot1.SceneState.CurrentOutfit, snapshot2.SceneState.CurrentOutfit);
+        Assert.Equal(snapshot1.TransientState?.Expression, snapshot2.TransientState?.Expression);
+        Assert.Equal(snapshot1.IdentityReferenceUrl, snapshot2.IdentityReferenceUrl);
     }
 
     private sealed class SequentialSceneStateTracker : ISceneStateTrackerService
@@ -245,7 +414,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 CurrentLocation: character.Title ?? "Sanctuary",
                 CurrentPosition: "Central Area",
                 CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Dress",
-                SceneRevision: 1
+                SceneRevision: 0
             );
             return Task.FromResult(baseState.ApplyDelta(NextDelta ?? new SceneStateDelta()));
         }
@@ -305,7 +474,12 @@ public class TurnCommitVisualSnapshotOutboxTests
         public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(RoleplayContext context, CancellationToken ct = default) =>
             Task.FromResult(new RoleplayTurnResult(_reply, CharacterMood.Happy, 80, 2, null));
 
-        public IAsyncEnumerable<string> GenerateRoleplayTurnStreamAsync(RoleplayContext context, CancellationToken ct = default) => throw new NotImplementedException();
+        public async IAsyncEnumerable<string> GenerateRoleplayTurnStreamAsync(RoleplayContext context, CancellationToken ct = default)
+        {
+            yield return _reply;
+            await Task.CompletedTask;
+        }
+
         public Task<RoleplayTurnResult> GenerateRoleplayTurnAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, IReadOnlyCollection<CharacterMemory>? memories = null, CancellationToken ct = default) =>
             Task.FromResult(new RoleplayTurnResult(_reply, CharacterMood.Happy, 80, 2, null));
         public Task<string> GenerateRoleplayResponseAsync(Character character, IReadOnlyCollection<ChatMessage> history, string newUserMessage, CharacterRelationship? relationship = null, CancellationToken ct = default) => Task.FromResult(_reply);

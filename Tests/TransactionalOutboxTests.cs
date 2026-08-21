@@ -95,6 +95,7 @@ public class TransactionalOutboxTests
         var services = new ServiceCollection();
         services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
         services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
+        services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
         services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
         services.AddSingleton<IImageGenerationService, MockImageService>();
         services.AddSingleton<IMemoryExtractionTrigger, MockMemoryExtractionTrigger>();

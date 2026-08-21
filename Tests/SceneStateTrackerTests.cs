@@ -249,4 +249,23 @@ public class SceneStateTrackerTests
         var turn4 = turn3.ApplyDelta(new SceneStateDelta());
         Assert.Null(turn4.HeldItems);
     }
+
+    [Fact]
+    public void Test8_Initial_State_Starts_At_Revision_0_And_First_Turn_Becomes_Revision_1()
+    {
+        // Uncommitted initial state
+        var initialState = new SessionSceneState(
+            CurrentLocation: "Grand Temple",
+            CurrentOutfit: "Holy Robes"
+        );
+        Assert.Equal(0, initialState.SceneRevision);
+
+        // Turn 1 commit
+        var turn1State = initialState.ApplyDelta(new SceneStateDelta(PoseChange: "Praying"), explicitRevision: 1);
+        Assert.Equal(1, turn1State.SceneRevision);
+
+        // Turn 2 commit
+        var turn2State = turn1State.ApplyDelta(new SceneStateDelta(PositionChange: "Altar"), explicitRevision: 2);
+        Assert.Equal(2, turn2State.SceneRevision);
+    }
 }
