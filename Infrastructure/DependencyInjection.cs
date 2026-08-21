@@ -70,10 +70,11 @@ public static class DependencyInjection
         // 5. Add Storage Service (Local / Cloud)
         services.AddScoped<IStorageService, Infrastructure.Storage.LocalStorageService>();
 
-        // 6. Add Image Generation Service (Pollinations / Gemini / OpenAI)
+        // 6. Add Image Generation Service (Dedicated AI Server with Fallback)
         services.AddHttpClient<Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
-        var imageProvider = configuration["AiProviders:ImageProvider"] ?? "Pollinations";
-        services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
+        services.AddScoped<Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
+        services.AddHttpClient<Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
+        services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
 
         // 7. Add Voice Generation Service (Phase 7 - Character Voice & Audio)
         services.AddHttpClient<Infrastructure.Services.VoiceGenerationService>();
@@ -83,6 +84,7 @@ public static class DependencyInjection
         services.AddSingleton<IPromptCompiler, Infrastructure.LLM.Prompts.PromptCompiler>();
         services.AddHttpClient<Infrastructure.LLM.Core.GeminiApiClient>();
         services.AddScoped<ILLMService, Infrastructure.LLM.LLMService>();
+        services.AddScoped<ISceneStateTrackerService, SceneStateTrackerService>();
 
         // 8. Add Memory Services (Phase 2 - Character Memory System)
         services.Configure<Application.DTOs.MemoryExtractionOptions>(configuration.GetSection("MemoryExtraction"));
