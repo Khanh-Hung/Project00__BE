@@ -1,6 +1,7 @@
 using Domain.Entities;
 using Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Infrastructure.Persistence.Configurations;
@@ -20,6 +21,11 @@ public sealed class CharacterRelationshipConfiguration : IEntityTypeConfiguratio
         builder.Property(r => r.LastInteractedAt).IsRequired();
         builder.Property(r => r.Version).IsRequired().HasDefaultValue(1u).IsConcurrencyToken();
 
+        var eventsComparer = new ValueComparer<IReadOnlyCollection<RelationshipEvent>>(
+            (c1, c2) => (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.SequenceEqual(c2)),
+            c => c == null ? 0 : c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+            c => c == null ? new List<RelationshipEvent>() : c.ToList());
+
         builder.Property(r => r.Events)
             .HasField("_events")
             .HasColumnName("EventsJson")
@@ -29,7 +35,8 @@ public sealed class CharacterRelationshipConfiguration : IEntityTypeConfiguratio
                 v => string.IsNullOrWhiteSpace(v)
                     ? new List<RelationshipEvent>()
                     : System.Text.Json.JsonSerializer.Deserialize<List<RelationshipEvent>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new List<RelationshipEvent>()
-            );
+            )
+            .Metadata.SetValueComparer(eventsComparer);
 
         // Unique composite index: (UserId, CharacterId)
         builder.HasIndex(r => new { r.UserId, r.CharacterId })
