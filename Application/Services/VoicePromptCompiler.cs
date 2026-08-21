@@ -33,7 +33,7 @@ public sealed class VoicePromptCompiler : IVoicePromptCompiler
         return cleaned;
     }
 
-    public VoiceGenerationRequest CompileVoiceRequest(VoiceContext context)
+    public VoiceProviderRequest CompileVoiceRequest(VoiceContext context)
     {
         var voice = context.Voice ?? new CharacterVoiceProfile();
         var cleanedText = ExtractCleanDialogueText(context.RawText);
@@ -46,7 +46,7 @@ public sealed class VoicePromptCompiler : IVoicePromptCompiler
 
         var expression = MapMoodToVoiceExpression(context.Mood, context.MoodIntensity, context.AffectionScore);
 
-        return new VoiceGenerationRequest(
+        return new VoiceProviderRequest(
             CleanedText: cleanedText,
             VoiceId: voice.VoiceId,
             Language: voice.Language ?? "vi-VN",

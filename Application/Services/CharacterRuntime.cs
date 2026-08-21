@@ -532,7 +532,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
                 MoodIntensity: currentIntensity,
                 AffectionScore: relationship?.AffectionScore ?? 0,
                 RelationshipStage: currentStageName,
-                RawText: aiTurn.Reply
+                RawText: aiTurn.Reply,
+                SessionId: session.Id
             );
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(voicePayload)), ct);
         }

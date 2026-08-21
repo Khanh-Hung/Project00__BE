@@ -29,6 +29,7 @@ public class ProjectDbContext : DbContext
     public DbSet<LorebookEntry> LorebookEntries { get; set; }
     public DbSet<UserProfile> UserProfiles { get; set; }
     public DbSet<SceneImage> SceneImages { get; set; }
+    public DbSet<AudioArtifact> AudioArtifacts { get; set; }
 
     private string NormalizeUserId()
     {
