@@ -453,27 +453,28 @@ public sealed class LLMService : ILLMService
             };
 
             var promptResult = await _geminiClient.GenerateTextAsync(
-                "You are an expert anime visual novel scene prompt engineer. Output only comma-separated English tags.",
+                "You are an expert anime visual novel scene prompt engineer. Output concise comma-separated English tags (under 40 tags total).",
                 contents,
-                temperature: 0.7,
-                maxOutputTokens: 250,
+                temperature: 0.6,
+                maxOutputTokens: 120,
                 ct: ct);
 
-            cleanPrompt = (promptResult ?? "1girl, solo, full body, cowboy shot, long blonde hair, emerald green eyes, gold cross earrings, white and gold holy silk dress, white veil, sitting in grand sunlit temple sanctuary, marble pillars, golden sunbeams, holding porcelain tea cup, gentle smile, masterpiece, best quality, 8k")
+            cleanPrompt = (promptResult ?? $"1girl, solo, cowboy shot, {request.CharacterName ?? "anime character"}, masterpiece, best quality")
                 .Replace("\n", ", ")
                 .Trim();
         }
         catch
         {
-            cleanPrompt = $"1girl, solo, full body, cowboy shot, {request.CharacterName ?? "Elysia"}, long blonde hair, emerald green eyes, gold cross earrings, white and gold holy silk dress, white veil, grand sunlit temple sanctuary, marble pillars, golden sunbeams, masterpiece, best quality, 8k";
+            cleanPrompt = $"1girl, solo, cowboy shot, {request.CharacterName ?? "Elysia"}, masterpiece, best quality";
         }
 
         var imageReq = new ImageGenerationRequest(
-            Prompt: $"{cleanPrompt}, full body, cowboy shot, scenic background, cinematic lighting, ultra-detailed environment, masterpiece, best quality, 8k",
+            Prompt: cleanPrompt,
             Width: 1024,
             Height: 768,
             AspectRatio: "16:9",
-            ReferenceImageUrl: request.ReferenceImageUrl
+            ReferenceImageUrl: request.ReferenceImageUrl,
+            NegativePrompt: "lowres, bad anatomy, bad hands, text, error, missing fingers, cropped, worst quality, low quality, blurry, different outfit, wrong clothing, different face, deformed, ugly"
         );
         var imageUrl = await _imageService.GenerateImageAsync(imageReq, ct);
         return new GenerateAvatarResponse(imageUrl, cleanPrompt);

@@ -42,6 +42,11 @@ using (var scope = app.Services.CreateScope())
         if (dbContext.Database.IsRelational())
         {
             await dbContext.Database.MigrateAsync();
+            try
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("ALTER TABLE IF EXISTS \"ChatSessions\" ADD COLUMN IF NOT EXISTS \"SceneState\" jsonb;");
+            }
+            catch { /* Ignore if already exists */ }
         }
         else
         {

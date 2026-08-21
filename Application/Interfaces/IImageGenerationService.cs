@@ -5,7 +5,9 @@ public sealed record ImageGenerationRequest(
     int Width = 1024,
     int Height = 1024,
     string? AspectRatio = "16:9",
-    string? ReferenceImageUrl = null
+    string? ReferenceImageUrl = null,
+    string? NegativePrompt = null,
+    string? PreviousSceneImageUrl = null
 );
 
 public interface IImageGenerationService

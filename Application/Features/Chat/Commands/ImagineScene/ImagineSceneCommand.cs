@@ -46,7 +46,9 @@ public sealed class ImagineSceneHandler : IRequestHandler<ImagineSceneCommand, R
                             CharacterPersonality = string.IsNullOrWhiteSpace(req.CharacterPersonality) ? character.PersonalityPrompt : req.CharacterPersonality,
                             VisualIdentity = character.VisualIdentity,
                             WorldDescription = character.WorldDescription,
-                            ReferenceImageUrl = !string.IsNullOrWhiteSpace(character.AvatarUrl) ? character.AvatarUrl : req.ReferenceImageUrl,
+                            ReferenceImageUrl = character.VisualIdentity?.CanonicalReferenceUrl 
+                                ?? character.VisualIdentity?.FullBodyUrl 
+                                ?? (!string.IsNullOrWhiteSpace(character.AvatarUrl) ? character.AvatarUrl : req.ReferenceImageUrl),
                             SceneState = session.SceneState
                         };
                     }

@@ -50,15 +50,87 @@ public class DedicatedImageGenerationService : IImageGenerationService
 
         try
         {
+            string? resolvedRefImage = null;
+            if (!string.IsNullOrWhiteSpace(request.ReferenceImageUrl))
+            {
+                var refUrl = request.ReferenceImageUrl.Trim();
+                if (refUrl.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+                {
+                    resolvedRefImage = refUrl;
+                }
+                else if (refUrl.StartsWith("/") || refUrl.StartsWith("uploads/"))
+                {
+                    try
+                    {
+                        var webRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                        var filePath = Path.Combine(webRoot, refUrl.TrimStart('/'));
+                        if (File.Exists(filePath))
+                        {
+                            var bytes = await File.ReadAllBytesAsync(filePath, ct);
+                            resolvedRefImage = $"data:image/jpeg;base64,{Convert.ToBase64String(bytes)}";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to read local reference image file from {Path}", refUrl);
+                    }
+                }
+                else if (refUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || refUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        var bytes = await _httpClient.GetByteArrayAsync(refUrl, ct);
+                        resolvedRefImage = $"data:image/jpeg;base64,{Convert.ToBase64String(bytes)}";
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to download remote reference image from {Url}", refUrl);
+                    }
+                }
+                else if (refUrl.Length > 100)
+                {
+                    resolvedRefImage = refUrl;
+                }
+            }
+
+            string? resolvedPrevImage = null;
+            if (!string.IsNullOrWhiteSpace(request.PreviousSceneImageUrl))
+            {
+                var prevUrl = request.PreviousSceneImageUrl.Trim();
+                if (prevUrl.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+                {
+                    resolvedPrevImage = prevUrl;
+                }
+                else if (prevUrl.StartsWith("/") || prevUrl.StartsWith("uploads/"))
+                {
+                    try
+                    {
+                        var webRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                        var filePath = Path.Combine(webRoot, prevUrl.TrimStart('/'));
+                        if (File.Exists(filePath))
+                        {
+                            var bytes = await File.ReadAllBytesAsync(filePath, ct);
+                            resolvedPrevImage = $"data:image/jpeg;base64,{Convert.ToBase64String(bytes)}";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to read local previous scene image file from {Path}", prevUrl);
+                    }
+                }
+            }
+
             var endpoint = serverUrl.TrimEnd('/') + "/generate";
             var payload = new DedicatedServerRequest
             {
                 Prompt = request.Prompt,
+                NegativePrompt = request.NegativePrompt ?? "lowres, bad anatomy, bad hands, text, error, missing fingers, cropped, worst quality, low quality, blurry, different outfit, wrong clothing, different face, deformed, ugly",
                 Width = request.Width > 0 ? request.Width : 1024,
                 Height = request.Height > 0 ? request.Height : 1024,
                 NumInferenceSteps = 25,
                 GuidanceScale = 7.0f,
-                ReferenceImage = request.ReferenceImageUrl
+                ReferenceImage = resolvedRefImage,
+                PreviousSceneImage = resolvedPrevImage
             };
 
             var res = await _httpClient.PostAsJsonAsync(endpoint, payload, ct);
@@ -89,6 +161,9 @@ public class DedicatedImageGenerationService : IImageGenerationService
         [JsonPropertyName("prompt")]
         public string Prompt { get; set; } = string.Empty;
 
+        [JsonPropertyName("negative_prompt")]
+        public string? NegativePrompt { get; set; }
+
         [JsonPropertyName("width")]
         public int Width { get; set; } = 1024;
 
@@ -103,6 +178,9 @@ public class DedicatedImageGenerationService : IImageGenerationService
 
         [JsonPropertyName("reference_image")]
         public string? ReferenceImage { get; set; }
+
+        [JsonPropertyName("previous_scene_image")]
+        public string? PreviousSceneImage { get; set; }
     }
 
     private sealed class DedicatedServerResponse
