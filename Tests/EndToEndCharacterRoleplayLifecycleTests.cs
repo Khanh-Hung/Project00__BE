@@ -16,6 +16,16 @@ using Xunit;
 
 namespace Project.Tests;
 
+/// <summary>
+/// 10-Turn Orchestration Integration Test Suite.
+/// 
+/// Scope & Boundaries:
+/// - Verifies the end-to-end orchestration contract between:
+///   HTTP/Mediator -> CharacterRuntime -> RoleplayContextEngine -> CharacterRelationship -> MemoryService -> LorebookEngine -> LLMService -> VisualSnapshot -> VoiceContext -> Transactional Outbox.
+/// - Deterministic mock LLM, voice, and image services are used to ensure $0 test execution cost.
+/// - Vector cosine similarity calculation is stubbed via MockMemoryService (tested separately in SemanticMemoryRetrievalTests).
+/// - Scene predecessor chaining in Turn 9 is verified against a seeded Revision 8 artifact (full multi-turn real image GPU inference is tested in VisualContinuity8TurnBenchmarkTests).
+/// </summary>
 public sealed class EndToEndCharacterRoleplayLifecycleTests
 {
     private sealed class FakeCurrentUserProvider : ICurrentUserProvider
@@ -209,7 +219,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
     }
 
     [Fact]
-    public async Task End_To_End_10_Turn_Roleplay_Lifecycle_Orchestration_Validation()
+    public async Task Ten_Turn_Character_Roleplay_Orchestration_Integration_Test()
     {
         // 1. Setup Database & In-Memory Context
         var dbName = Guid.NewGuid().ToString();
@@ -223,7 +233,16 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        // 2. Character Setup: Aeloria (Silver Dragon Princess)
+        // 2. Character Setup with Custom Milestones (Stranger -> Acquaintance -> Friend -> Soulmate)
+        var customMilestones = new List<RelationshipMilestoneDto>
+        {
+            new("Stranger", -25, 14, "Nhân vật giữ khoảng cách lịch thiệp xã giao, thận trọng quan sát."),
+            new("Acquaintance", 15, 34, "Nhân vật cởi mở, bắt đầu chia sẻ thói quen đời thường."),
+            new("Friend", 35, 70, "Nhân vật tin tưởng, coi bạn là người bạn đáng tin cậy."),
+            new("Soulmate", 71, 100, "Gắn kết tri kỷ sâu sắc.")
+        };
+        var customMilestonesJson = JsonSerializer.Serialize(customMilestones);
+
         var visualIdentity = new CharacterVisualIdentity(
             Hair: "Silver, waist-length",
             Eyes: "Luminous Violet",
@@ -241,6 +260,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             category: "Fantasy",
             defaultAffectionScore: 0,
             defaultMood: "Neutral",
+            customMilestonesJson: customMilestonesJson,
             visualIdentity: visualIdentity,
             voiceProfile: voiceProfile
         )
@@ -314,7 +334,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t1Result = await runtime.ProcessTurnAsync(t1Req);
 
         Assert.Equal(5, t1Result.Relationship.AffectionScore);
-        Assert.Equal("Người Quen & Cởi Mở", t1Result.Relationship.RelationshipStage);
+        Assert.Equal("Stranger", t1Result.Relationship.RelationshipStage); // Invariant: score 5 remains Stranger (<15)
         Assert.Equal("Neutral", t1Result.Mood);
 
         // Verify Outbox queued MemoryExtraction, VoiceGeneration, and SceneImageGeneration (Rev 1)
@@ -330,7 +350,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         });
 
         // ==========================================
-        // TURN 2: Building Rapport (Affection -> 10)
+        // TURN 2: Building Rapport (Affection 5 -> 10, Still Stranger)
         // ==========================================
         scriptedLLM.EnqueueResponse(
             reply: "You... actually know about my ancestors' sacrifices?",
@@ -343,11 +363,11 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t2Result = await runtime.ProcessTurnAsync(t2Req);
 
         Assert.Equal(10, t2Result.Relationship.AffectionScore);
-        Assert.Equal("Người Quen & Cởi Mở", t2Result.Relationship.RelationshipStage);
+        Assert.Equal("Stranger", t2Result.Relationship.RelationshipStage); // Invariant: score 10 remains Stranger (<15)
         Assert.Equal("Curious", t2Result.Mood);
 
         // ==========================================
-        // TURN 3: Gift Giving -> Level Up to Acquaintance + Event
+        // TURN 3: Gift Giving -> Level Up to Acquaintance (15) + Event
         // ==========================================
         scriptedLLM.EnqueueResponse(
             reply: "A star crystal?! You are far more thoughtful than other mortals who wander here.",
@@ -361,7 +381,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t3Result = await runtime.ProcessTurnAsync(t3Req);
 
         Assert.Equal(15, t3Result.Relationship.AffectionScore);
-        Assert.Equal("Người Quen & Cởi Mở", t3Result.Relationship.RelationshipStage);
+        Assert.Equal("Acquaintance", t3Result.Relationship.RelationshipStage); // Invariant: Stage transitions to Acquaintance at threshold 15!
         Assert.Equal("Happy", t3Result.Mood);
 
         // Verify Relationship Event was persisted
@@ -382,7 +402,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t4Result = await runtime.ProcessTurnAsync(t4Req);
 
         Assert.Equal(19, t4Result.Relationship.AffectionScore);
-        Assert.Equal("Người Quen & Cởi Mở", t4Result.Relationship.RelationshipStage);
+        Assert.Equal("Acquaintance", t4Result.Relationship.RelationshipStage);
 
         // Verify that RoleplayContext injected the stored memory
         var t4TurnRecord = await db.CharacterTurns.AsNoTracking().FirstAsync(t => t.TurnId == t4Req.TurnId);
@@ -402,6 +422,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t5Result = await runtime.ProcessTurnAsync(t5Req);
 
         Assert.Equal(22, t5Result.Relationship.AffectionScore);
+        Assert.Equal("Acquaintance", t5Result.Relationship.RelationshipStage);
 
         // ==========================================
         // TURN 6: Conflict / Insult -> Negative Delta & Angry Mood
@@ -418,6 +439,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t6Result = await runtime.ProcessTurnAsync(t6Req);
 
         Assert.Equal(17, t6Result.Relationship.AffectionScore); // 22 - 5 = 17
+        Assert.Equal("Acquaintance", t6Result.Relationship.RelationshipStage);
         Assert.Equal("Angry", t6Result.Mood);
         Assert.Equal(90, t6Result.MoodIntensity);
 
@@ -435,10 +457,11 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t7Result = await runtime.ProcessTurnAsync(t7Req);
 
         Assert.Equal(22, t7Result.Relationship.AffectionScore);
+        Assert.Equal("Acquaintance", t7Result.Relationship.RelationshipStage);
         Assert.Equal("Neutral", t7Result.Mood);
 
         // ==========================================
-        // TURN 8: Deep Bonding & Stage Transition -> Friend
+        // TURN 8: Deep Bonding & Stage Transition -> Friend (Threshold 35)
         // ==========================================
         scriptedLLM.EnqueueResponse(
             reply: "Thank you, Alex. I feel I can truly trust you as a genuine friend.",
@@ -457,10 +480,10 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t8Result = await runtime.ProcessTurnAsync(t8Req);
 
         Assert.Equal(35, t8Result.Relationship.AffectionScore);
-        Assert.Equal("Bạn Thân Thiết", t8Result.Relationship.RelationshipStage); // Stage transition to Friend!
+        Assert.Equal("Friend", t8Result.Relationship.RelationshipStage); // Invariant: Stage transitions to Friend at threshold 35!
 
         // ==========================================
-        // TURN 9: Scene Transition -> SceneRevision 2 & Predecessor Link
+        // TURN 9: Scene Transition -> SceneRevision 9 & Predecessor Link
         // ==========================================
         sceneTracker.ScriptedDeltas.Enqueue(new SceneStateDelta(LocationChange: "Moonlit Garden", OutfitChange: "White Royal Dress", AtmosphereChange: "Moonlit & Serene"));
         scriptedLLM.EnqueueResponse(
@@ -485,6 +508,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t9Result = await runtime.ProcessTurnAsync(t9Req);
 
         Assert.Equal(38, t9Result.Relationship.AffectionScore);
+        Assert.Equal("Friend", t9Result.Relationship.RelationshipStage);
 
         // Verify Outbox for Revision 9 was queued with Predecessor pointing to Rev 8 image
         var rev9Outbox = await db.OutboxMessages.AsNoTracking()
@@ -514,6 +538,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         var t10Result1 = await runtime.ProcessTurnAsync(t10Req);
         Assert.Equal(40, t10Result1.Relationship.AffectionScore);
         Assert.Equal("Indeed, it is a magnificent sight to behold together.", t10Result1.Reply);
+        Assert.Equal("Friend", t10Result1.Relationship.RelationshipStage);
 
         var totalMessagesBeforeReplay = await db.ChatMessages.AsNoTracking().CountAsync();
         var totalTurnsBeforeReplay = await db.CharacterTurns.AsNoTracking().CountAsync();
@@ -525,6 +550,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         Assert.Equal(t10Result1.MessageId, t10Result2.MessageId);
         Assert.Equal(t10Result1.Reply, t10Result2.Reply);
         Assert.Equal(t10Result1.Relationship.AffectionScore, t10Result2.Relationship.AffectionScore);
+        Assert.Equal(t10Result1.Relationship.RelationshipStage, t10Result2.Relationship.RelationshipStage);
 
         var totalMessagesAfterReplay = await db.ChatMessages.AsNoTracking().CountAsync();
         var totalTurnsAfterReplay = await db.CharacterTurns.AsNoTracking().CountAsync();
