@@ -396,9 +396,9 @@ public sealed class LLMService : ILLMService
             sceneStateInfo = $"""
                 DYNAMIC REAL-TIME PHYSICAL & SPATIAL STATE:
                 - Current Location: {s.CurrentLocation ?? "Grand Temple Sanctuary"}
+                - Current Position: {s.CurrentPosition ?? "Grand Altar"}
                 - Current Active Outfit: {s.CurrentOutfit ?? "Holy silk dress"}
                 - Time of Day & Lighting: {s.CurrentTimeOfDay ?? "Sunlit morning"}
-                - Current Physical Pose: {s.CurrentPose ?? "Graceful posture"}
                 - Held Items: {s.HeldItems ?? "None"}
                 - Atmosphere: {s.Atmosphere ?? "Serene"}
                 """;
