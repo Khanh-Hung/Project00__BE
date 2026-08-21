@@ -138,50 +138,14 @@ public sealed class CharacterRuntime : ICharacterRuntime
         var userMsg = session.AddUserMessage(request.UserMessage);
         var assistantMessage = session.AddAssistantMessage(aiTurn.Reply);
 
-        SessionSceneState effectiveSceneState = session.SceneState ?? new SessionSceneState(
-            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
-            CurrentPosition: "Central Area",
-            CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
-            CurrentTimeOfDay: "Daytime",
-            HeldItems: null,
-            Atmosphere: "Peaceful",
-            SceneRevision: 1,
-            LastUpdatedAt: Clock.Now
-        );
-        TransientVisualState effectiveTransientState = new TransientVisualState(
-            Pose: "Graceful posture",
-            Expression: aiTurn.Mood.ToString()
-        );
-
-        if (_sceneStateTracker != null)
-        {
-            try
-            {
-                var delta = await _sceneStateTracker.TrackAndExtractDeltaAsync(
-                    character,
-                    session.SceneState,
-                    request.UserMessage,
-                    aiTurn.Reply,
-                    ct);
-
-                if (delta != null)
-                {
-                    var targetRevision = (session.SceneState?.SceneRevision ?? 1) + 1;
-                    effectiveSceneState = effectiveSceneState.ApplyDelta(delta, explicitRevision: targetRevision);
-                    session.UpdateSceneState(effectiveSceneState);
-
-                    effectiveTransientState = TransientVisualState.FromDelta(
-                        delta,
-                        defaultPose: "Graceful posture",
-                        defaultExpression: aiTurn.Mood.ToString()
-                    );
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to track dynamic scene state during character turn.");
-            }
-        }
+        var (effectiveSceneState, effectiveTransientState, visualSnapshot) = await BuildTurnVisualStateAndSnapshotAsync(
+            character,
+            session,
+            request.UserMessage,
+            aiTurn.Reply,
+            aiTurn.Mood,
+            turnId,
+            ct);
 
         var messageRepo = _unitOfWork.GetRepository<ChatMessage>();
         await messageRepo.AddAsync(userMsg, ct);
@@ -313,33 +277,11 @@ public sealed class CharacterRuntime : ICharacterRuntime
         // Outbox Job 3: Scene Image Generation (if requested)
         if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
         {
-            var visualSnapshot = VisualSnapshot.Create(
-                turnId: turnId,
-                sessionId: session.Id,
-                characterId: character.Id,
-                sceneRevision: effectiveSceneState.SceneRevision,
-                visualIdentity: character.VisualIdentity,
-                characterAvatarUrl: character.AvatarUrl,
-                sceneState: effectiveSceneState,
-                transientState: effectiveTransientState,
-                previousSceneImageUrl: null
-            );
-
-            var scene = new SceneContext(
-                Location: effectiveSceneState.CurrentLocation,
-                Outfit: effectiveSceneState.CurrentOutfit,
-                Pose: effectiveTransientState.Pose,
-                Action: effectiveTransientState.Action,
-                Expression: effectiveTransientState.Expression,
-                TimeOfDay: effectiveSceneState.CurrentTimeOfDay
-            );
-            var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
             var scenePayload = new SceneImageGenerationOutboxPayload(
                 TurnId: turnId,
                 CharacterId: character.Id,
                 UserId: request.UserId,
-                Snapshot: visualSnapshot,
-                Prompt: prompt
+                Snapshot: visualSnapshot
             );
             var sceneOutbox = new OutboxMessage(
                 eventType: OutboxEventTypes.SceneImageGeneration,
@@ -595,80 +537,22 @@ public sealed class CharacterRuntime : ICharacterRuntime
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(voicePayload)), ct);
         }
 
-        SessionSceneState effectiveStreamSceneState = session.SceneState ?? new SessionSceneState(
-            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
-            CurrentPosition: "Central Area",
-            CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
-            CurrentTimeOfDay: "Daytime",
-            HeldItems: null,
-            Atmosphere: "Peaceful",
-            SceneRevision: 1,
-            LastUpdatedAt: Clock.Now
-        );
-        TransientVisualState effectiveStreamTransientState = new TransientVisualState(
-            Pose: "Graceful posture",
-            Expression: currentMood.ToString()
-        );
-
-        if (_sceneStateTracker != null)
-        {
-            try
-            {
-                var delta = await _sceneStateTracker.TrackAndExtractDeltaAsync(
-                    character,
-                    session.SceneState,
-                    request.UserMessage,
-                    aiTurn.Reply,
-                    ct);
-
-                if (delta != null)
-                {
-                    var targetRevision = (session.SceneState?.SceneRevision ?? 1) + 1;
-                    effectiveStreamSceneState = effectiveStreamSceneState.ApplyDelta(delta, explicitRevision: targetRevision);
-                    session.UpdateSceneState(effectiveStreamSceneState);
-
-                    effectiveStreamTransientState = TransientVisualState.FromDelta(
-                        delta,
-                        defaultPose: "Graceful posture",
-                        defaultExpression: currentMood.ToString()
-                    );
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to track dynamic scene state during streaming turn.");
-            }
-        }
+        var (effectiveStreamSceneState, effectiveStreamTransientState, streamVisualSnapshot) = await BuildTurnVisualStateAndSnapshotAsync(
+            character,
+            session,
+            request.UserMessage,
+            aiTurn.Reply,
+            currentMood,
+            turnId,
+            ct);
 
         if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
         {
-            var visualSnapshot = VisualSnapshot.Create(
-                turnId: turnId,
-                sessionId: session.Id,
-                characterId: character.Id,
-                sceneRevision: effectiveStreamSceneState.SceneRevision,
-                visualIdentity: character.VisualIdentity,
-                characterAvatarUrl: character.AvatarUrl,
-                sceneState: effectiveStreamSceneState,
-                transientState: effectiveStreamTransientState,
-                previousSceneImageUrl: null
-            );
-
-            var scene = new SceneContext(
-                Location: effectiveStreamSceneState.CurrentLocation,
-                Outfit: effectiveStreamSceneState.CurrentOutfit,
-                Pose: effectiveStreamTransientState.Pose,
-                Action: effectiveStreamTransientState.Action,
-                Expression: effectiveStreamTransientState.Expression,
-                TimeOfDay: effectiveStreamSceneState.CurrentTimeOfDay
-            );
-            var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
             var scenePayload = new SceneImageGenerationOutboxPayload(
                 TurnId: turnId,
                 CharacterId: character.Id,
                 UserId: request.UserId,
-                Snapshot: visualSnapshot,
-                Prompt: prompt
+                Snapshot: streamVisualSnapshot
             );
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(scenePayload)), ct);
         }
@@ -814,5 +698,75 @@ public sealed class CharacterRuntime : ICharacterRuntime
             MoodIntensity: existingTurn.MoodIntensity,
             AffectionDelta: existingTurn.AffectionDelta
         );
+    }
+
+    private async Task<(SessionSceneState SceneState, TransientVisualState TransientState, VisualSnapshot Snapshot)> BuildTurnVisualStateAndSnapshotAsync(
+        Character character,
+        ChatSession session,
+        string userMessage,
+        string assistantReply,
+        CharacterMood currentMood,
+        Guid turnId,
+        CancellationToken ct)
+    {
+        var oldState = session.SceneState ?? new SessionSceneState(
+            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
+            CurrentPosition: "Central Area",
+            CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
+            CurrentTimeOfDay: "Daytime",
+            HeldItems: null,
+            Atmosphere: "Peaceful",
+            SceneRevision: 0,
+            LastSceneImageUrl: null,
+            LastUpdatedAt: Clock.Now
+        );
+
+        int targetRevision = (session.SceneState?.SceneRevision ?? 0) + 1;
+        SceneStateDelta delta = new SceneStateDelta();
+
+        if (_sceneStateTracker != null)
+        {
+            try
+            {
+                delta = await _sceneStateTracker.TrackAndExtractDeltaAsync(
+                    character,
+                    session.SceneState,
+                    userMessage,
+                    assistantReply,
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to track dynamic scene state during turn {TurnId}.", turnId);
+            }
+        }
+
+        var updatedSceneState = oldState.ApplyDelta(delta, explicitRevision: targetRevision);
+        session.UpdateSceneState(updatedSceneState);
+
+        var transientState = TransientVisualState.FromDelta(
+            delta,
+            defaultPose: "Graceful posture",
+            defaultExpression: currentMood.ToString()
+        );
+
+        // Immediate predecessor continuity: previous image is resolved from Revision N - 1
+        string? previousSceneImageUrl = (session.SceneState != null && oldState.SceneRevision == targetRevision - 1)
+            ? oldState.LastSceneImageUrl
+            : null;
+
+        var snapshot = VisualSnapshot.Create(
+            turnId: turnId,
+            sessionId: session.Id,
+            characterId: character.Id,
+            sceneRevision: targetRevision,
+            visualIdentity: character.VisualIdentity,
+            characterAvatarUrl: character.AvatarUrl,
+            sceneState: updatedSceneState,
+            transientState: transientState,
+            previousSceneImageUrl: previousSceneImageUrl
+        );
+
+        return (updatedSceneState, transientState, snapshot);
     }
 }
