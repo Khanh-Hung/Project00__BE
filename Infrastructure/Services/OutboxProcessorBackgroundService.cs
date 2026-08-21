@@ -1,5 +1,7 @@
 using Application.DTOs;
+using Application.Exceptions;
 using Application.Interfaces;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -7,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace Infrastructure.Services;
@@ -16,6 +19,7 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutboxProcessorBackgroundService> _logger;
     private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(2);
+    private readonly TimeSpan _leaseTimeout = TimeSpan.FromMinutes(2);
 
     public OutboxProcessorBackgroundService(
         IServiceScopeFactory scopeFactory,
@@ -53,7 +57,10 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
         _logger.LogInformation("OutboxProcessorBackgroundService stopped.");
     }
 
-    public async Task<int> ProcessPendingOutboxMessagesAsync(CancellationToken ct = default)
+    public Task<int> ProcessPendingOutboxMessagesAsync(CancellationToken ct = default)
+        => ProcessPendingOutboxMessagesAsync(null, ct);
+
+    public async Task<int> ProcessPendingOutboxMessagesAsync(DateTime? referenceTime, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.Persistence.ProjectDbContext>();
@@ -63,21 +70,42 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
         var imageService = scope.ServiceProvider.GetRequiredService<IImageGenerationService>();
         var extractionTrigger = scope.ServiceProvider.GetRequiredService<IMemoryExtractionTrigger>();
 
+        var now = referenceTime ?? Clock.Now;
+
+        // 1. Crash Recovery: Reclaim stale processing leases (worker died or restarted)
+        var staleCutoff = now - _leaseTimeout;
+        var staleMessages = await dbContext.OutboxMessages
+            .Where(m => m.Status == OutboxStatus.Processing && m.ProcessingStartedAt != null && m.ProcessingStartedAt <= staleCutoff)
+            .ToListAsync(ct);
+
+        if (staleMessages.Count > 0)
+        {
+            _logger.LogWarning("Found {Count} stale processing outbox messages. Reclaiming back to Pending.", staleMessages.Count);
+            foreach (var stale in staleMessages)
+            {
+                stale.ReclaimStaleProcessing(now);
+            }
+            await dbContext.SaveChangesAsync(ct);
+        }
+
+        // 2. Poll due Pending messages
         var pendingMessages = await dbContext.OutboxMessages
-            .Where(m => m.Status == OutboxStatus.Pending)
+            .Where(m => m.Status == OutboxStatus.Pending && (m.NextRetryAt == null || m.NextRetryAt <= now))
             .OrderBy(m => m.CreatedAt)
             .Take(10)
             .ToListAsync(ct);
 
         if (pendingMessages.Count == 0) return 0;
 
-        _logger.LogInformation("Found {Count} pending outbox messages to process.", pendingMessages.Count);
+        _logger.LogInformation("Found {Count} due outbox messages to process.", pendingMessages.Count);
 
         int processedCount = 0;
         foreach (var msg in pendingMessages)
         {
-            msg.MarkProcessing();
+            msg.MarkProcessing(Clock.Now);
             await dbContext.SaveChangesAsync(ct);
+
+            var stopwatch = Stopwatch.StartNew();
 
             try
             {
@@ -98,6 +126,7 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                             var voiceReq = voiceCompiler.CompileVoiceRequest(voiceContext);
                             await voiceService.GenerateVoiceAsync(voiceReq, ct);
                         }
+                        msg.MarkCompleted(Clock.Now);
                         break;
 
                     case OutboxEventTypes.SceneImageGeneration:
@@ -105,24 +134,77 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         if (scenePayload?.Snapshot != null)
                         {
                             var snapshot = scenePayload.Snapshot;
+                            _logger.LogInformation("[SceneGenerationStarted] OutboxId={OutboxId}, SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}, RetryCount={RetryCount}",
+                                msg.Id, snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, msg.RetryCount);
 
-                            // 1. Idempotency safeguard: check if SceneImage artifact already exists for (SessionId, SceneRevision)
+                            // A. Application Idempotency: Check if SceneImage artifact already exists
                             var existingArtifact = await dbContext.SceneImages
                                 .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision, ct);
 
-                            if (existingArtifact == null)
+                            if (existingArtifact != null)
                             {
-                                // 2. Deterministic prompt compilation purely from VisualSnapshot
-                                var compiledPrompt = visualCompiler.CompileScenePrompt(snapshot);
-                                var imageReq = new ImageGenerationRequest(
-                                    Prompt: compiledPrompt,
-                                    ReferenceImageUrl: snapshot.IdentityReferenceUrl,
-                                    PreviousSceneImageUrl: snapshot.PreviousSceneImageUrl
-                                );
-                                var generatedImageUrl = await imageService.GenerateImageAsync(imageReq, ct);
+                                _logger.LogInformation("[SceneGenerationSkipped] Artifact already exists for SessionId={SessionId}, Revision={Revision}. OutboxId={OutboxId}",
+                                    snapshot.SessionId, snapshot.SceneRevision, msg.Id);
+                                msg.MarkCompleted(Clock.Now);
+                                break;
+                            }
 
-                                // 3. Persist immutable SceneImage artifact
-                                if (!string.IsNullOrWhiteSpace(generatedImageUrl))
+                            // B. Per-Session Predecessor Gating: Ensure Revision N - 1 artifact is completed
+                            if (snapshot.SceneRevision > 1)
+                            {
+                                var predecessorArtifact = await dbContext.SceneImages
+                                    .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision - 1, ct);
+
+                                if (predecessorArtifact == null)
+                                {
+                                    // Check outbox status of Revision N - 1
+                                    var predecessorMsg = await dbContext.OutboxMessages
+                                        .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration && m.PayloadJson.Contains(snapshot.SessionId.ToString()))
+                                        .ToListAsync(ct);
+
+                                    var predMatchingMsg = predecessorMsg.FirstOrDefault(m =>
+                                    {
+                                        try
+                                        {
+                                            var payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson);
+                                            return payload?.Snapshot?.SceneRevision == snapshot.SceneRevision - 1;
+                                        }
+                                        catch { return false; }
+                                    });
+
+                                    if (predMatchingMsg != null && predMatchingMsg.Status == OutboxStatus.Failed)
+                                    {
+                                        // Predecessor failed permanently -> Block Revision N with clear reason (No infinite deadlock)
+                                        _logger.LogWarning("[SceneGenerationFailed] Blocking Revision {Revision} because predecessor Revision {PredRev} failed permanently. OutboxId={OutboxId}",
+                                            snapshot.SceneRevision, snapshot.SceneRevision - 1, msg.Id);
+                                        msg.MarkFailed($"Predecessor Revision {snapshot.SceneRevision - 1} failed permanently.", Clock.Now, isTransient: false);
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        // Predecessor is still Pending/Processing -> Defer Revision N without incrementing retry count
+                                        _logger.LogInformation("[SceneGenerationDeferred] Deferring Revision {Revision} because predecessor Revision {PredRev} is not yet completed. OutboxId={OutboxId}",
+                                            snapshot.SceneRevision, snapshot.SceneRevision - 1, msg.Id);
+                                        msg.MarkDeferred(now);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // C. Deterministic prompt compilation purely from VisualSnapshot
+                            var compiledPrompt = visualCompiler.CompileScenePrompt(snapshot);
+                            var imageReq = new ImageGenerationRequest(
+                                Prompt: compiledPrompt,
+                                ReferenceImageUrl: snapshot.IdentityReferenceUrl,
+                                PreviousSceneImageUrl: snapshot.PreviousSceneImageUrl
+                            );
+
+                            var generatedImageUrl = await imageService.GenerateImageAsync(imageReq, ct);
+
+                            // D. Persist immutable SceneImage artifact
+                            if (!string.IsNullOrWhiteSpace(generatedImageUrl))
+                            {
+                                try
                                 {
                                     var artifact = new SceneImage(
                                         sessionId: snapshot.SessionId,
@@ -135,8 +217,20 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                                         previousSceneImageUrl: snapshot.PreviousSceneImageUrl
                                     );
                                     await dbContext.SceneImages.AddAsync(artifact, ct);
+                                    await dbContext.SaveChangesAsync(ct);
+                                }
+                                catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("IX_SceneImages_SessionId_SceneRevision") == true || ex.Message.Contains("IX_SceneImages_SessionId_SceneRevision"))
+                                {
+                                    // DB Unique Constraint safety net
+                                    _logger.LogInformation("[SceneGenerationSkipped] Concurrent race caught by DB Unique Constraint for SessionId={SessionId}, Revision={Revision}",
+                                        snapshot.SessionId, snapshot.SceneRevision);
                                 }
                             }
+
+                            msg.MarkCompleted(Clock.Now);
+                            stopwatch.Stop();
+                            _logger.LogInformation("[SceneGenerationCompleted] OutboxId={OutboxId}, SessionId={SessionId}, Revision={Revision}, LatencyMs={LatencyMs}",
+                                msg.Id, snapshot.SessionId, snapshot.SceneRevision, stopwatch.ElapsedMilliseconds);
                         }
                         break;
 
@@ -153,23 +247,36 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                             );
                             extractionTrigger.NotifyMessageSent(extractionJob);
                         }
+                        msg.MarkCompleted(Clock.Now);
                         break;
 
                     default:
                         _logger.LogWarning("Unknown outbox event type '{EventType}' on message {Id}", msg.EventType, msg.Id);
+                        msg.MarkCompleted(Clock.Now);
                         break;
                 }
-
-                msg.MarkCompleted(DateTime.UtcNow);
-                processedCount++;
+            }
+            catch (GpuNonTransientException ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "[SceneGenerationFailed] Non-transient error on Outbox message {Id}. Fast-failing.", msg.Id);
+                msg.MarkFailed(ex.Message, Clock.Now, isTransient: false);
+            }
+            catch (GpuTransientException ex)
+            {
+                stopwatch.Stop();
+                _logger.LogWarning(ex, "[SceneGenerationRetrying] Transient error on Outbox message {Id}. Scheduling retry with exponential backoff.", msg.Id);
+                msg.MarkFailed(ex.Message, Clock.Now, isTransient: true);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Failed to process outbox message {Id} of type {EventType}", msg.Id, msg.EventType);
-                msg.MarkFailed(ex.Message, DateTime.UtcNow);
+                stopwatch.Stop();
+                _logger.LogError(ex, "Unexpected exception processing outbox message {Id}.", msg.Id);
+                msg.MarkFailed(ex.Message, Clock.Now, isTransient: true);
             }
 
             await dbContext.SaveChangesAsync(ct);
+            processedCount++;
         }
 
         return processedCount;
