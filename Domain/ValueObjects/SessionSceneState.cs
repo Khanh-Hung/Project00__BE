@@ -20,6 +20,7 @@ public sealed record SessionSceneState(
     /// <summary>
     /// Applies delta changes onto the persistent scene state.
     /// Any field omitted or null in delta remains strictly unchanged (Invariance).
+    /// SceneRevision identifies the committed turn/frame, not the number of persistent-field mutations.
     /// Revision is controlled authoritatively by the application commit boundary.
     /// </summary>
     public SessionSceneState ApplyDelta(SceneStateDelta delta, int? explicitRevision = null)

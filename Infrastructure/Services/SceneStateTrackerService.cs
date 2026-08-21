@@ -69,9 +69,9 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
             
             CURRENT PERSISTENT STATE (Source of Truth):
             - Current Location: {baseState.CurrentLocation}
+            - Current Position: {baseState.CurrentPosition}
             - Current Outfit: {baseState.CurrentOutfit}
             - Current Time: {baseState.CurrentTimeOfDay}
-            - Current Position: {baseState.CurrentPosition}
             - Held Items: {baseState.HeldItems ?? "None"}
             
             LATEST DIALOGUE TURN:
