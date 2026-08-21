@@ -404,6 +404,174 @@ public class TurnCommitVisualSnapshotOutboxTests
         Assert.Equal(snapshot1.IdentityReferenceUrl, snapshot2.IdentityReferenceUrl);
     }
 
+    [Fact]
+    public async Task End_To_End_MultiTurn_Image_Lifecycle_Continuity_Chain()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var services = new ServiceCollection();
+        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
+        services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
+        services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
+
+        int imageCounter = 0;
+        var capturedRequests = new List<ImageGenerationRequest>();
+        var dynamicImageService = new SequentialImageService(capturedRequests, () => $"https://images.storage/scene_frame_{++imageCounter}.png");
+        services.AddSingleton<IImageGenerationService>(dynamicImageService);
+        services.AddSingleton<IMemoryExtractionTrigger, MockMemoryExtractionTrigger>();
+        services.AddLogging();
+
+        var serviceProvider = services.BuildServiceProvider();
+        var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
+
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+
+        using (var initScope = scopeFactory.CreateScope())
+        {
+            var ctx = initScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var character = new Character(
+                name: "Elysia",
+                title: "Herrscher of Human",
+                avatarUrl: "https://cloud.storage/elysia_avatar.png",
+                personalityPrompt: "Gentle and loving",
+                greeting: "Hi there!",
+                category: "Anime",
+                visualIdentity: new CharacterVisualIdentity(
+                    ClothingStyle: "White Dress",
+                    CanonicalReferenceUrl: "https://cloud.storage/elysia_canonical.png"
+                )
+            ) { Id = charId };
+            await ctx.Characters.AddAsync(character);
+
+            var session = new ChatSession(charId, userId, "End-to-End Continuity Session") { Id = sessionId };
+            await ctx.ChatSessions.AddAsync(session);
+            await ctx.SaveChangesAsync();
+        }
+
+        var tracker = new SequentialSceneStateTracker();
+
+        // --- TURN 1 ---
+        using (var turn1Scope = scopeFactory.CreateScope())
+        {
+            var ctx = turn1Scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var uow = new UnitOfWork(ctx);
+            var runtime = new CharacterRuntime(
+                uow,
+                new RoleplayContextEngine(uow, new FakeMemoryService(), new FakeUserProvider(userId.ToString()), NullLogger<RoleplayContextEngine>.Instance),
+                new ConfigurableLLMService("Chào bạn!"),
+                new MockMemoryExtractionTrigger(),
+                new VoicePromptCompiler(),
+                new MockVoiceService(),
+                new VisualPromptCompiler(),
+                dynamicImageService,
+                NullLogger<CharacterRuntime>.Instance,
+                tracker
+            );
+
+            tracker.NextDelta = new SceneStateDelta(LocationChange: "Living Room", PositionChange: "Sofa", OutfitChange: "White Dress");
+            await runtime.ProcessTurnAsync(new CharacterTurnRequest(userId, charId, sessionId, "Chào em!", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true)));
+        }
+
+        // Process Outbox for Turn 1 -> Generates Image 1 and updates SessionSceneState.LastSceneImageUrl
+        var processor = new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance);
+        var processed1 = await processor.ProcessPendingOutboxMessagesAsync();
+        Assert.True(processed1 >= 1);
+        Assert.Single(capturedRequests);
+        Assert.Null(capturedRequests[0].PreviousSceneImageUrl); // Turn 1 has no previous frame
+
+        // --- TURN 2 ---
+        using (var turn2Scope = scopeFactory.CreateScope())
+        {
+            var ctx = turn2Scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var uow = new UnitOfWork(ctx);
+            var runtime = new CharacterRuntime(
+                uow,
+                new RoleplayContextEngine(uow, new FakeMemoryService(), new FakeUserProvider(userId.ToString()), NullLogger<RoleplayContextEngine>.Instance),
+                new ConfigurableLLMService("Ta bước lại gần cửa sổ."),
+                new MockMemoryExtractionTrigger(),
+                new VoicePromptCompiler(),
+                new MockVoiceService(),
+                new VisualPromptCompiler(),
+                dynamicImageService,
+                NullLogger<CharacterRuntime>.Instance,
+                tracker
+            );
+
+            tracker.NextDelta = new SceneStateDelta(PositionChange: "Beside Window", ActionChange: "Walking toward window");
+            await runtime.ProcessTurnAsync(new CharacterTurnRequest(userId, charId, sessionId, "Em đi đâu thế?", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true)));
+        }
+
+        // Process Outbox for Turn 2
+        var processed2 = await processor.ProcessPendingOutboxMessagesAsync();
+        Assert.True(processed2 >= 1);
+        Assert.Equal(2, capturedRequests.Count);
+
+        // Assert: Turn 2 request MUST contain PreviousSceneImageUrl pointing to Image 1!
+        Assert.Equal("https://images.storage/scene_frame_1.png", capturedRequests[1].PreviousSceneImageUrl);
+        Assert.Equal("https://cloud.storage/elysia_canonical.png", capturedRequests[1].ReferenceImageUrl);
+
+        // --- TURN 3 ---
+        using (var turn3Scope = scopeFactory.CreateScope())
+        {
+            var ctx = turn3Scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var uow = new UnitOfWork(ctx);
+            var runtime = new CharacterRuntime(
+                uow,
+                new RoleplayContextEngine(uow, new FakeMemoryService(), new FakeUserProvider(userId.ToString()), NullLogger<RoleplayContextEngine>.Instance),
+                new ConfigurableLLMService("Ngắm trăng cùng anh nhé."),
+                new MockMemoryExtractionTrigger(),
+                new VoicePromptCompiler(),
+                new MockVoiceService(),
+                new VisualPromptCompiler(),
+                dynamicImageService,
+                NullLogger<CharacterRuntime>.Instance,
+                tracker
+            );
+
+            tracker.NextDelta = new SceneStateDelta(OutfitChange: "Black Dress", PoseChange: "Looking outside");
+            await runtime.ProcessTurnAsync(new CharacterTurnRequest(userId, charId, sessionId, "Trăng đẹp thật.", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true)));
+        }
+
+        // Process Outbox for Turn 3
+        var processed3 = await processor.ProcessPendingOutboxMessagesAsync();
+        Assert.True(processed3 >= 1);
+        Assert.Equal(3, capturedRequests.Count);
+
+        // Assert: Turn 3 request MUST contain PreviousSceneImageUrl pointing to Image 2!
+        Assert.Equal("https://images.storage/scene_frame_2.png", capturedRequests[2].PreviousSceneImageUrl);
+        Assert.Contains("Black Dress", capturedRequests[2].Prompt);
+        Assert.Contains("Beside Window", capturedRequests[2].Prompt);
+        Assert.Contains("Living Room", capturedRequests[2].Prompt);
+    }
+
+    private sealed class SequentialImageService : IImageGenerationService
+    {
+        private readonly List<ImageGenerationRequest> _capturedRequests;
+        private readonly Func<string> _urlGenerator;
+
+        public SequentialImageService(List<ImageGenerationRequest> capturedRequests, Func<string> urlGenerator)
+        {
+            _capturedRequests = capturedRequests;
+            _urlGenerator = urlGenerator;
+        }
+
+        public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default)
+        {
+            var url = _urlGenerator();
+            _capturedRequests.Add(new ImageGenerationRequest(prompt, width, height));
+            return Task.FromResult(url);
+        }
+
+        public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            var url = _urlGenerator();
+            _capturedRequests.Add(request);
+            return Task.FromResult(url);
+        }
+    }
+
     private sealed class SequentialSceneStateTracker : ISceneStateTrackerService
     {
         public SceneStateDelta? NextDelta { get; set; }

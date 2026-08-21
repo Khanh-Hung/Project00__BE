@@ -111,7 +111,20 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                                 ReferenceImageUrl: scenePayload.Snapshot.IdentityReferenceUrl,
                                 PreviousSceneImageUrl: scenePayload.Snapshot.PreviousSceneImageUrl
                             );
-                            await imageService.GenerateImageAsync(imageReq, ct);
+                            var generatedImageUrl = await imageService.GenerateImageAsync(imageReq, ct);
+
+                            // Feedback Loop Persistence: Persist generated image URL into SessionSceneState.LastSceneImageUrl
+                            if (!string.IsNullOrWhiteSpace(generatedImageUrl))
+                            {
+                                var session = await dbContext.ChatSessions.FirstOrDefaultAsync(s => s.Id == scenePayload.Snapshot.SessionId, ct);
+                                if (session != null && session.SceneState != null)
+                                {
+                                    if (scenePayload.Snapshot.SceneRevision >= session.SceneState.SceneRevision - 1)
+                                    {
+                                        session.UpdateSceneState(session.SceneState with { LastSceneImageUrl = generatedImageUrl });
+                                    }
+                                }
+                            }
                         }
                         break;
 
