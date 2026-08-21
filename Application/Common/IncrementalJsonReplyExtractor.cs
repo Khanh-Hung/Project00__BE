@@ -6,7 +6,8 @@ namespace Application.Common;
 /// <summary>
 /// Incremental parser that extracts and unescapes the 'reply' field from streaming JSON in real-time.
 /// Features:
-/// - Arbitrary JSON field ordering (e.g. 'thought', 'mood' preceding 'reply').
+/// - Arbitrary JSON field ordering (e.g. 'thought', 'event', 'mood' preceding 'reply').
+/// - Full object and array nesting depth tracking (_objectDepth, _arrayDepth) preventing premature termination on nested objects (e.g. 'event': { ... }).
 /// - Real-time escape decoding (\n, \r, \t, \", \\, \/, \b, \f).
 /// - Full Unicode escape decoding (\uXXXX) and UTF-16 surrogate pairs (\uD83D\uDE0A -> 😊) buffered across arbitrary chunk boundaries.
 /// - Zero leakage of raw JSON syntax ({, keys, quotes) into user-facing tokens.
@@ -31,9 +32,11 @@ public sealed class IncrementalJsonReplyExtractor
     // Buffer position tracking
     private int _readIndex = 0;
 
-    // Object scanning state
+    // Object scanning state with full nesting awareness
     private bool _inString = false;
     private bool _isEscapedInScan = false;
+    private int _objectDepth = 0;
+    private int _arrayDepth = 0;
     private readonly StringBuilder _currentKeyBuffer = new();
 
     // Reply value streaming escape state
@@ -82,10 +85,12 @@ public sealed class IncrementalJsonReplyExtractor
 
                         if (c == '{')
                         {
-                            _readIndex++; // consume '{'
+                            _readIndex++; // consume root '{'
                             _state = ParserState.ScanningObjectForReplyKey;
                             _inString = false;
                             _isEscapedInScan = false;
+                            _objectDepth = 1;
+                            _arrayDepth = 0;
                             _currentKeyBuffer.Clear();
                             break;
                         }
@@ -124,7 +129,9 @@ public sealed class IncrementalJsonReplyExtractor
                             else if (c == '"')
                             {
                                 _inString = false;
-                                if (_currentKeyBuffer.ToString().Equals("reply", StringComparison.OrdinalIgnoreCase))
+                                // Only match root-level property keys (_objectDepth == 1 && _arrayDepth == 0)
+                                if (_objectDepth == 1 && _arrayDepth == 0 &&
+                                    _currentKeyBuffer.ToString().Equals("reply", StringComparison.OrdinalIgnoreCase))
                                 {
                                     _state = ParserState.SeekingReplyColonAndQuote;
                                     foundReplyKey = true;
@@ -146,11 +153,30 @@ public sealed class IncrementalJsonReplyExtractor
                                 _isEscapedInScan = false;
                                 _currentKeyBuffer.Clear();
                             }
+                            else if (c == '{')
+                            {
+                                _objectDepth++;
+                            }
                             else if (c == '}')
                             {
-                                // Object closed without finding a reply field
-                                _state = ParserState.ReplyCompleted;
-                                break;
+                                _objectDepth--;
+                                if (_objectDepth <= 0)
+                                {
+                                    // Root object closed without finding a root reply field
+                                    _state = ParserState.ReplyCompleted;
+                                    break;
+                                }
+                            }
+                            else if (c == '[')
+                            {
+                                _arrayDepth++;
+                            }
+                            else if (c == ']')
+                            {
+                                if (_arrayDepth > 0)
+                                {
+                                    _arrayDepth--;
+                                }
                             }
                         }
                     }

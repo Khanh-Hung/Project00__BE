@@ -277,4 +277,69 @@ public sealed class IncrementalJsonReplyExtractorTests
         var fullDialogue = string.Join("", emittedTokens);
         Assert.Equal("Từng ký tự một.", fullDialogue);
     }
+
+    [Fact]
+    public void Handles_Nested_Object_Before_Reply()
+    {
+        var extractor = new IncrementalJsonReplyExtractor();
+        var chunks = new[]
+        {
+            "{\n  \"event\": {\"key\": \"FIRST_MEETING\", \"context\": \"Met in tavern\"},\n",
+            "  \"mood\": \"Happy\",\n",
+            "  \"affectionDelta\": 3,\n",
+            "  \"reply\": \"Chào bạn! Rất vui được gặp lại.\"\n}"
+        };
+
+        var emittedTokens = new List<string>();
+        foreach (var chunk in chunks)
+        {
+            emittedTokens.AddRange(extractor.PushChunk(chunk));
+        }
+
+        var fullDialogue = string.Join("", emittedTokens);
+        Assert.Equal("Chào bạn! Rất vui được gặp lại.", fullDialogue);
+
+        // Verify StructuredTurnParser extracts both nested event and clean reply
+        var turnResult = StructuredTurnParser.Parse(extractor.GetFullRawAccumulatedText());
+        Assert.Equal("Chào bạn! Rất vui được gặp lại.", turnResult.Reply);
+        Assert.Equal(CharacterMood.Happy, turnResult.Mood);
+        Assert.Equal(3, turnResult.AffectionDelta);
+        Assert.NotNull(turnResult.Event);
+        Assert.Equal("FIRST_MEETING", turnResult.Event.Key);
+        Assert.Equal("Met in tavern", turnResult.Event.Context);
+    }
+
+    [Fact]
+    public void Handles_Nested_Arrays_And_Multiple_Objects_Before_Reply()
+    {
+        var extractor = new IncrementalJsonReplyExtractor();
+        var chunks = new[]
+        {
+            "{\n  \"tags\": [\"ancient\", \"sage\", \"dragon_lore\"],\n",
+            "  \"sceneDelta\": {\"location\": \"Moonlit Tower\", \"lighting\": \"dim\", \"details\": {\"weather\": \"clear\"}},\n",
+            "  \"mood\": \"Curious\",\n",
+            "  \"reply\": \"Ngươi đã tìm được lối vào tháp cổ rồi sao?\"\n}"
+        };
+
+        var emittedTokens = new List<string>();
+        foreach (var chunk in chunks)
+        {
+            emittedTokens.AddRange(extractor.PushChunk(chunk));
+        }
+
+        var fullDialogue = string.Join("", emittedTokens);
+        Assert.Equal("Ngươi đã tìm được lối vào tháp cổ rồi sao?", fullDialogue);
+    }
+
+    [Fact]
+    public void Repairs_Unclosed_Braces_With_Braces_Inside_Strings_Safely()
+    {
+        // Truncated stream where reply string contains { and } inside quotes, and stream is cut off mid-json
+        var rawTruncated = "```json\n{\n  \"reply\": \"Cánh cổng có ký hiệu {cổ ngữ} này...\",\n  \"mood\": \"Curious\",\n  \"affectionDelta\": 2";
+        var turnResult = StructuredTurnParser.Parse(rawTruncated);
+
+        Assert.Equal("Cánh cổng có ký hiệu {cổ ngữ} này...", turnResult.Reply);
+        Assert.Equal(CharacterMood.Curious, turnResult.Mood);
+        Assert.Equal(2, turnResult.AffectionDelta);
+    }
 }

@@ -190,28 +190,140 @@ public static class StructuredTurnParser
         }
         cleaned = cleaned.Trim();
 
-        // Extract outermost object if surrounded by prose
         int firstBrace = cleaned.IndexOf('{');
-        int lastBrace = cleaned.LastIndexOf('}');
-        if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace)
+        if (firstBrace == -1) return cleaned;
+
+        // Find matching outermost closing brace outside string literals
+        bool inString = false;
+        bool isEscaped = false;
+        int objectDepth = 0;
+        int outermostCloseBrace = -1;
+
+        for (int i = firstBrace; i < cleaned.Length; i++)
         {
-            cleaned = cleaned.Substring(firstBrace, lastBrace - firstBrace + 1);
+            char c = cleaned[i];
+            if (inString)
+            {
+                if (isEscaped)
+                {
+                    isEscaped = false;
+                }
+                else if (c == '\\')
+                {
+                    isEscaped = true;
+                }
+                else if (c == '"')
+                {
+                    inString = false;
+                }
+            }
+            else
+            {
+                if (c == '"')
+                {
+                    inString = true;
+                    isEscaped = false;
+                }
+                else if (c == '{')
+                {
+                    objectDepth++;
+                }
+                else if (c == '}')
+                {
+                    objectDepth--;
+                    if (objectDepth == 0)
+                    {
+                        outermostCloseBrace = i;
+                        break;
+                    }
+                }
+            }
         }
 
-        return cleaned;
+        if (outermostCloseBrace != -1)
+        {
+            return cleaned.Substring(firstBrace, outermostCloseBrace - firstBrace + 1);
+        }
+
+        // If outermost object was truncated and unclosed, take from firstBrace to end
+        return cleaned.Substring(firstBrace);
     }
 
     private static string RepairUnclosedBraces(string json)
     {
-        int openBraces = json.Count(c => c == '{');
-        int closeBraces = json.Count(c => c == '}');
+        if (string.IsNullOrWhiteSpace(json)) return json;
 
-        if (openBraces > closeBraces)
+        bool inString = false;
+        bool isEscaped = false;
+        int objectDepth = 0;
+        int arrayDepth = 0;
+
+        for (int i = 0; i < json.Length; i++)
         {
-            return json + new string('}', openBraces - closeBraces);
+            char c = json[i];
+            if (inString)
+            {
+                if (isEscaped)
+                {
+                    isEscaped = false;
+                }
+                else if (c == '\\')
+                {
+                    isEscaped = true;
+                }
+                else if (c == '"')
+                {
+                    inString = false;
+                }
+            }
+            else
+            {
+                if (c == '"')
+                {
+                    inString = true;
+                    isEscaped = false;
+                }
+                else if (c == '{')
+                {
+                    objectDepth++;
+                }
+                else if (c == '}')
+                {
+                    if (objectDepth > 0) objectDepth--;
+                }
+                else if (c == '[')
+                {
+                    arrayDepth++;
+                }
+                else if (c == ']')
+                {
+                    if (arrayDepth > 0) arrayDepth--;
+                }
+            }
         }
 
-        return json;
+        var sb = new System.Text.StringBuilder(json);
+        // If truncated mid-string, close the unclosed string literal first
+        if (inString)
+        {
+            sb.Append('"');
+        }
+
+        // Close any unclosed arrays
+        while (arrayDepth > 0)
+        {
+            sb.Append(']');
+            arrayDepth--;
+        }
+
+        // Close any unclosed objects
+        while (objectDepth > 0)
+        {
+            sb.Append('}');
+            objectDepth--;
+        }
+
+        return sb.ToString();
     }
 
     private static string ExtractCleanReplyFallback(string raw)
