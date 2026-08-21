@@ -373,8 +373,8 @@ public class CharacterRuntimeStreamingTests
 
     private sealed class MockVoiceService : IVoiceGenerationService
     {
-        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceGenerationRequest request, CancellationToken ct = default) =>
-            Task.FromResult(new VoiceGenerationResult("/audio/test.mp3", "audio/mpeg", 2));
+        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceProviderRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new VoiceGenerationResult("/audio/test.mp3", "audio/mpeg", TimeSpan.FromSeconds(2)));
     }
 
     private sealed class MockImageService : IImageGenerationService

@@ -19,7 +19,8 @@ public sealed record VoiceGenerationOutboxPayload(
     int MoodIntensity,
     int AffectionScore,
     string RelationshipStage,
-    string RawText
+    string RawText,
+    Guid SessionId = default
 );
 
 /// <summary>

@@ -1,3 +1,4 @@
+using Application.Common;
 using Application.DTOs;
 using Application.Exceptions;
 using Application.Interfaces;
@@ -63,6 +64,9 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
 
     public Task<int> ProcessPendingOutboxMessagesAsync(CancellationToken ct = default)
         => ProcessPendingOutboxMessagesAsync(null, ct);
+
+    public Task<int> ProcessDueMessagesAsync(DateTime? referenceTime = null, CancellationToken ct = default)
+        => ProcessPendingOutboxMessagesAsync(referenceTime, ct);
 
     public async Task<int> ProcessPendingOutboxMessagesAsync(DateTime? referenceTime, CancellationToken ct = default)
     {
@@ -166,9 +170,85 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                                 RawText: voicePayload.RawText
                             );
                             var voiceReq = voiceCompiler.CompileVoiceRequest(voiceContext);
-                            await voiceService.GenerateVoiceAsync(voiceReq, ct);
+                            var contextHash = VoiceContextHashCalculator.ComputeHash(voiceReq, voicePayload.Mood, voicePayload.MoodIntensity);
+
+                            _logger.LogInformation("[VoiceGenerationStarted] OutboxId={OutboxId}, TurnId={TurnId}, ContextHash={Hash}, RetryCount={RetryCount}, WorkerId={WorkerId}",
+                                msg.Id, voicePayload.TurnId, contextHash, msg.RetryCount, _workerId);
+
+                            // A. Application Idempotency Check: ContextHash is primary idempotency identity
+                            var existingArtifact = await dbContext.AudioArtifacts
+                                .FirstOrDefaultAsync(a => a.ContextHash == contextHash, ct);
+
+                            if (existingArtifact != null)
+                            {
+                                _logger.LogInformation("[VoiceGenerationSkipped] Artifact already exists with ContextHash={Hash}. OutboxId={OutboxId}",
+                                    contextHash, msg.Id);
+                                msg.MarkCompleted(Clock.Now);
+                                break;
+                            }
+
+                            // B. Resolve Provider & Storage
+                            var voiceProvider = scope.ServiceProvider.GetService<IVoiceProvider>();
+                            var voiceStorage = scope.ServiceProvider.GetService<IVoiceStorage>();
+
+                            string audioUrl;
+                            string contentType = "audio/mpeg";
+                            TimeSpan? duration = null;
+
+                            if (voiceProvider != null && voiceStorage != null)
+                            {
+                                var providerResult = await voiceProvider.GenerateAudioAsync(voiceReq, ct);
+                                var fileName = $"{voicePayload.TurnId:N}_{contextHash.Substring(0, 8)}.mp3";
+                                audioUrl = await voiceStorage.SaveAudioAsync(providerResult.AudioBytes, fileName, providerResult.ContentType, ct);
+                                contentType = providerResult.ContentType;
+                                duration = providerResult.Duration;
+                            }
+                            else
+                            {
+                                var legacyResult = await voiceService.GenerateVoiceAsync(voiceReq, ct);
+                                audioUrl = legacyResult.AudioUrl;
+                                contentType = legacyResult.AudioFormat;
+                                duration = legacyResult.Duration;
+                            }
+
+                            // C. Persist immutable AudioArtifact
+                            if (!string.IsNullOrWhiteSpace(audioUrl))
+                            {
+                                var artifact = new AudioArtifact(
+                                    sessionId: voicePayload.SessionId,
+                                    characterId: voicePayload.CharacterId,
+                                    turnId: voicePayload.TurnId,
+                                    userId: voicePayload.UserId,
+                                    voiceId: voiceReq.VoiceId,
+                                    cleanedText: voiceReq.CleanedText,
+                                    contextHash: contextHash,
+                                    audioUrl: audioUrl,
+                                    audioFormat: contentType,
+                                    duration: duration
+                                );
+
+                                try
+                                {
+                                    await dbContext.AudioArtifacts.AddAsync(artifact, ct);
+                                    await dbContext.SaveChangesAsync(ct);
+                                }
+                                catch (DbUpdateException ex)
+                                {
+                                    // Unique constraint race condition safety net (another concurrent worker committed exact same ContextHash)
+                                    _logger.LogWarning(ex, "[VoiceGenerationDuplicateKeyHandled] Duplicate ContextHash={Hash} handled gracefully. OutboxId={OutboxId}",
+                                        contextHash, msg.Id);
+                                }
+                            }
+
+                            msg.MarkCompleted(Clock.Now);
+                            stopwatch.Stop();
+                            _logger.LogInformation("[VoiceGenerationCompleted] OutboxId={OutboxId}, TurnId={TurnId}, ContextHash={Hash}, LatencyMs={LatencyMs}",
+                                msg.Id, voicePayload.TurnId, contextHash, stopwatch.ElapsedMilliseconds);
                         }
-                        msg.MarkCompleted(Clock.Now);
+                        else
+                        {
+                            msg.MarkCompleted(Clock.Now);
+                        }
                         break;
 
                     case OutboxEventTypes.SceneImageGeneration:
@@ -297,6 +377,18 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         msg.MarkCompleted(Clock.Now);
                         break;
                 }
+            }
+            catch (VoiceNonTransientException ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "[VoiceGenerationFailed] Non-transient error on Outbox message {Id}. Fast-failing.", msg.Id);
+                msg.MarkFailed(ex.Message, Clock.Now, isTransient: false);
+            }
+            catch (VoiceTransientException ex)
+            {
+                stopwatch.Stop();
+                _logger.LogWarning(ex, "[VoiceGenerationRetrying] Transient error on Outbox message {Id}. Scheduling retry with exponential backoff.", msg.Id);
+                msg.MarkFailed(ex.Message, Clock.Now, isTransient: true);
             }
             catch (GpuNonTransientException ex)
             {

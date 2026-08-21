@@ -195,10 +195,10 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
     private sealed class MockVoiceService : IVoiceGenerationService
     {
         public int GenerateCount { get; private set; }
-        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceGenerationRequest request, CancellationToken ct = default)
+        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceProviderRequest request, CancellationToken ct = default)
         {
             GenerateCount++;
-            return Task.FromResult(new VoiceGenerationResult("https://cdn.project00.ai/voice_mock.mp3", "audio/mpeg", 2));
+            return Task.FromResult(new VoiceGenerationResult("https://cdn.project00.ai/voice_mock.mp3", "audio/mpeg", TimeSpan.FromSeconds(2)));
         }
     }
 

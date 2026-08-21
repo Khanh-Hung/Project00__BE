@@ -554,15 +554,15 @@ public class CharacterRuntimeOrchestrationTests
 
     private sealed class MockVoiceService : IVoiceGenerationService
     {
-        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceGenerationRequest request, CancellationToken ct = default)
+        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceProviderRequest request, CancellationToken ct = default)
         {
-            return Task.FromResult(new VoiceGenerationResult("/uploads/audio/luna.mp3", "audio/mpeg", 2));
+            return Task.FromResult(new VoiceGenerationResult("/uploads/audio/luna.mp3", "audio/mpeg", TimeSpan.FromSeconds(2)));
         }
     }
 
     private sealed class FailingVoiceService : IVoiceGenerationService
     {
-        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceGenerationRequest request, CancellationToken ct = default)
+        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceProviderRequest request, CancellationToken ct = default)
         {
             throw new HttpRequestException("TTS provider 503 Service Unavailable");
         }

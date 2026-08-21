@@ -67,8 +67,9 @@ public static class DependencyInjection
             };
         });
 
-        // 5. Add Storage Service (Local / Cloud)
+        // 5. Add Storage Services (Local / Cloud)
         services.AddScoped<IStorageService, Infrastructure.Storage.LocalStorageService>();
+        services.AddScoped<IVoiceStorage, Infrastructure.Storage.LocalVoiceStorage>();
 
         // 6. Add Image Generation Service (Dedicated AI Server with Fallback)
         services.AddHttpClient<Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
@@ -76,8 +77,8 @@ public static class DependencyInjection
         services.AddHttpClient<Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
         services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
 
-        // 7. Add Voice Generation Service (Phase 7 - Character Voice & Audio)
-        services.AddHttpClient<Infrastructure.Services.VoiceGenerationService>();
+        // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
+        services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
 
         // 7. Add LLM Services & Prompt Compiler

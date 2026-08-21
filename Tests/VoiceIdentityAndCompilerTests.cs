@@ -157,9 +157,9 @@ public class VoiceIdentityAndCompilerTests
 
     private sealed class MockVoiceService : IVoiceGenerationService
     {
-        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceGenerationRequest request, CancellationToken ct = default)
+        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceProviderRequest request, CancellationToken ct = default)
         {
-            return Task.FromResult(new VoiceGenerationResult($"/uploads/audio/{Guid.NewGuid():N}.mp3", "audio/mpeg", 3));
+            return Task.FromResult(new VoiceGenerationResult($"/uploads/audio/{Guid.NewGuid():N}.mp3", "audio/mpeg", TimeSpan.FromSeconds(3)));
         }
     }
 }
