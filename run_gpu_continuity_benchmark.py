@@ -20,7 +20,7 @@ import urllib.request
 import urllib.error
 import base64
 
-SERVER_URL = "https://stress-egg-teams-husband.trycloudflare.com/generate"
+SERVER_URL = "https://internal-jar-jun-meets.trycloudflare.com/generate"
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "benchmark_outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
