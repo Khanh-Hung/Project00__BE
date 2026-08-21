@@ -542,6 +542,9 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
 
         var totalMessagesBeforeReplay = await db.ChatMessages.AsNoTracking().CountAsync();
         var totalTurnsBeforeReplay = await db.CharacterTurns.AsNoTracking().CountAsync();
+        var totalOutboxBeforeReplay = await db.OutboxMessages.AsNoTracking().CountAsync();
+        var relBeforeReplay = await db.CharacterRelationships.AsNoTracking().FirstAsync(r => r.UserId == userId && r.CharacterId == charId);
+        var sessionBeforeReplay = await db.ChatSessions.AsNoTracking().FirstAsync(s => s.Id == session.Id);
 
         // Pass 2: Replay identical TurnId
         var t10Result2 = await runtime.ProcessTurnAsync(t10Req);
@@ -554,9 +557,22 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
 
         var totalMessagesAfterReplay = await db.ChatMessages.AsNoTracking().CountAsync();
         var totalTurnsAfterReplay = await db.CharacterTurns.AsNoTracking().CountAsync();
+        var totalOutboxAfterReplay = await db.OutboxMessages.AsNoTracking().CountAsync();
+        var relAfterReplay = await db.CharacterRelationships.AsNoTracking().FirstAsync(r => r.UserId == userId && r.CharacterId == charId);
+        var sessionAfterReplay = await db.ChatSessions.AsNoTracking().FirstAsync(s => s.Id == session.Id);
 
-        Assert.Equal(totalMessagesBeforeReplay, totalMessagesAfterReplay);
+        // 1. CharacterTurns không tăng (+0)
         Assert.Equal(totalTurnsBeforeReplay, totalTurnsAfterReplay);
+        // 2. ChatMessages không tăng (+0)
+        Assert.Equal(totalMessagesBeforeReplay, totalMessagesAfterReplay);
+        // 3. OutboxMessages không tăng (+0)
+        Assert.Equal(totalOutboxBeforeReplay, totalOutboxAfterReplay);
+        // 4. RelationshipEvents không tăng (+0) & AffectionScore không đổi
+        Assert.Equal(relBeforeReplay.Events.Count, relAfterReplay.Events.Count);
+        Assert.Equal(relBeforeReplay.AffectionScore, relAfterReplay.AffectionScore);
+        Assert.Equal(relBeforeReplay.Version, relAfterReplay.Version);
+        // 5. SceneRevision không tăng (+0)
+        Assert.Equal(sessionBeforeReplay.SceneState?.SceneRevision, sessionAfterReplay.SceneState?.SceneRevision);
     }
 
     [Fact]
