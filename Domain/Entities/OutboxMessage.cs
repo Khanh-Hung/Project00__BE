@@ -15,6 +15,7 @@ public sealed class OutboxMessage : BaseEntity
     public DateTime? ProcessedAt { get; private set; }
     public DateTime? NextRetryAt { get; private set; }
     public DateTime? ProcessingStartedAt { get; private set; }
+    public string? ClaimedBy { get; private set; }
 
     private OutboxMessage() { } // EF Core
 
@@ -30,11 +31,13 @@ public sealed class OutboxMessage : BaseEntity
         RetryCount = 0;
         NextRetryAt = null;
         ProcessingStartedAt = null;
+        ClaimedBy = null;
     }
 
-    public void MarkProcessing(DateTime? now = null)
+    public void MarkProcessing(string? workerId = null, DateTime? now = null)
     {
         Status = OutboxStatus.Processing;
+        ClaimedBy = workerId;
         ProcessingStartedAt = now ?? Clock.Now;
         Touch();
     }
@@ -46,6 +49,7 @@ public sealed class OutboxMessage : BaseEntity
         LastError = null;
         NextRetryAt = null;
         ProcessingStartedAt = null;
+        ClaimedBy = null;
         Touch();
     }
 
@@ -54,6 +58,7 @@ public sealed class OutboxMessage : BaseEntity
         Status = OutboxStatus.Pending;
         NextRetryAt = nextRetryAt;
         ProcessingStartedAt = null;
+        ClaimedBy = null;
         // Invariant: Deferring due to predecessor does NOT increment RetryCount
         Touch();
     }
@@ -63,6 +68,7 @@ public sealed class OutboxMessage : BaseEntity
         LastError = error;
         ProcessedAt = failedAt;
         ProcessingStartedAt = null;
+        ClaimedBy = null;
 
         if (!isTransient)
         {
@@ -97,6 +103,7 @@ public sealed class OutboxMessage : BaseEntity
     {
         Status = OutboxStatus.Pending;
         ProcessingStartedAt = null;
+        ClaimedBy = null;
         NextRetryAt = now;
         Touch();
     }

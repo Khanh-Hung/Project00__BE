@@ -599,7 +599,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         // 2. Process outbox messages (Pass 1 processes Rev 1 & 2, defers Rev 3; Pass 2 processes Rev 3)
         var processor = new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance);
         await processor.ProcessPendingOutboxMessagesAsync();
-        await processor.ProcessPendingOutboxMessagesAsync();
+        await processor.ProcessPendingOutboxMessagesAsync(referenceTime: DateTime.UtcNow.AddSeconds(5));
 
         // 3. Verify SceneImages table contains distinct artifacts for all 3 revisions
         using (var verifyScope = scopeFactory.CreateScope())

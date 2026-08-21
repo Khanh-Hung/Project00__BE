@@ -152,20 +152,46 @@ public sealed class OutboxReliabilityAndOrderingTests
     }
 
     [Fact]
-    public async Task Scenario2_Concurrent_Worker_Races_Protected_By_Database_Unique_Constraint()
+    public async Task Scenario2_Concurrent_Workers_Atomic_GPU_Claim_Prevents_Duplicate_Inference()
     {
         var dbName = Guid.NewGuid().ToString();
-        var (scopeFactory, db, _) = CreateTestContext(dbName);
+        var (scopeFactory, db, imageService) = CreateTestContext(dbName);
         var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
 
-        var artifact1 = new SceneImage(sessionId, Guid.NewGuid(), Guid.NewGuid(), 1, "https://cdn.project00.ai/img1.png", "prompt 1");
-        var artifact2 = new SceneImage(sessionId, Guid.NewGuid(), Guid.NewGuid(), 1, "https://cdn.project00.ai/img2.png", "prompt 2");
-
-        await db.SceneImages.AddAsync(artifact1);
+        var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
+        await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
 
-        var exists = await db.SceneImages.AsNoTracking().AnyAsync(img => img.SessionId == sessionId && img.SceneRevision == 1);
-        Assert.True(exists);
+        int gpuCallCount = 0;
+        imageService.Handler = async (req, ct) =>
+        {
+            Interlocked.Increment(ref gpuCallCount);
+            // Simulate realistic 50ms GPU rendering delay to allow race conditions to manifest
+            await Task.Delay(50, ct);
+            return "https://cdn.project00.ai/rendered_concurrent.png";
+        };
+
+        // Spawn 5 concurrent worker instances competing for the exact same message
+        var workers = Enumerable.Range(1, 5)
+            .Select(i => new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance, $"worker-{i}"))
+            .ToList();
+
+        // Run all 5 workers simultaneously in parallel
+        await Task.WhenAll(workers.Select(w => w.ProcessPendingOutboxMessagesAsync()));
+
+        // Invariant: GPU was invoked EXACTLY ONCE across all competing workers
+        Assert.Equal(1, gpuCallCount);
+
+        // Invariant: Exactly ONE SceneImage artifact was persisted in DB
+        var artifacts = await db.SceneImages.AsNoTracking().Where(img => img.SessionId == sessionId).ToListAsync();
+        Assert.Single(artifacts);
+
+        // Invariant: OutboxMessage is completed
+        var updatedMsg = await db.OutboxMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+        Assert.Equal(OutboxStatus.Completed, updatedMsg.Status);
     }
 
     [Fact]
@@ -405,7 +431,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot.TurnId, snapshot.CharacterId, Guid.NewGuid(), snapshot)));
 
         // Simulate crash 3 minutes ago
-        msg.MarkProcessing(Clock.Now.AddMinutes(-3));
+        msg.MarkProcessing(workerId: "worker-dead", now: Clock.Now.AddMinutes(-3));
         await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
 
@@ -516,11 +542,11 @@ public sealed class OutboxReliabilityAndOrderingTests
         Assert.Single(generatedOrder);
 
         // Pass 2: Predecessor Revision 1 is now in DB -> Revision 2 generates; Revision 3 is deferred
-        await processor.ProcessPendingOutboxMessagesAsync();
+        await processor.ProcessPendingOutboxMessagesAsync(referenceTime: DateTime.UtcNow.AddSeconds(5));
         Assert.Equal(2, generatedOrder.Count);
 
         // Pass 3: Predecessor Revision 2 is now in DB -> Revision 3 generates
-        await processor.ProcessPendingOutboxMessagesAsync();
+        await processor.ProcessPendingOutboxMessagesAsync(referenceTime: DateTime.UtcNow.AddSeconds(10));
         Assert.Equal(3, generatedOrder.Count);
 
         var artifacts = await db.SceneImages.AsNoTracking().Where(img => img.SessionId == sessionId).OrderBy(img => img.SceneRevision).ToListAsync();

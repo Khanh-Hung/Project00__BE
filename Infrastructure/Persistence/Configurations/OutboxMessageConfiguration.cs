@@ -18,6 +18,7 @@ public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outbox
         builder.Property(o => o.MaxRetries).IsRequired().HasDefaultValue(3);
         builder.Property(o => o.NextRetryAt);
         builder.Property(o => o.ProcessingStartedAt);
+        builder.Property(o => o.ClaimedBy).HasMaxLength(100);
 
         builder.HasIndex(o => new { o.Status, o.NextRetryAt, o.CreatedAt })
                .HasDatabaseName("IX_OutboxMessages_Status_NextRetryAt_CreatedAt");

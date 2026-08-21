@@ -18,26 +18,30 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutboxProcessorBackgroundService> _logger;
+    private readonly string _workerId;
+    private static readonly object _inMemoryClaimLock = new();
     private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(2);
     private readonly TimeSpan _leaseTimeout = TimeSpan.FromMinutes(2);
 
     public OutboxProcessorBackgroundService(
         IServiceScopeFactory scopeFactory,
-        ILogger<OutboxProcessorBackgroundService> logger)
+        ILogger<OutboxProcessorBackgroundService> logger,
+        string? workerId = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _workerId = workerId ?? $"worker-{Guid.NewGuid():N}";
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("OutboxProcessorBackgroundService started.");
+        _logger.LogInformation("OutboxProcessorBackgroundService started with WorkerId={WorkerId}.", _workerId);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await ProcessPendingOutboxMessagesAsync(stoppingToken);
+                await ProcessPendingOutboxMessagesAsync(ct: stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -102,8 +106,46 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
         int processedCount = 0;
         foreach (var msg in pendingMessages)
         {
-            msg.MarkProcessing(Clock.Now);
-            await dbContext.SaveChangesAsync(ct);
+            // 3. Atomic GPU Claim: Transition Pending -> Processing with ClaimedBy
+            if (dbContext.Database.IsRelational())
+            {
+                var rowsClaimed = await dbContext.OutboxMessages
+                    .Where(m => m.Id == msg.Id && m.Status == OutboxStatus.Pending)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(m => m.Status, OutboxStatus.Processing)
+                        .SetProperty(m => m.ProcessingStartedAt, Clock.Now)
+                        .SetProperty(m => m.ClaimedBy, _workerId)
+                        .SetProperty(m => m.UpdatedAt, Clock.Now), ct);
+
+                if (rowsClaimed == 0)
+                {
+                    // Lost race to another concurrent worker thread -> Skip without calling GPU
+                    _logger.LogInformation("[SceneGenerationSkipped] Message {Id} was claimed by another worker. Skipping.", msg.Id);
+                    continue;
+                }
+
+                await dbContext.Entry(msg).ReloadAsync(ct);
+            }
+            else
+            {
+                bool claimed = false;
+                lock (_inMemoryClaimLock)
+                {
+                    if (msg.Status == OutboxStatus.Pending)
+                    {
+                        msg.MarkProcessing(_workerId, Clock.Now);
+                        claimed = true;
+                    }
+                }
+
+                if (!claimed)
+                {
+                    _logger.LogInformation("[SceneGenerationSkipped] Message {Id} was claimed by another worker. Skipping.", msg.Id);
+                    continue;
+                }
+
+                await dbContext.SaveChangesAsync(ct);
+            }
 
             var stopwatch = Stopwatch.StartNew();
 
@@ -134,8 +176,8 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         if (scenePayload?.Snapshot != null)
                         {
                             var snapshot = scenePayload.Snapshot;
-                            _logger.LogInformation("[SceneGenerationStarted] OutboxId={OutboxId}, SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}, RetryCount={RetryCount}",
-                                msg.Id, snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, msg.RetryCount);
+                            _logger.LogInformation("[SceneGenerationStarted] OutboxId={OutboxId}, SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}, RetryCount={RetryCount}, WorkerId={WorkerId}",
+                                msg.Id, snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, msg.RetryCount, _workerId);
 
                             // A. Application Idempotency: Check if SceneImage artifact already exists
                             var existingArtifact = await dbContext.SceneImages
@@ -185,7 +227,7 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                                         // Predecessor is still Pending/Processing -> Defer Revision N without incrementing retry count
                                         _logger.LogInformation("[SceneGenerationDeferred] Deferring Revision {Revision} because predecessor Revision {PredRev} is not yet completed. OutboxId={OutboxId}",
                                             snapshot.SceneRevision, snapshot.SceneRevision - 1, msg.Id);
-                                        msg.MarkDeferred(now);
+                                        msg.MarkDeferred(now.AddSeconds(2));
                                         break;
                                     }
                                 }
