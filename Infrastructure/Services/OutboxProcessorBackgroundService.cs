@@ -234,9 +234,31 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                                 }
                                 catch (DbUpdateException ex)
                                 {
-                                    // Unique constraint race condition safety net (another concurrent worker committed exact same ContextHash)
-                                    _logger.LogWarning(ex, "[VoiceGenerationDuplicateKeyHandled] Duplicate ContextHash={Hash} handled gracefully. OutboxId={OutboxId}",
-                                        contextHash, msg.Id);
+                                    // Verify if collision is strictly due to duplicate ContextHash
+                                    bool isUniqueCollision = false;
+                                    if (ex.InnerException?.Message.Contains("IX_AudioArtifacts_ContextHash") == true
+                                        || ex.Message.Contains("IX_AudioArtifacts_ContextHash")
+                                        || (ex.InnerException is Npgsql.PostgresException pEx && pEx.SqlState == "23505")
+                                        || (ex.InnerException?.GetType().Name == "SqliteException" && ex.InnerException.Message.Contains("UNIQUE constraint failed")))
+                                    {
+                                        isUniqueCollision = true;
+                                    }
+                                    else
+                                    {
+                                        // Provider-agnostic check: did another concurrent worker successfully commit this ContextHash?
+                                        isUniqueCollision = await dbContext.AudioArtifacts.AsNoTracking().AnyAsync(a => a.ContextHash == contextHash, ct);
+                                    }
+
+                                    if (isUniqueCollision)
+                                    {
+                                        _logger.LogWarning(ex, "[VoiceGenerationDuplicateKeyHandled] Duplicate ContextHash={Hash} handled gracefully. OutboxId={OutboxId}",
+                                            contextHash, msg.Id);
+                                    }
+                                    else
+                                    {
+                                        _logger.LogError(ex, "[VoiceGenerationDbError] Non-duplicate DB update failure on OutboxId={OutboxId}. Re-throwing.", msg.Id);
+                                        throw;
+                                    }
                                 }
                             }
 

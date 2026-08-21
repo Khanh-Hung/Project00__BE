@@ -331,30 +331,57 @@ public class VoiceGenerationOutboxTests
     [Fact]
     public async Task Test6_Concurrent_Same_Job_DB_Uniqueness_Protects_Artifact()
     {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseSqlite(connection)
             .Options;
 
-        await using var db = new ProjectDbContext(options);
+        await using (var db = new ProjectDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
 
-        var artifact1 = new AudioArtifact(
-            sessionId: Guid.NewGuid(),
-            characterId: Guid.NewGuid(),
-            turnId: Guid.NewGuid(),
-            userId: Guid.NewGuid(),
-            voiceId: "voice1",
-            cleanedText: "Hello",
-            contextHash: "unique_hash_123",
-            audioUrl: "/uploads/audio/1.mp3"
-        );
+            var artifact1 = new AudioArtifact(
+                sessionId: Guid.NewGuid(),
+                characterId: Guid.NewGuid(),
+                turnId: Guid.NewGuid(),
+                userId: Guid.NewGuid(),
+                voiceId: "voice1",
+                cleanedText: "Hello",
+                contextHash: "unique_hash_123",
+                audioUrl: "/uploads/audio/1.mp3"
+            );
+            await db.AudioArtifacts.AddAsync(artifact1);
+            await db.SaveChangesAsync();
+        }
 
-        await db.AudioArtifacts.AddAsync(artifact1);
-        await db.SaveChangesAsync();
+        // Attempt concurrent duplicate insert with exact same ContextHash
+        await using (var db = new ProjectDbContext(options))
+        {
+            var artifact2 = new AudioArtifact(
+                sessionId: Guid.NewGuid(),
+                characterId: Guid.NewGuid(),
+                turnId: Guid.NewGuid(),
+                userId: Guid.NewGuid(),
+                voiceId: "voice1",
+                cleanedText: "Hello duplicate",
+                contextHash: "unique_hash_123", // Collision
+                audioUrl: "/uploads/audio/2.mp3"
+            );
+            await db.AudioArtifacts.AddAsync(artifact2);
 
-        // Verify query by ContextHash identifies existing
-        var existing = await db.AudioArtifacts.FirstOrDefaultAsync(a => a.ContextHash == "unique_hash_123");
-        Assert.NotNull(existing);
-        Assert.Equal("/uploads/audio/1.mp3", existing.AudioUrl);
+            // INVARIANT: Relational database MUST reject duplicate ContextHash with DbUpdateException
+            var ex = await Assert.ThrowsAsync<DbUpdateException>(async () => await db.SaveChangesAsync());
+            Assert.NotNull(ex);
+        }
+
+        // Verify exactly 1 artifact exists in DB
+        await using (var db = new ProjectDbContext(options))
+        {
+            var count = await db.AudioArtifacts.CountAsync(a => a.ContextHash == "unique_hash_123");
+            Assert.Equal(1, count);
+        }
     }
 
     [Fact]
