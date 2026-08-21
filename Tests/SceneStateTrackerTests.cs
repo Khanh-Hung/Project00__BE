@@ -9,7 +9,7 @@ public class SceneStateTrackerTests
     [Fact]
     public void Test1_Keep_Outfit_And_Location_When_Delta_Has_No_Change()
     {
-        // Initial state at Turn 1
+        // Initial persistent state at Turn 1
         var state = new SessionSceneState(
             CurrentLocation: "Living Room",
             CurrentPosition: "Sofa",
@@ -89,7 +89,38 @@ public class SceneStateTrackerTests
     }
 
     [Fact]
-    public void Test4_VisualSnapshot_Isolation_And_Deep_Immutability()
+    public void Test4_ActionChange_And_ExpressionChange_Map_To_TransientVisualState_Without_Mutating_PersistentState()
+    {
+        var persistentState = new SessionSceneState(
+            CurrentLocation: "Living Room",
+            CurrentPosition: "Sofa",
+            CurrentOutfit: "White Dress",
+            CurrentTimeOfDay: "Evening",
+            SceneRevision: 1
+        );
+
+        // Turn 2 Delta: Momentary action & expression (No spatial/outfit changes)
+        var delta = new SceneStateDelta(
+            PoseChange: "Standing",
+            ActionChange: "Walking toward window",
+            ExpressionChange: "Gentle smile"
+        );
+
+        // 1. Persistent SceneState applies delta: Location, Position, Outfit remain 100% UNTOUCHED
+        var updatedPersistent = persistentState.ApplyDelta(delta);
+        Assert.Equal("Living Room", updatedPersistent.CurrentLocation); // UNCHANGED
+        Assert.Equal("Sofa", updatedPersistent.CurrentPosition);       // UNCHANGED
+        Assert.Equal("White Dress", updatedPersistent.CurrentOutfit);  // UNCHANGED
+
+        // 2. TransientVisualState receives the frame-level dynamics
+        var transientFrame = TransientVisualState.FromDelta(delta, defaultPose: "Sitting", defaultExpression: "Neutral");
+        Assert.Equal("Standing", transientFrame.Pose);
+        Assert.Equal("Walking toward window", transientFrame.Action);
+        Assert.Equal("Gentle smile", transientFrame.Expression);
+    }
+
+    [Fact]
+    public void Test5_VisualSnapshot_Isolation_And_Deep_Immutability_Between_Turns()
     {
         var turnId1 = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
@@ -139,9 +170,12 @@ public class SceneStateTrackerTests
         var deltaTurn2 = new SceneStateDelta(
             LocationChange: "Royal Garden",
             PositionChange: "Stone Bench",
-            OutfitChange: "Red Silk Dress"
+            OutfitChange: "Red Silk Dress",
+            PoseChange: "Standing",
+            ActionChange: "Picking a rose"
         );
-        var stateTurn2 = stateTurn1.ApplyDelta(deltaTurn2);
+        var stateTurn2 = stateTurn1.ApplyDelta(deltaTurn2, explicitRevision: 2);
+        var transientTurn2 = TransientVisualState.FromDelta(deltaTurn2);
 
         var snapshot2 = VisualSnapshot.Create(
             turnId: Guid.NewGuid(),
@@ -151,7 +185,7 @@ public class SceneStateTrackerTests
             visualIdentity: dna,
             characterAvatarUrl: "https://cloud.storage/avatar.png",
             sceneState: stateTurn2,
-            transientState: new TransientVisualState(Pose: "Standing", Action: "Picking a rose"),
+            transientState: transientTurn2,
             previousSceneImageUrl: "https://cloud.storage/scene_turn1.png"
         );
 
@@ -161,18 +195,21 @@ public class SceneStateTrackerTests
         Assert.Equal("Sofa", snapshot1.SceneState.CurrentPosition);
         Assert.Equal("White Dress", snapshot1.SceneState.CurrentOutfit);
         Assert.Equal("Sitting gracefully", snapshot1.TransientState?.Pose);
+        Assert.Equal("Holding tea cup", snapshot1.TransientState?.Action);
         Assert.Null(snapshot1.PreviousSceneImageUrl);
 
-        // Snapshot 2 reflects new turn state
+        // Snapshot 2 reflects Turn 2 state
         Assert.Equal(2, snapshot2.SceneRevision);
         Assert.Equal("Royal Garden", snapshot2.SceneState.CurrentLocation);
         Assert.Equal("Stone Bench", snapshot2.SceneState.CurrentPosition);
         Assert.Equal("Red Silk Dress", snapshot2.SceneState.CurrentOutfit);
+        Assert.Equal("Standing", snapshot2.TransientState?.Pose);
+        Assert.Equal("Picking a rose", snapshot2.TransientState?.Action);
         Assert.Equal("https://cloud.storage/scene_turn1.png", snapshot2.PreviousSceneImageUrl);
     }
 
     [Fact]
-    public void Test5_Revision_Sequencing_And_Explicit_Overrides()
+    public void Test6_Revision_Sequencing_And_Explicit_Overrides()
     {
         var state = new SessionSceneState(
             CurrentLocation: "Sanctuary",
@@ -183,13 +220,13 @@ public class SceneStateTrackerTests
         var nextStateAutoRev = state.ApplyDelta(new SceneStateDelta(OutfitChange: "Casual Wear"));
         Assert.Equal(11, nextStateAutoRev.SceneRevision);
 
-        // Explicit revision assignment for committed turn alignment
-        var nextStateExplicitRev = state.ApplyDelta(new SceneStateDelta(OutfitChange: "Casual Wear"), newRevision: 42);
+        // Explicit revision assignment for authoritative application commit boundary
+        var nextStateExplicitRev = state.ApplyDelta(new SceneStateDelta(OutfitChange: "Casual Wear"), explicitRevision: 42);
         Assert.Equal(42, nextStateExplicitRev.SceneRevision);
     }
 
     [Fact]
-    public void Test6_HeldItems_Lifecycle_Preserves_Until_Explicitly_Cleared()
+    public void Test7_HeldItems_Lifecycle_Preserves_Until_Explicitly_Cleared()
     {
         var state = new SessionSceneState(
             CurrentLocation: "Tea Room",
