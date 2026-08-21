@@ -4,13 +4,13 @@ namespace Domain.ValueObjects;
 /// Persistent Scene State represents the durable spatial, environmental, and clothing context.
 /// Visual Continuity Invariant: "Nothing changes unless explicitly changed."
 /// NewState = OldState ⊕ Delta
+/// Frame-level actions (Pose, Action, Expression) belong exclusively to TransientVisualState.
 /// </summary>
 public sealed record SessionSceneState(
     string? CurrentLocation = null,
     string? CurrentPosition = null,
     string? CurrentOutfit = null,
     string? CurrentTimeOfDay = null,
-    string? CurrentPose = null,
     string? HeldItems = null,
     string? Atmosphere = null,
     int SceneRevision = 1,
@@ -18,10 +18,11 @@ public sealed record SessionSceneState(
 )
 {
     /// <summary>
-    /// Applies delta changes onto the current persistent scene state.
+    /// Applies delta changes onto the persistent scene state.
     /// Any field omitted or null in delta remains strictly unchanged (Invariance).
+    /// Revision is controlled authoritatively by the application commit boundary.
     /// </summary>
-    public SessionSceneState ApplyDelta(SceneStateDelta delta, int? newRevision = null)
+    public SessionSceneState ApplyDelta(SceneStateDelta delta, int? explicitRevision = null)
     {
         if (delta == null) return this;
 
@@ -48,10 +49,9 @@ public sealed record SessionSceneState(
             CurrentPosition: !string.IsNullOrWhiteSpace(delta.PositionChange) ? delta.PositionChange.Trim() : this.CurrentPosition,
             CurrentOutfit: !string.IsNullOrWhiteSpace(delta.OutfitChange) ? delta.OutfitChange.Trim() : this.CurrentOutfit,
             CurrentTimeOfDay: !string.IsNullOrWhiteSpace(delta.TimeOfDayChange) ? delta.TimeOfDayChange.Trim() : this.CurrentTimeOfDay,
-            CurrentPose: !string.IsNullOrWhiteSpace(delta.PoseChange) ? delta.PoseChange.Trim() : this.CurrentPose,
             HeldItems: resolvedHeldItems,
             Atmosphere: !string.IsNullOrWhiteSpace(delta.AtmosphereChange) ? delta.AtmosphereChange.Trim() : this.Atmosphere,
-            SceneRevision: newRevision ?? (this.SceneRevision + 1),
+            SceneRevision: explicitRevision ?? (this.SceneRevision + 1),
             LastUpdatedAt: DateTime.UtcNow
         );
     }

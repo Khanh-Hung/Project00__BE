@@ -1,9 +1,8 @@
-using Domain.ValueObjects;
-
 namespace Domain.ValueObjects;
 
 /// <summary>
 /// Deep-immutable Visual Snapshot captured at the atomic commit boundary of Turn N.
+/// Snapshot contains pure immutable value objects with no mutable collections.
 /// Serves as the single immutable source of truth for downstream image synthesis and outbox workers.
 /// </summary>
 public sealed record VisualSnapshot(
