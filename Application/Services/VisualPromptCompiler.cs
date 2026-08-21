@@ -110,7 +110,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
     {
         if (snapshot == null) return string.Empty;
 
-        var characterTags = new List<string>();
+        var characterTags = new List<string> { "masterpiece", "best quality", "solo" };
         var identity = snapshot.VisualIdentity;
         if (identity != null)
         {
@@ -127,7 +127,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         }
         else
         {
-            characterTags.Add("1girl, masterpiece, solo");
+            characterTags.Add("1girl");
         }
 
         var expressionTags = new List<string>();
@@ -136,6 +136,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         {
             if (!string.IsNullOrWhiteSpace(transient.Expression)) expressionTags.Add(transient.Expression);
             if (!string.IsNullOrWhiteSpace(transient.Gaze)) expressionTags.Add(transient.Gaze);
+            if (!string.IsNullOrWhiteSpace(transient.Gesture)) expressionTags.Add(transient.Gesture);
         }
         if (expressionTags.Count == 0)
         {
@@ -155,6 +156,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             {
                 if (!string.IsNullOrWhiteSpace(transient.Pose)) sceneTags.Add(transient.Pose);
                 if (!string.IsNullOrWhiteSpace(transient.Action)) sceneTags.Add(transient.Action);
+                if (!string.IsNullOrWhiteSpace(transient.Interaction)) sceneTags.Add(transient.Interaction);
             }
 
             if (!string.IsNullOrWhiteSpace(scene.CurrentPosition) && !string.IsNullOrWhiteSpace(scene.CurrentLocation))
