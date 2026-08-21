@@ -58,63 +58,7 @@ public sealed class LLMService : ILLMService
             maxOutputTokens: 1000,
             ct: ct);
 
-        try
-        {
-            var cleaned = rawResponse.Trim();
-            if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-            {
-                cleaned = cleaned.Substring(7);
-            }
-            else if (cleaned.StartsWith("```", StringComparison.OrdinalIgnoreCase))
-            {
-                cleaned = cleaned.Substring(3);
-            }
-            if (cleaned.EndsWith("```", StringComparison.OrdinalIgnoreCase))
-            {
-                cleaned = cleaned.Substring(0, cleaned.Length - 3);
-            }
-            cleaned = cleaned.Trim();
-
-            var parsed = JsonSerializer.Deserialize<RoleplayAiJsonDto>(cleaned, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            if (parsed != null && !string.IsNullOrWhiteSpace(parsed.Reply))
-            {
-                var mood = Enum.TryParse<CharacterMood>(parsed.Mood, true, out var parsedMood)
-                    ? parsedMood
-                    : CharacterMood.Neutral;
-
-                var intensity = Math.Clamp(parsed.MoodIntensity ?? 50, 0, 100);
-                var delta = Math.Clamp(parsed.AffectionDelta ?? 0, -5, 5);
-
-                RelationshipEventProposal? eventProposal = null;
-                if (parsed.Event != null && !string.IsNullOrWhiteSpace(parsed.Event.Key))
-                {
-                    eventProposal = new RelationshipEventProposal(
-                        parsed.Event.Key.Trim(),
-                        parsed.Event.Context?.Trim() ?? string.Empty
-                    );
-                }
-
-                return new RoleplayTurnResult(
-                    parsed.Reply.Trim(),
-                    mood,
-                    intensity,
-                    delta,
-                    eventProposal,
-                    parsed.HasWalkedOut ?? false,
-                    parsed.WalkOutReason
-                );
-            }
-        }
-        catch
-        {
-            // Fallback gracefully
-        }
-
-        return new RoleplayTurnResult(rawResponse.Trim(), CharacterMood.Neutral, 20, 0, null, false, null);
+        return Application.Common.StructuredTurnParser.Parse(rawResponse);
     }
 
     public async IAsyncEnumerable<string> GenerateRoleplayTurnStreamAsync(

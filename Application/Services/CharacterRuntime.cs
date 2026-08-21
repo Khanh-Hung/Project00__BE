@@ -619,51 +619,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
 
     private static RoleplayTurnResult ParseAiTurn(string raw)
     {
-        try
-        {
-            var cleaned = raw.Trim();
-            if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-            {
-                cleaned = cleaned.Substring(7);
-            }
-            else if (cleaned.StartsWith("```", StringComparison.OrdinalIgnoreCase))
-            {
-                cleaned = cleaned.Substring(3);
-            }
-            if (cleaned.EndsWith("```", StringComparison.OrdinalIgnoreCase))
-            {
-                cleaned = cleaned.Substring(0, cleaned.Length - 3);
-            }
-            cleaned = cleaned.Trim();
-
-            using var doc = JsonDocument.Parse(cleaned);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("reply", out var replyProp))
-            {
-                var reply = replyProp.GetString() ?? raw;
-                var mood = root.TryGetProperty("mood", out var moodProp) && Enum.TryParse<CharacterMood>(moodProp.GetString(), true, out var pm) ? pm : CharacterMood.Neutral;
-                var intensity = root.TryGetProperty("moodIntensity", out var intProp) ? intProp.GetInt32() : 50;
-                var delta = root.TryGetProperty("affectionDelta", out var delProp) ? delProp.GetInt32() : 0;
-
-                RelationshipEventProposal? proposal = null;
-                if (root.TryGetProperty("event", out var evtProp) && evtProp.TryGetProperty("key", out var kProp) && !string.IsNullOrWhiteSpace(kProp.GetString()))
-                {
-                    var ctx = evtProp.TryGetProperty("context", out var cProp) ? cProp.GetString() ?? string.Empty : string.Empty;
-                    proposal = new RelationshipEventProposal(kProp.GetString()!, ctx);
-                }
-
-                var hasWalkedOut = root.TryGetProperty("hasWalkedOut", out var woProp) && (woProp.ValueKind == JsonValueKind.True || (woProp.ValueKind == JsonValueKind.String && bool.TryParse(woProp.GetString(), out var bw) && bw));
-                var walkOutReason = root.TryGetProperty("walkOutReason", out var wrProp) && wrProp.ValueKind == JsonValueKind.String ? wrProp.GetString() : null;
-
-                return new RoleplayTurnResult(reply, mood, intensity, delta, proposal, hasWalkedOut, walkOutReason);
-            }
-        }
-        catch
-        {
-            // Fallback to plain text reply
-        }
-
-        return new RoleplayTurnResult(raw, CharacterMood.Neutral, 50, 0, null);
+        return StructuredTurnParser.Parse(raw);
     }
 
     private static CharacterTurnResult MapExistingTurnToResult(CharacterTurn existingTurn)
