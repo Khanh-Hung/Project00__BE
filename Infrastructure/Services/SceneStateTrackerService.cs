@@ -37,6 +37,33 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
             CurrentTimeOfDay: defaultTime,
             HeldItems: null,
             Atmosphere: "Thanh tịnh",
+            SceneRevision: 1,
+            LastUpdatedAt: DateTime.UtcNow
+        );
+
+        var delta = await TrackAndExtractDeltaAsync(character, baseState, userMessage, assistantMessage, ct);
+        return baseState.ApplyDelta(delta);
+    }
+
+    public async Task<SceneStateDelta> TrackAndExtractDeltaAsync(
+        Character character,
+        SessionSceneState? currentState,
+        string userMessage,
+        string assistantMessage,
+        CancellationToken ct = default)
+    {
+        var defaultLocation = !string.IsNullOrWhiteSpace(character.WorldName) ? $"{character.WorldName}" : "Thánh Điện Thần Mặt Trời";
+        var defaultOutfit = character.VisualIdentity?.ClothingStyle ?? "Thánh phục lụa trắng thêu viền vàng kim quý phái, khăn voan trắng";
+        var defaultTime = "Bình minh rạng rỡ";
+
+        var baseState = currentState ?? new SessionSceneState(
+            CurrentLocation: defaultLocation,
+            CurrentPosition: "Đại điện",
+            CurrentOutfit: defaultOutfit,
+            CurrentTimeOfDay: defaultTime,
+            HeldItems: null,
+            Atmosphere: "Thanh tịnh",
+            SceneRevision: 1,
             LastUpdatedAt: DateTime.UtcNow
         );
 
@@ -46,18 +73,27 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
             FUNDAMENTAL CONTINUITY INVARIANT:
             1. "NOTHING CHANGES UNLESS EXPLICITLY CHANGED IN THIS CONVERSATION TURN."
             2. DO NOT hallucinate or invent changes that were not explicitly mentioned or clearly acted upon in the latest dialogue.
-            3. If Location, Outfit, TimeOfDay, or Items did NOT change in this turn, omit them or set them to null.
-            4. HeldItems Lifecycle:
+            3. If Location, Position, Outfit, TimeOfDay, or Items did NOT change in this turn, omit them or set them to null.
+            4. Differentiate between:
+               - Location: Macro room/place (e.g. Living Room, Garden, Bedroom).
+               - Position: Relative spatial placement (e.g. Sofa, Window, Altar, Bed, Balcony).
+               - Pose: Bodily stance (e.g. Sitting, Standing, Kneeling).
+               - Action: Momentary physical movement (e.g. Walking toward window, Pouring tea, Reaching out).
+               - Expression: Facial/eye emotional state (e.g. Gentle smile, Blushing shyly, Stern gaze).
+            5. HeldItems Lifecycle:
                - If an item is picked up/held -> provide item name.
                - If an item is placed down, dropped, or released -> return "none".
                - If held status has not changed -> return null.
             
             Return JSON only matching the schema:
             {
-              "locationChange": "Tên địa điểm mới nếu có di chuyển (null nếu ở nguyên vị trí cũ)",
+              "locationChange": "Tên địa điểm vĩ mô mới nếu có di chuyển phòng/nơi chốn (null nếu ở nguyên phòng cũ)",
+              "positionChange": "Vị trí không gian cụ thể mới (ví dụ 'Bên cửa sổ', 'Trên sofa') hoặc null nếu không đổi vị trí",
               "outfitChange": "Trang phục mới nếu có thay đổi/cởi bớt/làm ướt (null nếu mặc nguyên đồ cũ)",
               "timeOfDayChange": "Thời điểm mới nếu thời gian trôi qua rõ rệt (null nếu cùng thời điểm)",
-              "poseChange": "Tư thế/hành động vật lý cụ thể trong câu thoại này",
+              "poseChange": "Tư thế cơ thể tức thời trong câu thoại này (ví dụ 'Ngồi', 'Đứng')",
+              "actionChange": "Hành động tức thời cụ thể trong câu thoại này (ví dụ 'Đang bước tới bên cửa sổ')",
+              "expressionChange": "Biểu cảm gương mặt/ánh mắt trong câu thoại này (ví dụ 'Mỉm cười dịu dàng')",
               "heldItemsChange": "Vật phẩm mới cầm trên tay, hoặc 'none' nếu vừa đặt xuống, hoặc null nếu không đổi",
               "atmosphereChange": "Sắc thái cảm xúc của tình huống này",
               "evidence": "Trích dẫn ngắn chứng minh sự thay đổi"
@@ -78,7 +114,7 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
             - Player: "{userMessage}"
             - {character.Name}: "{assistantMessage}"
             
-            Did this specific turn contain explicit evidence of changing location, outfit, time, pose, or held items?
+            Did this specific turn contain explicit evidence of changing location, position, outfit, time, pose, action, expression, or held items?
             Extract the DELTA in JSON:
             """;
 
@@ -124,18 +160,18 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
 
                 if (deltaDto != null)
                 {
-                    var delta = new SceneStateDelta(
+                    return new SceneStateDelta(
                         LocationChange: deltaDto.LocationChange,
+                        PositionChange: deltaDto.PositionChange,
                         OutfitChange: deltaDto.OutfitChange,
                         TimeOfDayChange: deltaDto.TimeOfDayChange,
                         PoseChange: deltaDto.PoseChange,
+                        ActionChange: deltaDto.ActionChange,
+                        ExpressionChange: deltaDto.ExpressionChange,
                         HeldItemsChange: deltaDto.HeldItemsChange,
                         AtmosphereChange: deltaDto.AtmosphereChange,
                         Evidence: deltaDto.Evidence
                     );
-
-                    // Apply the mathematical merge: NewState = OldState ⊕ Delta
-                    return baseState.ApplyDelta(delta);
                 }
             }
         }
@@ -144,13 +180,16 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
             _logger.LogWarning(ex, "Failed to extract dynamic scene state delta. Retaining invariant state.");
         }
 
-        return baseState;
+        return new SceneStateDelta();
     }
 
     private sealed class SceneStateDeltaDto
     {
         [JsonPropertyName("locationChange")]
         public string? LocationChange { get; set; }
+
+        [JsonPropertyName("positionChange")]
+        public string? PositionChange { get; set; }
 
         [JsonPropertyName("outfitChange")]
         public string? OutfitChange { get; set; }
@@ -160,6 +199,12 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
 
         [JsonPropertyName("poseChange")]
         public string? PoseChange { get; set; }
+
+        [JsonPropertyName("actionChange")]
+        public string? ActionChange { get; set; }
+
+        [JsonPropertyName("expressionChange")]
+        public string? ExpressionChange { get; set; }
 
         [JsonPropertyName("heldItemsChange")]
         public string? HeldItemsChange { get; set; }

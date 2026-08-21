@@ -138,23 +138,14 @@ public sealed class CharacterRuntime : ICharacterRuntime
         var userMsg = session.AddUserMessage(request.UserMessage);
         var assistantMessage = session.AddAssistantMessage(aiTurn.Reply);
 
-        if (_sceneStateTracker != null)
-        {
-            try
-            {
-                var updatedSceneState = await _sceneStateTracker.TrackAndExtractStateAsync(
-                    character,
-                    session.SceneState,
-                    request.UserMessage,
-                    aiTurn.Reply,
-                    ct);
-                session.UpdateSceneState(updatedSceneState);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to track dynamic scene state during character turn.");
-            }
-        }
+        var (effectiveSceneState, effectiveTransientState, visualSnapshot) = await BuildTurnVisualStateAndSnapshotAsync(
+            character,
+            session,
+            request.UserMessage,
+            aiTurn.Reply,
+            aiTurn.Mood,
+            turnId,
+            ct);
 
         var messageRepo = _unitOfWork.GetRepository<ChatMessage>();
         await messageRepo.AddAsync(userMsg, ct);
@@ -286,18 +277,11 @@ public sealed class CharacterRuntime : ICharacterRuntime
         // Outbox Job 3: Scene Image Generation (if requested)
         if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
         {
-            var scene = new SceneContext(
-                Location: character.Title,
-                Expression: currentMood.ToString()
-            );
-            var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
             var scenePayload = new SceneImageGenerationOutboxPayload(
                 TurnId: turnId,
                 CharacterId: character.Id,
                 UserId: request.UserId,
-                CharacterTitle: character.Title,
-                Mood: currentMood.ToString(),
-                Prompt: prompt
+                Snapshot: visualSnapshot
             );
             var sceneOutbox = new OutboxMessage(
                 eventType: OutboxEventTypes.SceneImageGeneration,
@@ -553,17 +537,22 @@ public sealed class CharacterRuntime : ICharacterRuntime
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(voicePayload)), ct);
         }
 
+        var (effectiveStreamSceneState, effectiveStreamTransientState, streamVisualSnapshot) = await BuildTurnVisualStateAndSnapshotAsync(
+            character,
+            session,
+            request.UserMessage,
+            aiTurn.Reply,
+            currentMood,
+            turnId,
+            ct);
+
         if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
         {
-            var scene = new SceneContext(Location: character.Title, Expression: currentMood.ToString());
-            var prompt = _visualCompiler.CompileScenePrompt(character, scene, relationship);
             var scenePayload = new SceneImageGenerationOutboxPayload(
                 TurnId: turnId,
                 CharacterId: character.Id,
                 UserId: request.UserId,
-                CharacterTitle: character.Title,
-                Mood: currentMood.ToString(),
-                Prompt: prompt
+                Snapshot: streamVisualSnapshot
             );
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(scenePayload)), ct);
         }
@@ -709,5 +698,79 @@ public sealed class CharacterRuntime : ICharacterRuntime
             MoodIntensity: existingTurn.MoodIntensity,
             AffectionDelta: existingTurn.AffectionDelta
         );
+    }
+
+    private async Task<(SessionSceneState SceneState, TransientVisualState TransientState, VisualSnapshot Snapshot)> BuildTurnVisualStateAndSnapshotAsync(
+        Character character,
+        ChatSession session,
+        string userMessage,
+        string assistantReply,
+        CharacterMood currentMood,
+        Guid turnId,
+        CancellationToken ct)
+    {
+        var oldState = session.SceneState ?? new SessionSceneState(
+            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
+            CurrentPosition: "Central Area",
+            CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
+            CurrentTimeOfDay: "Daytime",
+            HeldItems: null,
+            Atmosphere: "Peaceful",
+            SceneRevision: 0,
+            LastUpdatedAt: Clock.Now
+        );
+
+        int targetRevision = (session.SceneState?.SceneRevision ?? 0) + 1;
+        SceneStateDelta delta = new SceneStateDelta();
+
+        if (_sceneStateTracker != null)
+        {
+            try
+            {
+                delta = await _sceneStateTracker.TrackAndExtractDeltaAsync(
+                    character,
+                    session.SceneState,
+                    userMessage,
+                    assistantReply,
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to track dynamic scene state during turn {TurnId}.", turnId);
+            }
+        }
+
+        var updatedSceneState = oldState.ApplyDelta(delta, explicitRevision: targetRevision);
+        session.UpdateSceneState(updatedSceneState);
+
+        var transientState = TransientVisualState.FromDelta(
+            delta,
+            defaultPose: "Graceful posture",
+            defaultExpression: currentMood.ToString()
+        );
+
+        // Immediate predecessor continuity: previous image is resolved from SceneImage artifact of Revision N - 1
+        string? previousSceneImageUrl = null;
+        if (targetRevision > 1)
+        {
+            var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
+            var predecessorArtifact = await sceneImageRepo
+                .GetAsync(img => img.SessionId == session.Id && img.SceneRevision == targetRevision - 1, ct);
+            previousSceneImageUrl = predecessorArtifact?.ImageUrl;
+        }
+
+        var snapshot = VisualSnapshot.Create(
+            turnId: turnId,
+            sessionId: session.Id,
+            characterId: character.Id,
+            sceneRevision: targetRevision,
+            visualIdentity: character.VisualIdentity,
+            characterAvatarUrl: character.AvatarUrl,
+            sceneState: updatedSceneState,
+            transientState: transientState,
+            previousSceneImageUrl: previousSceneImageUrl
+        );
+
+        return (updatedSceneState, transientState, snapshot);
     }
 }

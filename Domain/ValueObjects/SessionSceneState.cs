@@ -5,6 +5,7 @@ namespace Domain.ValueObjects;
 /// Visual Continuity Invariant: "Nothing changes unless explicitly changed."
 /// NewState = OldState ⊕ Delta
 /// Frame-level actions (Pose, Action, Expression) belong exclusively to TransientVisualState.
+/// Rendered visual artifacts belong exclusively to the SceneImage entity.
 /// </summary>
 public sealed record SessionSceneState(
     string? CurrentLocation = null,
@@ -13,7 +14,7 @@ public sealed record SessionSceneState(
     string? CurrentTimeOfDay = null,
     string? HeldItems = null,
     string? Atmosphere = null,
-    int SceneRevision = 1,
+    int SceneRevision = 0,
     DateTime? LastUpdatedAt = null
 )
 {
@@ -23,7 +24,9 @@ public sealed record SessionSceneState(
     /// SceneRevision identifies the committed turn/frame, not the number of persistent-field mutations.
     /// Revision is controlled authoritatively by the application commit boundary.
     /// </summary>
-    public SessionSceneState ApplyDelta(SceneStateDelta delta, int? explicitRevision = null)
+    public SessionSceneState ApplyDelta(
+        SceneStateDelta delta,
+        int? explicitRevision = null)
     {
         if (delta == null) return this;
 

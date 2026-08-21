@@ -22,13 +22,15 @@ public sealed record VoiceGenerationOutboxPayload(
     string RawText
 );
 
+/// <summary>
+/// Scene Image Generation payload carrying the immutable visual snapshot of Turn N as the single source of truth.
+/// Outbox workers compile deterministic prompts directly from this snapshot without querying current database session state.
+/// </summary>
 public sealed record SceneImageGenerationOutboxPayload(
     Guid TurnId,
     Guid CharacterId,
     Guid UserId,
-    string CharacterTitle,
-    string Mood,
-    string Prompt
+    VisualSnapshot Snapshot
 );
 
 public sealed record MemoryExtractionOutboxPayload(

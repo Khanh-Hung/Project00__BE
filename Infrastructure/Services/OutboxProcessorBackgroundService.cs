@@ -1,8 +1,5 @@
-using System.Text.Json;
-using Application.Abstractions.Data;
 using Application.DTOs;
 using Application.Interfaces;
-using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -10,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace Infrastructure.Services;
 
@@ -17,7 +15,7 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutboxProcessorBackgroundService> _logger;
-    private readonly TimeSpan _pollingInterval = TimeSpan.FromSeconds(3);
+    private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(2);
 
     public OutboxProcessorBackgroundService(
         IServiceScopeFactory scopeFactory,
@@ -39,12 +37,12 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Error processing outbox messages");
+                _logger.LogError(ex, "Error occurred during Outbox processing cycle.");
             }
 
             try
             {
-                await Task.Delay(_pollingInterval, stoppingToken);
+                await Task.Delay(_pollInterval, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -60,6 +58,7 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.Persistence.ProjectDbContext>();
         var voiceCompiler = scope.ServiceProvider.GetRequiredService<IVoicePromptCompiler>();
+        var visualCompiler = scope.ServiceProvider.GetRequiredService<IVisualPromptCompiler>();
         var voiceService = scope.ServiceProvider.GetRequiredService<IVoiceGenerationService>();
         var imageService = scope.ServiceProvider.GetRequiredService<IImageGenerationService>();
         var extractionTrigger = scope.ServiceProvider.GetRequiredService<IMemoryExtractionTrigger>();
@@ -103,9 +102,41 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
 
                     case OutboxEventTypes.SceneImageGeneration:
                         var scenePayload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg.PayloadJson);
-                        if (scenePayload != null)
+                        if (scenePayload?.Snapshot != null)
                         {
-                            await imageService.GenerateImageAsync(new ImageGenerationRequest(scenePayload.Prompt), ct);
+                            var snapshot = scenePayload.Snapshot;
+
+                            // 1. Idempotency safeguard: check if SceneImage artifact already exists for (SessionId, SceneRevision)
+                            var existingArtifact = await dbContext.SceneImages
+                                .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision, ct);
+
+                            if (existingArtifact == null)
+                            {
+                                // 2. Deterministic prompt compilation purely from VisualSnapshot
+                                var compiledPrompt = visualCompiler.CompileScenePrompt(snapshot);
+                                var imageReq = new ImageGenerationRequest(
+                                    Prompt: compiledPrompt,
+                                    ReferenceImageUrl: snapshot.IdentityReferenceUrl,
+                                    PreviousSceneImageUrl: snapshot.PreviousSceneImageUrl
+                                );
+                                var generatedImageUrl = await imageService.GenerateImageAsync(imageReq, ct);
+
+                                // 3. Persist immutable SceneImage artifact
+                                if (!string.IsNullOrWhiteSpace(generatedImageUrl))
+                                {
+                                    var artifact = new SceneImage(
+                                        sessionId: snapshot.SessionId,
+                                        characterId: snapshot.CharacterId,
+                                        turnId: snapshot.TurnId,
+                                        sceneRevision: snapshot.SceneRevision,
+                                        imageUrl: generatedImageUrl,
+                                        prompt: compiledPrompt,
+                                        identityReferenceUrl: snapshot.IdentityReferenceUrl,
+                                        previousSceneImageUrl: snapshot.PreviousSceneImageUrl
+                                    );
+                                    await dbContext.SceneImages.AddAsync(artifact, ct);
+                                }
+                            }
                         }
                         break;
 
@@ -129,13 +160,13 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         break;
                 }
 
-                msg.MarkCompleted(Clock.Now);
+                msg.MarkCompleted(DateTime.UtcNow);
                 processedCount++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogWarning(ex, "Failed to process outbox message {Id} of type {EventType}. Retry count: {Retry}", msg.Id, msg.EventType, msg.RetryCount + 1);
-                msg.MarkFailed(ex.Message, Clock.Now);
+                _logger.LogError(ex, "Failed to process outbox message {Id} of type {EventType}", msg.Id, msg.EventType);
+                msg.MarkFailed(ex.Message, DateTime.UtcNow);
             }
 
             await dbContext.SaveChangesAsync(ct);

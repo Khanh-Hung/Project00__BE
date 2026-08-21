@@ -102,6 +102,81 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         return string.Join(", ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 
+    /// <summary>
+    /// Deterministic prompt compilation purely from the frozen VisualSnapshot of Turn N.
+    /// Single Source of Truth for Outbox Workers.
+    /// </summary>
+    public string CompileScenePrompt(VisualSnapshot snapshot)
+    {
+        if (snapshot == null) return string.Empty;
+
+        var characterTags = new List<string>();
+        var identity = snapshot.VisualIdentity;
+        if (identity != null)
+        {
+            if (!string.IsNullOrWhiteSpace(identity.Gender))
+                characterTags.Add(identity.Gender.Equals("Female", StringComparison.OrdinalIgnoreCase) ? "1girl" : "1boy");
+            if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) characterTags.Add(identity.AgeAppearance);
+            if (!string.IsNullOrWhiteSpace(identity.Hair)) characterTags.Add(identity.Hair);
+            if (!string.IsNullOrWhiteSpace(identity.Eyes)) characterTags.Add(identity.Eyes);
+            if (!string.IsNullOrWhiteSpace(identity.Face)) characterTags.Add(identity.Face);
+            if (!string.IsNullOrWhiteSpace(identity.Skin)) characterTags.Add(identity.Skin);
+            if (!string.IsNullOrWhiteSpace(identity.Body)) characterTags.Add(identity.Body);
+            if (!string.IsNullOrWhiteSpace(identity.Accessories)) characterTags.Add(identity.Accessories);
+            if (!string.IsNullOrWhiteSpace(identity.VisualTraits)) characterTags.Add(identity.VisualTraits);
+        }
+        else
+        {
+            characterTags.Add("1girl, masterpiece, solo");
+        }
+
+        var expressionTags = new List<string>();
+        var transient = snapshot.TransientState;
+        if (transient != null)
+        {
+            if (!string.IsNullOrWhiteSpace(transient.Expression)) expressionTags.Add(transient.Expression);
+            if (!string.IsNullOrWhiteSpace(transient.Gaze)) expressionTags.Add(transient.Gaze);
+        }
+        if (expressionTags.Count == 0)
+        {
+            expressionTags.Add("gentle expression, soft gaze");
+        }
+
+        var sceneTags = new List<string>();
+        var scene = snapshot.SceneState;
+        if (scene != null)
+        {
+            if (!string.IsNullOrWhiteSpace(scene.CurrentOutfit))
+                sceneTags.Add($"wearing {scene.CurrentOutfit}");
+            else if (!string.IsNullOrWhiteSpace(identity?.ClothingStyle))
+                sceneTags.Add($"wearing {identity.ClothingStyle}");
+
+            if (transient != null)
+            {
+                if (!string.IsNullOrWhiteSpace(transient.Pose)) sceneTags.Add(transient.Pose);
+                if (!string.IsNullOrWhiteSpace(transient.Action)) sceneTags.Add(transient.Action);
+            }
+
+            if (!string.IsNullOrWhiteSpace(scene.CurrentPosition) && !string.IsNullOrWhiteSpace(scene.CurrentLocation))
+                sceneTags.Add($"at {scene.CurrentPosition}, in {scene.CurrentLocation}");
+            else if (!string.IsNullOrWhiteSpace(scene.CurrentPosition))
+                sceneTags.Add($"at {scene.CurrentPosition}");
+            else if (!string.IsNullOrWhiteSpace(scene.CurrentLocation))
+                sceneTags.Add($"in {scene.CurrentLocation}");
+
+            if (!string.IsNullOrWhiteSpace(scene.CurrentTimeOfDay)) sceneTags.Add(scene.CurrentTimeOfDay);
+            if (!string.IsNullOrWhiteSpace(scene.HeldItems)) sceneTags.Add($"holding {scene.HeldItems}");
+            if (!string.IsNullOrWhiteSpace(scene.Atmosphere)) sceneTags.Add(scene.Atmosphere);
+        }
+
+        var identityPart = string.Join(", ", characterTags.Where(t => !string.IsNullOrWhiteSpace(t)));
+        var expressionPart = string.Join(", ", expressionTags.Where(t => !string.IsNullOrWhiteSpace(t)));
+        var scenePart = string.Join(", ", sceneTags.Where(t => !string.IsNullOrWhiteSpace(t)));
+
+        var parts = new List<string> { identityPart, expressionPart, scenePart, "cinematic composition, dramatic lighting, detailed background" };
+        return string.Join(", ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
     private static string MapMoodToVisualExpression(CharacterMood mood, int intensity)
     {
         var intensitySuffix = intensity >= 70 ? ", strong emotional expression" : "";

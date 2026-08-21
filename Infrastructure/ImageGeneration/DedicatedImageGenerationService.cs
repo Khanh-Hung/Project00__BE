@@ -54,11 +54,13 @@ public class DedicatedImageGenerationService : IImageGenerationService
             var payload = new DedicatedServerRequest
             {
                 Prompt = request.Prompt,
+                NegativePrompt = request.NegativePrompt ?? "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name",
                 Width = request.Width > 0 ? request.Width : 1024,
                 Height = request.Height > 0 ? request.Height : 1024,
-                NumInferenceSteps = 25,
+                NumInferenceSteps = 28,
                 GuidanceScale = 7.0f,
-                ReferenceImage = request.ReferenceImageUrl
+                ReferenceImage = request.ReferenceImageUrl,
+                PreviousSceneImage = request.PreviousSceneImageUrl
             };
 
             var res = await _httpClient.PostAsJsonAsync(endpoint, payload, ct);
@@ -89,6 +91,9 @@ public class DedicatedImageGenerationService : IImageGenerationService
         [JsonPropertyName("prompt")]
         public string Prompt { get; set; } = string.Empty;
 
+        [JsonPropertyName("negative_prompt")]
+        public string? NegativePrompt { get; set; }
+
         [JsonPropertyName("width")]
         public int Width { get; set; } = 1024;
 
@@ -96,13 +101,16 @@ public class DedicatedImageGenerationService : IImageGenerationService
         public int Height { get; set; } = 1024;
 
         [JsonPropertyName("num_inference_steps")]
-        public int NumInferenceSteps { get; set; } = 25;
+        public int NumInferenceSteps { get; set; } = 28;
 
         [JsonPropertyName("guidance_scale")]
         public float GuidanceScale { get; set; } = 7.0f;
 
         [JsonPropertyName("reference_image")]
         public string? ReferenceImage { get; set; }
+
+        [JsonPropertyName("previous_scene_image")]
+        public string? PreviousSceneImage { get; set; }
     }
 
     private sealed class DedicatedServerResponse

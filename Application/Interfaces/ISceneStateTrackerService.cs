@@ -11,4 +11,11 @@ public interface ISceneStateTrackerService
         string userMessage,
         string assistantMessage,
         CancellationToken ct = default);
+
+    Task<SceneStateDelta> TrackAndExtractDeltaAsync(
+        Character character,
+        SessionSceneState? currentState,
+        string userMessage,
+        string assistantMessage,
+        CancellationToken ct = default);
 }
