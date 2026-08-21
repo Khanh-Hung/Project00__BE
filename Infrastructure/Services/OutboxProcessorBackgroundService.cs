@@ -108,7 +108,8 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                             var compiledPrompt = visualCompiler.CompileScenePrompt(scenePayload.Snapshot);
                             var imageReq = new ImageGenerationRequest(
                                 Prompt: compiledPrompt,
-                                ReferenceImageUrl: scenePayload.Snapshot.IdentityReferenceUrl
+                                ReferenceImageUrl: scenePayload.Snapshot.IdentityReferenceUrl,
+                                PreviousSceneImageUrl: scenePayload.Snapshot.PreviousSceneImageUrl
                             );
                             await imageService.GenerateImageAsync(imageReq, ct);
                         }
