@@ -11,17 +11,25 @@ public class ChatSession : BaseEntity
     public SessionStatus Status { get; private set; } = SessionStatus.Active;
     public DateTime? WalkedOutAt { get; private set; }
     public string? WalkOutReason { get; private set; }
+    public Domain.ValueObjects.SessionSceneState? SceneState { get; private set; }
 
     public List<ChatMessage> Messages { get; private set; } = [];
 
     private ChatSession() { } // EF Core
 
-    public ChatSession(Guid characterId, Guid? userId, string title)
+    public ChatSession(Guid characterId, Guid? userId, string title, Domain.ValueObjects.SessionSceneState? sceneState = null)
     {
         CharacterId = characterId;
         UserId = userId;
         Title = title;
         Status = SessionStatus.Active;
+        SceneState = sceneState;
+    }
+
+    public void UpdateSceneState(Domain.ValueObjects.SessionSceneState newState)
+    {
+        SceneState = newState;
+        Touch();
     }
 
     public void WalkOut(string reason, DateTime timestamp)

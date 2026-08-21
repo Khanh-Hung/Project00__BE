@@ -1,6 +1,7 @@
 namespace Domain.ValueObjects;
 
 public sealed record CharacterVisualIdentity(
+    string? Gender = null,
     string? Face = null,
     string? Hair = null,
     string? Eyes = null,
@@ -10,5 +11,6 @@ public sealed record CharacterVisualIdentity(
     string? ClothingStyle = null,
     string? Accessories = null,
     string? VisualTraits = null,
-    string? CanonicalReferenceUrl = null
+    string? CanonicalReferenceUrl = null,
+    string? FullBodyUrl = null
 );
