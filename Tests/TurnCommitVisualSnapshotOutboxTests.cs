@@ -267,17 +267,27 @@ public class TurnCommitVisualSnapshotOutboxTests
         ) { Id = charId };
         await context.Characters.AddAsync(character);
 
-        // Session at Revision 1 having a committed scene image
+        // Session at Revision 1
         var initialScene = new SessionSceneState(
             CurrentLocation: "Living Room",
             CurrentPosition: "Sofa",
             CurrentOutfit: "White Dress",
-            SceneRevision: 1,
-            LastSceneImageUrl: "https://cloud.storage/scene_rev1.png"
+            SceneRevision: 1
         );
 
         var session = new ChatSession(charId, userId, "Continuity Session", sceneState: initialScene);
         await context.ChatSessions.AddAsync(session);
+
+        // Predecessor visual artifact for Revision 1
+        var rev1Image = new SceneImage(
+            sessionId: session.Id,
+            characterId: charId,
+            turnId: Guid.NewGuid(),
+            sceneRevision: 1,
+            imageUrl: "https://cloud.storage/scene_rev1.png",
+            prompt: "1girl, sofa, living room"
+        );
+        await context.SceneImages.AddAsync(rev1Image);
         await context.SaveChangesAsync();
 
         var unitOfWork = new UnitOfWork(context);
@@ -544,6 +554,82 @@ public class TurnCommitVisualSnapshotOutboxTests
         Assert.Contains("Black Dress", capturedRequests[2].Prompt);
         Assert.Contains("Beside Window", capturedRequests[2].Prompt);
         Assert.Contains("Living Room", capturedRequests[2].Prompt);
+    }
+
+    [Fact]
+    public async Task Out_Of_Order_GPU_Completion_And_Idempotency_Maintains_Exact_Revision_Mapping()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var services = new ServiceCollection();
+        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
+        services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
+        services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
+
+        var capturedRequests = new List<ImageGenerationRequest>();
+        var imageService = new RecordingImageService(capturedRequests);
+        services.AddSingleton<IImageGenerationService>(imageService);
+        services.AddSingleton<IMemoryExtractionTrigger, MockMemoryExtractionTrigger>();
+        services.AddLogging();
+
+        var serviceProvider = services.BuildServiceProvider();
+        var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
+
+        var charId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+
+        // 1. Seed 3 outbox messages with revisions 3, 1, 2 (simulating out-of-order completion)
+        var snap1 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 1, null, "https://cloud.storage/elysia.png", new SessionSceneState("Living Room", "Sofa", "White Dress", SceneRevision: 1), new TransientVisualState());
+        var snap2 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 2, null, "https://cloud.storage/elysia.png", new SessionSceneState("Living Room", "Window", "White Dress", SceneRevision: 2), new TransientVisualState());
+        var snap3 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 3, null, "https://cloud.storage/elysia.png", new SessionSceneState("Living Room", "Window", "Black Dress", SceneRevision: 3), new TransientVisualState());
+
+        using (var seedScope = scopeFactory.CreateScope())
+        {
+            var ctx = seedScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var session = new ChatSession(charId, Guid.NewGuid(), "Out-of-order Session") { Id = sessionId };
+            await ctx.ChatSessions.AddAsync(session);
+
+            // Add outbox in out-of-order sequence: Revision 3 first, then 1, then 2
+            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap3.TurnId, charId, Guid.NewGuid(), snap3))));
+            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap1.TurnId, charId, Guid.NewGuid(), snap1))));
+            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, charId, Guid.NewGuid(), snap2))));
+            await ctx.SaveChangesAsync();
+        }
+
+        // 2. Process all 3 outbox messages
+        var processor = new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance);
+        var processed = await processor.ProcessPendingOutboxMessagesAsync();
+        Assert.Equal(3, processed);
+
+        // 3. Verify SceneImages table contains distinct artifacts for all 3 revisions
+        using (var verifyScope = scopeFactory.CreateScope())
+        {
+            var ctx = verifyScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var artifacts = await ctx.SceneImages.Where(img => img.SessionId == sessionId).OrderBy(img => img.SceneRevision).ToListAsync();
+            Assert.Equal(3, artifacts.Count);
+            Assert.Equal(1, artifacts[0].SceneRevision);
+            Assert.Equal(2, artifacts[1].SceneRevision);
+            Assert.Equal(3, artifacts[2].SceneRevision);
+        }
+
+        // 4. Test Idempotency: Re-processing identical payload does not duplicate or throw
+        using (var retryScope = scopeFactory.CreateScope())
+        {
+            var ctx = retryScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            // Add duplicate message for Revision 2
+            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, charId, Guid.NewGuid(), snap2))));
+            await ctx.SaveChangesAsync();
+        }
+
+        var retryProcessed = await processor.ProcessPendingOutboxMessagesAsync();
+        Assert.Equal(1, retryProcessed);
+
+        using (var finalScope = scopeFactory.CreateScope())
+        {
+            var ctx = finalScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var finalArtifacts = await ctx.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
+            Assert.Equal(3, finalArtifacts.Count); // Count remains strictly 3!
+        }
     }
 
     private sealed class SequentialImageService : IImageGenerationService

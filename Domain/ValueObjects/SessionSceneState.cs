@@ -5,6 +5,7 @@ namespace Domain.ValueObjects;
 /// Visual Continuity Invariant: "Nothing changes unless explicitly changed."
 /// NewState = OldState ⊕ Delta
 /// Frame-level actions (Pose, Action, Expression) belong exclusively to TransientVisualState.
+/// Rendered visual artifacts belong exclusively to the SceneImage entity.
 /// </summary>
 public sealed record SessionSceneState(
     string? CurrentLocation = null,
@@ -14,7 +15,6 @@ public sealed record SessionSceneState(
     string? HeldItems = null,
     string? Atmosphere = null,
     int SceneRevision = 0,
-    string? LastSceneImageUrl = null,
     DateTime? LastUpdatedAt = null
 )
 {
@@ -26,8 +26,7 @@ public sealed record SessionSceneState(
     /// </summary>
     public SessionSceneState ApplyDelta(
         SceneStateDelta delta,
-        int? explicitRevision = null,
-        string? newSceneImageUrl = null)
+        int? explicitRevision = null)
     {
         if (delta == null) return this;
 
@@ -57,7 +56,6 @@ public sealed record SessionSceneState(
             HeldItems: resolvedHeldItems,
             Atmosphere: !string.IsNullOrWhiteSpace(delta.AtmosphereChange) ? delta.AtmosphereChange.Trim() : this.Atmosphere,
             SceneRevision: explicitRevision ?? (this.SceneRevision + 1),
-            LastSceneImageUrl: newSceneImageUrl ?? this.LastSceneImageUrl,
             LastUpdatedAt: DateTime.UtcNow
         );
     }

@@ -104,25 +104,37 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         var scenePayload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg.PayloadJson);
                         if (scenePayload?.Snapshot != null)
                         {
-                            // Invariant: Prompt is deterministically compiled from the frozen VisualSnapshot
-                            var compiledPrompt = visualCompiler.CompileScenePrompt(scenePayload.Snapshot);
-                            var imageReq = new ImageGenerationRequest(
-                                Prompt: compiledPrompt,
-                                ReferenceImageUrl: scenePayload.Snapshot.IdentityReferenceUrl,
-                                PreviousSceneImageUrl: scenePayload.Snapshot.PreviousSceneImageUrl
-                            );
-                            var generatedImageUrl = await imageService.GenerateImageAsync(imageReq, ct);
+                            var snapshot = scenePayload.Snapshot;
 
-                            // Feedback Loop Persistence: Persist generated image URL into SessionSceneState.LastSceneImageUrl
-                            if (!string.IsNullOrWhiteSpace(generatedImageUrl))
+                            // 1. Idempotency safeguard: check if SceneImage artifact already exists for (SessionId, SceneRevision)
+                            var existingArtifact = await dbContext.SceneImages
+                                .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision, ct);
+
+                            if (existingArtifact == null)
                             {
-                                var session = await dbContext.ChatSessions.FirstOrDefaultAsync(s => s.Id == scenePayload.Snapshot.SessionId, ct);
-                                if (session != null && session.SceneState != null)
+                                // 2. Deterministic prompt compilation purely from VisualSnapshot
+                                var compiledPrompt = visualCompiler.CompileScenePrompt(snapshot);
+                                var imageReq = new ImageGenerationRequest(
+                                    Prompt: compiledPrompt,
+                                    ReferenceImageUrl: snapshot.IdentityReferenceUrl,
+                                    PreviousSceneImageUrl: snapshot.PreviousSceneImageUrl
+                                );
+                                var generatedImageUrl = await imageService.GenerateImageAsync(imageReq, ct);
+
+                                // 3. Persist immutable SceneImage artifact
+                                if (!string.IsNullOrWhiteSpace(generatedImageUrl))
                                 {
-                                    if (scenePayload.Snapshot.SceneRevision >= session.SceneState.SceneRevision - 1)
-                                    {
-                                        session.UpdateSceneState(session.SceneState with { LastSceneImageUrl = generatedImageUrl });
-                                    }
+                                    var artifact = new SceneImage(
+                                        sessionId: snapshot.SessionId,
+                                        characterId: snapshot.CharacterId,
+                                        turnId: snapshot.TurnId,
+                                        sceneRevision: snapshot.SceneRevision,
+                                        imageUrl: generatedImageUrl,
+                                        prompt: compiledPrompt,
+                                        identityReferenceUrl: snapshot.IdentityReferenceUrl,
+                                        previousSceneImageUrl: snapshot.PreviousSceneImageUrl
+                                    );
+                                    await dbContext.SceneImages.AddAsync(artifact, ct);
                                 }
                             }
                         }

@@ -717,7 +717,6 @@ public sealed class CharacterRuntime : ICharacterRuntime
             HeldItems: null,
             Atmosphere: "Peaceful",
             SceneRevision: 0,
-            LastSceneImageUrl: null,
             LastUpdatedAt: Clock.Now
         );
 
@@ -750,10 +749,15 @@ public sealed class CharacterRuntime : ICharacterRuntime
             defaultExpression: currentMood.ToString()
         );
 
-        // Immediate predecessor continuity: previous image is resolved from Revision N - 1
-        string? previousSceneImageUrl = (session.SceneState != null && oldState.SceneRevision == targetRevision - 1)
-            ? oldState.LastSceneImageUrl
-            : null;
+        // Immediate predecessor continuity: previous image is resolved from SceneImage artifact of Revision N - 1
+        string? previousSceneImageUrl = null;
+        if (targetRevision > 1)
+        {
+            var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
+            var predecessorArtifact = await sceneImageRepo
+                .GetAsync(img => img.SessionId == session.Id && img.SceneRevision == targetRevision - 1, ct);
+            previousSceneImageUrl = predecessorArtifact?.ImageUrl;
+        }
 
         var snapshot = VisualSnapshot.Create(
             turnId: turnId,
