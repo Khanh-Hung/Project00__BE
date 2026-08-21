@@ -115,7 +115,11 @@ public record GenerateSceneImageRequest(
     string? CharacterTitle,
     string? CharacterPersonality,
     string MessageContent,
-    string? UserMessageContent = null
+    string? UserMessageContent = null,
+    string? ReferenceImageUrl = null,
+    Domain.ValueObjects.CharacterVisualIdentity? VisualIdentity = null,
+    string? WorldDescription = null,
+    Domain.ValueObjects.SessionSceneState? SceneState = null
 );
 
 public record RegenerateResponse(

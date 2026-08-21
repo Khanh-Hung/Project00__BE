@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Infrastructure.LLM.Core;
 
@@ -258,10 +259,12 @@ public sealed class GeminiApiClient
                         if (!string.IsNullOrWhiteSpace(rawText))
                         {
                             var cleanJson = CleanJsonString(rawText);
-                            var result = JsonSerializer.Deserialize<T>(cleanJson, new JsonSerializerOptions
+                            var options = new JsonSerializerOptions
                             {
                                 PropertyNameCaseInsensitive = true
-                            });
+                            };
+                            options.Converters.Add(new JsonStringEnumConverter());
+                            var result = JsonSerializer.Deserialize<T>(cleanJson, options);
 
                             if (result != null)
                             {

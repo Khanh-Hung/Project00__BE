@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Application.Features.Characters.Queries.GenerateRandomIdeas;
 
-public record GenerateRandomIdeasQuery(int Count = 4) : IRequest<Result<List<string>>>;
+public record GenerateRandomIdeasQuery(int Count = 3) : IRequest<Result<List<string>>>;
 
 public sealed class GenerateRandomIdeasHandler : IRequestHandler<GenerateRandomIdeasQuery, Result<List<string>>>
 {

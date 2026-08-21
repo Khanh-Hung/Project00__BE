@@ -8,6 +8,8 @@ using Domain.Enums;
 using Infrastructure.LLM.Core;
 using Infrastructure.LLM.Prompts;
 using Microsoft.Extensions.Configuration;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 
 namespace Infrastructure.LLM;
 
@@ -185,37 +187,26 @@ public sealed class LLMService : ILLMService
         int count = 3,
         CancellationToken ct = default)
     {
-        var roles = new[]
+        var independentCharacterArchetypes = new[]
         {
-            "Nữ gia sư tiếng Anh tinh quái", "Nữ giám đốc công ty quyền lực", "Bà chủ tiệm mì ramen khuya",
-            "Nữ ca sĩ thần tượng bí mật hẹn hò", "Tiểu thư sa sút làm hầu gái riêng", "Nữ cung thủ tinh linh hoang dã",
-            "Thợ rèn ma thuật hậu đậu", "Nữ cảnh sát ngầm giả làm bạn gái", "Họa sĩ truyện tranh lập dị",
-            "Nữ kiếm đạo sư coi bạn là đối thủ", "Bác sĩ thú y dịu dàng", "Nữ barista nghiện cà phê",
-            "Cô bạn cùng phòng bất đắc dĩ", "Nữ đạo tặc chuyên trộm đồ của bạn", "Nữ hoàng băng giá bị phong ấn",
-            "Cô bé bán hoa dạo bí ẩn", "Nữ thần hộ mệnh vụng về", "Nàng tiên cá trôi dạt vào bờ",
-            "Nữ điệp viên hai mang cần bạn che chở", "Trưởng câu lạc bộ kịch nói kiêu kỳ", "Nữ y tá thực tập ngây thơ",
-            "Nữ võ sĩ vô địch nhưng nhát gái", "Cô bạn thanh mai trúc mã làm YouTuber ẩm thực", "Nữ pháp sư thời gian bí ẩn"
+            "Nữ kiếm sĩ lang thang mang theo thanh huyết kiếm phong ấn, đơn độc săn lùng quái thú cổ đại.",
+            "Chủ tiệm trà thảo mộc kiêm thầy bói bài Tarot tại phố cổ, luôn thấu suốt tâm can người đối diện.",
+            "Tiểu thư quý tộc mê cơ khí ma pháp, bí mật chế tạo khinh khí cầu vượt biển tại xưởng ngầm.",
+            "Thủ lĩnh lính đánh thuê thiện chiến, bề ngoài lạnh lùng nhưng nội tâm luôn mang gánh nặng chuộc tội.",
+            "Nhà nghiên cứu khảo cổ học dị giới, ngày đêm giải mã tàn tích của nền văn minh đã biến mất.",
+            "Nữ hoàng đế quốc cai trị bằng bàn tay sắt, luôn ẩn giấu nỗi cô đơn trên ngai vàng quyền lực.",
+            "Nghệ sĩ vĩ cầm thiên tài có tính cách lập dị, chỉ diễn tấu dưới những cơn mưa đêm lạnh giá.",
+            "Nữ đặc vụ giải mã công nghệ Cyberpunk, sống ẩn dật giữa khu phố đèn neon rực rỡ.",
+            "Nữ pháp sư thời gian trẻ tuổi vô tình làm vỡ đồng hồ cát định mệnh, đang tìm cách hàn gắn thực tại.",
+            "Nữ đao phủ hoàng gia bí ẩn luôn đeo mặt nạ bạc, khao khát tìm lại ký ức đã bị phong ấn.",
+            "Bác sĩ thú y dịu dàng điều hành phòng khám đêm, chuyên chữa trị cho các linh thú huyền bí.",
+            "Nữ đạo tặc bóng đêm chuyên đánh cắp bảo vật của các quý tộc tham nhũng để giúp đỡ khu ổ chuột."
         };
 
-        var situations = new[]
-        {
-            "bị kẹt trong thang máy cùng bạn sau giờ làm", "nhận làm bạn gái hợp đồng để đối phó phụ huynh",
-            "tình cờ ngồi chung bàn ở quán ăn khuya", "cùng bạn lén lút nuôi một chú mèo hoang",
-            "phải chia đôi căn phòng trọ vì chủ nhà xếp nhầm", "được bạn cứu giúp khi quên ví tiền",
-            "ngày nào cũng mang hộp cơm trưa tự làm sang cho bạn", "thách đấu bạn mỗi chiều ở sân tập",
-            "lấy cớ hỏi bài để ở lại nhà bạn đến tối muộn", "lén nắm tay bạn mỗi khi đi qua chỗ đông người",
-            "bắt bạn làm người nếm thử các món bánh mới", "tìm đến bạn để trút hết những áp lực giấu kín",
-            "vô tình đọc trúng nhật ký bí mật của bạn", "ở nhờ nhà bạn để trốn cuộc hôn nhân sắp đặt",
-            "ngày nào cũng xuất hiện trước cửa nhà rủ bạn đi dạo", "tự nhận là vị hôn thê từ kiếp trước của bạn"
-        };
-
-        var pickedRoles = roles.OrderBy(_ => Random.Shared.Next()).Take(3).ToArray();
-        var pickedSituations = situations.OrderBy(_ => Random.Shared.Next()).Take(3).ToArray();
-
-        var promptSeed = $"Gợi ý kết hợp 3 hình mẫu ngẫu nhiên: 1) {pickedRoles[0]} + {pickedSituations[0]}, 2) {pickedRoles[1]} + {pickedSituations[1]}, 3) {pickedRoles[2]} + {pickedSituations[2]}.";
+        var pickedFallbacks = independentCharacterArchetypes.OrderBy(_ => Random.Shared.Next()).Take(count).ToList();
 
         var systemPrompt = CharacterGenerationPrompts.BuildRandomIdeasSystemPrompt(count);
-        var userPrompt = $"Hãy sáng tạo đúng {count} ý tưởng nhân vật Anime hoàn toàn mới, giàu cảm xúc và tương tác sâu sắc với người chơi. {promptSeed}. Mã ngẫu nhiên #{Random.Shared.Next(1000, 9999)}.";
+        var userPrompt = $"Hãy sáng tạo đúng {count} ý tưởng nhân vật có bản sắc độc lập, cá tính sắc nét và chiều sâu nội tâm. Mã ngẫu nhiên #{Random.Shared.Next(1000, 9999)}.";
 
         var list = await _geminiClient.GenerateJsonAsync<List<string>>(
             systemPrompt: systemPrompt,
@@ -228,12 +219,7 @@ public sealed class LLMService : ILLMService
             return list;
         }
 
-        return new List<string>
-        {
-            $"{pickedRoles[0]} {pickedSituations[0]}.",
-            $"{pickedRoles[1]} {pickedSituations[1]}.",
-            $"{pickedRoles[2]} {pickedSituations[2]}."
-        };
+        return pickedFallbacks;
     }
 
     public async Task<List<string>> GenerateRoleplaySuggestionsAsync(
@@ -267,64 +253,189 @@ public sealed class LLMService : ILLMService
         GenerateAvatarRequest request,
         CancellationToken ct = default)
     {
-        var systemPrompt = CharacterGenerationPrompts.BuildAvatarImagePrompt(
+        var dualSystemPrompt = CharacterGenerationPrompts.BuildDualImagePrompt(
             request.Name,
             request.Title,
             request.Category,
             request.PersonalityPrompt,
-            request.Idea);
+            request.Idea,
+            request.WorldGenre,
+            request.VisualIdentity);
 
-        string cleanPrompt;
+        string cleanAvatarPrompt = "";
+        string cleanFullBodyPrompt = "";
+
         try
         {
-            var promptResult = await _geminiClient.GenerateTextAsync(
-                systemPrompt: systemPrompt,
+            var rawDualResult = await _geminiClient.GenerateTextAsync(
+                systemPrompt: dualSystemPrompt,
                 contents: new[]
                 {
                     new
                     {
                         role = "user",
-                        parts = new[] { new { text = "Generate the anime avatar image prompt tags now." } }
+                        parts = new[] { new { text = "Generate the synchronized AVATAR and FULLBODY prompt tags now." } }
                     }
                 },
                 temperature: 0.7,
-                maxOutputTokens: 120,
+                maxOutputTokens: 250,
                 ct: ct);
 
-            cleanPrompt = (promptResult ?? "1girl, beautiful anime character portrait, masterpiece, best quality, Makoto Shinkai style, vibrant lighting, highly detailed face, 8k")
-                .Replace("\n", ", ")
-                .Trim();
+            if (!string.IsNullOrWhiteSpace(rawDualResult))
+            {
+                var lines = rawDualResult.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var line in lines)
+                {
+                    var trimmed = line.Trim();
+                    if (trimmed.StartsWith("AVATAR:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanAvatarPrompt = trimmed["AVATAR:".Length..].Trim();
+                    }
+                    else if (trimmed.StartsWith("FULLBODY:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanFullBodyPrompt = trimmed["FULLBODY:".Length..].Trim();
+                    }
+                }
+            }
         }
         catch
         {
-            cleanPrompt = $"masterpiece, best quality, 2d anime illustration portrait of {request.Name ?? "anime character"}, {request.Title ?? "fantasy hero"}, beautiful expressive eyes, highly detailed face, vibrant colors, cinematic lighting, 8k, pixiv trending";
+            // fallback if Gemini prompt tags generation fails
         }
 
-        var imageUrl = await _imageService.GenerateImageAsync(cleanPrompt, 512, 512, ct);
-        return new GenerateAvatarResponse(imageUrl, cleanPrompt);
+        if (string.IsNullOrWhiteSpace(cleanAvatarPrompt))
+        {
+            cleanAvatarPrompt = $"masterpiece, best quality, 2d anime illustration close-up portrait of {request.Name ?? "anime character"}, {request.Title ?? "fantasy hero"}, beautiful expressive eyes, highly detailed face, vibrant colors, cinematic lighting, 8k, pixiv trending";
+        }
+
+        if (string.IsNullOrWhiteSpace(cleanFullBodyPrompt))
+        {
+            cleanFullBodyPrompt = cleanAvatarPrompt
+                .Replace("close-up portrait", "waist-up character portrait")
+                .Replace("close up", "waist-up character portrait")
+                + ", waist-up character portrait, elegant upper body posture, luxurious outfit details, beautiful detailed face, sharp focus, masterpiece, best quality, 8k";
+        }
+
+        if (!cleanAvatarPrompt.Contains("close-up", StringComparison.OrdinalIgnoreCase) && !cleanAvatarPrompt.Contains("face focus", StringComparison.OrdinalIgnoreCase))
+        {
+            cleanAvatarPrompt = "masterpiece, best quality, 1girl, solo, close-up face portrait, face focus, looking at viewer, " + cleanAvatarPrompt;
+        }
+
+        var avatarUrl = await _imageService.GenerateImageAsync(cleanAvatarPrompt, 1024, 1024, ct);
+        var fullBodyUrl = await _imageService.GenerateImageAsync(cleanFullBodyPrompt, 1024, 1024, ct);
+
+        return new GenerateAvatarResponse(avatarUrl, cleanAvatarPrompt, avatarUrl, fullBodyUrl, cleanFullBodyPrompt);
+    }
+
+    private static string CropFaceAvatarFromMaster(string masterImageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(masterImageUrl) || !masterImageUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return masterImageUrl;
+        }
+
+        try
+        {
+            var commaIdx = masterImageUrl.IndexOf(',');
+            if (commaIdx == -1) return masterImageUrl;
+
+            var base64Data = masterImageUrl[(commaIdx + 1)..];
+            var imageBytes = Convert.FromBase64String(base64Data);
+
+            using var image = Image.Load(imageBytes);
+
+            // Calculate upper-center face crop box (52% of canvas, centered horizontally, 3% from top to include crown/hair)
+            int cropSize = (int)(Math.Min(image.Width, image.Height) * 0.52);
+            int cropX = (image.Width - cropSize) / 2;
+            int cropY = (int)(image.Height * 0.03);
+            if (cropY + cropSize > image.Height) cropY = 0;
+
+            image.Mutate(ctx => ctx.Crop(new Rectangle(cropX, cropY, cropSize, cropSize)));
+
+            using var ms = new MemoryStream();
+            image.SaveAsJpeg(ms);
+            var croppedBytes = ms.ToArray();
+            return $"data:image/jpeg;base64,{Convert.ToBase64String(croppedBytes)}";
+        }
+        catch
+        {
+            return masterImageUrl;
+        }
     }
 
     public async Task<GenerateAvatarResponse> GenerateSceneImageAsync(
         GenerateSceneImageRequest request,
         CancellationToken ct = default)
     {
+        var visualDna = "";
+        if (request.VisualIdentity != null)
+        {
+            var v = request.VisualIdentity;
+            visualDna = $"""
+                Permanent Anatomical DNA (CRITICAL - MUST STRICTLY PRESERVE):
+                - Hair: {v.Hair ?? "long blonde wavy hair, floral gold hair ornaments"}
+                - Eyes: {v.Eyes ?? "emerald green eyes"}
+                - Face: {v.Face ?? "gentle beautiful anime face"}
+                - Body Type/Proportions: {v.Body ?? "1m65, slender, graceful figure"}
+                """;
+        }
+        else
+        {
+            visualDna = """
+                Permanent Anatomical DNA (CRITICAL - MUST STRICTLY PRESERVE):
+                - Hair: long blonde hair
+                - Eyes: emerald green eyes
+                - Face: gentle beautiful anime face
+                """;
+        }
+
+        var sceneStateInfo = "";
+        if (request.SceneState != null)
+        {
+            var s = request.SceneState;
+            sceneStateInfo = $"""
+                DYNAMIC REAL-TIME PHYSICAL & SPATIAL STATE:
+                - Current Location: {s.CurrentLocation ?? "Grand Temple Sanctuary"}
+                - Current Active Outfit: {s.CurrentOutfit ?? "Holy silk dress"}
+                - Time of Day & Lighting: {s.CurrentTimeOfDay ?? "Sunlit morning"}
+                - Current Physical Pose: {s.CurrentPose ?? "Graceful posture"}
+                - Held Items: {s.HeldItems ?? "None"}
+                - Atmosphere: {s.Atmosphere ?? "Serene"}
+                """;
+        }
+        else
+        {
+            sceneStateInfo = $"""
+                DYNAMIC REAL-TIME PHYSICAL & SPATIAL STATE:
+                - Current Location: {request.WorldDescription ?? "Grand Holy Sun Temple Sanctuary"}
+                - Current Active Outfit: {request.VisualIdentity?.ClothingStyle ?? "White and gold holy silk dress"}
+                - Time of Day & Lighting: Sunlit morning
+                """;
+        }
+
         var scenePromptBuilder = $"""
-            You are a World-Class Visual Novel & Cinematic Key Moment Illustrator.
+            You are a World-Class Visual Novel & Anime Scene Prompt Engineer for Animagine-XL.
             
             Character:
             - Name: {request.CharacterName ?? "Character"}
-            - Title: {request.CharacterTitle ?? "Role"}
-            - Personality / Lore: {request.CharacterPersonality ?? "Fascinating character"}
+            - Title/Role: {request.CharacterTitle ?? "Role"}
+            - Lore/Personality: {request.CharacterPersonality ?? "Fascinating character"}
             
-            Current Roleplay Dialogue & Interaction Moment:
+            {visualDna}
+            
+            {sceneStateInfo}
+            
+            Current Roleplay Dialogue Moment:
             - Player action/dialogue: "{request.UserMessageContent ?? "Interacting together"}"
             - Character action/dialogue: "{request.MessageContent}"
             
             TASK:
-            Translate this exact interaction scene into a focused, highly emotional English image prompt (35 - 50 comma-separated tags):
-            1. Depict the specific physical interaction (e.g. leaning in, gripping player's sleeve, intense eye contact, blush, hugging, sitting together, emotional expression).
-            2. Match character's visual traits (hair, eyes, clothing).
-            3. Use dynamic visual novel / cinematic perspective (close-up, over-the-shoulder, point of view from player, dramatic soft lighting, masterpiece, best quality, depth of field, 8k).
+            Generate a rich, cohesive English Anime scene prompt (35 - 50 comma-separated tags):
+            1. CHARACTER ANCHORS: 1girl, solo, {request.CharacterName ?? "anime character"}, exact hair and eye traits from DNA.
+            2. ACTIVE OUTFIT: Render the EXACT current active outfit described above (e.g. if wearing nightgown/swimsuit/holy dress, strictly depict that specific clothing).
+            3. POSE & FRAMING: Cowboy shot or full body shot, matching the dialogue action and current physical pose.
+            4. CURRENT LOCATION & LIGHTING: Render the exact current location, background scenery, and lighting.
+            5. QUALITY: masterpiece, best quality, highly detailed background, cinematic soft lighting, 8k.
             
             Output ONLY the raw comma-separated English tags.
             """;
@@ -332,38 +443,39 @@ public sealed class LLMService : ILLMService
         string cleanPrompt;
         try
         {
+            var contents = new List<object>
+            {
+                new
+                {
+                    role = "user",
+                    parts = new[] { new { text = scenePromptBuilder } }
+                }
+            };
+
             var promptResult = await _geminiClient.GenerateTextAsync(
-                "You are an expert visual novel and cinematic scene prompt generator. Output only comma-separated English tags.",
-                new[] { scenePromptBuilder },
+                "You are an expert anime visual novel scene prompt engineer. Output only comma-separated English tags.",
+                contents,
                 temperature: 0.7,
                 maxOutputTokens: 250,
                 ct: ct);
 
-            cleanPrompt = (promptResult ?? "1girl, close up, emotional eye contact, gripping sleeve, dramatic lighting, masterpiece, best quality, 8k")
+            cleanPrompt = (promptResult ?? "1girl, solo, full body, cowboy shot, long blonde hair, emerald green eyes, gold cross earrings, white and gold holy silk dress, white veil, sitting in grand sunlit temple sanctuary, marble pillars, golden sunbeams, holding porcelain tea cup, gentle smile, masterpiece, best quality, 8k")
                 .Replace("\n", ", ")
                 .Trim();
         }
         catch
         {
-            cleanPrompt = $"masterpiece, best quality, close up interaction portrait of {request.CharacterName ?? "anime character"}, emotional eye contact, blushing, highly detailed, dramatic lighting, 8k";
+            cleanPrompt = $"1girl, solo, full body, cowboy shot, {request.CharacterName ?? "Elysia"}, long blonde hair, emerald green eyes, gold cross earrings, white and gold holy silk dress, white veil, grand sunlit temple sanctuary, marble pillars, golden sunbeams, masterpiece, best quality, 8k";
         }
 
-        // Thử tạo ảnh bằng Imagen 3 chính chủ trước nếu khả dụng
-        try
-        {
-            var finalPrompt = $"{cleanPrompt}, masterpiece, best quality, scenic, detailed background, cinematic lighting, ultra-detailed, 8k";
-            var imagenDataUrl = await _geminiClient.GenerateImageWithImagenAsync(finalPrompt, "16:9", ct);
-            if (!string.IsNullOrEmpty(imagenDataUrl))
-            {
-                return new GenerateAvatarResponse(imagenDataUrl, cleanPrompt);
-            }
-        }
-        catch
-        {
-            // Fallback to configured Image Service provider
-        }
-
-        var imageUrl = await _imageService.GenerateImageAsync(cleanPrompt, 896, 512, ct);
+        var imageReq = new ImageGenerationRequest(
+            Prompt: $"{cleanPrompt}, full body, cowboy shot, scenic background, cinematic lighting, ultra-detailed environment, masterpiece, best quality, 8k",
+            Width: 1024,
+            Height: 768,
+            AspectRatio: "16:9",
+            ReferenceImageUrl: request.ReferenceImageUrl
+        );
+        var imageUrl = await _imageService.GenerateImageAsync(imageReq, ct);
         return new GenerateAvatarResponse(imageUrl, cleanPrompt);
     }
 

@@ -99,6 +99,8 @@ public record GeneratedCharacterDto(
     int DefaultAffectionScore = 0,
     string? DefaultMood = null,
     List<RelationshipMilestoneDto>? CustomMilestones = null,
+    CharacterVisualIdentity? VisualIdentity = null,
+    CharacterVoiceProfile? VoiceProfile = null,
     CharacterBlueprint? Blueprint = null,
     string? WorldName = null,
     string? WorldDescription = null,
@@ -112,10 +114,15 @@ public record GenerateAvatarRequest(
     string? Title = null,
     string? Category = null,
     string? PersonalityPrompt = null,
-    string? Idea = null
+    string? Idea = null,
+    WorldGenre? WorldGenre = null,
+    CharacterVisualIdentity? VisualIdentity = null
 );
 
 public record GenerateAvatarResponse(
     string ImageUrl,
-    string RevisedPrompt
+    string RevisedPrompt,
+    string? AvatarUrl = null,
+    string? FullBodyUrl = null,
+    string? FullBodyPrompt = null
 );

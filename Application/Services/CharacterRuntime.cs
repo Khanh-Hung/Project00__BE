@@ -25,6 +25,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
     private readonly IVoiceGenerationService _voiceService;
     private readonly IVisualPromptCompiler _visualCompiler;
     private readonly IImageGenerationService _imageService;
+    private readonly ISceneStateTrackerService? _sceneStateTracker;
     private readonly ILogger<CharacterRuntime> _logger;
 
     // Concurrent in-flight gates to eliminate duplicate LLM execution on concurrent identical TurnIds
@@ -39,7 +40,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
         IVoiceGenerationService voiceService,
         IVisualPromptCompiler visualCompiler,
         IImageGenerationService imageService,
-        ILogger<CharacterRuntime> logger)
+        ILogger<CharacterRuntime> logger,
+        ISceneStateTrackerService? sceneStateTracker = null)
     {
         _unitOfWork = unitOfWork;
         _contextEngine = contextEngine;
@@ -50,6 +52,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
         _visualCompiler = visualCompiler;
         _imageService = imageService;
         _logger = logger;
+        _sceneStateTracker = sceneStateTracker;
     }
 
     public async Task<CharacterTurnResult> ProcessTurnAsync(CharacterTurnRequest request, CancellationToken ct = default)
@@ -134,6 +137,24 @@ public sealed class CharacterRuntime : ICharacterRuntime
         // 4. Critical Path: Prepare Session, Relationship & Persistent Turn Record
         var userMsg = session.AddUserMessage(request.UserMessage);
         var assistantMessage = session.AddAssistantMessage(aiTurn.Reply);
+
+        if (_sceneStateTracker != null)
+        {
+            try
+            {
+                var updatedSceneState = await _sceneStateTracker.TrackAndExtractStateAsync(
+                    character,
+                    session.SceneState,
+                    request.UserMessage,
+                    aiTurn.Reply,
+                    ct);
+                session.UpdateSceneState(updatedSceneState);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to track dynamic scene state during character turn.");
+            }
+        }
 
         var messageRepo = _unitOfWork.GetRepository<ChatMessage>();
         await messageRepo.AddAsync(userMsg, ct);

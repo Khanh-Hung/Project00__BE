@@ -38,7 +38,7 @@ public sealed class CharactersController : ControllerBase
     /// Generates random creative character ideas using AI
     /// </summary>
     [HttpGet("generate-ideas")]
-    public async Task<IActionResult> GenerateRandomIdeas([FromQuery] int count = 4, CancellationToken ct = default)
+    public async Task<IActionResult> GenerateRandomIdeas([FromQuery] int count = 3, CancellationToken ct = default)
     {
         var result = await _sender.Send(new GenerateRandomIdeasQuery(count), ct);
         return result.ToActionResult();
