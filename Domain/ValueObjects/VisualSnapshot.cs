@@ -16,13 +16,13 @@ public sealed record VisualSnapshot(
     GenerationProfile? GenerationProfile = null,
     string? IdentityReferenceUrl = null,
     string? PreviousSceneImageUrl = null,
+    int? PredecessorSceneRevision = null,
     string? NegativeConstraints = null,
     DateTime? CreatedAt = null
 )
 {
     /// <summary>
-    /// Factory helper to build a snapshot with strict canonical reference resolution order:
-    /// CanonicalReferenceUrl -> FullBodyUrl -> AvatarUrl
+    /// Factory helper to build an immutable snapshot with clean constraints and predecessor revision.
     /// </summary>
     public static VisualSnapshot Create(
         Guid turnId,
@@ -34,6 +34,7 @@ public sealed record VisualSnapshot(
         SessionSceneState sceneState,
         TransientVisualState? transientState,
         string? previousSceneImageUrl = null,
+        int? predecessorSceneRevision = null,
         GenerationProfile? generationProfile = null,
         string? negativeConstraints = null)
     {
@@ -44,7 +45,7 @@ public sealed record VisualSnapshot(
         var profile = generationProfile ?? GenerationProfile.CreateDefault();
 
         var defaultNegatives = negativeConstraints 
-            ?? "black clothing, red clothing, black-red outfit, dark clothing, crimson outfit, black dress, red dress, dark bodysuit, black bodysuit, no horns, missing horns, human ears only, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
+            ?? "deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
 
         return new VisualSnapshot(
             TurnId: turnId,
@@ -57,6 +58,7 @@ public sealed record VisualSnapshot(
             GenerationProfile: profile,
             IdentityReferenceUrl: resolvedIdentityRef,
             PreviousSceneImageUrl: previousSceneImageUrl,
+            PredecessorSceneRevision: predecessorSceneRevision ?? (sceneRevision > 1 ? sceneRevision - 1 : null),
             NegativeConstraints: defaultNegatives,
             CreatedAt: DateTime.UtcNow
         );
