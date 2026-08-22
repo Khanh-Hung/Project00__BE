@@ -13,8 +13,10 @@ public sealed record VisualSnapshot(
     CharacterVisualIdentity? VisualIdentity,
     SessionSceneState SceneState,
     TransientVisualState? TransientState,
+    GenerationProfile? GenerationProfile = null,
     string? IdentityReferenceUrl = null,
     string? PreviousSceneImageUrl = null,
+    string? NegativeConstraints = null,
     DateTime? CreatedAt = null
 )
 {
@@ -31,11 +33,18 @@ public sealed record VisualSnapshot(
         string? characterAvatarUrl,
         SessionSceneState sceneState,
         TransientVisualState? transientState,
-        string? previousSceneImageUrl = null)
+        string? previousSceneImageUrl = null,
+        GenerationProfile? generationProfile = null,
+        string? negativeConstraints = null)
     {
         var resolvedIdentityRef = visualIdentity?.CanonicalReferenceUrl
             ?? visualIdentity?.FullBodyUrl
             ?? (!string.IsNullOrWhiteSpace(characterAvatarUrl) ? characterAvatarUrl : null);
+
+        var profile = generationProfile ?? GenerationProfile.CreateDefault();
+
+        var defaultNegatives = negativeConstraints 
+            ?? "black clothing, red clothing, black-red outfit, dark clothing, crimson outfit, black dress, red dress, dark bodysuit, black bodysuit, no horns, missing horns, human ears only, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
 
         return new VisualSnapshot(
             TurnId: turnId,
@@ -45,8 +54,10 @@ public sealed record VisualSnapshot(
             VisualIdentity: visualIdentity,
             SceneState: sceneState,
             TransientState: transientState,
+            GenerationProfile: profile,
             IdentityReferenceUrl: resolvedIdentityRef,
             PreviousSceneImageUrl: previousSceneImageUrl,
+            NegativeConstraints: defaultNegatives,
             CreatedAt: DateTime.UtcNow
         );
     }
