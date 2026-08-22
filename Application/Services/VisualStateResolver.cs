@@ -84,6 +84,8 @@ public sealed class VisualStateResolver : IVisualStateResolver
         }
 
         var generationProfile = GenerationProfile.CreateDefault(
+            ipAdapterWeight: 0.45f,
+            ipAdapterEndAt: 0.70f,
             workflow: "VisualIdentity",
             workflowVersion: 1
         );

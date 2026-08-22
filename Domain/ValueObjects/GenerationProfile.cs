@@ -13,6 +13,8 @@ public sealed record GenerationProfile(
     float Cfg = 7.0f,
     string Sampler = "euler_ancestral",
     string Scheduler = "karras",
+    float IPAdapterWeight = 0.45f,
+    float IPAdapterEndAt = 0.70f,
     string Workflow = "VisualIdentity",
     int WorkflowVersion = 1,
     string? ParametersJson = null
@@ -27,6 +29,8 @@ public sealed record GenerationProfile(
         float? cfg = null,
         string? sampler = null,
         string? scheduler = null,
+        float? ipAdapterWeight = null,
+        float? ipAdapterEndAt = null,
         string? workflow = null,
         int? workflowVersion = null,
         string? parametersJson = null)
@@ -40,6 +44,8 @@ public sealed record GenerationProfile(
             Cfg: cfg ?? 7.0f,
             Sampler: sampler ?? "euler_ancestral",
             Scheduler: scheduler ?? "karras",
+            IPAdapterWeight: ipAdapterWeight ?? 0.45f,
+            IPAdapterEndAt: ipAdapterEndAt ?? 0.70f,
             Workflow: workflow ?? "VisualIdentity",
             WorkflowVersion: workflowVersion ?? 1,
             ParametersJson: parametersJson

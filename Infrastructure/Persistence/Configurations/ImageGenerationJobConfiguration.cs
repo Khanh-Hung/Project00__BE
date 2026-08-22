@@ -23,7 +23,7 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.Property(x => x.WorkflowVersion).IsRequired();
         builder.Property(x => x.FailureReason).HasMaxLength(2048);
 
-        builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision });
+        builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision }).IsUnique();
         builder.HasIndex(x => x.Status);
     }
 }

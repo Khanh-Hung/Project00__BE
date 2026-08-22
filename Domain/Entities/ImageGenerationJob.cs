@@ -56,6 +56,9 @@ public sealed class ImageGenerationJob : BaseEntity
         Status = ImageJobStatus.Processing;
         ProviderJobId = providerJobId ?? ProviderJobId;
         StartedAt = startedAt ?? Clock.Now;
+        FailureReason = null;
+        IsRetryable = false;
+        CompletedAt = null;
         AttemptCount++;
         Touch();
     }
@@ -78,6 +81,20 @@ public sealed class ImageGenerationJob : BaseEntity
         FailureReason = reason;
         IsRetryable = isRetryable;
         CompletedAt = failedAt ?? Clock.Now;
+        Touch();
+    }
+
+    public void MarkCancelled(DateTime? cancelledAt = null)
+    {
+        Status = ImageJobStatus.Cancelled;
+        CompletedAt = cancelledAt ?? Clock.Now;
+        Touch();
+    }
+
+    public void ResetToPending()
+    {
+        Status = ImageJobStatus.Pending;
+        StartedAt = null;
         Touch();
     }
 }
