@@ -277,104 +277,22 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         var scenePayload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg.PayloadJson);
                         if (scenePayload?.Snapshot != null)
                         {
-                            var snapshot = scenePayload.Snapshot;
-                            _logger.LogInformation("[SceneGenerationStarted] OutboxId={OutboxId}, SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}, RetryCount={RetryCount}, WorkerId={WorkerId}",
-                                msg.Id, snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, msg.RetryCount, _workerId);
+                            var jobHandler = scope.ServiceProvider.GetService<IImageGenerationJobHandler>()
+                                ?? new ImageGenerationJobHandler(dbContext, visualCompiler, imageService, Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageGenerationJobHandler>.Instance);
 
-                            // A. Application Idempotency: Check if SceneImage artifact already exists
-                            var existingArtifact = await dbContext.SceneImages
-                                .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision, ct);
-
-                            if (existingArtifact != null)
+                            var result = await jobHandler.HandleSceneImageGenerationAsync(scenePayload, msg.Id, _workerId, now, ct);
+                            if (result.Status == JobExecutionStatus.Deferred)
                             {
-                                _logger.LogInformation("[SceneGenerationSkipped] Artifact already exists for SessionId={SessionId}, Revision={Revision}. OutboxId={OutboxId}",
-                                    snapshot.SessionId, snapshot.SceneRevision, msg.Id);
+                                msg.MarkDeferred(now.AddSeconds(2));
+                            }
+                            else
+                            {
                                 msg.MarkCompleted(Clock.Now);
-                                break;
                             }
-
-                            // B. Per-Session Predecessor Gating: Ensure Revision N - 1 artifact is completed
-                            if (snapshot.SceneRevision > 1)
-                            {
-                                var predecessorArtifact = await dbContext.SceneImages
-                                    .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision - 1, ct);
-
-                                if (predecessorArtifact == null)
-                                {
-                                    // Check outbox status of Revision N - 1
-                                    var predecessorMsg = await dbContext.OutboxMessages
-                                        .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration && m.PayloadJson.Contains(snapshot.SessionId.ToString()))
-                                        .ToListAsync(ct);
-
-                                    var predMatchingMsg = predecessorMsg.FirstOrDefault(m =>
-                                    {
-                                        try
-                                        {
-                                            var payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson);
-                                            return payload?.Snapshot?.SceneRevision == snapshot.SceneRevision - 1;
-                                        }
-                                        catch { return false; }
-                                    });
-
-                                    if (predMatchingMsg != null && predMatchingMsg.Status == OutboxStatus.Failed)
-                                    {
-                                        // Predecessor failed permanently -> Block Revision N with clear reason (No infinite deadlock)
-                                        _logger.LogWarning("[SceneGenerationFailed] Blocking Revision {Revision} because predecessor Revision {PredRev} failed permanently. OutboxId={OutboxId}",
-                                            snapshot.SceneRevision, snapshot.SceneRevision - 1, msg.Id);
-                                        msg.MarkFailed($"Predecessor Revision {snapshot.SceneRevision - 1} failed permanently.", Clock.Now, isTransient: false);
-                                        break;
-                                    }
-                                    else
-                                    {
-                                        // Predecessor is still Pending/Processing -> Defer Revision N without incrementing retry count
-                                        _logger.LogInformation("[SceneGenerationDeferred] Deferring Revision {Revision} because predecessor Revision {PredRev} is not yet completed. OutboxId={OutboxId}",
-                                            snapshot.SceneRevision, snapshot.SceneRevision - 1, msg.Id);
-                                        msg.MarkDeferred(now.AddSeconds(2));
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // C. Deterministic prompt compilation purely from VisualSnapshot
-                            var compiledPrompt = visualCompiler.CompileScenePrompt(snapshot);
-                            var imageReq = new ImageGenerationRequest(
-                                Prompt: compiledPrompt,
-                                ReferenceImageUrl: snapshot.IdentityReferenceUrl,
-                                PreviousSceneImageUrl: snapshot.PreviousSceneImageUrl
-                            );
-
-                            var generatedImageUrl = await imageService.GenerateImageAsync(imageReq, ct);
-
-                            // D. Persist immutable SceneImage artifact
-                            if (!string.IsNullOrWhiteSpace(generatedImageUrl))
-                            {
-                                try
-                                {
-                                    var artifact = new SceneImage(
-                                        sessionId: snapshot.SessionId,
-                                        characterId: snapshot.CharacterId,
-                                        turnId: snapshot.TurnId,
-                                        sceneRevision: snapshot.SceneRevision,
-                                        imageUrl: generatedImageUrl,
-                                        prompt: compiledPrompt,
-                                        identityReferenceUrl: snapshot.IdentityReferenceUrl,
-                                        previousSceneImageUrl: snapshot.PreviousSceneImageUrl
-                                    );
-                                    await dbContext.SceneImages.AddAsync(artifact, ct);
-                                    await dbContext.SaveChangesAsync(ct);
-                                }
-                                catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("IX_SceneImages_SessionId_SceneRevision") == true || ex.Message.Contains("IX_SceneImages_SessionId_SceneRevision"))
-                                {
-                                    // DB Unique Constraint safety net
-                                    _logger.LogInformation("[SceneGenerationSkipped] Concurrent race caught by DB Unique Constraint for SessionId={SessionId}, Revision={Revision}",
-                                        snapshot.SessionId, snapshot.SceneRevision);
-                                }
-                            }
-
+                        }
+                        else
+                        {
                             msg.MarkCompleted(Clock.Now);
-                            stopwatch.Stop();
-                            _logger.LogInformation("[SceneGenerationCompleted] OutboxId={OutboxId}, SessionId={SessionId}, Revision={Revision}, LatencyMs={LatencyMs}",
-                                msg.Id, snapshot.SessionId, snapshot.SceneRevision, stopwatch.ElapsedMilliseconds);
                         }
                         break;
 

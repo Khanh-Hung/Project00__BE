@@ -309,8 +309,8 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            NullLogger<CharacterRuntime>.Instance,
-            sceneTracker
+            new VisualStateResolver(unitOfWork, sceneTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // ==========================================
@@ -615,8 +615,8 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            NullLogger<CharacterRuntime>.Instance,
-            sceneTracker
+            new VisualStateResolver(unitOfWork, sceneTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 1: LLM attempts +99 delta -> Runtime strictly clamps to +5
@@ -672,8 +672,8 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            NullLogger<CharacterRuntime>.Instance,
-            sceneTracker
+            new VisualStateResolver(unitOfWork, sceneTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 1: Propose Event FIRST_PROMISE

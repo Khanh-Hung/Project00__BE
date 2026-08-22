@@ -71,8 +71,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            sequentialTracker
+            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 1: Initial state -> Living Room, Sofa, White Dress, Revision = 1 (0 + 1)
@@ -306,8 +306,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            sequentialTracker
+            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 2 executes: Target Revision is 2 (1 + 1). Previous scene image from Revision 1 MUST be resolved!
@@ -369,8 +369,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            tracker1
+            new VisualStateResolver(new UnitOfWork(ctx1), tracker1, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         await runtime1.ProcessTurnAsync(new CharacterTurnRequest(userId, charId, session1.Id, "Hello", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true)));
@@ -395,8 +395,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            tracker2
+            new VisualStateResolver(new UnitOfWork(ctx2), tracker2, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         await foreach (var _ in runtime2.ProcessTurnStreamAsync(new CharacterTurnRequest(userId, charId, session2.Id, "Hello", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true))))
@@ -476,8 +476,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                NullLogger<CharacterRuntime>.Instance,
-                tracker
+                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                NullLogger<CharacterRuntime>.Instance
             );
 
             tracker.NextDelta = new SceneStateDelta(LocationChange: "Living Room", PositionChange: "Sofa", OutfitChange: "White Dress");
@@ -505,8 +505,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                NullLogger<CharacterRuntime>.Instance,
-                tracker
+                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                NullLogger<CharacterRuntime>.Instance
             );
 
             tracker.NextDelta = new SceneStateDelta(PositionChange: "Beside Window", ActionChange: "Walking toward window");
@@ -536,8 +536,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                NullLogger<CharacterRuntime>.Instance,
-                tracker
+                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                NullLogger<CharacterRuntime>.Instance
             );
 
             tracker.NextDelta = new SceneStateDelta(OutfitChange: "Black Dress", PoseChange: "Looking outside");
@@ -757,6 +757,132 @@ public class TurnCommitVisualSnapshotOutboxTests
             Task.FromResult(new VoiceGenerationResult("https://audio.storage/voice.mp3", "audio/mpeg", 2));
     }
 
+    [Fact]
+    public async Task Zero_State_Drift_Worker_Processes_Turn_Snapshot_Without_Being_Corrupted_By_Current_Character_State()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        await using var context = new ProjectDbContext(options);
+        var character = new Character(
+            name: "Lyra",
+            title: "Dragon Sovereign",
+            avatarUrl: "https://cloud.storage/lyra_avatar.png",
+            personalityPrompt: "Proud dragon girl",
+            greeting: "Greetings mortal.",
+            category: "Anime",
+            visualIdentity: new CharacterVisualIdentity(
+                Gender: "Female",
+                Face: "Sharp anime face",
+                Hair: "(silver long straight hair:1.2)",
+                Eyes: "(bright crimson red eyes:1.2)",
+                Skin: "Pale skin",
+                Body: "Slender",
+                ClothingStyle: "Pastel Pink Sundress",
+                VisualTraits: "(small black dragon horns on head:1.3)",
+                CanonicalReferenceUrl: "https://cloud.storage/Lyra_tight_face.png"
+            )
+        ) { Id = charId };
+        await context.Characters.AddAsync(character);
+
+        var session = new ChatSession(charId, userId, "Zero State Drift Session");
+        await context.ChatSessions.AddAsync(session);
+        await context.SaveChangesAsync();
+
+        var unitOfWork = new UnitOfWork(context);
+        var fakeUserProvider = new FakeUserProvider(userId.ToString());
+        var fakeMemoryService = new FakeMemoryService();
+        var contextEngine = new RoleplayContextEngine(unitOfWork, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
+        var mockTrigger = new MockMemoryExtractionTrigger();
+        var sequentialTracker = new SequentialSceneStateTracker();
+
+        var runtime = new CharacterRuntime(
+            unitOfWork,
+            contextEngine,
+            new ConfigurableLLMService("Ta đây!"),
+            mockTrigger,
+            new VoicePromptCompiler(),
+            new MockVoiceService(),
+            new VisualPromptCompiler(),
+            new MockImageService(),
+            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
+        );
+
+        // Turn 1: Outfit is "Pastel Pink Sundress", Revision = 1
+        sequentialTracker.NextDelta = new SceneStateDelta(
+            LocationChange: "Cherry Blossom Park",
+            OutfitChange: "Pastel Pink Sundress"
+        );
+
+        var turn1Id = Guid.NewGuid();
+        await runtime.ProcessTurnAsync(new CharacterTurnRequest(
+            UserId: userId,
+            CharacterId: charId,
+            SessionId: session.Id,
+            UserMessage: "Chào Lyra!",
+            TurnId: turn1Id,
+            Options: new CharacterTurnOptions(GenerateImage: true)
+        ));
+
+        // State Mutation: Simulate that subsequent conversation turns or admin actions changed Character & Session outfit to "Black Dragon Heavy Armor"
+        character.UpdateDetails(
+            name: character.Name,
+            title: character.Title,
+            avatarUrl: character.AvatarUrl,
+            personalityPrompt: character.PersonalityPrompt,
+            greeting: character.Greeting,
+            category: character.Category,
+            tags: character.Tags,
+            visualIdentity: new CharacterVisualIdentity(
+                Gender: "Female",
+                ClothingStyle: "Black Dragon Heavy Armor"
+            ),
+            updateVisualIdentity: true
+        );
+        session.UpdateSceneState(session.SceneState!.ApplyDelta(new SceneStateDelta(OutfitChange: "Black Dragon Heavy Armor"), explicitRevision: 2));
+        await context.SaveChangesAsync();
+
+        // Worker Execution: Process Turn 1 Outbox Message via ImageGenerationJobHandler
+        var outboxMessage = await context.OutboxMessages
+            .FirstAsync(m => m.EventType == OutboxEventTypes.SceneImageGeneration);
+
+        var scenePayload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(outboxMessage.PayloadJson);
+        Assert.NotNull(scenePayload?.Snapshot);
+
+        var jobHandler = new ImageGenerationJobHandler(
+            context,
+            new VisualPromptCompiler(),
+            new MockImageService(),
+            NullLogger<ImageGenerationJobHandler>.Instance
+        );
+
+        await jobHandler.HandleSceneImageGenerationAsync(scenePayload, outboxMessage.Id, "test-worker-1", DateTime.UtcNow);
+
+        // Verify ImageGenerationJob was persisted with correct status and workflow version
+        var job = await context.ImageGenerationJobs.FirstOrDefaultAsync(j => j.SessionId == session.Id && j.TurnId == turn1Id);
+        Assert.NotNull(job);
+        Assert.Equal(ImageJobStatus.Completed, job.Status);
+        Assert.Equal("VisualIdentity", job.Workflow);
+        Assert.Equal(1, job.WorkflowVersion);
+
+        // Verify SceneImage artifact was persisted
+        var sceneImage = await context.SceneImages.FirstOrDefaultAsync(img => img.SessionId == session.Id && img.TurnId == turn1Id);
+        Assert.NotNull(sceneImage);
+        Assert.Equal(job.Id, sceneImage.GenerationJobId);
+        Assert.Equal("VisualIdentity", sceneImage.Workflow);
+        Assert.Equal(1, sceneImage.WorkflowVersion);
+
+        // ZERO STATE DRIFT INVARIANT: Prompt must contain Turn 1's "Pastel Pink Sundress" and NOT "Black Dragon Heavy Armor"
+        Assert.Contains("wearing Pastel Pink Sundress", sceneImage.Prompt);
+        Assert.DoesNotContain("Black Dragon Heavy Armor", sceneImage.Prompt);
+    }
+
     private sealed class MockImageService : IImageGenerationService
     {
         public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default) =>
@@ -764,5 +890,8 @@ public class TurnCommitVisualSnapshotOutboxTests
 
         public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default) =>
             Task.FromResult("https://image.storage/mock.png");
+
+        public Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new ImageGenerationResult("https://image.storage/mock.png", "Mock", "mock-job-123", 100, request.Seed ?? 42, "{\"mock\": true}"));
     }
 }

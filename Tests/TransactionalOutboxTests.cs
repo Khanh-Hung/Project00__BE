@@ -60,6 +60,7 @@ public class TransactionalOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
+            new VisualStateResolver(unitOfWork, null, NullLogger<VisualStateResolver>.Instance),
             NullLogger<CharacterRuntime>.Instance
         );
 

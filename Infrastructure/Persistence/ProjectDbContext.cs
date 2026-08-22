@@ -30,6 +30,7 @@ public class ProjectDbContext : DbContext
     public DbSet<UserProfile> UserProfiles { get; set; }
     public DbSet<SceneImage> SceneImages { get; set; }
     public DbSet<AudioArtifact> AudioArtifacts { get; set; }
+    public DbSet<ImageGenerationJob> ImageGenerationJobs { get; set; }
 
     private string NormalizeUserId()
     {

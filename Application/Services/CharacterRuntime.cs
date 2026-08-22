@@ -25,7 +25,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
     private readonly IVoiceGenerationService _voiceService;
     private readonly IVisualPromptCompiler _visualCompiler;
     private readonly IImageGenerationService _imageService;
-    private readonly ISceneStateTrackerService? _sceneStateTracker;
+    private readonly IVisualStateResolver _visualStateResolver;
     private readonly ILogger<CharacterRuntime> _logger;
 
     // Concurrent in-flight gates to eliminate duplicate LLM execution on concurrent identical TurnIds
@@ -40,8 +40,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
         IVoiceGenerationService voiceService,
         IVisualPromptCompiler visualCompiler,
         IImageGenerationService imageService,
-        ILogger<CharacterRuntime> logger,
-        ISceneStateTrackerService? sceneStateTracker = null)
+        IVisualStateResolver visualStateResolver,
+        ILogger<CharacterRuntime> logger)
     {
         _unitOfWork = unitOfWork;
         _contextEngine = contextEngine;
@@ -51,8 +51,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
         _voiceService = voiceService;
         _visualCompiler = visualCompiler;
         _imageService = imageService;
+        _visualStateResolver = visualStateResolver;
         _logger = logger;
-        _sceneStateTracker = sceneStateTracker;
     }
 
     public async Task<CharacterTurnResult> ProcessTurnAsync(CharacterTurnRequest request, CancellationToken ct = default)
@@ -657,7 +657,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
         );
     }
 
-    private async Task<(SessionSceneState SceneState, TransientVisualState TransientState, VisualSnapshot Snapshot)> BuildTurnVisualStateAndSnapshotAsync(
+    private Task<(SessionSceneState SceneState, TransientVisualState TransientState, VisualSnapshot Snapshot)> BuildTurnVisualStateAndSnapshotAsync(
         Character character,
         ChatSession session,
         string userMessage,
@@ -666,68 +666,13 @@ public sealed class CharacterRuntime : ICharacterRuntime
         Guid turnId,
         CancellationToken ct)
     {
-        var oldState = session.SceneState ?? new SessionSceneState(
-            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
-            CurrentPosition: "Central Area",
-            CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
-            CurrentTimeOfDay: "Daytime",
-            HeldItems: null,
-            Atmosphere: "Peaceful",
-            SceneRevision: 0,
-            LastUpdatedAt: Clock.Now
-        );
-
-        int targetRevision = (session.SceneState?.SceneRevision ?? 0) + 1;
-        SceneStateDelta delta = new SceneStateDelta();
-
-        if (_sceneStateTracker != null)
-        {
-            try
-            {
-                delta = await _sceneStateTracker.TrackAndExtractDeltaAsync(
-                    character,
-                    session.SceneState,
-                    userMessage,
-                    assistantReply,
-                    ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to track dynamic scene state during turn {TurnId}.", turnId);
-            }
-        }
-
-        var updatedSceneState = oldState.ApplyDelta(delta, explicitRevision: targetRevision);
-        session.UpdateSceneState(updatedSceneState);
-
-        var transientState = TransientVisualState.FromDelta(
-            delta,
-            defaultPose: "Graceful posture",
-            defaultExpression: currentMood.ToString()
-        );
-
-        // Immediate predecessor continuity: previous image is resolved from SceneImage artifact of Revision N - 1
-        string? previousSceneImageUrl = null;
-        if (targetRevision > 1)
-        {
-            var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
-            var predecessorArtifact = await sceneImageRepo
-                .GetAsync(img => img.SessionId == session.Id && img.SceneRevision == targetRevision - 1, ct);
-            previousSceneImageUrl = predecessorArtifact?.ImageUrl;
-        }
-
-        var snapshot = VisualSnapshot.Create(
-            turnId: turnId,
-            sessionId: session.Id,
-            characterId: character.Id,
-            sceneRevision: targetRevision,
-            visualIdentity: character.VisualIdentity,
-            characterAvatarUrl: character.AvatarUrl,
-            sceneState: updatedSceneState,
-            transientState: transientState,
-            previousSceneImageUrl: previousSceneImageUrl
-        );
-
-        return (updatedSceneState, transientState, snapshot);
+        return _visualStateResolver.ResolveTurnVisualStateAsync(
+            character,
+            session,
+            userMessage,
+            assistantReply,
+            currentMood,
+            turnId,
+            ct);
     }
 }
