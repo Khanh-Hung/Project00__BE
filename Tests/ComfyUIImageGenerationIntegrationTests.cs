@@ -1,5 +1,6 @@
 using Application.Interfaces;
 using Infrastructure.ImageGeneration;
+using Infrastructure.ImageGeneration.ComfyUI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -21,6 +22,7 @@ public sealed class ComfyUIImageGenerationIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "ComfyUI")]
     public async Task ComfyUI_Generates_Image_Successfully_When_Server_Is_Available()
     {
         var config = new ConfigurationBuilder()
@@ -41,7 +43,7 @@ public sealed class ComfyUIImageGenerationIntegrationTests
             })
             .Build();
 
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
 
         // Check if local ComfyUI is online before running live generation
         bool isComfyOnline = false;
@@ -57,12 +59,22 @@ public sealed class ComfyUIImageGenerationIntegrationTests
 
         if (!isComfyOnline)
         {
-            // Skip live GPU execution if local daemon is temporarily offline
             return;
         }
 
+        // Create a temporary reference image on disk to test real upload
+        var tempRefPath = Path.Combine(Path.GetTempPath(), "test_canonical_ref.png");
+        if (!File.Exists(tempRefPath))
+        {
+            // Minimal 1x1 PNG byte array
+            var minimalPng = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+            await File.WriteAllBytesAsync(tempRefPath, minimalPng);
+        }
+
         var storageService = new InMemoryStorageService();
-        var service = new ComfyUIImageGenerationService(httpClient, storageService, config, NullLogger<ComfyUIImageGenerationService>.Instance);
+        var inputImageService = new ComfyUIInputImageService(httpClient, config, NullLogger<ComfyUIInputImageService>.Instance);
+        var workflowBuilders = new IComfyUIWorkflowBuilder[] { new VisualIdentityWorkflowV1Builder() };
+        var service = new ComfyUIImageGenerationService(httpClient, storageService, inputImageService, workflowBuilders, config, NullLogger<ComfyUIImageGenerationService>.Instance);
 
         var request = new ImageGenerationRequest(
             Prompt: "masterpiece, best quality, 1girl, solo, (silver long straight hair:1.2), (bright crimson red eyes:1.2), (small black dragon horns on head:1.3), wearing pastel pink sundress, smiling",
@@ -75,8 +87,11 @@ public sealed class ComfyUIImageGenerationIntegrationTests
             Model: "meinamix_meinaV11.safetensors",
             Sampler: "euler_ancestral",
             Scheduler: "karras",
+            IPAdapterWeight: 0.45f,
+            IPAdapterEndAt: 0.70f,
             Workflow: "VisualIdentity",
-            WorkflowVersion: 1
+            WorkflowVersion: 1,
+            ReferenceImageUrl: tempRefPath
         );
 
         var result = await service.GenerateImageWithResultAsync(request);
