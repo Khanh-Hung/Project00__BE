@@ -26,7 +26,6 @@ public sealed class CharacterRuntime : ICharacterRuntime
     private readonly IVisualPromptCompiler _visualCompiler;
     private readonly IImageGenerationService _imageService;
     private readonly IVisualStateResolver _visualStateResolver;
-    private readonly ISceneStateTrackerService? _sceneStateTracker;
     private readonly ILogger<CharacterRuntime> _logger;
 
     // Concurrent in-flight gates to eliminate duplicate LLM execution on concurrent identical TurnIds
@@ -41,9 +40,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
         IVoiceGenerationService voiceService,
         IVisualPromptCompiler visualCompiler,
         IImageGenerationService imageService,
-        ILogger<CharacterRuntime> logger,
-        ISceneStateTrackerService? sceneStateTracker = null,
-        IVisualStateResolver? visualStateResolver = null)
+        IVisualStateResolver visualStateResolver,
+        ILogger<CharacterRuntime> logger)
     {
         _unitOfWork = unitOfWork;
         _contextEngine = contextEngine;
@@ -53,9 +51,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
         _voiceService = voiceService;
         _visualCompiler = visualCompiler;
         _imageService = imageService;
+        _visualStateResolver = visualStateResolver;
         _logger = logger;
-        _sceneStateTracker = sceneStateTracker;
-        _visualStateResolver = visualStateResolver ?? new VisualStateResolver(unitOfWork, sceneStateTracker, LoggerFactory.Create(builder => { }).CreateLogger<VisualStateResolver>());
     }
 
     public async Task<CharacterTurnResult> ProcessTurnAsync(CharacterTurnRequest request, CancellationToken ct = default)

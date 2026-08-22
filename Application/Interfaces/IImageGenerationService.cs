@@ -25,10 +25,15 @@ public sealed record ImageGenerationRequest(
     float? IPAdapterEndAt = null,
     string Workflow = "VisualIdentity",
     int WorkflowVersion = 1,
+    string? ParametersJson = null,
     Dictionary<string, object>? ExtraParameters = null
 )
 {
-    public static ImageGenerationRequest FromSnapshot(VisualSnapshot snapshot, string compiledPrompt, string? compiledNegative = null)
+    public static ImageGenerationRequest FromSnapshot(
+        VisualSnapshot snapshot,
+        string compiledPrompt,
+        string? compiledNegative = null,
+        string? previousSceneImageUrlOverride = null)
     {
         var profile = snapshot.GenerationProfile ?? GenerationProfile.CreateDefault();
         return new ImageGenerationRequest(
@@ -37,17 +42,16 @@ public sealed record ImageGenerationRequest(
             Width: profile.Width,
             Height: profile.Height,
             ReferenceImageUrl: snapshot.IdentityReferenceUrl,
-            PreviousSceneImageUrl: snapshot.PreviousSceneImageUrl,
+            PreviousSceneImageUrl: previousSceneImageUrlOverride ?? snapshot.PreviousSceneImageUrl,
             Steps: profile.Steps,
             GuidanceScale: profile.Cfg,
             Seed: profile.Seed,
             Model: profile.Model,
             Sampler: profile.Sampler,
             Scheduler: profile.Scheduler,
-            IPAdapterWeight: profile.IPAdapterWeight,
-            IPAdapterEndAt: profile.IPAdapterEndAt,
             Workflow: profile.Workflow,
-            WorkflowVersion: profile.WorkflowVersion
+            WorkflowVersion: profile.WorkflowVersion,
+            ParametersJson: profile.ParametersJson
         );
     }
 }

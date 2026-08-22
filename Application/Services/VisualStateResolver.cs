@@ -84,10 +84,9 @@ public sealed class VisualStateResolver : IVisualStateResolver
         }
 
         var generationProfile = GenerationProfile.CreateDefault(
-            ipAdapterWeight: 0.45f,
-            ipAdapterEndAt: 0.70f,
             workflow: "VisualIdentity",
-            workflowVersion: 1
+            workflowVersion: 1,
+            parametersJson: "{\"ipAdapter\":{\"weight\":0.45,\"endAt\":0.70}}"
         );
 
         var snapshot = VisualSnapshot.Create(
@@ -100,6 +99,7 @@ public sealed class VisualStateResolver : IVisualStateResolver
             sceneState: updatedSceneState,
             transientState: transientState,
             previousSceneImageUrl: previousSceneImageUrl,
+            predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null,
             generationProfile: generationProfile
         );
 
