@@ -11,16 +11,35 @@ namespace Project.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_SceneImages_SessionId_SceneRevision",
+                table: "SceneImages");
+
             migrationBuilder.AddColumn<Guid>(
                 name: "GenerationJobId",
                 table: "SceneImages",
                 type: "uuid",
                 nullable: true);
 
+            migrationBuilder.AddColumn<Guid>(
+                name: "GenerationRequestId",
+                table: "SceneImages",
+                type: "uuid",
+                nullable: false,
+                defaultValue: new Guid("00000000-0000-0000-0000-000000000000"));
+
+            migrationBuilder.AddColumn<bool>(
+                name: "IsCurrent",
+                table: "SceneImages",
+                type: "boolean",
+                nullable: false,
+                defaultValue: true);
+
             migrationBuilder.AddColumn<string>(
                 name: "Workflow",
                 table: "SceneImages",
-                type: "text",
+                type: "character varying(128)",
+                maxLength: 128,
                 nullable: false,
                 defaultValue: "");
 
@@ -40,10 +59,13 @@ namespace Project.Infrastructure.Persistence.Migrations
                     TurnId = table.Column<Guid>(type: "uuid", nullable: false),
                     CharacterId = table.Column<Guid>(type: "uuid", nullable: false),
                     SceneRevision = table.Column<int>(type: "integer", nullable: false),
+                    GenerationRequestId = table.Column<Guid>(type: "uuid", nullable: false),
                     Provider = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     ProviderJobId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     Status = table.Column<string>(type: "text", nullable: false),
                     AttemptCount = table.Column<int>(type: "integer", nullable: false),
+                    ClaimedBy = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    LeaseUntil = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     FailureReason = table.Column<string>(type: "character varying(2048)", maxLength: 2048, nullable: true),
@@ -65,15 +87,31 @@ namespace Project.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_ImageGenerationJobs_SessionId_TurnId_SceneRevision",
-                table: "ImageGenerationJobs",
-                columns: new[] { "SessionId", "TurnId", "SceneRevision" },
+                name: "IX_SceneImages_SessionId_GenerationRequestId",
+                table: "SceneImages",
+                columns: new[] { "SessionId", "GenerationRequestId" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_ImageGenerationJobs_Status",
+                name: "IX_SceneImages_SessionId_SceneRevision_IsCurrent",
+                table: "SceneImages",
+                columns: new[] { "SessionId", "SceneRevision", "IsCurrent" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ImageGenerationJobs_SessionId_GenerationRequestId",
                 table: "ImageGenerationJobs",
-                column: "Status");
+                columns: new[] { "SessionId", "GenerationRequestId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ImageGenerationJobs_SessionId_TurnId_SceneRevision",
+                table: "ImageGenerationJobs",
+                columns: new[] { "SessionId", "TurnId", "SceneRevision" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ImageGenerationJobs_Status_LeaseUntil",
+                table: "ImageGenerationJobs",
+                columns: new[] { "Status", "LeaseUntil" });
         }
 
         /// <inheritdoc />
@@ -82,8 +120,24 @@ namespace Project.Infrastructure.Persistence.Migrations
             migrationBuilder.DropTable(
                 name: "ImageGenerationJobs");
 
+            migrationBuilder.DropIndex(
+                name: "IX_SceneImages_SessionId_GenerationRequestId",
+                table: "SceneImages");
+
+            migrationBuilder.DropIndex(
+                name: "IX_SceneImages_SessionId_SceneRevision_IsCurrent",
+                table: "SceneImages");
+
             migrationBuilder.DropColumn(
                 name: "GenerationJobId",
+                table: "SceneImages");
+
+            migrationBuilder.DropColumn(
+                name: "GenerationRequestId",
+                table: "SceneImages");
+
+            migrationBuilder.DropColumn(
+                name: "IsCurrent",
                 table: "SceneImages");
 
             migrationBuilder.DropColumn(
@@ -93,6 +147,12 @@ namespace Project.Infrastructure.Persistence.Migrations
             migrationBuilder.DropColumn(
                 name: "WorkflowVersion",
                 table: "SceneImages");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SceneImages_SessionId_SceneRevision",
+                table: "SceneImages",
+                columns: new[] { "SessionId", "SceneRevision" },
+                unique: true);
         }
     }
 }

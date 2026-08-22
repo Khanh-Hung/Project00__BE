@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Project.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ProjectDbContext))]
-    [Migration("20260822153954_AddImageGenerationJobAndVisualIdentityMetadata")]
+    [Migration("20260822155629_AddImageGenerationJobAndVisualIdentityMetadata")]
     partial class AddImageGenerationJobAndVisualIdentityMetadata
     {
         /// <inheritdoc />
@@ -571,6 +571,10 @@ namespace Project.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CharacterId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ClaimedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -593,11 +597,17 @@ namespace Project.Infrastructure.Persistence.Migrations
                     b.Property<string>("GenerationMetadataJson")
                         .HasColumnType("text");
 
+                    b.Property<Guid>("GenerationRequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("IsRetryable")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsSoftDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Provider")
                         .IsRequired()
@@ -640,10 +650,12 @@ namespace Project.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Status");
-
-                    b.HasIndex("SessionId", "TurnId", "SceneRevision")
+                    b.HasIndex("SessionId", "GenerationRequestId")
                         .IsUnique();
+
+                    b.HasIndex("Status", "LeaseUntil");
+
+                    b.HasIndex("SessionId", "TurnId", "SceneRevision");
 
                     b.ToTable("ImageGenerationJobs", (string)null);
                 });
@@ -818,6 +830,9 @@ namespace Project.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("GenerationJobId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("GenerationRequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("IdentityReferenceUrl")
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
@@ -826,6 +841,11 @@ namespace Project.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
+
+                    b.Property<bool>("IsCurrent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsSoftDeleted")
                         .HasColumnType("boolean");
@@ -855,7 +875,8 @@ namespace Project.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Workflow")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<int>("WorkflowVersion")
                         .HasColumnType("integer");
@@ -864,8 +885,10 @@ namespace Project.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TurnId");
 
-                    b.HasIndex("SessionId", "SceneRevision")
+                    b.HasIndex("SessionId", "GenerationRequestId")
                         .IsUnique();
+
+                    b.HasIndex("SessionId", "SceneRevision", "IsCurrent");
 
                     b.ToTable("SceneImages", (string)null);
                 });
