@@ -1,3 +1,4 @@
+using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
@@ -12,10 +13,12 @@ namespace Application.Features.Chat.Commands.CreateChatSession;
 public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSessionCommand, Result<ChatSessionDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUserProvider _currentUserProvider;
 
-    public CreateChatSessionHandler(IUnitOfWork unitOfWork)
+    public CreateChatSessionHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _currentUserProvider = currentUserProvider;
     }
 
     public async Task<Result<ChatSessionDto>> Handle(CreateChatSessionCommand command, CancellationToken cancellationToken)
@@ -30,6 +33,12 @@ public sealed class CreateChatSessionHandler : IRequestHandler<CreateChatSession
         }
 
         var userId = command.Request.UserId;
+        var currentUserId = _currentUserProvider.CurrentUserId;
+        if (!string.IsNullOrEmpty(currentUserId) && Guid.TryParse(currentUserId, out var uid))
+        {
+            userId = uid;
+        }
+
         var title = string.IsNullOrWhiteSpace(command.Request.Title)
             ? $"Chat with {character.Name}"
             : command.Request.Title;

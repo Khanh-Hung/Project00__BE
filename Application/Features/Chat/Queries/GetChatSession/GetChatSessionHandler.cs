@@ -1,3 +1,4 @@
+using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
@@ -12,10 +13,12 @@ namespace Application.Features.Chat.Queries.GetChatSession;
 public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery, Result<ChatSessionDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetChatSessionHandler(IUnitOfWork unitOfWork)
+    public GetChatSessionHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _currentUserProvider = currentUserProvider;
     }
 
     public async Task<Result<ChatSessionDto>> Handle(GetChatSessionQuery query, CancellationToken cancellationToken)
@@ -27,6 +30,18 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
         if (session == null)
         {
             return Result<ChatSessionDto>.Failure(StatusCodes.Status404NotFound, $"Chat session '{query.SessionId}' was not found.");
+        }
+
+        var currentUserId = _currentUserProvider.CurrentUserId;
+        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
+        {
+            if (!string.IsNullOrEmpty(currentUserId) && Guid.TryParse(currentUserId, out var uid))
+            {
+                if (session.UserId.Value != uid)
+                {
+                    return Result<ChatSessionDto>.Failure(StatusCodes.Status403Forbidden, "You do not have access to this chat session.");
+                }
+            }
         }
 
         var character = await characterRepo.GetByIdAsync(session.CharacterId, cancellationToken);

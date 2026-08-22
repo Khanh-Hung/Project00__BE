@@ -53,14 +53,13 @@ public sealed class GenerateMessageVoiceHandler : IRequestHandler<GenerateMessag
         {
             effectiveUserId = uid;
         }
-        else
-        {
-            effectiveUserId = session.UserId;
-        }
 
-        if (session.UserId.HasValue && effectiveUserId.HasValue && session.UserId.Value != effectiveUserId.Value)
+        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty)
         {
-            return Result<VoiceGenerationResult>.Failure(StatusCodes.Status403Forbidden, "You do not have permission to access this chat session.");
+            if (!effectiveUserId.HasValue || session.UserId.Value != effectiveUserId.Value)
+            {
+                return Result<VoiceGenerationResult>.Failure(StatusCodes.Status403Forbidden, "You do not have permission to access this chat session.");
+            }
         }
 
         // 3. Find Target Message

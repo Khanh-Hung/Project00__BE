@@ -54,7 +54,7 @@ public sealed class ChatController : ControllerBase
     [HttpPost("sessions")]
     public async Task<IActionResult> CreateSession([FromBody] CreateSessionRequest request, CancellationToken ct)
     {
-        var userId = GetCurrentUserId() ?? request.UserId;
+        var userId = GetCurrentUserId();
         var requestWithUser = request with { UserId = userId };
         var result = await _sender.Send(new CreateChatSessionCommand(requestWithUser), ct);
         return result.ToActionResult();
@@ -113,7 +113,6 @@ public sealed class ChatController : ControllerBase
     /// <summary>
     /// Generates dynamic illustration image for a specific moment in chat
     /// </summary>
-    [AllowAnonymous]
     [HttpPost("imagine-scene")]
     public async Task<IActionResult> ImagineScene([FromBody] GenerateSceneImageRequest request, CancellationToken ct)
     {
@@ -124,7 +123,6 @@ public sealed class ChatController : ControllerBase
     /// <summary>
     /// Triggers character to browse user profile and proactively send an opening DM message
     /// </summary>
-    [AllowAnonymous]
     [HttpPost("proactive-reachout")]
     public async Task<IActionResult> ProactiveReachout([FromBody] ProactiveReachoutRequest request, CancellationToken ct)
     {
@@ -164,13 +162,19 @@ public sealed class ChatController : ControllerBase
         [FromServices] Application.Interfaces.ICharacterRuntime characterRuntime,
         CancellationToken ct)
     {
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue || userId.Value == Guid.Empty)
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
 
-        var userId = GetCurrentUserId() ?? Guid.Empty;
         var turnRequest = new Application.Interfaces.CharacterTurnRequest(
-            UserId: userId,
+            UserId: userId.Value,
             CharacterId: Guid.Empty,
             SessionId: sessionId,
             UserMessage: request.Content,
