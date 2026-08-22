@@ -32,7 +32,7 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
 
         var serverUrl = _configuration["AiProviders:ComfyUI:ServerUrl"]?.TrimEnd('/') ?? "http://127.0.0.1:8188";
 
-        // 1. Resolve image bytes from Storage, Local File, or Remote URL
+        // 1. Resolve image bytes from Storage, Local File, or Remote URL with SSRF protection
         byte[] imageBytes;
         string fileName = Path.GetFileName(referenceImageUrl.Split('?')[0]);
         if (string.IsNullOrWhiteSpace(fileName) || !fileName.Contains('.'))
@@ -45,23 +45,45 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
             if (referenceImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 referenceImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {
+                if (!Uri.TryCreate(referenceImageUrl, UriKind.Absolute, out var uri))
+                {
+                    throw new GpuNonTransientException($"Invalid reference image URI: '{referenceImageUrl}'");
+                }
+
+                // SSRF Protection: Deny loopback and link-local metadata addresses
+                var host = uri.Host.ToLowerInvariant();
+                if (host == "localhost" || host == "127.0.0.1" || host == "169.254.169.254" || host == "0.0.0.0" || host == "::1")
+                {
+                    _logger.LogWarning("Blocked potential SSRF reference image attempt to host: {Host}", host);
+                    throw new GpuNonTransientException($"Access to internal address '{host}' is forbidden for reference images.");
+                }
+
                 imageBytes = await _httpClient.GetByteArrayAsync(referenceImageUrl, ct);
-            }
-            else if (File.Exists(referenceImageUrl))
-            {
-                imageBytes = await File.ReadAllBytesAsync(referenceImageUrl, ct);
             }
             else
             {
-                // Try resolving relative path from current directory or wwwroot
-                var possiblePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", referenceImageUrl.TrimStart('/'));
-                if (File.Exists(possiblePath))
+                // Path traversal protection
+                if (referenceImageUrl.Contains(".."))
                 {
-                    imageBytes = await File.ReadAllBytesAsync(possiblePath, ct);
+                    throw new GpuNonTransientException($"Invalid reference image path containing directory traversal: '{referenceImageUrl}'");
+                }
+
+                if (File.Exists(referenceImageUrl))
+                {
+                    imageBytes = await File.ReadAllBytesAsync(referenceImageUrl, ct);
                 }
                 else
                 {
-                    throw new GpuNonTransientException($"Reference image could not be resolved from path or URL: '{referenceImageUrl}'");
+                    // Try resolving relative path from current directory or wwwroot
+                    var possiblePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", referenceImageUrl.TrimStart('/', '\\'));
+                    if (File.Exists(possiblePath))
+                    {
+                        imageBytes = await File.ReadAllBytesAsync(possiblePath, ct);
+                    }
+                    else
+                    {
+                        throw new GpuNonTransientException($"Reference image could not be resolved from path or URL: '{referenceImageUrl}'");
+                    }
                 }
             }
         }

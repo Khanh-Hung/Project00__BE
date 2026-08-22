@@ -15,15 +15,19 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.Property(x => x.TurnId).IsRequired();
         builder.Property(x => x.CharacterId).IsRequired();
         builder.Property(x => x.SceneRevision).IsRequired();
+        builder.Property(x => x.GenerationRequestId).IsRequired();
         builder.Property(x => x.Provider).IsRequired().HasMaxLength(64);
         builder.Property(x => x.ProviderJobId).HasMaxLength(256);
         builder.Property(x => x.Status).IsRequired();
         builder.Property(x => x.AttemptCount).IsRequired();
+        builder.Property(x => x.ClaimedBy).HasMaxLength(128);
+        builder.Property(x => x.LeaseUntil);
         builder.Property(x => x.Workflow).IsRequired().HasMaxLength(128);
         builder.Property(x => x.WorkflowVersion).IsRequired();
         builder.Property(x => x.FailureReason).HasMaxLength(2048);
 
-        builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision }).IsUnique();
-        builder.HasIndex(x => x.Status);
+        builder.HasIndex(x => new { x.SessionId, x.GenerationRequestId }).IsUnique();
+        builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision });
+        builder.HasIndex(x => new { x.Status, x.LeaseUntil });
     }
 }

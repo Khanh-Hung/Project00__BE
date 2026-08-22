@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Application.Exceptions;
 using Application.Interfaces;
 
 namespace Infrastructure.ImageGeneration.ComfyUI;
@@ -9,7 +11,12 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
 
     public Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName)
     {
-        var defaultNegative = "black clothing, red clothing, black-red outfit, dark clothing, crimson outfit, black dress, red dress, dark bodysuit, black bodysuit, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
+        if (string.IsNullOrWhiteSpace(resolvedReferenceImageName))
+        {
+            throw new GpuNonTransientException("CanonicalReferenceUrl (tight face crop) is required for VisualIdentity workflow.");
+        }
+
+        var defaultNegative = "deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
         var negativePrompt = !string.IsNullOrWhiteSpace(request.NegativePrompt) ? request.NegativePrompt : defaultNegative;
 
         var modelName = !string.IsNullOrWhiteSpace(request.Model) ? request.Model : "meinamix_meinaV11.safetensors";
@@ -20,8 +27,33 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
         var cfg = request.GuidanceScale ?? 7.0f;
         var sampler = !string.IsNullOrWhiteSpace(request.Sampler) ? request.Sampler : "euler_ancestral";
         var scheduler = !string.IsNullOrWhiteSpace(request.Scheduler) ? request.Scheduler : "karras";
-        var ipAdapterWeight = request.IPAdapterWeight ?? 0.45f;
-        var ipAdapterEndAt = request.IPAdapterEndAt ?? 0.70f;
+
+        // Parse IPAdapter weights from ParametersJson or ExtraParameters (fallback 0.45 / 0.70)
+        float ipAdapterWeight = 0.45f;
+        float ipAdapterEndAt = 0.70f;
+
+        if (request.IPAdapterWeight.HasValue)
+        {
+            ipAdapterWeight = request.IPAdapterWeight.Value;
+        }
+        if (request.IPAdapterEndAt.HasValue)
+        {
+            ipAdapterEndAt = request.IPAdapterEndAt.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ParametersJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(request.ParametersJson);
+                if (doc.RootElement.TryGetProperty("ipAdapter", out var ipProp))
+                {
+                    if (ipProp.TryGetProperty("weight", out var wProp)) ipAdapterWeight = (float)wProp.GetDouble();
+                    if (ipProp.TryGetProperty("endAt", out var eProp)) ipAdapterEndAt = (float)eProp.GetDouble();
+                }
+            }
+            catch { }
+        }
 
         return new Dictionary<string, object>
         {

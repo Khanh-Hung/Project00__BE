@@ -44,32 +44,45 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             return new JobExecutionResult(JobExecutionStatus.Skipped, "Null snapshot");
         }
 
+        var generationRequestId = payload.ResolvedGenerationRequestId;
         var stopwatch = Stopwatch.StartNew();
-        _logger.LogInformation("[SceneGenerationJobStarted] OutboxId={OutboxId}, SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}, WorkerId={WorkerId}",
-            outboxId, snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, workerId);
+        _logger.LogInformation("[SceneGenerationJobStarted] OutboxId={OutboxId}, SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}, RequestId={RequestId}, WorkerId={WorkerId}",
+            outboxId, snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, generationRequestId, workerId);
 
-        // 1. Application Idempotency Check: (SessionId, TurnId, SceneRevision)
+        // 1. Application Idempotency Check: (SessionId, GenerationRequestId)
         var existingArtifact = await _dbContext.SceneImages
-            .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.TurnId == snapshot.TurnId && img.SceneRevision == snapshot.SceneRevision, ct);
+            .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.GenerationRequestId == generationRequestId, ct);
 
         if (existingArtifact != null)
         {
-            _logger.LogInformation("[SceneGenerationSkipped] Artifact already exists for SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}. OutboxId={OutboxId}",
-                snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, outboxId);
+            _logger.LogInformation("[SceneGenerationSkipped] Artifact already exists for SessionId={SessionId}, RequestId={RequestId}. OutboxId={OutboxId}",
+                snapshot.SessionId, generationRequestId, outboxId);
             return new JobExecutionResult(JobExecutionStatus.Skipped, "Artifact already exists");
         }
 
-        // 2. Predecessor Gating based on Entities (SceneImage & ImageGenerationJob)
+        // 2. Predecessor Gating & Late Predecessor Image URL Resolution
+        string? resolvedPreviousSceneImageUrl = snapshot.PreviousSceneImageUrl;
         if (snapshot.SceneRevision > 1)
         {
             var predecessorArtifact = await _dbContext.SceneImages
-                .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision - 1, ct);
+                .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision - 1 && img.IsCurrent)
+                .FirstOrDefaultAsync(ct);
 
-            if (predecessorArtifact == null)
+            predecessorArtifact ??= await _dbContext.SceneImages
+                .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision - 1)
+                .OrderByDescending(img => img.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            if (predecessorArtifact != null)
+            {
+                resolvedPreviousSceneImageUrl = predecessorArtifact.ImageUrl;
+            }
+            else
             {
                 var predJob = await _dbContext.ImageGenerationJobs
+                    .Where(j => j.SessionId == snapshot.SessionId && j.SceneRevision == snapshot.SceneRevision - 1)
                     .OrderByDescending(j => j.CreatedAt)
-                    .FirstOrDefaultAsync(j => j.SessionId == snapshot.SessionId && j.SceneRevision == snapshot.SceneRevision - 1, ct);
+                    .FirstOrDefaultAsync(ct);
 
                 if (predJob != null && predJob.Status == ImageJobStatus.Failed && !predJob.IsRetryable)
                 {
@@ -106,12 +119,13 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             }
         }
 
-        // 3. Atomic Job Claim Before GPU Invocation
+        // 3. Lease-based Atomic Job Claim Before GPU Invocation
         var workflow = snapshot.GenerationProfile?.Workflow ?? "VisualIdentity";
         var workflowVersion = snapshot.GenerationProfile?.WorkflowVersion ?? 1;
+        var leaseDuration = TimeSpan.FromMinutes(2);
 
         var job = await _dbContext.ImageGenerationJobs
-            .FirstOrDefaultAsync(j => j.SessionId == snapshot.SessionId && j.TurnId == snapshot.TurnId && j.SceneRevision == snapshot.SceneRevision, ct);
+            .FirstOrDefaultAsync(j => j.SessionId == snapshot.SessionId && j.GenerationRequestId == generationRequestId, ct);
 
         if (job == null)
         {
@@ -120,11 +134,12 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 turnId: snapshot.TurnId,
                 characterId: snapshot.CharacterId,
                 sceneRevision: snapshot.SceneRevision,
+                generationRequestId: generationRequestId,
                 provider: "ComfyUI",
                 workflow: workflow,
                 workflowVersion: workflowVersion
             );
-            job.MarkProcessing(startedAt: Clock.Now);
+            job.TryClaim(workerId, leaseDuration, now);
 
             try
             {
@@ -133,8 +148,8 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             }
             catch (DbUpdateException ex)
             {
-                _logger.LogInformation(ex, "[SceneGenerationRacePrevented] Concurrent worker claimed job for SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}",
-                    snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision);
+                _logger.LogInformation(ex, "[SceneGenerationRacePrevented] Concurrent worker inserted job for SessionId={SessionId}, RequestId={RequestId}",
+                    snapshot.SessionId, generationRequestId);
                 return new JobExecutionResult(JobExecutionStatus.Skipped, "Job claimed by concurrent worker");
             }
         }
@@ -149,7 +164,14 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 throw new GpuNonTransientException(job.FailureReason ?? "Job permanently failed.");
             }
 
-            job.MarkProcessing(startedAt: Clock.Now);
+            var claimed = job.TryClaim(workerId, leaseDuration, now);
+            if (!claimed)
+            {
+                _logger.LogInformation("[SceneGenerationLeaseActive] Job is actively leased by worker '{ClaimedBy}' until {LeaseUntil}",
+                    job.ClaimedBy, job.LeaseUntil);
+                return new JobExecutionResult(JobExecutionStatus.Deferred, "Job actively leased by another worker");
+            }
+
             await _dbContext.SaveChangesAsync(ct);
         }
 
@@ -157,43 +179,52 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         {
             // 4. Deterministic prompt compilation purely from frozen VisualSnapshot
             var compiledPrompt = _visualCompiler.CompileScenePrompt(snapshot);
-            var imageReq = ImageGenerationRequest.FromSnapshot(snapshot, compiledPrompt);
+            var imageReq = ImageGenerationRequest.FromSnapshot(
+                snapshot: snapshot,
+                compiledPrompt: compiledPrompt,
+                previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl
+            );
 
             // 5. Generate Image via configured Provider
             var genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
 
-            // 6. Persist immutable SceneImage artifact & Complete Job
+            // 6. Persist immutable SceneImage artifact & Update IsCurrent
             if (!string.IsNullOrWhiteSpace(genResult.ImageUrl))
             {
-                try
+                // De-activate previous current images for this revision if regenerating
+                var previousCurrents = await _dbContext.SceneImages
+                    .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                    .ToListAsync(ct);
+
+                foreach (var prev in previousCurrents)
                 {
-                    var artifact = new SceneImage(
-                        sessionId: snapshot.SessionId,
-                        characterId: snapshot.CharacterId,
-                        turnId: snapshot.TurnId,
-                        sceneRevision: snapshot.SceneRevision,
-                        imageUrl: genResult.ImageUrl,
-                        prompt: compiledPrompt,
-                        identityReferenceUrl: snapshot.IdentityReferenceUrl,
-                        previousSceneImageUrl: snapshot.PreviousSceneImageUrl,
-                        generationJobId: job.Id,
-                        workflow: workflow,
-                        workflowVersion: workflowVersion
-                    );
-                    await _dbContext.SceneImages.AddAsync(artifact, ct);
-                    job.MarkCompleted(Clock.Now, genResult.MetadataJson);
-                    await _dbContext.SaveChangesAsync(ct);
+                    prev.SetCurrent(false);
                 }
-                catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("IX_SceneImages_SessionId_SceneRevision") == true || ex.Message.Contains("IX_SceneImages_SessionId_SceneRevision"))
-                {
-                    _logger.LogInformation("[SceneGenerationSkipped] Concurrent race caught by DB Unique Constraint for SessionId={SessionId}, Revision={Revision}",
-                        snapshot.SessionId, snapshot.SceneRevision);
-                }
+
+                var artifact = new SceneImage(
+                    sessionId: snapshot.SessionId,
+                    characterId: snapshot.CharacterId,
+                    turnId: snapshot.TurnId,
+                    sceneRevision: snapshot.SceneRevision,
+                    imageUrl: genResult.ImageUrl,
+                    prompt: compiledPrompt,
+                    generationRequestId: generationRequestId,
+                    identityReferenceUrl: snapshot.IdentityReferenceUrl,
+                    previousSceneImageUrl: resolvedPreviousSceneImageUrl,
+                    generationJobId: job.Id,
+                    workflow: workflow,
+                    workflowVersion: workflowVersion,
+                    isCurrent: true
+                );
+
+                await _dbContext.SceneImages.AddAsync(artifact, ct);
+                job.MarkCompleted(Clock.Now, genResult.MetadataJson);
+                await _dbContext.SaveChangesAsync(ct);
             }
 
             stopwatch.Stop();
-            _logger.LogInformation("[SceneGenerationCompleted] OutboxId={OutboxId}, JobId={JobId}, SessionId={SessionId}, Revision={Revision}, LatencyMs={LatencyMs}",
-                outboxId, job.Id, snapshot.SessionId, snapshot.SceneRevision, stopwatch.ElapsedMilliseconds);
+            _logger.LogInformation("[SceneGenerationCompleted] OutboxId={OutboxId}, JobId={JobId}, SessionId={SessionId}, Revision={Revision}, RequestId={RequestId}, LatencyMs={LatencyMs}",
+                outboxId, job.Id, snapshot.SessionId, snapshot.SceneRevision, generationRequestId, stopwatch.ElapsedMilliseconds);
 
             return new JobExecutionResult(JobExecutionStatus.Completed);
         }
