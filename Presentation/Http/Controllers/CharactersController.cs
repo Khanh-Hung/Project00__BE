@@ -9,10 +9,12 @@ using Application.Features.Characters.Queries.GenerateRandomIdeas;
 using Application.Features.Characters.Queries.GetCharacterById;
 using Application.Features.Characters.Queries.GetPublicCharacters;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Presentation.Http.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/v1/[controller]")]
 public sealed class CharactersController : ControllerBase
@@ -37,6 +39,7 @@ public sealed class CharactersController : ControllerBase
     /// <summary>
     /// Generates random creative character ideas using AI
     /// </summary>
+    [AllowAnonymous]
     [HttpGet("generate-ideas")]
     public async Task<IActionResult> GenerateRandomIdeas([FromQuery] int count = 3, CancellationToken ct = default)
     {
@@ -47,6 +50,7 @@ public sealed class CharactersController : ControllerBase
     /// <summary>
     /// Gets public AI characters
     /// </summary>
+    [AllowAnonymous]
     [HttpGet]
     public async Task<IActionResult> GetCharacters([FromQuery] string? category, CancellationToken ct)
     {
@@ -57,6 +61,7 @@ public sealed class CharactersController : ControllerBase
     /// <summary>
     /// Gets AI character details by ID
     /// </summary>
+    [AllowAnonymous]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetCharacterById(Guid id, CancellationToken ct)
     {

@@ -1,3 +1,4 @@
+using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
@@ -10,10 +11,12 @@ namespace Application.Features.Characters.Commands.UpdateCharacter;
 public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterCommand, Result<CharacterDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUserProvider _currentUserProvider;
 
-    public UpdateCharacterHandler(IUnitOfWork unitOfWork)
+    public UpdateCharacterHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _currentUserProvider = currentUserProvider;
     }
 
     public async Task<Result<CharacterDto>> Handle(UpdateCharacterCommand command, CancellationToken cancellationToken)
@@ -23,6 +26,15 @@ public sealed class UpdateCharacterHandler : IRequestHandler<UpdateCharacterComm
         if (character == null)
         {
             return Result<CharacterDto>.Failure(StatusCodes.Status404NotFound, $"Character with ID '{command.Id}' was not found.");
+        }
+
+        var currentUserId = _currentUserProvider.CurrentUserId;
+        if (!string.IsNullOrEmpty(character.CreatedBy) && character.CreatedBy != "system")
+        {
+            if (string.IsNullOrEmpty(currentUserId) || !string.Equals(character.CreatedBy, currentUserId, StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<CharacterDto>.Failure(StatusCodes.Status403Forbidden, "You do not have permission to modify this character.");
+            }
         }
 
         var req = command.Request;

@@ -1,3 +1,4 @@
+using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
@@ -11,14 +12,25 @@ namespace Application.Features.UserProfile.Commands.UpdateUserProfile;
 public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfileCommand, Result<UserProfileDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUserProvider _currentUserProvider;
 
-    public UpdateUserProfileHandler(IUnitOfWork unitOfWork)
+    public UpdateUserProfileHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _currentUserProvider = currentUserProvider;
     }
 
     public async Task<Result<UserProfileDto>> Handle(UpdateUserProfileCommand command, CancellationToken cancellationToken)
     {
+        var currentUserId = _currentUserProvider.CurrentUserId;
+        if (!string.IsNullOrEmpty(currentUserId) && Guid.TryParse(currentUserId, out var loggedInGuid))
+        {
+            if (loggedInGuid != command.UserId)
+            {
+                return Result<UserProfileDto>.Failure(StatusCodes.Status403Forbidden, "You do not have permission to update this user profile.");
+            }
+        }
+
         var profileRepo = _unitOfWork.GetRepository<Domain.Entities.UserProfile>();
         var profiles = await profileRepo.GetAllAsync(ct: cancellationToken);
         var profile = profiles.FirstOrDefault(p => p.UserId == command.UserId);

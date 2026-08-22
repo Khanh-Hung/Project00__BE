@@ -1,3 +1,4 @@
+using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
@@ -10,10 +11,12 @@ namespace Application.Features.Characters.Queries.GetCharacterById;
 public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQuery, Result<CharacterDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetCharacterByIdHandler(IUnitOfWork unitOfWork)
+    public GetCharacterByIdHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _currentUserProvider = currentUserProvider;
     }
 
     public async Task<Result<CharacterDto>> Handle(GetCharacterByIdQuery query, CancellationToken cancellationToken)
@@ -23,6 +26,19 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
         if (character == null)
         {
             return Result<CharacterDto>.Failure(StatusCodes.Status404NotFound, $"Character with ID '{query.Id}' was not found.");
+        }
+
+        // Privacy check for non-public characters
+        var currentUserId = _currentUserProvider.CurrentUserId;
+        if (!character.IsPublic)
+        {
+            if (string.IsNullOrEmpty(currentUserId) ||
+                (!string.IsNullOrEmpty(character.CreatedBy) &&
+                 character.CreatedBy != "system" &&
+                 !string.Equals(character.CreatedBy, currentUserId, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Result<CharacterDto>.Failure(StatusCodes.Status404NotFound, $"Character with ID '{query.Id}' was not found.");
+            }
         }
 
         User? creator = null;

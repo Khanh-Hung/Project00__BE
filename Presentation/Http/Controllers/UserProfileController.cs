@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Presentation.Http.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/v1/user-profile")]
 public sealed class UserProfileController : ControllerBase
@@ -27,7 +28,6 @@ public sealed class UserProfileController : ControllerBase
         return result.ToActionResult();
     }
 
-    [AllowAnonymous]
     [HttpPut("{userId:guid}")]
     public async Task<IActionResult> UpdateUserProfile(Guid userId, [FromBody] UpdateUserProfileRequest request, CancellationToken cancellationToken)
     {
