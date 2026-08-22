@@ -62,6 +62,8 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 c.DefaultMood,
                 customMilestones,
                 c.Blueprint,
+                c.VisualIdentity,
+                c.VoiceProfile,
                 c.WorldName,
                 c.WorldDescription,
                 c.WorldGenre,

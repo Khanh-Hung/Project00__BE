@@ -58,6 +58,8 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.DefaultMood,
             customMilestones,
             character.Blueprint,
+            character.VisualIdentity,
+            character.VoiceProfile,
             character.WorldName,
             character.WorldDescription,
             character.WorldGenre,
