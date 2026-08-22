@@ -72,9 +72,10 @@ public sealed class ComfyUIImageGenerationIntegrationTests
         }
 
         var storageService = new InMemoryStorageService();
+        var comfyClient = new ComfyUIClient(httpClient, config, NullLogger<ComfyUIClient>.Instance);
         var inputImageService = new ComfyUIInputImageService(httpClient, config, NullLogger<ComfyUIInputImageService>.Instance);
         var workflowBuilders = new IComfyUIWorkflowBuilder[] { new VisualIdentityWorkflowV1Builder() };
-        var service = new ComfyUIImageGenerationService(httpClient, storageService, inputImageService, workflowBuilders, config, NullLogger<ComfyUIImageGenerationService>.Instance);
+        var service = new ComfyUIImageGenerationService(comfyClient, storageService, inputImageService, workflowBuilders, config, NullLogger<ComfyUIImageGenerationService>.Instance);
 
         var request = new ImageGenerationRequest(
             Prompt: "masterpiece, best quality, 1girl, solo, (silver long straight hair:1.2), (bright crimson red eyes:1.2), (small black dragon horns on head:1.3), wearing pastel pink sundress, smiling",

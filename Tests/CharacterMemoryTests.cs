@@ -332,6 +332,7 @@ public class CharacterMemoryTests
             currentUserProvider,
             NullLogger<RoleplayContextEngine>.Instance
         );
+        var visualResolver = new VisualStateResolver(unitOfWork, null, NullLogger<VisualStateResolver>.Instance);
         var runtime = new CharacterRuntime(
             unitOfWork,
             contextEngine,
@@ -341,6 +342,7 @@ public class CharacterMemoryTests
             new DummyVoiceService(),
             new VisualPromptCompiler(),
             new DummyImageService(),
+            visualResolver,
             NullLogger<CharacterRuntime>.Instance
         );
 

@@ -71,8 +71,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            sequentialTracker
+            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 1: Initial state -> Living Room, Sofa, White Dress, Revision = 1 (0 + 1)
@@ -306,8 +306,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            sequentialTracker
+            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 2 executes: Target Revision is 2 (1 + 1). Previous scene image from Revision 1 MUST be resolved!
@@ -369,8 +369,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            tracker1
+            new VisualStateResolver(new UnitOfWork(ctx1), tracker1, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         await runtime1.ProcessTurnAsync(new CharacterTurnRequest(userId, charId, session1.Id, "Hello", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true)));
@@ -395,8 +395,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            tracker2
+            new VisualStateResolver(new UnitOfWork(ctx2), tracker2, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         await foreach (var _ in runtime2.ProcessTurnStreamAsync(new CharacterTurnRequest(userId, charId, session2.Id, "Hello", Guid.NewGuid(), new CharacterTurnOptions(GenerateImage: true))))
@@ -476,8 +476,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                NullLogger<CharacterRuntime>.Instance,
-                tracker
+                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                NullLogger<CharacterRuntime>.Instance
             );
 
             tracker.NextDelta = new SceneStateDelta(LocationChange: "Living Room", PositionChange: "Sofa", OutfitChange: "White Dress");
@@ -505,8 +505,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                NullLogger<CharacterRuntime>.Instance,
-                tracker
+                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                NullLogger<CharacterRuntime>.Instance
             );
 
             tracker.NextDelta = new SceneStateDelta(PositionChange: "Beside Window", ActionChange: "Walking toward window");
@@ -536,8 +536,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                NullLogger<CharacterRuntime>.Instance,
-                tracker
+                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                NullLogger<CharacterRuntime>.Instance
             );
 
             tracker.NextDelta = new SceneStateDelta(OutfitChange: "Black Dress", PoseChange: "Looking outside");
@@ -810,9 +810,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<CharacterRuntime>.Instance,
-            sequentialTracker,
-            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance)
+            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 1: Outfit is "Pastel Pink Sundress", Revision = 1
