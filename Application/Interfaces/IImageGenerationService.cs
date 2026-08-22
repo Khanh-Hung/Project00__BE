@@ -21,6 +21,8 @@ public sealed record ImageGenerationRequest(
     string? Model = null,
     string? Sampler = null,
     string? Scheduler = null,
+    float? IPAdapterWeight = null,
+    float? IPAdapterEndAt = null,
     string Workflow = "VisualIdentity",
     int WorkflowVersion = 1,
     Dictionary<string, object>? ExtraParameters = null
@@ -42,6 +44,8 @@ public sealed record ImageGenerationRequest(
             Model: profile.Model,
             Sampler: profile.Sampler,
             Scheduler: profile.Scheduler,
+            IPAdapterWeight: profile.IPAdapterWeight,
+            IPAdapterEndAt: profile.IPAdapterEndAt,
             Workflow: profile.Workflow,
             WorkflowVersion: profile.WorkflowVersion
         );

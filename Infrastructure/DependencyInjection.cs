@@ -76,6 +76,8 @@ public static class DependencyInjection
         services.AddScoped<Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
         services.AddHttpClient<Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
         services.AddScoped<Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
+        services.AddHttpClient<Infrastructure.ImageGeneration.ComfyUI.IComfyUIInputImageService, Infrastructure.ImageGeneration.ComfyUI.ComfyUIInputImageService>();
+        services.AddSingleton<Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder, Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder>();
         services.AddHttpClient<Infrastructure.ImageGeneration.ComfyUIImageGenerationService>(c => c.Timeout = TimeSpan.FromSeconds(120));
         services.AddScoped<Infrastructure.ImageGeneration.ComfyUIImageGenerationService>();
 
