@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<Interfaces.ILorebookEngine, Services.LorebookEngine>();
         services.AddScoped<Interfaces.IRoleplayContextEngine, Services.RoleplayContextEngine>();
         services.AddSingleton<Interfaces.IVisualPromptCompiler, Services.VisualPromptCompiler>();
+        services.AddScoped<Interfaces.IVisualStateResolver, Services.VisualStateResolver>();
         services.AddSingleton<Interfaces.IVoicePromptCompiler, Services.VoicePromptCompiler>();
         services.AddScoped<Interfaces.ICharacterRuntime, Services.CharacterRuntime>();
 
