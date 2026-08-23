@@ -156,6 +156,7 @@ public sealed class OutboxReliabilityAndOrderingTests
             VisualIdentity: visualIdentity,
             SceneState: sceneState,
             TransientState: transientState,
+            GenerationProfile: GenerationProfile.CreateDefault(),
             IdentityReferenceUrl: visualIdentity.CanonicalReferenceUrl,
             PreviousSceneImageUrl: revision > 1 ? $"https://cdn.project00.ai/scenes/rev_{revision - 1}.png" : null,
             CreatedAt: Clock.Now

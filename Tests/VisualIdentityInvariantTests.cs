@@ -45,6 +45,39 @@ public sealed class VisualIdentityInvariantTests
         }
     }
 
+    private sealed class MockComfyUIClient : IComfyUIClient
+    {
+        public int QueuePromptCallCount { get; private set; } = 0;
+        public int GetHistoryCallCount { get; private set; } = 0;
+        public string? LastPolledPromptId { get; private set; }
+
+        public Task<string> QueuePromptAsync(Dictionary<string, object> workflowGraph, CancellationToken ct = default)
+        {
+            QueuePromptCallCount++;
+            return Task.FromResult("prompt-123");
+        }
+
+        public Task<ComfyUIHistoryResult?> GetHistoryAsync(string promptId, CancellationToken ct = default)
+        {
+            GetHistoryCallCount++;
+            LastPolledPromptId = promptId;
+            return Task.FromResult<ComfyUIHistoryResult?>(new ComfyUIHistoryResult(
+                PromptId: promptId,
+                IsSuccess: true,
+                ErrorMessage: null,
+                OutputImages: new List<ComfyUIHistoryOutputImage>
+                {
+                    new ComfyUIHistoryOutputImage("rendered_test.png", "", "output")
+                }
+            ));
+        }
+
+        public Task<byte[]> DownloadImageAsync(string filename, string? subfolder = null, string? type = null, CancellationToken ct = default)
+        {
+            return Task.FromResult(new byte[] { 1, 2, 3, 4 });
+        }
+    }
+
     private static (ProjectDbContext db, ImageGenerationJobHandler handler, CountingImageService imageService) CreateHarness(string dbName)
     {
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
@@ -57,8 +90,14 @@ public sealed class VisualIdentityInvariantTests
         return (db, handler, imageService);
     }
 
-    private static VisualSnapshot CreateTestSnapshot(Guid sessionId, Guid turnId, int revision = 1, string? canonicalRef = "https://cloud.storage/canonical_face.png")
+    private static VisualSnapshot CreateTestSnapshot(Guid sessionId, Guid turnId, int revision = 1, string? canonicalRef = "https://cloud.storage/canonical_face.png", string? parametersJson = "{\"ipAdapter\":{\"weight\":0.45,\"endAt\":0.70}}")
     {
+        var profile = GenerationProfile.CreateDefault(
+            workflow: "VisualIdentity",
+            workflowVersion: 1,
+            parametersJson: parametersJson
+        );
+
         return VisualSnapshot.Create(
             turnId: turnId,
             sessionId: sessionId,
@@ -69,7 +108,6 @@ public sealed class VisualIdentityInvariantTests
                 Eyes: "Crimson red eyes",
                 CanonicalReferenceUrl: canonicalRef
             ),
-            characterAvatarUrl: "https://cloud.storage/avatar.png",
             sceneState: new SessionSceneState(
                 CurrentLocation: "Sanctuary",
                 CurrentPosition: "Altar",
@@ -84,7 +122,8 @@ public sealed class VisualIdentityInvariantTests
                 Action: "Standing gracefully",
                 Pose: "Elegant posture",
                 Expression: "Gentle smile"
-            )
+            ),
+            generationProfile: profile
         );
     }
 
@@ -247,7 +286,6 @@ public sealed class VisualIdentityInvariantTests
 
         // Step 2: Turn 2 snapshot was created with PreviousSceneImageUrl = null
         var snapshot2 = CreateTestSnapshot(sessionId, turn2Id, revision: 2);
-        Assert.Null(snapshot2.PreviousSceneImageUrl); // Simulating snapshot created before turn 1 completed
 
         var req2 = new SceneImageGenerationOutboxPayload(turn2Id, snapshot2.CharacterId, Guid.NewGuid(), snapshot2, Guid.NewGuid());
         await handler.HandleSceneImageGenerationAsync(req2, Guid.NewGuid(), "worker-1", Clock.Now);
@@ -270,7 +308,6 @@ public sealed class VisualIdentityInvariantTests
                 Eyes: "Crimson red eyes",
                 ClothingStyle: "Black evening gown, elegant dark velvet dress"
             ),
-            characterAvatarUrl: null,
             sceneState: new SessionSceneState(
                 CurrentLocation: "Grand Ballroom",
                 CurrentPosition: "Balcony",
@@ -281,7 +318,8 @@ public sealed class VisualIdentityInvariantTests
                 SceneRevision: 1,
                 LastUpdatedAt: Clock.Now
             ),
-            transientState: new TransientVisualState(Action: "Holding wine glass", Pose: "Standing", Expression: "Charming smile")
+            transientState: new TransientVisualState(Action: "Holding wine glass", Pose: "Standing", Expression: "Charming smile"),
+            generationProfile: GenerationProfile.CreateDefault()
         );
 
         var compiledPositive = visualCompiler.CompileScenePrompt(snapshot);
@@ -307,6 +345,125 @@ public sealed class VisualIdentityInvariantTests
         Assert.DoesNotContain("black dress", negText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("dark clothing", negText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("no horns", negText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ConcurrencyTestA_TwoWorkersClaimSameExistingJob_OnlyOneExecutesGpu()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (db, handlerA, imageService) = CreateHarness(dbName);
+        var visualCompiler = new VisualPromptCompiler();
+        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance);
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
+        var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
+
+        // Run both workers concurrently
+        var taskA = handlerA.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-A", Clock.Now);
+        var taskB = handlerB.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-B", Clock.Now);
+
+        var results = await Task.WhenAll(taskA, taskB);
+
+        // Exactly one worker completes, one worker is deferred or skipped
+        var completedCount = results.Count(r => r.Status == JobExecutionStatus.Completed);
+        Assert.Equal(1, completedCount);
+        Assert.Equal(1, imageService.CallCount);
+
+        var images = await db.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
+        Assert.Single(images);
+    }
+
+    [Fact]
+    public async Task ConcurrencyTestB_ExpiredLeaseRace_StaleWorkerCannotOverwriteNewOwner()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (db, handler, _) = CreateHarness(dbName);
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+
+        // Worker A had claimed the job but lease expired
+        var job = new ImageGenerationJob(sessionId, turnId, Guid.NewGuid(), 1, requestId);
+        job.TryClaim("worker-A", TimeSpan.FromSeconds(1), Clock.Now.AddMinutes(-5));
+        await db.ImageGenerationJobs.AddAsync(job);
+        await db.SaveChangesAsync();
+
+        // Worker B claims the expired job
+        job.TryClaim("worker-B", TimeSpan.FromMinutes(2), Clock.Now);
+        await db.SaveChangesAsync();
+
+        var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
+        var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
+
+        // If Worker A attempts to run with stale identity "worker-A" while Worker B owns it
+        var resA = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-A", Clock.Now);
+        Assert.Equal(JobExecutionStatus.Deferred, resA.Status);
+    }
+
+    [Fact]
+    public async Task BoundaryTestC_CrashAfterQueuePrompt_ResumesPollingExistingProviderJobId_WithoutSecondQueuePrompt()
+    {
+        var config = new ConfigurationBuilder().Build();
+        var mockComfyClient = new MockComfyUIClient();
+        var storage = new ComfyUIImageGenerationIntegrationTests_InMemoryStorageService();
+        var inputService = new ComfyUIInputImageService(new HttpClient(), config, NullLogger<ComfyUIInputImageService>.Instance);
+        var workflowBuilders = new IComfyUIWorkflowBuilder[] { new VisualIdentityWorkflowV1Builder() };
+
+        var service = new ComfyUIImageGenerationService(mockComfyClient, storage, inputService, workflowBuilders, config, NullLogger<ComfyUIImageGenerationService>.Instance);
+
+        // Request with pre-existing ProviderJobId="prompt-recovered" (simulating recovery after crash)
+        var request = new ImageGenerationRequest(
+            Prompt: "1girl, solo",
+            ReferenceImageUrl: "https://cloud.storage/canonical.png",
+            ProviderJobId: "prompt-recovered"
+        );
+
+        var result = await service.GenerateImageWithResultAsync(request);
+
+        // Must NOT call QueuePromptAsync!
+        Assert.Equal(0, mockComfyClient.QueuePromptCallCount);
+        // Must call GetHistoryAsync with "prompt-recovered"
+        Assert.Equal(1, mockComfyClient.GetHistoryCallCount);
+        Assert.Equal("prompt-recovered", mockComfyClient.LastPolledPromptId);
+        Assert.Equal("prompt-recovered", result.ProviderJobId);
+    }
+
+    [Fact]
+    public async Task ValidationTestD_MalformedParametersJson_ThrowsGpuNonTransientException_NoGpuCall()
+    {
+        var builder = new VisualIdentityWorkflowV1Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1girl",
+            ParametersJson: "{ malformed json..."
+        );
+
+        // Must throw GpuNonTransientException fail-fast
+        await Assert.ThrowsAsync<GpuNonTransientException>(() =>
+        {
+            builder.BuildWorkflow(request, "canonical_face.png");
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
+    public async Task ValidationTestE_MissingCanonicalReferenceUrl_ThrowsGpuNonTransientException_NoGpuCall()
+    {
+        var builder = new VisualIdentityWorkflowV1Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1girl",
+            ReferenceImageUrl: null
+        );
+
+        // Must throw GpuNonTransientException when resolvedReferenceImageName is empty
+        await Assert.ThrowsAsync<GpuNonTransientException>(() =>
+        {
+            builder.BuildWorkflow(request, string.Empty);
+            return Task.CompletedTask;
+        });
     }
 
     private sealed class ComfyUIImageGenerationIntegrationTests_InMemoryStorageService : IStorageService

@@ -25,10 +25,9 @@ public sealed class ComfyUIWorkflowBuilderTests
             Model: "meinamix_meinaV11.safetensors",
             Sampler: "euler_ancestral",
             Scheduler: "karras",
-            IPAdapterWeight: 0.45f,
-            IPAdapterEndAt: 0.70f,
             Workflow: "VisualIdentity",
-            WorkflowVersion: 1
+            WorkflowVersion: 1,
+            ParametersJson: "{\"ipAdapter\":{\"weight\":0.45,\"endAt\":0.70}}"
         );
 
         var graph = builder.BuildWorkflow(request, "character_canonical_ref.png");
@@ -114,8 +113,7 @@ public sealed class ComfyUIWorkflowBuilderTests
 
         var request = new ImageGenerationRequest(
             Prompt: "solo, 1girl",
-            IPAdapterWeight: 0.55f,
-            IPAdapterEndAt: 0.85f,
+            ParametersJson: "{\"ipAdapter\":{\"weight\":0.55,\"endAt\":0.85}}",
             Seed: 42
         );
 

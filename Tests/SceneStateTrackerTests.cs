@@ -157,13 +157,13 @@ public class SceneStateTrackerTests
             characterId: characterId,
             sceneRevision: 1,
             visualIdentity: dna,
-            characterAvatarUrl: "https://cloud.storage/avatar.png",
             sceneState: stateTurn1,
             transientState: transientTurn1,
+            generationProfile: GenerationProfile.CreateDefault(),
             previousSceneImageUrl: null
         );
 
-        // Verify Identity Reference resolution priority: Canonical > FullBody > Avatar
+        // Verify Identity Reference resolution: Canonical
         Assert.Equal("https://cloud.storage/elysia_canonical.png", snapshot1.IdentityReferenceUrl);
 
         // Turn 2 mutates SceneState to Garden with Red Dress
@@ -183,9 +183,9 @@ public class SceneStateTrackerTests
             characterId: characterId,
             sceneRevision: 2,
             visualIdentity: dna,
-            characterAvatarUrl: "https://cloud.storage/avatar.png",
             sceneState: stateTurn2,
             transientState: transientTurn2,
+            generationProfile: GenerationProfile.CreateDefault(),
             previousSceneImageUrl: "https://cloud.storage/scene_turn1.png"
         );
 

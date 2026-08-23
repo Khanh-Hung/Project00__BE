@@ -88,10 +88,9 @@ public sealed class ComfyUIImageGenerationIntegrationTests
             Model: "meinamix_meinaV11.safetensors",
             Sampler: "euler_ancestral",
             Scheduler: "karras",
-            IPAdapterWeight: 0.45f,
-            IPAdapterEndAt: 0.70f,
             Workflow: "VisualIdentity",
             WorkflowVersion: 1,
+            ParametersJson: "{\"ipAdapter\":{\"weight\":0.45,\"endAt\":0.70}}",
             ReferenceImageUrl: tempRefPath
         );
 

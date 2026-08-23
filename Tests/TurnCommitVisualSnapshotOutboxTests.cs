@@ -197,6 +197,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 SceneRevision: 1
             ),
             TransientState: new TransientVisualState(Pose: "Sitting gracefully", Expression: "Gentle smile"),
+            GenerationProfile: GenerationProfile.CreateDefault(),
             IdentityReferenceUrl: "https://cloud.storage/elysia_canonical.png"
         );
 
@@ -579,9 +580,9 @@ public class TurnCommitVisualSnapshotOutboxTests
         var sessionId = Guid.NewGuid();
 
         // 1. Seed 3 outbox messages with revisions 3, 1, 2 (simulating out-of-order completion)
-        var snap1 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 1, null, "https://cloud.storage/elysia.png", new SessionSceneState("Living Room", "Sofa", "White Dress", SceneRevision: 1), new TransientVisualState());
-        var snap2 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 2, null, "https://cloud.storage/elysia.png", new SessionSceneState("Living Room", "Window", "White Dress", SceneRevision: 2), new TransientVisualState());
-        var snap3 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 3, null, "https://cloud.storage/elysia.png", new SessionSceneState("Living Room", "Window", "Black Dress", SceneRevision: 3), new TransientVisualState());
+        var snap1 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 1, null, new SessionSceneState("Living Room", "Sofa", "White Dress", SceneRevision: 1), new TransientVisualState(), GenerationProfile.CreateDefault());
+        var snap2 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 2, null, new SessionSceneState("Living Room", "Window", "White Dress", SceneRevision: 2), new TransientVisualState(), GenerationProfile.CreateDefault());
+        var snap3 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 3, null, new SessionSceneState("Living Room", "Window", "Black Dress", SceneRevision: 3), new TransientVisualState(), GenerationProfile.CreateDefault());
 
         using (var seedScope = scopeFactory.CreateScope())
         {
