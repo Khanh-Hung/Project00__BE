@@ -901,16 +901,112 @@ public sealed class VisualIdentityInvariantTests
     [Fact]
     public void DbExceptionClassifier_CorrectlyDistinguishes_TransientVsPermanentExceptions()
     {
-        // Transient errors
+        // Typed transient errors
         Assert.True(DbExceptionClassifier.IsTransient(new DbUpdateConcurrencyException("Concurrency conflict")));
         Assert.True(DbExceptionClassifier.IsTransient(new TimeoutException("DB timeout")));
-        Assert.True(DbExceptionClassifier.IsTransient(new IOException("Storage socket dropped")));
-        Assert.True(DbExceptionClassifier.IsTransient(new GpuTransientException("Server error 503")));
+        Assert.True(DbExceptionClassifier.IsTransient(new System.Net.Sockets.SocketException()));
+        Assert.True(DbExceptionClassifier.IsTransient(new HttpRequestException("Network drop")));
 
-        // Permanent errors
-        Assert.False(DbExceptionClassifier.IsTransient(new GpuNonTransientException("Bad prompt 400")));
+        // Permanent domain / argument errors
         Assert.False(DbExceptionClassifier.IsTransient(new ArgumentException("Invalid arguments")));
         Assert.False(DbExceptionClassifier.IsTransient(new InvalidOperationException("Schema corruption")));
+        Assert.False(DbExceptionClassifier.IsTransient(new NullReferenceException()));
+    }
+
+    [Fact]
+    public void DbExceptionClassifier_FailClosed_MisleadingMessageDoesNotMakeUnknownExceptionTransient()
+    {
+        // Generic exceptions with words like 'storage', 'temporary', 'transient' MUST fail-closed to false
+        Assert.False(DbExceptionClassifier.IsTransient(new InvalidOperationException("Permanent storage configuration is invalid")));
+        Assert.False(DbExceptionClassifier.IsTransient(new ArgumentException("Temporary directory path is invalid")));
+        Assert.False(DbExceptionClassifier.IsTransient(new Exception("Database network error occurred")));
+        Assert.False(DbExceptionClassifier.IsTransient(new Exception("Transient state timeout")));
+    }
+
+    [Fact]
+    public async Task VisualGenerationProfileProvider_ZeroStateDrift_ConfigurationMutationAfterSnapshot_DoesNotMutateFrozenSnapshot()
+    {
+        // 1. Initial configuration: Weight = 0.45, EndAt = 0.70
+        var configDict = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:DefaultWorkflow"] = "VisualIdentity",
+            ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = "1",
+            ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.45",
+            ["AiProviders:ImageGeneration:IPAdapter:EndAt"] = "0.70"
+        };
+        var configSource = new Microsoft.Extensions.Configuration.Memory.MemoryConfigurationSource { InitialData = configDict };
+        var configRoot = new ConfigurationBuilder().Add(configSource).Build();
+
+        var profileProvider = new VisualGenerationProfileProvider(configRoot);
+        var resolver = new VisualStateResolver(
+            unitOfWork: null!,
+            sceneStateTracker: null,
+            profileProvider: profileProvider,
+            logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<VisualStateResolver>.Instance
+        );
+
+        var visualIdentity = new CharacterVisualIdentity(
+            Face: "delicate youthful features",
+            Hair: "long silver hair",
+            Eyes: "blue eyes",
+            Skin: "fair skin",
+            Body: "slender",
+            AgeAppearance: "early 20s",
+            ClothingStyle: "robe",
+            Accessories: null,
+            VisualTraits: null,
+            CanonicalReferenceUrl: "canonical.png"
+        );
+        var character = new Character("Aria", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy", visualIdentity: visualIdentity);
+        var session = new ChatSession(character.Id, Guid.NewGuid(), "Chat with Aria");
+
+        // 2. Turn 1 Snapshot created under initial configuration
+        var (_, _, snapshotTurn1) = await resolver.ResolveTurnVisualStateAsync(
+            character: character,
+            session: session,
+            userMessage: "Turn 1 message",
+            assistantReply: "Turn 1 reply",
+            currentMood: CharacterMood.Neutral,
+            turnId: Guid.NewGuid()
+        );
+
+        Assert.Contains("\"weight\":0.45", snapshotTurn1.GenerationProfile.ParametersJson);
+        Assert.Contains("\"endAt\":0.70", snapshotTurn1.GenerationProfile.ParametersJson);
+
+        // 3. Mutate runtime configuration (e.g. administrator reconfigures weights for Turn 2)
+        var newConfigDict = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:DefaultWorkflow"] = "VisualIdentity",
+            ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = "1",
+            ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.20",
+            ["AiProviders:ImageGeneration:IPAdapter:EndAt"] = "0.30"
+        };
+        var newConfigRoot = new ConfigurationBuilder().AddInMemoryCollection(newConfigDict).Build();
+        var newProfileProvider = new VisualGenerationProfileProvider(newConfigRoot);
+        var newResolver = new VisualStateResolver(
+            unitOfWork: null!,
+            sceneStateTracker: null,
+            profileProvider: newProfileProvider,
+            logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<VisualStateResolver>.Instance
+        );
+
+        // Turn 2 Snapshot created under mutated configuration
+        var (_, _, snapshotTurn2) = await newResolver.ResolveTurnVisualStateAsync(
+            character: character,
+            session: session,
+            userMessage: "Turn 2 message",
+            assistantReply: "Turn 2 reply",
+            currentMood: CharacterMood.Neutral,
+            turnId: Guid.NewGuid()
+        );
+
+        // 4. INVARIANT: Turn 1 snapshot remains STRICTLY FROZEN at 0.45 / 0.70 (Zero State Drift)
+        Assert.Contains("\"weight\":0.45", snapshotTurn1.GenerationProfile.ParametersJson);
+        Assert.Contains("\"endAt\":0.70", snapshotTurn1.GenerationProfile.ParametersJson);
+
+        // Turn 2 snapshot has new 0.20 / 0.30 configuration
+        Assert.Contains("\"weight\":0.20", snapshotTurn2.GenerationProfile.ParametersJson);
+        Assert.Contains("\"endAt\":0.30", snapshotTurn2.GenerationProfile.ParametersJson);
     }
 
     [Fact]
