@@ -26,7 +26,18 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
 
         // Invariant: Unique per generation request attempt; non-unique per revision to support multiple regenerations
         builder.HasIndex(x => new { x.SessionId, x.GenerationRequestId }).IsUnique();
-        builder.HasIndex(x => new { x.SessionId, x.SceneRevision, x.IsCurrent });
+        
+        // Database invariant: At most ONE active (IsCurrent = true) artifact per (SessionId, SceneRevision)
+        builder.HasIndex(x => new { x.SessionId, x.SceneRevision })
+            .HasFilter("\"IsCurrent\" = true")
+            .IsUnique();
+
         builder.HasIndex(x => x.TurnId);
+
+        // Referential integrity to ImageGenerationJob
+        builder.HasOne<ImageGenerationJob>()
+            .WithMany()
+            .HasForeignKey(x => x.GenerationJobId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

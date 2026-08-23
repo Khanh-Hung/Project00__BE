@@ -103,9 +103,24 @@ namespace Project.Infrastructure.Persistence.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_SceneImages_SessionId_SceneRevision_IsCurrent",
+                name: "IX_SceneImages_SessionId_SceneRevision",
                 table: "SceneImages",
-                columns: new[] { "SessionId", "SceneRevision", "IsCurrent" });
+                columns: new[] { "SessionId", "SceneRevision" },
+                filter: "\"IsCurrent\" = true",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SceneImages_GenerationJobId",
+                table: "SceneImages",
+                column: "GenerationJobId");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_SceneImages_ImageGenerationJobs_GenerationJobId",
+                table: "SceneImages",
+                column: "GenerationJobId",
+                principalTable: "ImageGenerationJobs",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
 
             migrationBuilder.CreateIndex(
                 name: "IX_ImageGenerationJobs_SessionId_GenerationRequestId",
@@ -127,6 +142,10 @@ namespace Project.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropForeignKey(
+                name: "FK_SceneImages_ImageGenerationJobs_GenerationJobId",
+                table: "SceneImages");
+
             migrationBuilder.DropTable(
                 name: "ImageGenerationJobs");
 
@@ -135,7 +154,11 @@ namespace Project.Infrastructure.Persistence.Migrations
                 table: "SceneImages");
 
             migrationBuilder.DropIndex(
-                name: "IX_SceneImages_SessionId_SceneRevision_IsCurrent",
+                name: "IX_SceneImages_SessionId_SceneRevision",
+                table: "SceneImages");
+
+            migrationBuilder.DropIndex(
+                name: "IX_SceneImages_GenerationJobId",
                 table: "SceneImages");
 
             migrationBuilder.DropColumn(
