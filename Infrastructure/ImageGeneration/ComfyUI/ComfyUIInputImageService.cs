@@ -50,12 +50,27 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                     throw new GpuNonTransientException($"Invalid reference image URI: '{referenceImageUrl}'");
                 }
 
-                // SSRF Protection: Deny loopback and link-local metadata addresses
+                // SSRF Protection: Deny loopback, private subnets, and cloud metadata addresses
                 var host = uri.Host.ToLowerInvariant();
                 if (host == "localhost" || host == "127.0.0.1" || host == "169.254.169.254" || host == "0.0.0.0" || host == "::1")
                 {
                     _logger.LogWarning("Blocked potential SSRF reference image attempt to host: {Host}", host);
                     throw new GpuNonTransientException($"Access to internal address '{host}' is forbidden for reference images.");
+                }
+
+                try
+                {
+                    var ips = await System.Net.Dns.GetHostAddressesAsync(uri.DnsSafeHost, ct);
+                    if (ips.Any(IsPrivateOrInternalIp))
+                    {
+                        _logger.LogWarning("Blocked potential SSRF reference image attempt resolving to private IP for host: {Host}", uri.Host);
+                        throw new GpuNonTransientException($"Access to internal IP address for host '{uri.Host}' is forbidden.");
+                    }
+                }
+                catch (GpuNonTransientException) { throw; }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "DNS resolution failed for reference image host: {Host}", uri.Host);
                 }
 
                 imageBytes = await _httpClient.GetByteArrayAsync(referenceImageUrl, ct);
@@ -150,5 +165,27 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
             ".webp" => "image/webp",
             _ => "application/octet-stream"
         };
+    }
+
+    private static bool IsPrivateOrInternalIp(System.Net.IPAddress ip)
+    {
+        if (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.Any) || ip.Equals(System.Net.IPAddress.IPv6Any))
+            return true;
+
+        var bytes = ip.GetAddressBytes();
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            if (bytes[0] == 10) return true; // 10.0.0.0/8
+            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true; // 172.16.0.0/12
+            if (bytes[0] == 192 && bytes[1] == 168) return true; // 192.168.0.0/16
+            if (bytes[0] == 127) return true; // 127.0.0.0/8
+            if (bytes[0] == 169 && bytes[1] == 254) return true; // 169.254.0.0/16
+        }
+        else if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            if (ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || ip.IsIPv6UniqueLocal) return true;
+        }
+
+        return false;
     }
 }
