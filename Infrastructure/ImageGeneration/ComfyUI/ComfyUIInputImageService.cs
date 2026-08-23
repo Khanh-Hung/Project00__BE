@@ -61,9 +61,9 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                 try
                 {
                     var ips = await System.Net.Dns.GetHostAddressesAsync(uri.DnsSafeHost, ct);
-                    if (ips.Any(IsPrivateOrInternalIp))
+                    if (ips.Length == 0 || ips.Any(IsPrivateOrInternalIp))
                     {
-                        _logger.LogWarning("Blocked potential SSRF reference image attempt resolving to private IP for host: {Host}", uri.Host);
+                        _logger.LogWarning("Blocked potential SSRF reference image attempt resolving to private/empty IP for host: {Host}", uri.Host);
                         throw new GpuNonTransientException($"Access to internal IP address for host '{uri.Host}' is forbidden.");
                     }
                 }
@@ -71,6 +71,7 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogWarning(ex, "DNS resolution failed for reference image host: {Host}", uri.Host);
+                    throw new GpuNonTransientException($"Could not resolve DNS for reference image host '{uri.Host}': {ex.Message}", innerException: ex);
                 }
 
                 imageBytes = await _httpClient.GetByteArrayAsync(referenceImageUrl, ct);

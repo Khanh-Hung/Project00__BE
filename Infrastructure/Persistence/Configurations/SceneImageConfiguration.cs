@@ -34,10 +34,10 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
 
         builder.HasIndex(x => x.TurnId);
 
-        // Referential integrity to ImageGenerationJob
+        // Referential integrity to ImageGenerationJob: RESTRICT to preserve immutable historical audit trail
         builder.HasOne<ImageGenerationJob>()
             .WithMany()
             .HasForeignKey(x => x.GenerationJobId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

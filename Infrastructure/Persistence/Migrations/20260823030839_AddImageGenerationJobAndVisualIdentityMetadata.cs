@@ -120,7 +120,7 @@ namespace Project.Infrastructure.Persistence.Migrations
                 column: "GenerationJobId",
                 principalTable: "ImageGenerationJobs",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                onDelete: ReferentialAction.Restrict);
 
             migrationBuilder.CreateIndex(
                 name: "IX_ImageGenerationJobs_SessionId_GenerationRequestId",
