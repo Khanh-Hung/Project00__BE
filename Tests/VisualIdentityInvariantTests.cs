@@ -78,6 +78,12 @@ public sealed class VisualIdentityInvariantTests
         }
     }
 
+    private sealed class MockInputImageService : IComfyUIInputImageService
+    {
+        public Task<string> EnsureImageUploadedAsync(string? referenceImageUrl, CancellationToken ct = default)
+            => Task.FromResult("canonical_face.png");
+    }
+
     private static (ProjectDbContext db, ImageGenerationJobHandler handler, CountingImageService imageService) CreateHarness(string dbName)
     {
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
@@ -463,15 +469,29 @@ public sealed class VisualIdentityInvariantTests
         Assert.Equal(ImageJobStatus.Completed, jobInDb.Status);
     }
 
-    private sealed class ExpiringLeaseImageService : IImageGenerationService
+    private sealed class TestDateTimeProvider : IDateTimeProvider
     {
-        private readonly ProjectDbContext _db;
-        private readonly Guid _requestId;
+        public DateTime CurrentTime { get; set; }
+        public DateTime UtcNow => CurrentTime;
 
-        public ExpiringLeaseImageService(ProjectDbContext db, Guid requestId)
+        public TestDateTimeProvider(DateTime initialTime)
         {
-            _db = db;
-            _requestId = requestId;
+            CurrentTime = initialTime;
+        }
+
+        public void Advance(TimeSpan delta)
+        {
+            CurrentTime = CurrentTime.Add(delta);
+        }
+    }
+
+    private sealed class ActionImageService : IImageGenerationService
+    {
+        private readonly Action _onGenerate;
+
+        public ActionImageService(Action onGenerate)
+        {
+            _onGenerate = onGenerate;
         }
 
         public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default)
@@ -479,20 +499,16 @@ public sealed class VisualIdentityInvariantTests
         public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default)
             => Task.FromResult("https://images.storage/dummy.png");
 
-        public async Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        public Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
         {
-            // Simulate GPU running longer than lease: expire the lease in DB!
-            var job = await _db.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == _requestId);
-            job.ExpireLease(Clock.Now.AddMinutes(-5));
-            await _db.SaveChangesAsync();
-
-            return new ImageGenerationResult(
-                ImageUrl: "https://images.storage/stale_render.png",
+            _onGenerate();
+            return Task.FromResult(new ImageGenerationResult(
+                ImageUrl: "https://images.storage/rendered.png",
                 Provider: "ComfyUI",
-                ProviderJobId: "prompt_stale",
-                DurationMs: 300000,
+                ProviderJobId: "prompt_done",
+                DurationMs: 100,
                 Seed: request.Seed ?? 12345
-            );
+            ));
         }
     }
 
@@ -526,23 +542,33 @@ public sealed class VisualIdentityInvariantTests
             .Options;
         var db = new ProjectDbContext(options);
 
+        var startTime = new DateTime(2026, 8, 23, 12, 0, 0, DateTimeKind.Utc);
+        var timeProvider = new TestDateTimeProvider(startTime);
+
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
         var requestId = Guid.NewGuid();
 
-        var expiringService = new ExpiringLeaseImageService(db, requestId);
+        var timeAdvancingService = new ActionImageService(() =>
+        {
+            // GPU runs for 5 minutes -> time advances past 4-minute lease!
+            timeProvider.Advance(TimeSpan.FromMinutes(5));
+        });
+
         var visualCompiler = new VisualPromptCompiler();
-        var handler = new ImageGenerationJobHandler(db, visualCompiler, expiringService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, timeAdvancingService, NullLogger<ImageGenerationJobHandler>.Instance, timeProvider);
 
         var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
         var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
 
-        // Worker A claims job at T0, GPU takes too long and lease expires before commit
-        // When handler checks live Clock.Now, lease is expired -> Discarded with Deferred!
-        var resA = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-A", Clock.Now);
+        // Worker A claims job at T0 (lease is T0 + 4 mins)
+        // During GPU execution, time advances to T0 + 5 mins (lease expired!)
+        // Worker A completes GPU and attempts to commit artifact
+        // Handler checks timeProvider.UtcNow (T0 + 5 mins) > LeaseUntil (T0 + 4 mins) -> Discarded with Deferred!
+        var resA = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-A", startTime);
         Assert.Equal(JobExecutionStatus.Deferred, resA.Status);
 
-        // ZERO SceneImages committed
+        // ZERO SceneImages committed to database!
         var allImages = await db.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
         Assert.Empty(allImages);
     }
@@ -585,6 +611,84 @@ public sealed class VisualIdentityInvariantTests
 
         var finalJob = await db.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == requestId);
         Assert.Equal(ImageJobStatus.Completed, finalJob.Status);
+    }
+
+    [Fact]
+    public async Task ConcurrencyTest_ConcurrentRegenerations_MaintainsAtMostOneCurrentArtifactInDatabase()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (db, handler, imageService) = CreateHarness(dbName);
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
+
+        // Attempt 1
+        var req1 = Guid.NewGuid();
+        var payload1 = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, req1);
+        var res1 = await handler.HandleSceneImageGenerationAsync(payload1, Guid.NewGuid(), "worker-1", Clock.Now);
+        Assert.Equal(JobExecutionStatus.Completed, res1.Status);
+
+        // Attempt 2 (Regeneration)
+        var req2 = Guid.NewGuid();
+        var payload2 = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, req2);
+        var res2 = await handler.HandleSceneImageGenerationAsync(payload2, Guid.NewGuid(), "worker-2", Clock.Now.AddSeconds(10));
+        Assert.Equal(JobExecutionStatus.Completed, res2.Status);
+
+        // Assert DB contains 2 artifacts total, but EXACTLY ONE has IsCurrent = true!
+        var allImages = await db.SceneImages.Where(img => img.SessionId == sessionId && img.SceneRevision == 1).ToListAsync();
+        Assert.Equal(2, allImages.Count);
+
+        var currentImages = allImages.Where(img => img.IsCurrent).ToList();
+        Assert.Single(currentImages);
+        Assert.Equal(req2, currentImages[0].GenerationRequestId);
+    }
+
+    [Fact]
+    public async Task BoundaryTest_CrashAfterQueuePromptBeforeProviderJobIdSaved_ReExecutesPromptAndCommitsSingleWinningArtifact()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+        var db = new ProjectDbContext(options);
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
+        var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
+
+        var mockComfyClient = new MockComfyUIClient();
+        var config = new ConfigurationBuilder().Build();
+        var storage = new ComfyUIImageGenerationIntegrationTests_InMemoryStorageService();
+        var inputService = new MockInputImageService();
+        var workflowBuilders = new IComfyUIWorkflowBuilder[] { new VisualIdentityWorkflowV1Builder() };
+        var comfyService = new ComfyUIImageGenerationService(mockComfyClient, storage, inputService, workflowBuilders, config, NullLogger<ComfyUIImageGenerationService>.Instance);
+
+        var visualCompiler = new VisualPromptCompiler();
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, comfyService, NullLogger<ImageGenerationJobHandler>.Instance);
+
+        // 1. First execution: ComfyUI receives /prompt, but worker crashes before ProviderJobId is saved to DB
+        var requestCrash = ImageGenerationRequest.FromSnapshot(
+            snapshot: snapshot,
+            compiledPrompt: "1girl",
+            providerJobId: null,
+            onPromptQueuedAsync: (promptId, ct) => throw new InvalidOperationException("Process crashed before saving ProviderJobId!")
+        );
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => comfyService.GenerateImageWithResultAsync(requestCrash));
+        Assert.Equal(1, mockComfyClient.QueuePromptCallCount);
+
+        // 2. Recovery execution: Worker restarts with ProviderJobId = null, calls QueuePromptAsync again (at-least-once external generation)
+        var resRecovery = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-recovery", Clock.Now);
+        Assert.Equal(JobExecutionStatus.Completed, resRecovery.Status);
+        Assert.Equal(2, mockComfyClient.QueuePromptCallCount); // External ComfyUI called twice due to crash window
+
+        // 3. Assert DB guarantees strictly exactly-once artifact persistence
+        var committedImages = await db.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
+        Assert.Single(committedImages);
+        Assert.Equal(requestId, committedImages[0].GenerationRequestId);
     }
 
     [Fact]
