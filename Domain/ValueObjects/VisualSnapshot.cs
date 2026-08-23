@@ -13,7 +13,7 @@ public sealed record VisualSnapshot(
     CharacterVisualIdentity? VisualIdentity,
     SessionSceneState SceneState,
     TransientVisualState? TransientState,
-    GenerationProfile? GenerationProfile = null,
+    GenerationProfile GenerationProfile,
     string? IdentityReferenceUrl = null,
     string? PreviousSceneImageUrl = null,
     int? PredecessorSceneRevision = null,
@@ -22,7 +22,7 @@ public sealed record VisualSnapshot(
 )
 {
     /// <summary>
-    /// Factory helper to build an immutable snapshot with clean constraints and predecessor revision.
+    /// Factory helper to build an immutable snapshot with strict canonical reference and generation profile.
     /// </summary>
     public static VisualSnapshot Create(
         Guid turnId,
@@ -30,19 +30,20 @@ public sealed record VisualSnapshot(
         Guid characterId,
         int sceneRevision,
         CharacterVisualIdentity? visualIdentity,
-        string? characterAvatarUrl,
         SessionSceneState sceneState,
         TransientVisualState? transientState,
+        GenerationProfile generationProfile,
         string? previousSceneImageUrl = null,
         int? predecessorSceneRevision = null,
-        GenerationProfile? generationProfile = null,
         string? negativeConstraints = null)
     {
-        var resolvedIdentityRef = visualIdentity?.CanonicalReferenceUrl
-            ?? visualIdentity?.FullBodyUrl
-            ?? (!string.IsNullOrWhiteSpace(characterAvatarUrl) ? characterAvatarUrl : null);
+        ArgumentNullException.ThrowIfNull(generationProfile, nameof(generationProfile));
 
-        var profile = generationProfile ?? GenerationProfile.CreateDefault();
+        // Strict Canonical Reference: strictly use CanonicalReferenceUrl (tight face crop).
+        // No fallback to full-body or avatar to prevent outfit/style leakage.
+        var resolvedIdentityRef = !string.IsNullOrWhiteSpace(visualIdentity?.CanonicalReferenceUrl)
+            ? visualIdentity.CanonicalReferenceUrl
+            : null;
 
         var defaultNegatives = negativeConstraints 
             ?? "deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
@@ -55,7 +56,7 @@ public sealed record VisualSnapshot(
             VisualIdentity: visualIdentity,
             SceneState: sceneState,
             TransientState: transientState,
-            GenerationProfile: profile,
+            GenerationProfile: generationProfile,
             IdentityReferenceUrl: resolvedIdentityRef,
             PreviousSceneImageUrl: previousSceneImageUrl,
             PredecessorSceneRevision: predecessorSceneRevision ?? (sceneRevision > 1 ? sceneRevision - 1 : null),

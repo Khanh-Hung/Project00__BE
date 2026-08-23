@@ -30,6 +30,8 @@ public sealed class ImageGenerationJob : BaseEntity
     public int WorkflowVersion { get; private set; } = 1;
     public string? GenerationMetadataJson { get; private set; }
 
+    public uint Version { get; private set; } = 1;
+
     private ImageGenerationJob() { } // EF Core
 
     public ImageGenerationJob(
@@ -43,8 +45,8 @@ public sealed class ImageGenerationJob : BaseEntity
         int workflowVersion = 1,
         string? generationMetadataJson = null)
     {
-        Id = generationRequestId ?? Guid.NewGuid();
-        GenerationRequestId = Id;
+        Id = Guid.NewGuid();
+        GenerationRequestId = generationRequestId ?? Guid.NewGuid();
         SessionId = sessionId;
         TurnId = turnId;
         CharacterId = characterId;
@@ -55,6 +57,15 @@ public sealed class ImageGenerationJob : BaseEntity
         GenerationMetadataJson = generationMetadataJson;
         Status = ImageJobStatus.Pending;
         AttemptCount = 0;
+        Version = 1;
+    }
+
+    public void SetProviderJobId(string providerJobId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerJobId, nameof(providerJobId));
+        ProviderJobId = providerJobId;
+        Version++;
+        Touch();
     }
 
     public bool TryClaim(string workerId, TimeSpan leaseDuration, DateTime now)
@@ -77,6 +88,7 @@ public sealed class ImageGenerationJob : BaseEntity
             IsRetryable = false;
             CompletedAt = null;
             AttemptCount++;
+            Version++;
             Touch();
             return true;
         }
@@ -96,6 +108,7 @@ public sealed class ImageGenerationJob : BaseEntity
         IsRetryable = false;
         CompletedAt = null;
         AttemptCount++;
+        Version++;
         Touch();
     }
 
@@ -109,6 +122,7 @@ public sealed class ImageGenerationJob : BaseEntity
         {
             GenerationMetadataJson = metadataJson;
         }
+        Version++;
         Touch();
     }
 
@@ -119,6 +133,7 @@ public sealed class ImageGenerationJob : BaseEntity
         IsRetryable = isRetryable;
         CompletedAt = failedAt ?? Clock.Now;
         LeaseUntil = null;
+        Version++;
         Touch();
     }
 
@@ -127,6 +142,7 @@ public sealed class ImageGenerationJob : BaseEntity
         Status = ImageJobStatus.Cancelled;
         CompletedAt = cancelledAt ?? Clock.Now;
         LeaseUntil = null;
+        Version++;
         Touch();
     }
 
@@ -136,6 +152,7 @@ public sealed class ImageGenerationJob : BaseEntity
         ClaimedBy = null;
         LeaseUntil = null;
         StartedAt = null;
+        Version++;
         Touch();
     }
 }

@@ -95,12 +95,11 @@ public sealed class VisualStateResolver : IVisualStateResolver
             characterId: character.Id,
             sceneRevision: targetRevision,
             visualIdentity: character.VisualIdentity,
-            characterAvatarUrl: character.AvatarUrl,
             sceneState: updatedSceneState,
             transientState: transientState,
+            generationProfile: generationProfile,
             previousSceneImageUrl: previousSceneImageUrl,
-            predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null,
-            generationProfile: generationProfile
+            predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null
         );
 
         return (updatedSceneState, transientState, snapshot);
