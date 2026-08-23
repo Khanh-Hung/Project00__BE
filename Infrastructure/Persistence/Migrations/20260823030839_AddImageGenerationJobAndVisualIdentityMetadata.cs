@@ -73,6 +73,7 @@ namespace Project.Infrastructure.Persistence.Migrations
                     Workflow = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
                     WorkflowVersion = table.Column<int>(type: "integer", nullable: false),
                     GenerationMetadataJson = table.Column<string>(type: "text", nullable: true),
+                    Version = table.Column<long>(type: "bigint", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedBy = table.Column<string>(type: "text", nullable: true),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),

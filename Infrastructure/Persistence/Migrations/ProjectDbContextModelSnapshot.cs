@@ -637,6 +637,10 @@ namespace Project.Infrastructure.Persistence.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("text");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Workflow")
                         .IsRequired()
                         .HasMaxLength(128)

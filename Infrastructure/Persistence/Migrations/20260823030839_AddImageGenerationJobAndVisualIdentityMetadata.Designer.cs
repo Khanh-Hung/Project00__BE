@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Project.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ProjectDbContext))]
-    [Migration("20260822155629_AddImageGenerationJobAndVisualIdentityMetadata")]
+    [Migration("20260823030839_AddImageGenerationJobAndVisualIdentityMetadata")]
     partial class AddImageGenerationJobAndVisualIdentityMetadata
     {
         /// <inheritdoc />
@@ -639,6 +639,10 @@ namespace Project.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("text");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Workflow")
                         .IsRequired()
