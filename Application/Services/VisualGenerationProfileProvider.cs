@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Application.Interfaces;
 using Domain.Entities;
 using Domain.ValueObjects;
@@ -26,9 +27,23 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     /// </summary>
     public GenerationProfile ResolveProfile(Character character, string? workflowOverride = null)
     {
-        var workflow = workflowOverride 
-            ?? _configuration?["AiProviders:ImageGeneration:DefaultWorkflow"] 
-            ?? DefaultWorkflow;
+        string workflow = DefaultWorkflow;
+        if (workflowOverride != null)
+        {
+            if (string.IsNullOrWhiteSpace(workflowOverride))
+            {
+                throw new InvalidOperationException("workflowOverride cannot be empty or whitespace.");
+            }
+            workflow = workflowOverride.Trim();
+        }
+        else
+        {
+            var configWorkflow = _configuration?["AiProviders:ImageGeneration:DefaultWorkflow"];
+            if (!string.IsNullOrWhiteSpace(configWorkflow))
+            {
+                workflow = configWorkflow.Trim();
+            }
+        }
 
         // 1. Strict validation of WorkflowVersion (missing => default 1; present but invalid => fail-fast)
         int workflowVersion = DefaultWorkflowVersion;
@@ -77,8 +92,15 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             endAt = parsedEndAt;
         }
 
-        // 4. Invariant: ParametersJson is built strictly from validated typed parameters (preventing unvalidated raw JSON bypass)
-        var parametersJson = $"{{\"ipAdapter\":{{\"weight\":{weight.ToString("0.00", CultureInfo.InvariantCulture)},\"endAt\":{endAt.ToString("0.00", CultureInfo.InvariantCulture)}}}}}";
+        // 4. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
+        var parametersJson = JsonSerializer.Serialize(new
+        {
+            ipAdapter = new
+            {
+                weight,
+                endAt
+            }
+        });
 
         return GenerationProfile.CreateDefault(
             workflow: workflow,

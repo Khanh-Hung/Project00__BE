@@ -995,6 +995,66 @@ public sealed class VisualIdentityInvariantTests
         Assert.Contains("AiProviders:ImageGeneration:DefaultWorkflowVersion", ex.Message);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void VisualGenerationProfileProvider_InvalidWorkflowOverride_ThrowsInvalidOperationException(string invalidOverride)
+    {
+        var provider = new VisualGenerationProfileProvider();
+        var character = new Character("Aria", "Mage", "avatar.jpg", "Hello", "Friendly", "Fantasy");
+
+        Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character, workflowOverride: invalidOverride));
+    }
+
+    [Fact]
+    public void VisualGenerationProfileProvider_MissingConfiguration_UsesExpectedDefaults()
+    {
+        var provider = new VisualGenerationProfileProvider(); // No configuration provided
+        var character = new Character("Aria", "Mage", "avatar.jpg", "Hello", "Friendly", "Fantasy");
+
+        var profile = provider.ResolveProfile(character);
+        Assert.Equal("VisualIdentity", profile.Workflow);
+        Assert.Equal(1, profile.WorkflowVersion);
+        Assert.Contains("\"weight\":0.45", profile.ParametersJson);
+        Assert.Contains("\"endAt\":0.7", profile.ParametersJson);
+    }
+
+    [Fact]
+    public void VisualGenerationProfileProvider_ValidBoundaryValues_ZeroAndOne_Succeeds()
+    {
+        var inMemoryConfig = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.0",
+            ["AiProviders:ImageGeneration:IPAdapter:EndAt"] = "1.0",
+            ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = "5"
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
+        var provider = new VisualGenerationProfileProvider(configuration);
+        var character = new Character("Aria", "Mage", "avatar.jpg", "Hello", "Friendly", "Fantasy");
+
+        var profile = provider.ResolveProfile(character);
+        Assert.Equal(5, profile.WorkflowVersion);
+        Assert.Contains("\"weight\":0", profile.ParametersJson);
+        Assert.Contains("\"endAt\":1", profile.ParametersJson);
+    }
+
+    [Fact]
+    public void VisualGenerationProfileProvider_HighPrecisionFloat_PreservesExactPrecisionWithoutTruncation()
+    {
+        var inMemoryConfig = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.456",
+            ["AiProviders:ImageGeneration:IPAdapter:EndAt"] = "0.789"
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
+        var provider = new VisualGenerationProfileProvider(configuration);
+        var character = new Character("Aria", "Mage", "avatar.jpg", "Hello", "Friendly", "Fantasy");
+
+        var profile = provider.ResolveProfile(character);
+        Assert.Contains("\"weight\":0.456", profile.ParametersJson);
+        Assert.Contains("\"endAt\":0.789", profile.ParametersJson);
+    }
+
     [Fact]
     public async Task VisualGenerationProfileProvider_ZeroStateDrift_ConfigurationMutationAfterSnapshot_DoesNotMutateFrozenSnapshot()
     {
@@ -1043,7 +1103,7 @@ public sealed class VisualIdentityInvariantTests
         );
 
         Assert.Contains("\"weight\":0.45", snapshotTurn1.GenerationProfile.ParametersJson);
-        Assert.Contains("\"endAt\":0.70", snapshotTurn1.GenerationProfile.ParametersJson);
+        Assert.Contains("\"endAt\":0.7", snapshotTurn1.GenerationProfile.ParametersJson);
 
         // 3. Mutate runtime configuration (e.g. administrator reconfigures weights for Turn 2)
         var newConfigDict = new Dictionary<string, string?>
@@ -1074,11 +1134,11 @@ public sealed class VisualIdentityInvariantTests
 
         // 4. INVARIANT: Turn 1 snapshot remains STRICTLY FROZEN at 0.45 / 0.70 (Zero State Drift)
         Assert.Contains("\"weight\":0.45", snapshotTurn1.GenerationProfile.ParametersJson);
-        Assert.Contains("\"endAt\":0.70", snapshotTurn1.GenerationProfile.ParametersJson);
+        Assert.Contains("\"endAt\":0.7", snapshotTurn1.GenerationProfile.ParametersJson);
 
         // Turn 2 snapshot has new 0.20 / 0.30 configuration
-        Assert.Contains("\"weight\":0.20", snapshotTurn2.GenerationProfile.ParametersJson);
-        Assert.Contains("\"endAt\":0.30", snapshotTurn2.GenerationProfile.ParametersJson);
+        Assert.Contains("\"weight\":0.2", snapshotTurn2.GenerationProfile.ParametersJson);
+        Assert.Contains("\"endAt\":0.3", snapshotTurn2.GenerationProfile.ParametersJson);
     }
 
     [Fact]
@@ -1133,7 +1193,7 @@ public sealed class VisualIdentityInvariantTests
         Assert.Equal("VisualIdentityV2", snapshot.GenerationProfile.Workflow);
         Assert.Equal(2, snapshot.GenerationProfile.WorkflowVersion);
         Assert.Contains("\"weight\":0.35", snapshot.GenerationProfile.ParametersJson);
-        Assert.Contains("\"endAt\":0.60", snapshot.GenerationProfile.ParametersJson);
+        Assert.Contains("\"endAt\":0.6", snapshot.GenerationProfile.ParametersJson);
     }
 
     private sealed class ComfyUIImageGenerationIntegrationTests_InMemoryStorageService : IStorageService
