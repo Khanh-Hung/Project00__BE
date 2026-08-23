@@ -132,9 +132,16 @@ public sealed class ComfyUIClient : IComfyUIClient
 
             return new ComfyUIHistoryResult(promptId, true, null, outputImages);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (GpuTransientException) { throw; }
+        catch (GpuNonTransientException) { throw; }
+        catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Transient error while querying ComfyUI history for PromptId={PromptId}", promptId);
+            _logger.LogWarning(ex, "Network drop while querying ComfyUI history for PromptId={PromptId}", promptId);
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "JSON parse error while parsing ComfyUI history for PromptId={PromptId}", promptId);
             return null;
         }
     }
