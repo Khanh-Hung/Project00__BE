@@ -3,6 +3,7 @@ using Application.Common;
 using Application.DTOs;
 using Application.Interfaces;
 using Application.Services;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -862,7 +863,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             context,
             new VisualPromptCompiler(),
             new MockImageService(),
-            NullLogger<ImageGenerationJobHandler>.Instance
+            NullLogger<ImageGenerationJobHandler>.Instance,
+            new SystemDateTimeProvider()
         );
 
         await jobHandler.HandleSceneImageGenerationAsync(scenePayload, outboxMessage.Id, "test-worker-1", DateTime.UtcNow);

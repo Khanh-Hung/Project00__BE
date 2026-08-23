@@ -92,7 +92,7 @@ public sealed class VisualIdentityInvariantTests
         var db = new ProjectDbContext(options);
         var imageService = new CountingImageService();
         var visualCompiler = new VisualPromptCompiler();
-        var handler = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
         return (db, handler, imageService);
     }
 
@@ -359,7 +359,7 @@ public sealed class VisualIdentityInvariantTests
         var dbName = Guid.NewGuid().ToString();
         var (db, handlerA, imageService) = CreateHarness(dbName);
         var visualCompiler = new VisualPromptCompiler();
-        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -402,7 +402,6 @@ public sealed class VisualIdentityInvariantTests
                 WorkerAStartedTcs.TrySetResult(true);
                 await WorkerAReleaseTcs.Task;
             }
-
             return new ImageGenerationResult(
                 ImageUrl: $"https://images.storage/generated_{CallCount}.png",
                 Provider: "ComfyUI",
@@ -426,8 +425,8 @@ public sealed class VisualIdentityInvariantTests
 
         var barrierService = new BarrierImageService();
         var visualCompiler = new VisualPromptCompiler();
-        var handlerA = new ImageGenerationJobHandler(dbA, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance);
-        var handlerB = new ImageGenerationJobHandler(dbB, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var handlerA = new ImageGenerationJobHandler(dbA, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handlerB = new ImageGenerationJobHandler(dbB, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -591,7 +590,7 @@ public sealed class VisualIdentityInvariantTests
         using var cts = new CancellationTokenSource();
         var cancellingService = new CancellingImageService(cts);
         var visualCompiler = new VisualPromptCompiler();
-        var handlerA = new ImageGenerationJobHandler(db, visualCompiler, cancellingService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var handlerA = new ImageGenerationJobHandler(db, visualCompiler, cancellingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
 
         // 1. Worker A interrupted by host shutdown / cancellation during GPU execution
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
@@ -604,7 +603,7 @@ public sealed class VisualIdentityInvariantTests
 
         // 2. Restart: Worker B arrives after lease expired -> Successfully reclaims and completes!
         var countingService = new CountingImageService();
-        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, countingService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, countingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
         var resRestart = await handlerB.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-B", Clock.Now.AddMinutes(5));
         Assert.Equal(JobExecutionStatus.Completed, resRestart.Status);
         Assert.Equal(1, countingService.CallCount);
@@ -613,35 +612,161 @@ public sealed class VisualIdentityInvariantTests
         Assert.Equal(ImageJobStatus.Completed, finalJob.Status);
     }
 
-    [Fact]
-    public async Task ConcurrencyTest_ConcurrentRegenerations_MaintainsAtMostOneCurrentArtifactInDatabase()
+    private sealed class TwoWorkerBarrierImageService : IImageGenerationService
     {
-        var dbName = Guid.NewGuid().ToString();
-        var (db, handler, imageService) = CreateHarness(dbName);
+        private readonly CountdownEvent _barrier = new CountdownEvent(2);
+        private readonly TaskCompletionSource<bool> _releaseTcs = new TaskCompletionSource<bool>();
+
+        public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default)
+            => Task.FromResult("https://images.storage/dummy.png");
+        public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default)
+            => Task.FromResult("https://images.storage/dummy.png");
+
+        public async Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            _barrier.Signal();
+            if (_barrier.IsSet)
+            {
+                _releaseTcs.TrySetResult(true);
+            }
+            await _releaseTcs.Task;
+
+            return new ImageGenerationResult(
+                ImageUrl: $"https://images.storage/{Guid.NewGuid()}.png",
+                Provider: "ComfyUI",
+                ProviderJobId: "prompt_race",
+                DurationMs: 100,
+                Seed: request.Seed ?? 12345
+            );
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrencyTest_ConcurrentRegenerations_RealRaceWithBarrier_GuaranteesAtMostOneCurrentArtifact()
+    {
+        var connectionString = $"Data Source=SharedDb_{Guid.NewGuid()};Mode=Memory;Cache=Shared";
+        using var masterConnection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await masterConnection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connectionString)
+            .Options;
+
+        using (var setupDb = new ProjectDbContext(options))
+        {
+            await setupDb.Database.EnsureCreatedAsync();
+        }
+
+        var db1 = new ProjectDbContext(options);
+        var db2 = new ProjectDbContext(options);
+
+        var barrierService = new TwoWorkerBarrierImageService();
+        var visualCompiler = new VisualPromptCompiler();
+        var handler1 = new ImageGenerationJobHandler(db1, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handler2 = new ImageGenerationJobHandler(db2, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
         var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
 
-        // Attempt 1
         var req1 = Guid.NewGuid();
         var payload1 = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, req1);
-        var res1 = await handler.HandleSceneImageGenerationAsync(payload1, Guid.NewGuid(), "worker-1", Clock.Now);
-        Assert.Equal(JobExecutionStatus.Completed, res1.Status);
-
-        // Attempt 2 (Regeneration)
         var req2 = Guid.NewGuid();
         var payload2 = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, req2);
-        var res2 = await handler.HandleSceneImageGenerationAsync(payload2, Guid.NewGuid(), "worker-2", Clock.Now.AddSeconds(10));
-        Assert.Equal(JobExecutionStatus.Completed, res2.Status);
 
-        // Assert DB contains 2 artifacts total, but EXACTLY ONE has IsCurrent = true!
-        var allImages = await db.SceneImages.Where(img => img.SessionId == sessionId && img.SceneRevision == 1).ToListAsync();
-        Assert.Equal(2, allImages.Count);
+        // Run both workers concurrently racing to commit revision 1!
+        var task1 = Task.Run(() => handler1.HandleSceneImageGenerationAsync(payload1, Guid.NewGuid(), "worker-1", Clock.Now));
+        var task2 = Task.Run(() => handler2.HandleSceneImageGenerationAsync(payload2, Guid.NewGuid(), "worker-2", Clock.Now));
+
+        var results = await Task.WhenAll(task1, task2);
+        Assert.Contains(results, r => r.Status == JobExecutionStatus.Completed);
+
+        // Assert DB guarantees EXACTLY ONE artifact has IsCurrent = true!
+        using var verifyDb = new ProjectDbContext(options);
+        var allImages = await verifyDb.SceneImages.AsNoTracking().Where(img => img.SessionId == sessionId && img.SceneRevision == 1).ToListAsync();
+        Assert.NotEmpty(allImages);
 
         var currentImages = allImages.Where(img => img.IsCurrent).ToList();
         Assert.Single(currentImages);
-        Assert.Equal(req2, currentImages[0].GenerationRequestId);
+    }
+
+    [Fact]
+    public async Task RelationalAtomicFencingAndTransactionTest_CommitSucceedsWithExactOneCurrentArtifact()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var db = new ProjectDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        Assert.True(db.Database.IsRelational());
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
+        var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
+
+        var countingService = new CountingImageService();
+        var visualCompiler = new VisualPromptCompiler();
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, countingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+
+        // Worker executes relational path: ExecuteUpdateAsync + BeginTransactionAsync
+        var res = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "relational-worker", Clock.Now);
+        Assert.Equal(JobExecutionStatus.Completed, res.Status);
+
+        // Assert job completed and artifact committed atomically
+        using var verifyDb = new ProjectDbContext(options);
+        var jobInDb = await verifyDb.ImageGenerationJobs.AsNoTracking().FirstAsync(j => j.GenerationRequestId == requestId);
+        Assert.Equal(ImageJobStatus.Completed, jobInDb.Status);
+
+        var artifacts = await verifyDb.SceneImages.AsNoTracking().Where(img => img.SessionId == sessionId).ToListAsync();
+        Assert.Single(artifacts);
+        Assert.True(artifacts[0].IsCurrent);
+    }
+
+    [Fact]
+    public async Task RelationalAtomicFencingAndTransactionTest_StaleFencingRollsBackAndInsertsNoArtifact()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var db = new ProjectDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var startTime = new DateTime(2026, 8, 23, 12, 0, 0, DateTimeKind.Utc);
+        var timeProvider = new TestDateTimeProvider(startTime);
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
+        var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
+
+        var timeAdvancingService = new ActionImageService(() =>
+        {
+            // Advance time past 4-minute lease
+            timeProvider.Advance(TimeSpan.FromMinutes(5));
+        });
+
+        var visualCompiler = new VisualPromptCompiler();
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, timeAdvancingService, NullLogger<ImageGenerationJobHandler>.Instance, timeProvider);
+
+        // Worker A attempts commit after lease expired -> relational ExecuteUpdateAsync rowsAffected == 0 -> Rollback
+        var res = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "relational-worker-A", startTime);
+        Assert.Equal(JobExecutionStatus.Deferred, res.Status);
+
+        // ZERO SceneImages committed!
+        var artifacts = await db.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
+        Assert.Empty(artifacts);
     }
 
     [Fact]
@@ -667,7 +792,7 @@ public sealed class VisualIdentityInvariantTests
         var comfyService = new ComfyUIImageGenerationService(mockComfyClient, storage, inputService, workflowBuilders, config, NullLogger<ComfyUIImageGenerationService>.Instance);
 
         var visualCompiler = new VisualPromptCompiler();
-        var handler = new ImageGenerationJobHandler(db, visualCompiler, comfyService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, comfyService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
 
         // 1. First execution: ComfyUI receives /prompt, but worker crashes before ProviderJobId is saved to DB
         var requestCrash = ImageGenerationRequest.FromSnapshot(
