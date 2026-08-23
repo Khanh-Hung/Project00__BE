@@ -22,10 +22,11 @@ public sealed record ImageGenerationRequest(
     string? Sampler = null,
     string? Scheduler = null,
     float? IPAdapterWeight = null,
-    float? IPAdapterEndAt = null,
     string Workflow = "VisualIdentity",
     int WorkflowVersion = 1,
     string? ParametersJson = null,
+    string? ProviderJobId = null,
+    Func<string, CancellationToken, Task>? OnPromptQueuedAsync = null,
     Dictionary<string, object>? ExtraParameters = null
 )
 {
@@ -33,16 +34,18 @@ public sealed record ImageGenerationRequest(
         VisualSnapshot snapshot,
         string compiledPrompt,
         string? compiledNegative = null,
-        string? previousSceneImageUrlOverride = null)
+        string? previousSceneImageUrlOverride = null,
+        string? providerJobId = null,
+        Func<string, CancellationToken, Task>? onPromptQueuedAsync = null)
     {
-        var profile = snapshot.GenerationProfile ?? GenerationProfile.CreateDefault();
+        var profile = snapshot.GenerationProfile;
         return new ImageGenerationRequest(
             Prompt: compiledPrompt,
             NegativePrompt: compiledNegative ?? snapshot.NegativeConstraints,
             Width: profile.Width,
             Height: profile.Height,
             ReferenceImageUrl: snapshot.IdentityReferenceUrl,
-            PreviousSceneImageUrl: previousSceneImageUrlOverride ?? snapshot.PreviousSceneImageUrl,
+            PreviousSceneImageUrl: previousSceneImageUrlOverride ?? snapshot.PreviousSceneImageUrl, // Reserved for future continuity workflows
             Steps: profile.Steps,
             GuidanceScale: profile.Cfg,
             Seed: profile.Seed,
@@ -51,7 +54,9 @@ public sealed record ImageGenerationRequest(
             Scheduler: profile.Scheduler,
             Workflow: profile.Workflow,
             WorkflowVersion: profile.WorkflowVersion,
-            ParametersJson: profile.ParametersJson
+            ParametersJson: profile.ParametersJson,
+            ProviderJobId: providerJobId,
+            OnPromptQueuedAsync: onPromptQueuedAsync
         );
     }
 }
@@ -69,14 +74,15 @@ public interface IImageGenerationService
 {
     Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default);
     Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default);
-    Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+    async Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
     {
-        return GenerateImageAsync(request, ct).ContinueWith(t => new ImageGenerationResult(
-            ImageUrl: t.Result,
+        var url = await GenerateImageAsync(request, ct);
+        return new ImageGenerationResult(
+            ImageUrl: url,
             Provider: "Default",
             ProviderJobId: null,
             DurationMs: 0,
             Seed: request.Seed ?? 0
-        ), ct);
+        );
     }
 }

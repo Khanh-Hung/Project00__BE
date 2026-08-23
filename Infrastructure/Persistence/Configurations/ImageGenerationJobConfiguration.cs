@@ -25,6 +25,7 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.Property(x => x.Workflow).IsRequired().HasMaxLength(128);
         builder.Property(x => x.WorkflowVersion).IsRequired();
         builder.Property(x => x.FailureReason).HasMaxLength(2048);
+        builder.Property(x => x.Version).IsConcurrencyToken();
 
         builder.HasIndex(x => new { x.SessionId, x.GenerationRequestId }).IsUnique();
         builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision });

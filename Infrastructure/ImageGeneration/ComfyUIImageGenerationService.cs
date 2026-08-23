@@ -62,23 +62,39 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
         if (int.TryParse(_configuration["AiProviders:ComfyUI:PollIntervalMs"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInterval)) pollIntervalMs = parsedInterval;
         if (int.TryParse(_configuration["AiProviders:ComfyUI:TimeoutSeconds"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTimeout)) timeoutSeconds = parsedTimeout;
 
-        // 1. Ensure Reference Image is uploaded to ComfyUI /upload/image (SSRF-protected, throws if invalid)
-        var resolvedReferenceImageName = await _inputImageService.EnsureImageUploadedAsync(request.ReferenceImageUrl, ct);
-
-        // 2. Select Workflow Builder by exact (Workflow, WorkflowVersion) match - NO SILENT FALLBACK!
         var targetWorkflow = request.Workflow ?? "VisualIdentity";
         var targetVersion = request.WorkflowVersion;
+        string promptId = request.ProviderJobId ?? string.Empty;
+        IComfyUIWorkflowBuilder? builder = null;
 
-        var builder = _workflowBuilders.FirstOrDefault(b =>
-            string.Equals(b.WorkflowName, targetWorkflow, StringComparison.OrdinalIgnoreCase) &&
-            b.WorkflowVersion == targetVersion)
-            ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not available on this server.");
+        if (string.IsNullOrWhiteSpace(promptId))
+        {
+            // 1. Ensure Reference Image is uploaded to ComfyUI /upload/image (SSRF-protected, throws if invalid)
+            var resolvedReferenceImageName = await _inputImageService.EnsureImageUploadedAsync(request.ReferenceImageUrl, ct);
 
-        var workflowGraph = builder.BuildWorkflow(request, resolvedReferenceImageName);
+            // 2. Select Workflow Builder by exact (Workflow, WorkflowVersion) match - NO SILENT FALLBACK!
+            builder = _workflowBuilders.FirstOrDefault(b =>
+                string.Equals(b.WorkflowName, targetWorkflow, StringComparison.OrdinalIgnoreCase) &&
+                b.WorkflowVersion == targetVersion)
+                ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not available on this server.");
 
-        // 3. Post Prompt Graph to ComfyUI Client
-        var promptId = await _comfyClient.QueuePromptAsync(workflowGraph, ct);
-        _logger.LogInformation("ComfyUI prompt enqueued: PromptId={PromptId}, Workflow={Workflow}, Version={Version}", promptId, targetWorkflow, targetVersion);
+            var workflowGraph = builder.BuildWorkflow(request, resolvedReferenceImageName);
+
+            // 3. Post Prompt Graph to ComfyUI Client
+            promptId = await _comfyClient.QueuePromptAsync(workflowGraph, ct);
+            _logger.LogInformation("ComfyUI prompt enqueued: PromptId={PromptId}, Workflow={Workflow}, Version={Version}", promptId, targetWorkflow, targetVersion);
+
+            // Immediately persist ProviderJobId before beginning polling
+            if (request.OnPromptQueuedAsync != null)
+            {
+                await request.OnPromptQueuedAsync(promptId, ct);
+            }
+        }
+        else
+        {
+            _logger.LogInformation("ComfyUI recovery: Resuming polling for existing ProviderJobId={PromptId}, Workflow={Workflow}, Version={Version}",
+                promptId, targetWorkflow, targetVersion);
+        }
 
         // 4. Poll history until completed or timeout
         var startTime = DateTime.UtcNow;
@@ -136,8 +152,8 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
             DurationMs = stopwatch.ElapsedMilliseconds,
             Seed = seedUsed,
             Model = request.Model ?? "meinamix_meinaV11.safetensors",
-            Workflow = builder.WorkflowName,
-            WorkflowVersion = builder.WorkflowVersion,
+            Workflow = builder?.WorkflowName ?? targetWorkflow,
+            WorkflowVersion = builder?.WorkflowVersion ?? targetVersion,
             Width = request.Width,
             Height = request.Height,
             Steps = request.Steps,

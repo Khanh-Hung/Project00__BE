@@ -150,7 +150,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             {
                 _logger.LogInformation(ex, "[SceneGenerationRacePrevented] Concurrent worker inserted job for SessionId={SessionId}, RequestId={RequestId}",
                     snapshot.SessionId, generationRequestId);
-                return new JobExecutionResult(JobExecutionStatus.Skipped, "Job claimed by concurrent worker");
+                return new JobExecutionResult(JobExecutionStatus.Deferred, "Job claimed by concurrent worker");
             }
         }
         else
@@ -172,7 +172,16 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 return new JobExecutionResult(JobExecutionStatus.Deferred, "Job actively leased by another worker");
             }
 
-            await _dbContext.SaveChangesAsync(ct);
+            try
+            {
+                await _dbContext.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                _logger.LogInformation(ex, "[SceneGenerationRacePrevented] Concurrent worker updated lease for SessionId={SessionId}, RequestId={RequestId}",
+                    snapshot.SessionId, generationRequestId);
+                return new JobExecutionResult(JobExecutionStatus.Deferred, "Job lease claimed by concurrent worker");
+            }
         }
 
         try
@@ -182,11 +191,25 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             var imageReq = ImageGenerationRequest.FromSnapshot(
                 snapshot: snapshot,
                 compiledPrompt: compiledPrompt,
-                previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl
+                previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
+                providerJobId: job.ProviderJobId,
+                onPromptQueuedAsync: async (promptId, token) =>
+                {
+                    job.SetProviderJobId(promptId);
+                    await _dbContext.SaveChangesAsync(token);
+                }
             );
 
             // 5. Generate Image via configured Provider
             var genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+
+            // Verify worker still owns lease before committing artifact (prevent stale worker overwrite)
+            if (job.ClaimedBy != workerId && job.LeaseUntil.HasValue && job.LeaseUntil.Value <= Clock.Now)
+            {
+                _logger.LogWarning("[SceneGenerationStaleDiscarded] Stale worker '{WorkerId}' finished after lease expired for JobId={JobId}. Discarding artifact.",
+                    workerId, job.Id);
+                return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease expired before commit");
+            }
 
             // 6. Persist immutable SceneImage artifact & Update IsCurrent
             if (!string.IsNullOrWhiteSpace(genResult.ImageUrl))

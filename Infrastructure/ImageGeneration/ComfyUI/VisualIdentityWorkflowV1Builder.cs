@@ -28,18 +28,9 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
         var sampler = !string.IsNullOrWhiteSpace(request.Sampler) ? request.Sampler : "euler_ancestral";
         var scheduler = !string.IsNullOrWhiteSpace(request.Scheduler) ? request.Scheduler : "karras";
 
-        // Parse IPAdapter weights from ParametersJson or ExtraParameters (fallback 0.45 / 0.70)
+        // Parse IPAdapter weights from ParametersJson (fallback 0.45 / 0.70)
         float ipAdapterWeight = 0.45f;
         float ipAdapterEndAt = 0.70f;
-
-        if (request.IPAdapterWeight.HasValue)
-        {
-            ipAdapterWeight = request.IPAdapterWeight.Value;
-        }
-        if (request.IPAdapterEndAt.HasValue)
-        {
-            ipAdapterEndAt = request.IPAdapterEndAt.Value;
-        }
 
         if (!string.IsNullOrWhiteSpace(request.ParametersJson))
         {
@@ -52,7 +43,10 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
                     if (ipProp.TryGetProperty("endAt", out var eProp)) ipAdapterEndAt = (float)eProp.GetDouble();
                 }
             }
-            catch { }
+            catch (JsonException ex)
+            {
+                throw new GpuNonTransientException($"Malformed ParametersJson in VisualSnapshot: {ex.Message}", innerException: ex);
+            }
         }
 
         return new Dictionary<string, object>
