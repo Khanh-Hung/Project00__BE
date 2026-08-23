@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -25,8 +25,7 @@ namespace Project.Infrastructure.Persistence.Migrations
                 name: "GenerationRequestId",
                 table: "SceneImages",
                 type: "uuid",
-                nullable: false,
-                defaultValue: new Guid("00000000-0000-0000-0000-000000000000"));
+                nullable: true);
 
             migrationBuilder.AddColumn<bool>(
                 name: "IsCurrent",
@@ -41,14 +40,24 @@ namespace Project.Infrastructure.Persistence.Migrations
                 type: "character varying(128)",
                 maxLength: 128,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "VisualIdentity");
 
             migrationBuilder.AddColumn<int>(
                 name: "WorkflowVersion",
                 table: "SceneImages",
                 type: "integer",
                 nullable: false,
-                defaultValue: 0);
+                defaultValue: 1);
+
+            // Safe Backfill: Populate existing historical SceneImages with GenerationRequestId = TurnId
+            migrationBuilder.Sql("UPDATE \"SceneImages\" SET \"GenerationRequestId\" = \"TurnId\" WHERE \"GenerationRequestId\" IS NULL OR \"GenerationRequestId\" = '00000000-0000-0000-0000-000000000000';");
+            migrationBuilder.Sql("UPDATE \"SceneImages\" SET \"Workflow\" = 'VisualIdentity', \"WorkflowVersion\" = 1 WHERE \"Workflow\" = '' OR \"Workflow\" IS NULL;");
+
+            migrationBuilder.AlterColumn<Guid>(
+                name: "GenerationRequestId",
+                table: "SceneImages",
+                type: "uuid",
+                nullable: false);
 
             migrationBuilder.CreateTable(
                 name: "ImageGenerationJobs",
