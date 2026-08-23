@@ -59,6 +59,8 @@ public static class DbExceptionClassifier
         }
 
         // 4. Recursive inspection of InnerException
+        // Policy: When a framework/wrapper exception encapsulates a known transient root cause (e.g. DbUpdateException wrapping a transient connection drop/timeout),
+        // it is classified as transient. If the inner exception is unknown or permanent, it strictly fails closed as non-transient.
         if (ex.InnerException != null)
         {
             return IsTransient(ex.InnerException);

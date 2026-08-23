@@ -924,6 +924,78 @@ public sealed class VisualIdentityInvariantTests
     }
 
     [Fact]
+    public void DbExceptionClassifier_InnerExceptionPolicy_UnwrapsAndClassifiesNestedTransientException()
+    {
+        // Wrapper with transient root cause => true
+        var wrapperWithTimeout = new InvalidOperationException("Outer execution failure", new TimeoutException("Database connection timeout"));
+        Assert.True(DbExceptionClassifier.IsTransient(wrapperWithTimeout));
+
+        // Wrapper with permanent root cause => false (fail closed)
+        var wrapperWithArgException = new InvalidOperationException("Outer execution failure", new ArgumentException("Invalid column mapping"));
+        Assert.False(DbExceptionClassifier.IsTransient(wrapperWithArgException));
+    }
+
+    [Theory]
+    [InlineData("1.5")]
+    [InlineData("-0.1")]
+    [InlineData("abc")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("-Infinity")]
+    public void VisualGenerationProfileProvider_InvalidWeight_ThrowsInvalidOperationException_FailFast(string invalidWeight)
+    {
+        var inMemoryConfig = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:IPAdapter:Weight"] = invalidWeight
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
+        var provider = new VisualGenerationProfileProvider(configuration);
+        var character = new Character("Aria", "Mage", "avatar.jpg", "Hello", "Friendly", "Fantasy");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character));
+        Assert.Contains("AiProviders:ImageGeneration:IPAdapter:Weight", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("1.2")]
+    [InlineData("-0.5")]
+    [InlineData("invalid")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    public void VisualGenerationProfileProvider_InvalidEndAt_ThrowsInvalidOperationException_FailFast(string invalidEndAt)
+    {
+        var inMemoryConfig = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:IPAdapter:EndAt"] = invalidEndAt
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
+        var provider = new VisualGenerationProfileProvider(configuration);
+        var character = new Character("Aria", "Mage", "avatar.jpg", "Hello", "Friendly", "Fantasy");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character));
+        Assert.Contains("AiProviders:ImageGeneration:IPAdapter:EndAt", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("version1")]
+    [InlineData("1.5")]
+    public void VisualGenerationProfileProvider_InvalidWorkflowVersion_ThrowsInvalidOperationException_FailFast(string invalidVersion)
+    {
+        var inMemoryConfig = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = invalidVersion
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
+        var provider = new VisualGenerationProfileProvider(configuration);
+        var character = new Character("Aria", "Mage", "avatar.jpg", "Hello", "Friendly", "Fantasy");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character));
+        Assert.Contains("AiProviders:ImageGeneration:DefaultWorkflowVersion", ex.Message);
+    }
+
+    [Fact]
     public async Task VisualGenerationProfileProvider_ZeroStateDrift_ConfigurationMutationAfterSnapshot_DoesNotMutateFrozenSnapshot()
     {
         // 1. Initial configuration: Weight = 0.45, EndAt = 0.70

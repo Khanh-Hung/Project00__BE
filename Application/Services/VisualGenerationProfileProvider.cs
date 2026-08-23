@@ -8,6 +8,11 @@ namespace Application.Services;
 
 public sealed class VisualGenerationProfileProvider : IVisualGenerationProfileProvider
 {
+    private const float DefaultWeight = 0.45f;
+    private const float DefaultEndAt = 0.70f;
+    private const int DefaultWorkflowVersion = 1;
+    private const string DefaultWorkflow = "VisualIdentity";
+
     private readonly IConfiguration? _configuration;
 
     public VisualGenerationProfileProvider(IConfiguration? configuration = null)
@@ -23,24 +28,57 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     {
         var workflow = workflowOverride 
             ?? _configuration?["AiProviders:ImageGeneration:DefaultWorkflow"] 
-            ?? "VisualIdentity";
+            ?? DefaultWorkflow;
 
+        // 1. Strict validation of WorkflowVersion (missing => default 1; present but invalid => fail-fast)
+        int workflowVersion = DefaultWorkflowVersion;
         var workflowVersionStr = _configuration?["AiProviders:ImageGeneration:DefaultWorkflowVersion"];
-        int workflowVersion = int.TryParse(workflowVersionStr, out var ver) && ver > 0 ? ver : 1;
+        if (!string.IsNullOrWhiteSpace(workflowVersionStr))
+        {
+            if (!int.TryParse(workflowVersionStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedVer) || parsedVer <= 0)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid configuration for 'AiProviders:ImageGeneration:DefaultWorkflowVersion': '{workflowVersionStr}'. WorkflowVersion must be a positive integer greater than 0.");
+            }
+            workflowVersion = parsedVer;
+        }
 
-        // Parse and validate numeric IP-Adapter parameters within valid [0.0, 1.0] bounds
+        // 2. Strict validation of IP-Adapter Weight (missing => default 0.45; present but invalid => fail-fast)
+        float weight = DefaultWeight;
         var weightStr = _configuration?["AiProviders:ImageGeneration:IPAdapter:Weight"];
-        float weight = float.TryParse(weightStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedWeight)
-            ? Math.Clamp(parsedWeight, 0.0f, 1.0f)
-            : 0.45f;
+        if (!string.IsNullOrWhiteSpace(weightStr))
+        {
+            if (!float.TryParse(weightStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedWeight)
+                || float.IsNaN(parsedWeight)
+                || float.IsInfinity(parsedWeight)
+                || parsedWeight < 0.0f
+                || parsedWeight > 1.0f)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid configuration for 'AiProviders:ImageGeneration:IPAdapter:Weight': '{weightStr}'. Weight must be a valid number between 0.0 and 1.0.");
+            }
+            weight = parsedWeight;
+        }
 
+        // 3. Strict validation of IP-Adapter EndAt (missing => default 0.70; present but invalid => fail-fast)
+        float endAt = DefaultEndAt;
         var endAtStr = _configuration?["AiProviders:ImageGeneration:IPAdapter:EndAt"];
-        float endAt = float.TryParse(endAtStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedEndAt)
-            ? Math.Clamp(parsedEndAt, 0.0f, 1.0f)
-            : 0.70f;
+        if (!string.IsNullOrWhiteSpace(endAtStr))
+        {
+            if (!float.TryParse(endAtStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedEndAt)
+                || float.IsNaN(parsedEndAt)
+                || float.IsInfinity(parsedEndAt)
+                || parsedEndAt < 0.0f
+                || parsedEndAt > 1.0f)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid configuration for 'AiProviders:ImageGeneration:IPAdapter:EndAt': '{endAtStr}'. EndAt must be a valid number between 0.0 and 1.0.");
+            }
+            endAt = parsedEndAt;
+        }
 
-        var parametersJson = _configuration?["AiProviders:ImageGeneration:DefaultParametersJson"]
-            ?? $"{{\"ipAdapter\":{{\"weight\":{weight.ToString("0.00", CultureInfo.InvariantCulture)},\"endAt\":{endAt.ToString("0.00", CultureInfo.InvariantCulture)}}}}}";
+        // 4. Invariant: ParametersJson is built strictly from validated typed parameters (preventing unvalidated raw JSON bypass)
+        var parametersJson = $"{{\"ipAdapter\":{{\"weight\":{weight.ToString("0.00", CultureInfo.InvariantCulture)},\"endAt\":{endAt.ToString("0.00", CultureInfo.InvariantCulture)}}}}}";
 
         return GenerationProfile.CreateDefault(
             workflow: workflow,
