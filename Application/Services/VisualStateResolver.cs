@@ -73,16 +73,6 @@ public sealed class VisualStateResolver : IVisualStateResolver
             defaultExpression: currentMood.ToString()
         );
 
-        // Immediate predecessor continuity: previous image is resolved from SceneImage artifact of Revision N - 1
-        string? previousSceneImageUrl = null;
-        if (targetRevision > 1)
-        {
-            var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
-            var predecessorArtifact = await sceneImageRepo
-                .GetAsync(img => img.SessionId == session.Id && img.SceneRevision == targetRevision - 1, ct);
-            previousSceneImageUrl = predecessorArtifact?.ImageUrl;
-        }
-
         var generationProfile = GenerationProfile.CreateDefault(
             workflow: "VisualIdentity",
             workflowVersion: 1,
@@ -98,7 +88,7 @@ public sealed class VisualStateResolver : IVisualStateResolver
             sceneState: updatedSceneState,
             transientState: transientState,
             generationProfile: generationProfile,
-            previousSceneImageUrl: previousSceneImageUrl,
+            previousSceneImageUrl: null,
             predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null
         );
 

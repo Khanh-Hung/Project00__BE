@@ -32,9 +32,9 @@ public sealed class SceneImage : BaseEntity
         string imageUrl,
         string prompt,
         Guid? generationRequestId = null,
+        Guid? generationJobId = null,
         string? identityReferenceUrl = null,
         string? previousSceneImageUrl = null,
-        Guid? generationJobId = null,
         string workflow = "VisualIdentity",
         int workflowVersion = 1,
         bool isCurrent = true)
@@ -44,11 +44,11 @@ public sealed class SceneImage : BaseEntity
         TurnId = turnId;
         SceneRevision = sceneRevision;
         GenerationRequestId = generationRequestId ?? turnId;
+        GenerationJobId = generationJobId;
         ImageUrl = imageUrl;
         Prompt = prompt;
         IdentityReferenceUrl = identityReferenceUrl;
         PreviousSceneImageUrl = previousSceneImageUrl;
-        GenerationJobId = generationJobId ?? GenerationRequestId;
         Workflow = workflow;
         WorkflowVersion = workflowVersion;
         IsCurrent = isCurrent;
