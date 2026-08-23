@@ -122,7 +122,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         // 3. Lease-based Atomic Job Claim Before GPU Invocation
         var workflow = snapshot.GenerationProfile?.Workflow ?? "VisualIdentity";
         var workflowVersion = snapshot.GenerationProfile?.WorkflowVersion ?? 1;
-        var leaseDuration = TimeSpan.FromMinutes(2);
+        var leaseDuration = TimeSpan.FromMinutes(4); // 240s: provides 120s safety margin over max 120s ComfyUI timeout
 
         var job = await _dbContext.ImageGenerationJobs
             .FirstOrDefaultAsync(j => j.SessionId == snapshot.SessionId && j.GenerationRequestId == generationRequestId, ct);
@@ -203,15 +203,23 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             // 5. Generate Image via configured Provider
             var genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
 
-            // Verify worker still owns lease before committing artifact (prevent stale worker overwrite)
-            if (job.ClaimedBy != workerId && job.LeaseUntil.HasValue && job.LeaseUntil.Value <= Clock.Now)
+            // 6. Strict Atomic DB Lease Ownership Verification: Query the current state from DB directly
+            var currentJob = await _dbContext.ImageGenerationJobs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(j => j.Id == job.Id, ct);
+
+            if (currentJob == null || 
+                currentJob.ClaimedBy != workerId || 
+                !currentJob.LeaseUntil.HasValue || 
+                currentJob.LeaseUntil.Value <= now ||
+                currentJob.Version != job.Version)
             {
-                _logger.LogWarning("[SceneGenerationStaleDiscarded] Stale worker '{WorkerId}' finished after lease expired for JobId={JobId}. Discarding artifact.",
-                    workerId, job.Id);
-                return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease expired before commit");
+                _logger.LogWarning("[SceneGenerationStaleDiscarded] Stale worker '{WorkerId}' finished after lease lost/expired for JobId={JobId} (CurrentOwner='{ClaimedBy}', CurrentVersion={CurrentVer}, ExpectedVersion={ExpectedVer}). Discarding artifact.",
+                    workerId, job.Id, currentJob?.ClaimedBy, currentJob?.Version, job.Version);
+                return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before commit");
             }
 
-            // 6. Persist immutable SceneImage artifact & Update IsCurrent
+            // 7. Persist immutable SceneImage artifact & Update IsCurrent
             if (!string.IsNullOrWhiteSpace(genResult.ImageUrl))
             {
                 // De-activate previous current images for this revision if regenerating
@@ -232,17 +240,26 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     imageUrl: genResult.ImageUrl,
                     prompt: compiledPrompt,
                     generationRequestId: generationRequestId,
+                    generationJobId: job.Id,
                     identityReferenceUrl: snapshot.IdentityReferenceUrl,
                     previousSceneImageUrl: resolvedPreviousSceneImageUrl,
-                    generationJobId: job.Id,
                     workflow: workflow,
                     workflowVersion: workflowVersion,
                     isCurrent: true
                 );
 
-                await _dbContext.SceneImages.AddAsync(artifact, ct);
-                job.MarkCompleted(Clock.Now, genResult.MetadataJson);
-                await _dbContext.SaveChangesAsync(ct);
+                try
+                {
+                    await _dbContext.SceneImages.AddAsync(artifact, ct);
+                    job.MarkCompleted(Clock.Now, genResult.MetadataJson);
+                    await _dbContext.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateConcurrencyException ex)
+                {
+                    _logger.LogWarning(ex, "[SceneGenerationStaleDiscarded] Concurrency conflict during artifact commit for JobId={JobId}, WorkerId={WorkerId}. Another worker modified/reclaimed the job.",
+                        job.Id, workerId);
+                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Concurrency conflict during artifact commit");
+                }
             }
 
             stopwatch.Stop();

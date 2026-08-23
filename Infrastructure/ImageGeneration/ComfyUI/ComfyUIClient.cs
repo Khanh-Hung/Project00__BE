@@ -73,6 +73,22 @@ public sealed class ComfyUIClient : IComfyUIClient
             var historyRes = await _httpClient.GetAsync($"{serverUrl}/history/{promptId}", ct);
             if (!historyRes.IsSuccessStatusCode)
             {
+                var statusCode = (int)historyRes.StatusCode;
+                if (historyRes.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    // 404: Prompt is still queued / processing and not yet in history table
+                    return null;
+                }
+                if (statusCode >= 500 || statusCode == 408 || statusCode == 429)
+                {
+                    throw new GpuTransientException($"ComfyUI server error (HTTP {statusCode}) while querying history for PromptId={promptId}", statusCode);
+                }
+                if (statusCode == 401 || statusCode == 403)
+                {
+                    throw new GpuNonTransientException($"ComfyUI authentication failed (HTTP {statusCode})", statusCode);
+                }
+                
+                _logger.LogWarning("ComfyUI /history returned unexpected HTTP {StatusCode} for PromptId={PromptId}", statusCode, promptId);
                 return null;
             }
 
