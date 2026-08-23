@@ -36,7 +36,8 @@ public static class DependencyInjection
         services.AddScoped<Application.Abstractions.Auth.ICurrentUserProvider, CurrentUserProvider>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
-        // 3. Add Auth Services (Hasher & JWT)
+        // 3. Add Auth Services (Hasher & JWT) and DateTime Provider
+        services.AddSingleton<Domain.Common.DateTimes.IDateTimeProvider, Domain.Common.DateTimes.SystemDateTimeProvider>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 

@@ -277,8 +277,9 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         var scenePayload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg.PayloadJson);
                         if (scenePayload?.Snapshot != null)
                         {
+                            var dateTimeProvider = scope.ServiceProvider.GetService<IDateTimeProvider>() ?? new SystemDateTimeProvider();
                             var jobHandler = scope.ServiceProvider.GetService<IImageGenerationJobHandler>()
-                                ?? new ImageGenerationJobHandler(dbContext, visualCompiler, imageService, Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageGenerationJobHandler>.Instance);
+                                ?? new ImageGenerationJobHandler(dbContext, visualCompiler, imageService, Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageGenerationJobHandler>.Instance, dateTimeProvider);
 
                             var result = await jobHandler.HandleSceneImageGenerationAsync(scenePayload, msg.Id, _workerId, now, ct);
                             if (result.Status == JobExecutionStatus.Deferred)

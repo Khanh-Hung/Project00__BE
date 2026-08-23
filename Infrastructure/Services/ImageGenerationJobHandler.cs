@@ -24,13 +24,13 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         IVisualPromptCompiler visualCompiler,
         IImageGenerationService imageService,
         ILogger<ImageGenerationJobHandler> logger,
-        IDateTimeProvider? dateTimeProvider = null)
+        IDateTimeProvider dateTimeProvider)
     {
         _dbContext = dbContext;
         _visualCompiler = visualCompiler;
         _imageService = imageService;
         _logger = logger;
-        _dateTimeProvider = dateTimeProvider ?? new SystemDateTimeProvider();
+        _dateTimeProvider = dateTimeProvider;
     }
 
     public async Task<JobExecutionResult> HandleSceneImageGenerationAsync(
@@ -205,43 +205,51 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             // 5. Generate Image via configured Provider
             var genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
 
-            // 6. Strict Atomic DB Conditional Fencing & Artifact Insertion
+            // Strict Validation: ImageUrl must be non-empty; never mark Job Completed without an artifact!
+            if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
+            {
+                _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}.", job.Id);
+                throw new GpuNonTransientException("Image generation completed without producing an image URL.");
+            }
+
+            // 6. Strict Atomic DB Conditional Fencing & Artifact Persistence in ONE Unit of Work
             var liveUtc = _dateTimeProvider.UtcNow;
 
             if (_dbContext.Database.IsRelational())
             {
-                var rowsAffected = await _dbContext.ImageGenerationJobs
-                    .Where(j => j.Id == job.Id 
-                                && j.ClaimedBy == workerId 
-                                && j.Version == job.Version 
-                                && j.Status == ImageJobStatus.Processing 
-                                && j.LeaseUntil.HasValue 
-                                && j.LeaseUntil.Value > liveUtc)
-                    .ExecuteUpdateAsync(s => s
-                        .SetProperty(j => j.Status, ImageJobStatus.Completed)
-                        .SetProperty(j => j.CompletedAt, liveUtc)
-                        .SetProperty(j => j.GenerationMetadataJson, genResult.MetadataJson)
-                        .SetProperty(j => j.Version, j => j.Version + 1)
-                        .SetProperty(j => j.UpdatedAt, liveUtc), ct);
-
-                if (rowsAffected != 1)
+                try
                 {
-                    _logger.LogWarning("[SceneGenerationStaleDiscarded] Atomic conditional update fencing failed for JobId={JobId}, WorkerId={WorkerId}. Rows affected: {Rows}. Discarding artifact.",
-                        job.Id, workerId, rowsAffected);
-                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before conditional update");
-                }
+                    await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
 
-                if (!string.IsNullOrWhiteSpace(genResult.ImageUrl))
-                {
-                    var previousCurrents = await _dbContext.SceneImages
-                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                        .ToListAsync(ct);
+                    // Step 6a: Conditional update as atomic fencing gate
+                    var rowsAffected = await _dbContext.ImageGenerationJobs
+                        .Where(j => j.Id == job.Id 
+                                    && j.ClaimedBy == workerId 
+                                    && j.Version == job.Version 
+                                    && j.Status == ImageJobStatus.Processing 
+                                    && j.LeaseUntil.HasValue 
+                                    && j.LeaseUntil.Value > liveUtc)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(j => j.Status, ImageJobStatus.Completed)
+                            .SetProperty(j => j.CompletedAt, liveUtc)
+                            .SetProperty(j => j.GenerationMetadataJson, genResult.MetadataJson)
+                            .SetProperty(j => j.Version, j => j.Version + 1)
+                            .SetProperty(j => j.UpdatedAt, liveUtc), ct);
 
-                    foreach (var prev in previousCurrents)
+                    if (rowsAffected != 1)
                     {
-                        prev.SetCurrent(false);
+                        _logger.LogWarning("[SceneGenerationStaleDiscarded] Atomic conditional update fencing failed for JobId={JobId}, WorkerId={WorkerId}. Rows affected: {Rows}. Discarding artifact.",
+                            job.Id, workerId, rowsAffected);
+                        await transaction.RollbackAsync(ct);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before conditional update");
                     }
 
+                    // Step 6b: Deactivate previous currents for this revision within the SAME transaction
+                    await _dbContext.SceneImages
+                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                        .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+
+                    // Step 6c: Insert new SceneImage artifact within the SAME transaction
                     var artifact = new SceneImage(
                         sessionId: snapshot.SessionId,
                         characterId: snapshot.CharacterId,
@@ -260,6 +268,20 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
 
                     await _dbContext.SceneImages.AddAsync(artifact, ct);
                     await _dbContext.SaveChangesAsync(ct);
+
+                    await transaction.CommitAsync(ct);
+                }
+                catch (DbUpdateException ex)
+                {
+                    _logger.LogWarning(ex, "[SceneGenerationConcurrencyConflict] Relational transaction conflict during artifact commit for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
+                        job.Id, workerId);
+                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Relational transaction conflict during artifact commit");
+                }
+                catch (System.Data.Common.DbException ex)
+                {
+                    _logger.LogWarning(ex, "[SceneGenerationTransactionBusy] Database connection/transaction conflict for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
+                        job.Id, workerId);
+                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Database transaction conflict during artifact commit");
                 }
             }
             else
@@ -280,45 +302,42 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before commit");
                 }
 
-                if (!string.IsNullOrWhiteSpace(genResult.ImageUrl))
+                var previousCurrents = await _dbContext.SceneImages
+                    .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                    .ToListAsync(ct);
+
+                foreach (var prev in previousCurrents)
                 {
-                    var previousCurrents = await _dbContext.SceneImages
-                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                        .ToListAsync(ct);
+                    prev.SetCurrent(false);
+                }
 
-                    foreach (var prev in previousCurrents)
-                    {
-                        prev.SetCurrent(false);
-                    }
+                var artifact = new SceneImage(
+                    sessionId: snapshot.SessionId,
+                    characterId: snapshot.CharacterId,
+                    turnId: snapshot.TurnId,
+                    sceneRevision: snapshot.SceneRevision,
+                    imageUrl: genResult.ImageUrl,
+                    prompt: compiledPrompt,
+                    generationRequestId: generationRequestId,
+                    generationJobId: job.Id,
+                    identityReferenceUrl: snapshot.IdentityReferenceUrl,
+                    previousSceneImageUrl: resolvedPreviousSceneImageUrl,
+                    workflow: workflow,
+                    workflowVersion: workflowVersion,
+                    isCurrent: true
+                );
 
-                    var artifact = new SceneImage(
-                        sessionId: snapshot.SessionId,
-                        characterId: snapshot.CharacterId,
-                        turnId: snapshot.TurnId,
-                        sceneRevision: snapshot.SceneRevision,
-                        imageUrl: genResult.ImageUrl,
-                        prompt: compiledPrompt,
-                        generationRequestId: generationRequestId,
-                        generationJobId: job.Id,
-                        identityReferenceUrl: snapshot.IdentityReferenceUrl,
-                        previousSceneImageUrl: resolvedPreviousSceneImageUrl,
-                        workflow: workflow,
-                        workflowVersion: workflowVersion,
-                        isCurrent: true
-                    );
-
-                    try
-                    {
-                        await _dbContext.SceneImages.AddAsync(artifact, ct);
-                        job.MarkCompleted(liveUtc, genResult.MetadataJson);
-                        await _dbContext.SaveChangesAsync(ct);
-                    }
-                    catch (DbUpdateConcurrencyException ex)
-                    {
-                        _logger.LogWarning(ex, "[SceneGenerationStaleDiscarded] Concurrency conflict during artifact commit for JobId={JobId}, WorkerId={WorkerId}. Another worker modified/reclaimed the job.",
-                            job.Id, workerId);
-                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Concurrency conflict during artifact commit");
-                    }
+                try
+                {
+                    await _dbContext.SceneImages.AddAsync(artifact, ct);
+                    job.MarkCompleted(liveUtc, genResult.MetadataJson);
+                    await _dbContext.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateConcurrencyException ex)
+                {
+                    _logger.LogWarning(ex, "[SceneGenerationStaleDiscarded] Concurrency conflict during artifact commit for JobId={JobId}, WorkerId={WorkerId}. Another worker modified/reclaimed the job.",
+                        job.Id, workerId);
+                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Concurrency conflict during artifact commit");
                 }
             }
 
