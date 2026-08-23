@@ -21,7 +21,6 @@ public sealed record ImageGenerationRequest(
     string? Model = null,
     string? Sampler = null,
     string? Scheduler = null,
-    float? IPAdapterWeight = null,
     string Workflow = "VisualIdentity",
     int WorkflowVersion = 1,
     string? ParametersJson = null,

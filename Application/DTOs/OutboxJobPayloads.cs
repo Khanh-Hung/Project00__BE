@@ -32,11 +32,8 @@ public sealed record SceneImageGenerationOutboxPayload(
     Guid CharacterId,
     Guid UserId,
     VisualSnapshot Snapshot,
-    Guid GenerationRequestId = default
-)
-{
-    public Guid ResolvedGenerationRequestId => GenerationRequestId != default ? GenerationRequestId : (Snapshot != null ? Snapshot.TurnId : Guid.NewGuid());
-}
+    Guid GenerationRequestId
+);
 
 public sealed record MemoryExtractionOutboxPayload(
     Guid SessionId,

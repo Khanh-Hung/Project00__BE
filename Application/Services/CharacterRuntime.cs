@@ -281,7 +281,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
                 TurnId: turnId,
                 CharacterId: character.Id,
                 UserId: request.UserId,
-                Snapshot: visualSnapshot
+                Snapshot: visualSnapshot,
+                GenerationRequestId: Guid.NewGuid()
             );
             var sceneOutbox = new OutboxMessage(
                 eventType: OutboxEventTypes.SceneImageGeneration,
@@ -553,7 +554,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
                 TurnId: turnId,
                 CharacterId: character.Id,
                 UserId: request.UserId,
-                Snapshot: streamVisualSnapshot
+                Snapshot: streamVisualSnapshot,
+                GenerationRequestId: Guid.NewGuid()
             );
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(scenePayload)), ct);
         }
