@@ -6,6 +6,7 @@ using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
+using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -346,8 +347,9 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 stopwatch.Stop();
-                _logger.LogError(ex, "Unexpected exception processing outbox message {Id}.", msg.Id);
-                msg.MarkFailed(ex.Message, Clock.Now, isTransient: true);
+                bool isTransient = DbExceptionClassifier.IsTransient(ex);
+                _logger.LogError(ex, "Unexpected exception processing outbox message {Id} (IsTransient={IsTransient}).", msg.Id, isTransient);
+                msg.MarkFailed(ex.Message, Clock.Now, isTransient: isTransient);
             }
 
             await dbContext.SaveChangesAsync(ct);

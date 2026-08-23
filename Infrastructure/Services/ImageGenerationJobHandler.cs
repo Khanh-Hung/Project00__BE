@@ -273,15 +273,27 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 }
                 catch (DbUpdateException ex)
                 {
-                    _logger.LogWarning(ex, "[SceneGenerationConcurrencyConflict] Relational transaction conflict during artifact commit for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
-                        job.Id, workerId);
-                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Relational transaction conflict during artifact commit");
+                    bool isTransient = DbExceptionClassifier.IsTransient(ex);
+                    if (isTransient)
+                    {
+                        _logger.LogWarning(ex, "[SceneGenerationConcurrencyConflict] Relational transaction conflict during artifact commit for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
+                            job.Id, workerId);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Relational transaction conflict during artifact commit");
+                    }
+                    _logger.LogError(ex, "[SceneGenerationPermanentDbError] Permanent database update failure during artifact commit for JobId={JobId}, WorkerId={WorkerId}.", job.Id, workerId);
+                    throw new GpuNonTransientException($"Permanent database error: {ex.Message}", statusCode: null, innerException: ex);
                 }
                 catch (System.Data.Common.DbException ex)
                 {
-                    _logger.LogWarning(ex, "[SceneGenerationTransactionBusy] Database connection/transaction conflict for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
-                        job.Id, workerId);
-                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Database transaction conflict during artifact commit");
+                    bool isTransient = DbExceptionClassifier.IsTransient(ex);
+                    if (isTransient)
+                    {
+                        _logger.LogWarning(ex, "[SceneGenerationTransactionBusy] Database connection/transaction conflict for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
+                            job.Id, workerId);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Database transaction conflict during artifact commit");
+                    }
+                    _logger.LogError(ex, "[SceneGenerationPermanentDbError] Permanent database connection failure for JobId={JobId}, WorkerId={WorkerId}.", job.Id, workerId);
+                    throw new GpuNonTransientException($"Permanent database error: {ex.Message}", statusCode: null, innerException: ex);
                 }
             }
             else
@@ -366,9 +378,16 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         }
         catch (Exception ex)
         {
-            job.MarkFailed(ex.Message, isRetryable: true, Clock.Now);
+            bool isTransient = DbExceptionClassifier.IsTransient(ex);
+            _logger.LogError(ex, "[SceneGenerationError] Exception for JobId={JobId} (IsTransient={IsTransient}): {Message}",
+                job.Id, isTransient, ex.Message);
+            job.MarkFailed(ex.Message, isRetryable: isTransient, Clock.Now);
             await _dbContext.SaveChangesAsync(CancellationToken.None);
-            throw;
+            if (isTransient)
+            {
+                throw new GpuTransientException($"Transient database/infrastructure error: {ex.Message}", statusCode: null, innerException: ex);
+            }
+            throw new GpuNonTransientException($"Permanent unclassified error: {ex.Message}", statusCode: null, innerException: ex);
         }
     }
 }
