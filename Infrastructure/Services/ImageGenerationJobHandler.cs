@@ -44,7 +44,11 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             return new JobExecutionResult(JobExecutionStatus.Skipped, "Null snapshot");
         }
 
-        var generationRequestId = payload.ResolvedGenerationRequestId;
+        var generationRequestId = payload.GenerationRequestId;
+        if (generationRequestId == Guid.Empty)
+        {
+            throw new GpuNonTransientException("GenerationRequestId is required and cannot be Guid.Empty.");
+        }
         var stopwatch = Stopwatch.StartNew();
         _logger.LogInformation("[SceneGenerationJobStarted] OutboxId={OutboxId}, SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}, RequestId={RequestId}, WorkerId={WorkerId}",
             outboxId, snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, generationRequestId, workerId);
@@ -64,14 +68,9 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         string? resolvedPreviousSceneImageUrl = snapshot.PreviousSceneImageUrl;
         if (snapshot.SceneRevision > 1)
         {
+            var predRev = snapshot.PredecessorSceneRevision ?? (snapshot.SceneRevision - 1);
             var predecessorArtifact = await _dbContext.SceneImages
-                .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision - 1 && img.IsCurrent)
-                .FirstOrDefaultAsync(ct);
-
-            predecessorArtifact ??= await _dbContext.SceneImages
-                .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision - 1)
-                .OrderByDescending(img => img.CreatedAt)
-                .FirstOrDefaultAsync(ct);
+                .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == predRev && img.IsCurrent, ct);
 
             if (predecessorArtifact != null)
             {
@@ -80,15 +79,15 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             else
             {
                 var predJob = await _dbContext.ImageGenerationJobs
-                    .Where(j => j.SessionId == snapshot.SessionId && j.SceneRevision == snapshot.SceneRevision - 1)
+                    .Where(j => j.SessionId == snapshot.SessionId && j.SceneRevision == predRev)
                     .OrderByDescending(j => j.CreatedAt)
                     .FirstOrDefaultAsync(ct);
 
                 if (predJob != null && predJob.Status == ImageJobStatus.Failed && !predJob.IsRetryable)
                 {
                     _logger.LogWarning("[SceneGenerationFailed] Blocking Revision {Revision} because predecessor Revision {PredRev} failed permanently.",
-                        snapshot.SceneRevision, snapshot.SceneRevision - 1);
-                    throw new GpuNonTransientException($"Predecessor Revision {snapshot.SceneRevision - 1} failed permanently.");
+                        snapshot.SceneRevision, predRev);
+                    throw new GpuNonTransientException($"Predecessor Revision {predRev} failed permanently.");
                 }
 
                 // Check predecessor outbox message if job hasn't been created yet or failed at outbox level
@@ -101,7 +100,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     try
                     {
                         var p = System.Text.Json.JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson);
-                        return p?.Snapshot?.SceneRevision == snapshot.SceneRevision - 1;
+                        return p?.Snapshot?.SceneRevision == predRev;
                     }
                     catch { return false; }
                 });
@@ -109,13 +108,13 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 if (predMatchingMsg != null && predMatchingMsg.Status == OutboxStatus.Failed)
                 {
                     _logger.LogWarning("[SceneGenerationFailed] Blocking Revision {Revision} because predecessor Revision {PredRev} failed permanently in Outbox.",
-                        snapshot.SceneRevision, snapshot.SceneRevision - 1);
-                    throw new GpuNonTransientException($"Predecessor Revision {snapshot.SceneRevision - 1} failed permanently.");
+                        snapshot.SceneRevision, predRev);
+                    throw new GpuNonTransientException($"Predecessor Revision {predRev} failed permanently.");
                 }
 
-                _logger.LogInformation("[SceneGenerationDeferred] Deferring Revision {Revision} because predecessor Revision {PredRev} is not yet completed.",
-                    snapshot.SceneRevision, snapshot.SceneRevision - 1);
-                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Predecessor Revision {snapshot.SceneRevision - 1} not yet completed");
+                _logger.LogInformation("[SceneGenerationDeferred] Deferring Revision {Revision} because predecessor Revision {PredRev} has no active current artifact yet.",
+                    snapshot.SceneRevision, predRev);
+                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Predecessor Revision {predRev} not yet completed");
             }
         }
 
@@ -203,23 +202,25 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             // 5. Generate Image via configured Provider
             var genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
 
-            // 6. Strict Atomic DB Lease Ownership Verification: Query the current state from DB directly
+            // 6. Strict Atomic DB Lease Ownership Verification: Query current live state right before commit
             var currentJob = await _dbContext.ImageGenerationJobs
                 .AsNoTracking()
                 .FirstOrDefaultAsync(j => j.Id == job.Id, ct);
 
+            var liveUtc = Clock.Now;
             if (currentJob == null || 
                 currentJob.ClaimedBy != workerId || 
                 !currentJob.LeaseUntil.HasValue || 
-                currentJob.LeaseUntil.Value <= now ||
-                currentJob.Version != job.Version)
+                currentJob.LeaseUntil.Value <= liveUtc || 
+                currentJob.Version != job.Version ||
+                currentJob.Status != ImageJobStatus.Processing)
             {
                 _logger.LogWarning("[SceneGenerationStaleDiscarded] Stale worker '{WorkerId}' finished after lease lost/expired for JobId={JobId} (CurrentOwner='{ClaimedBy}', CurrentVersion={CurrentVer}, ExpectedVersion={ExpectedVer}). Discarding artifact.",
                     workerId, job.Id, currentJob?.ClaimedBy, currentJob?.Version, job.Version);
                 return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before commit");
             }
 
-            // 7. Persist immutable SceneImage artifact & Update IsCurrent
+            // 7. Persist immutable SceneImage artifact & Update IsCurrent atomically
             if (!string.IsNullOrWhiteSpace(genResult.ImageUrl))
             {
                 // De-activate previous current images for this revision if regenerating
@@ -251,7 +252,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 try
                 {
                     await _dbContext.SceneImages.AddAsync(artifact, ct);
-                    job.MarkCompleted(Clock.Now, genResult.MetadataJson);
+                    job.MarkCompleted(liveUtc, genResult.MetadataJson);
                     await _dbContext.SaveChangesAsync(ct);
                 }
                 catch (DbUpdateConcurrencyException ex)
@@ -270,16 +271,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("[SceneGenerationCancelled] JobId={JobId} was cancelled.", job.Id);
-            try
-            {
-                job.MarkCancelled(Clock.Now);
-                await _dbContext.SaveChangesAsync(CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to mark job as Cancelled for JobId={JobId}", job.Id);
-            }
+            _logger.LogWarning("[SceneGenerationInterrupted] JobId={JobId} execution was interrupted by cancellation token. Leaving job in Processing for recovery upon restart.", job.Id);
             throw;
         }
         catch (GpuNonTransientException ex)

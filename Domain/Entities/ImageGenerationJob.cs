@@ -96,6 +96,12 @@ public sealed class ImageGenerationJob : BaseEntity
         return false;
     }
 
+    public void ExpireLease(DateTime? expiredAt = null)
+    {
+        LeaseUntil = expiredAt ?? DateTime.UtcNow.AddMinutes(-1);
+        Touch();
+    }
+
     public void MarkProcessing(string? providerJobId = null, string? workerId = null, TimeSpan? leaseDuration = null, DateTime? startedAt = null)
     {
         var now = startedAt ?? Clock.Now;
