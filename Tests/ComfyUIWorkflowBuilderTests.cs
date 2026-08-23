@@ -129,7 +129,7 @@ public sealed class ComfyUIWorkflowBuilderTests
     public void VisualIdentityWorkflowV1Builder_GraphTopology_HasExactRequiredNodeConnections()
     {
         var builder = new VisualIdentityWorkflowV1Builder();
-        var request = new ImageGenerationRequest(Prompt: "masterpiece, 1girl");
+        var request = new ImageGenerationRequest(Prompt: "masterpiece, 1girl", Seed: 42);
         var graph = builder.BuildWorkflow(request, "ref_face.png");
 
         // 1. IPAdapter (Node 10) MUST receive Checkpoint Model (Node 4), IPAdapter Model (Node 8), Ref Image (Node 1), CLIP Vision (Node 2)

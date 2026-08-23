@@ -463,6 +463,130 @@ public sealed class VisualIdentityInvariantTests
         Assert.Equal(ImageJobStatus.Completed, jobInDb.Status);
     }
 
+    private sealed class ExpiringLeaseImageService : IImageGenerationService
+    {
+        private readonly ProjectDbContext _db;
+        private readonly Guid _requestId;
+
+        public ExpiringLeaseImageService(ProjectDbContext db, Guid requestId)
+        {
+            _db = db;
+            _requestId = requestId;
+        }
+
+        public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default)
+            => Task.FromResult("https://images.storage/dummy.png");
+        public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default)
+            => Task.FromResult("https://images.storage/dummy.png");
+
+        public async Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            // Simulate GPU running longer than lease: expire the lease in DB!
+            var job = await _db.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == _requestId);
+            job.ExpireLease(Clock.Now.AddMinutes(-5));
+            await _db.SaveChangesAsync();
+
+            return new ImageGenerationResult(
+                ImageUrl: "https://images.storage/stale_render.png",
+                Provider: "ComfyUI",
+                ProviderJobId: "prompt_stale",
+                DurationMs: 300000,
+                Seed: request.Seed ?? 12345
+            );
+        }
+    }
+
+    private sealed class CancellingImageService : IImageGenerationService
+    {
+        private readonly CancellationTokenSource _cts;
+
+        public CancellingImageService(CancellationTokenSource cts)
+        {
+            _cts = cts;
+        }
+
+        public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default)
+            => Task.FromResult("https://images.storage/dummy.png");
+        public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default)
+            => Task.FromResult("https://images.storage/dummy.png");
+
+        public Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            _cts.Cancel();
+            throw new OperationCanceledException(_cts.Token);
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrencyTestC_LeaseExpiresWithNoOtherWorker_StaleWorkerCannotCommitArtifact()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+        var db = new ProjectDbContext(options);
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+
+        var expiringService = new ExpiringLeaseImageService(db, requestId);
+        var visualCompiler = new VisualPromptCompiler();
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, expiringService, NullLogger<ImageGenerationJobHandler>.Instance);
+
+        var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
+        var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
+
+        // Worker A claims job at T0, GPU takes too long and lease expires before commit
+        // When handler checks live Clock.Now, lease is expired -> Discarded with Deferred!
+        var resA = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-A", Clock.Now);
+        Assert.Equal(JobExecutionStatus.Deferred, resA.Status);
+
+        // ZERO SceneImages committed
+        var allImages = await db.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
+        Assert.Empty(allImages);
+    }
+
+    [Fact]
+    public async Task ConcurrencyTestD_HostCancellationInterruption_LeavesJobRecoverableUponRestart()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+        var db = new ProjectDbContext(options);
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
+        var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
+
+        using var cts = new CancellationTokenSource();
+        var cancellingService = new CancellingImageService(cts);
+        var visualCompiler = new VisualPromptCompiler();
+        var handlerA = new ImageGenerationJobHandler(db, visualCompiler, cancellingService, NullLogger<ImageGenerationJobHandler>.Instance);
+
+        // 1. Worker A interrupted by host shutdown / cancellation during GPU execution
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            handlerA.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-A", Clock.Now, cts.Token));
+
+        // Job in DB must NOT be permanently marked Cancelled!
+        var jobInDb = await db.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == requestId);
+        Assert.NotEqual(ImageJobStatus.Cancelled, jobInDb.Status);
+        Assert.Equal(ImageJobStatus.Processing, jobInDb.Status);
+
+        // 2. Restart: Worker B arrives after lease expired -> Successfully reclaims and completes!
+        var countingService = new CountingImageService();
+        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, countingService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var resRestart = await handlerB.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-B", Clock.Now.AddMinutes(5));
+        Assert.Equal(JobExecutionStatus.Completed, resRestart.Status);
+        Assert.Equal(1, countingService.CallCount);
+
+        var finalJob = await db.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == requestId);
+        Assert.Equal(ImageJobStatus.Completed, finalJob.Status);
+    }
+
     [Fact]
     public async Task BoundaryTestC_CrashAfterQueuePrompt_ResumesPollingExistingProviderJobId_WithoutSecondQueuePrompt()
     {
@@ -478,7 +602,8 @@ public sealed class VisualIdentityInvariantTests
         var request = new ImageGenerationRequest(
             Prompt: "1girl, solo",
             ReferenceImageUrl: "https://cloud.storage/canonical.png",
-            ProviderJobId: "prompt-recovered"
+            ProviderJobId: "prompt-recovered",
+            Seed: 12345
         );
 
         var result = await service.GenerateImageWithResultAsync(request);
@@ -497,7 +622,8 @@ public sealed class VisualIdentityInvariantTests
         var builder = new VisualIdentityWorkflowV1Builder();
         var request = new ImageGenerationRequest(
             Prompt: "1girl",
-            ParametersJson: "{ malformed json..."
+            ParametersJson: "{ malformed json...",
+            Seed: 12345
         );
 
         // Must throw GpuNonTransientException fail-fast
@@ -514,13 +640,31 @@ public sealed class VisualIdentityInvariantTests
         var builder = new VisualIdentityWorkflowV1Builder();
         var request = new ImageGenerationRequest(
             Prompt: "1girl",
-            ReferenceImageUrl: null
+            ReferenceImageUrl: null,
+            Seed: 12345
         );
 
         // Must throw GpuNonTransientException when resolvedReferenceImageName is empty
         await Assert.ThrowsAsync<GpuNonTransientException>(() =>
         {
             builder.BuildWorkflow(request, string.Empty);
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
+    public async Task ValidationTestH_MissingSeed_ThrowsGpuNonTransientException_StrictDeterminism()
+    {
+        var builder = new VisualIdentityWorkflowV1Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1girl",
+            Seed: null // Missing Seed
+        );
+
+        // Must throw GpuNonTransientException to enforce strict determinism
+        await Assert.ThrowsAsync<GpuNonTransientException>(() =>
+        {
+            builder.BuildWorkflow(request, "canonical_face.png");
             return Task.CompletedTask;
         });
     }

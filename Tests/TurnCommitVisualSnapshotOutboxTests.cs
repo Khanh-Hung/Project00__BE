@@ -219,7 +219,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 TurnId: snapshotTurn1.TurnId,
                 CharacterId: charId,
                 UserId: Guid.NewGuid(),
-                Snapshot: snapshotTurn1
+                Snapshot: snapshotTurn1,
+                GenerationRequestId: Guid.NewGuid()
             );
             await ctx.OutboxMessages.AddAsync(new OutboxMessage(
                 eventType: OutboxEventTypes.SceneImageGeneration,
@@ -583,6 +584,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         var snap1 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 1, null, new SessionSceneState("Living Room", "Sofa", "White Dress", SceneRevision: 1), new TransientVisualState(), GenerationProfile.CreateDefault());
         var snap2 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 2, null, new SessionSceneState("Living Room", "Window", "White Dress", SceneRevision: 2), new TransientVisualState(), GenerationProfile.CreateDefault());
         var snap3 = VisualSnapshot.Create(Guid.NewGuid(), sessionId, charId, 3, null, new SessionSceneState("Living Room", "Window", "Black Dress", SceneRevision: 3), new TransientVisualState(), GenerationProfile.CreateDefault());
+        var snap2RequestId = Guid.NewGuid();
 
         using (var seedScope = scopeFactory.CreateScope())
         {
@@ -591,9 +593,9 @@ public class TurnCommitVisualSnapshotOutboxTests
             await ctx.ChatSessions.AddAsync(session);
 
             // Add outbox in out-of-order sequence: Revision 3 first, then 1, then 2
-            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap3.TurnId, charId, Guid.NewGuid(), snap3))));
-            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap1.TurnId, charId, Guid.NewGuid(), snap1))));
-            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, charId, Guid.NewGuid(), snap2))));
+            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap3.TurnId, charId, Guid.NewGuid(), snap3, Guid.NewGuid()))));
+            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap1.TurnId, charId, Guid.NewGuid(), snap1, Guid.NewGuid()))));
+            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, charId, Guid.NewGuid(), snap2, snap2RequestId))));
             await ctx.SaveChangesAsync();
         }
 
@@ -618,7 +620,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         {
             var ctx = retryScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
             // Add duplicate message for Revision 2
-            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, charId, Guid.NewGuid(), snap2))));
+            await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, charId, Guid.NewGuid(), snap2, snap2RequestId))));
             await ctx.SaveChangesAsync();
         }
 
