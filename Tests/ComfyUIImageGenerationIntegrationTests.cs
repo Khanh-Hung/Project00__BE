@@ -22,7 +22,7 @@ public sealed class ComfyUIImageGenerationIntegrationTests
     }
 
     [Fact]
-    [Trait("Category", "ComfyUI")]
+    [Trait("Category", "LiveComfyUI")]
     public async Task ComfyUI_Generates_Image_Successfully_When_Server_Is_Available()
     {
         var config = new ConfigurationBuilder()

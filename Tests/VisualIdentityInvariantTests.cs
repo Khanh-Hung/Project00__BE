@@ -376,32 +376,91 @@ public sealed class VisualIdentityInvariantTests
         Assert.Single(images);
     }
 
+    private sealed class BarrierImageService : IImageGenerationService
+    {
+        public TaskCompletionSource<bool> WorkerAStartedTcs { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> WorkerAReleaseTcs { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int CallCount { get; private set; } = 0;
+
+        public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default)
+            => Task.FromResult("https://images.storage/dummy.png");
+
+        public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default)
+            => Task.FromResult("https://images.storage/dummy.png");
+
+        public async Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            CallCount++;
+            if (CallCount == 1)
+            {
+                WorkerAStartedTcs.TrySetResult(true);
+                await WorkerAReleaseTcs.Task;
+            }
+
+            return new ImageGenerationResult(
+                ImageUrl: $"https://images.storage/generated_{CallCount}.png",
+                Provider: "ComfyUI",
+                ProviderJobId: $"prompt_{CallCount}",
+                DurationMs: 120,
+                Seed: request.Seed ?? 12345
+            );
+        }
+    }
+
     [Fact]
     public async Task ConcurrencyTestB_ExpiredLeaseRace_StaleWorkerCannotOverwriteNewOwner()
     {
         var dbName = Guid.NewGuid().ToString();
-        var (db, handler, _) = CreateHarness(dbName);
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+
+        var dbA = new ProjectDbContext(options);
+        var dbB = new ProjectDbContext(options);
+
+        var barrierService = new BarrierImageService();
+        var visualCompiler = new VisualPromptCompiler();
+        var handlerA = new ImageGenerationJobHandler(dbA, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance);
+        var handlerB = new ImageGenerationJobHandler(dbB, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance);
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
         var requestId = Guid.NewGuid();
-
-        // Worker A had claimed the job but lease expired
-        var job = new ImageGenerationJob(sessionId, turnId, Guid.NewGuid(), 1, requestId);
-        job.TryClaim("worker-A", TimeSpan.FromSeconds(1), Clock.Now.AddMinutes(-5));
-        await db.ImageGenerationJobs.AddAsync(job);
-        await db.SaveChangesAsync();
-
-        // Worker B claims the expired job
-        job.TryClaim("worker-B", TimeSpan.FromMinutes(2), Clock.Now);
-        await db.SaveChangesAsync();
-
         var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
         var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
 
-        // If Worker A attempts to run with stale identity "worker-A" while Worker B owns it
-        var resA = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-A", Clock.Now);
+        var startTime = Clock.Now;
+
+        // 1. Worker A claims job at startTime (lease 4 mins) and begins GPU generation (paused at barrier)
+        var workerATask = Task.Run(() => handlerA.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-A", startTime));
+
+        // 2. Wait until Worker A is actively running GPU
+        await barrierService.WorkerAStartedTcs.Task;
+
+        // 3. Time advances by 5 minutes (Worker A's lease expires!)
+        var reclaimTime = startTime.AddMinutes(5);
+
+        // 4. Worker B arrives, reclaims stale job, executes GPU, and completes!
+        var resB = await handlerB.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-B", reclaimTime);
+        Assert.Equal(JobExecutionStatus.Completed, resB.Status);
+
+        // 5. Worker A finishes GPU and attempts to commit artifact
+        barrierService.WorkerAReleaseTcs.TrySetResult(true);
+        var resA = await workerATask;
+
+        // 6. Assertions:
+        // Worker A MUST BE DISCARDED (Deferred) because it lost ownership!
         Assert.Equal(JobExecutionStatus.Deferred, resA.Status);
+
+        // Exactly ONE SceneImage artifact exists in DB (committed by Worker B)
+        var allImages = await dbB.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
+        Assert.Single(allImages);
+        Assert.True(allImages[0].IsCurrent);
+
+        // The job in DB is completed by Worker B
+        var jobInDb = await dbB.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == requestId);
+        Assert.Equal("worker-B", jobInDb.ClaimedBy);
+        Assert.Equal(ImageJobStatus.Completed, jobInDb.Status);
     }
 
     [Fact]

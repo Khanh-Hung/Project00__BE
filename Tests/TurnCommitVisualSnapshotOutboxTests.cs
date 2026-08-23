@@ -328,7 +328,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         var payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(outboxMsg.PayloadJson);
         Assert.NotNull(payload?.Snapshot);
         Assert.Equal(2, payload.Snapshot.SceneRevision);
-        Assert.Equal("https://cloud.storage/scene_rev1.png", payload.Snapshot.PreviousSceneImageUrl);
+        Assert.Equal(1, payload.Snapshot.PredecessorSceneRevision);
     }
 
     [Fact]

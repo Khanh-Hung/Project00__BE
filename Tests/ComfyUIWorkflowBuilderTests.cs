@@ -124,4 +124,35 @@ public sealed class ComfyUIWorkflowBuilderTests
         Assert.Equal(0.55, (double)node10Inputs["weight"], precision: 2);
         Assert.Equal(0.85, (double)node10Inputs["end_at"], precision: 2);
     }
+
+    [Fact]
+    public void VisualIdentityWorkflowV1Builder_GraphTopology_HasExactRequiredNodeConnections()
+    {
+        var builder = new VisualIdentityWorkflowV1Builder();
+        var request = new ImageGenerationRequest(Prompt: "masterpiece, 1girl");
+        var graph = builder.BuildWorkflow(request, "ref_face.png");
+
+        // 1. IPAdapter (Node 10) MUST receive Checkpoint Model (Node 4), IPAdapter Model (Node 8), Ref Image (Node 1), CLIP Vision (Node 2)
+        var ipAdapter = (Dictionary<string, object>)((Dictionary<string, object>)graph["10"])["inputs"];
+        Assert.Equal(new object[] { "4", 0 }, ipAdapter["model"]);
+        Assert.Equal(new object[] { "8", 0 }, ipAdapter["ipadapter"]);
+        Assert.Equal(new object[] { "1", 0 }, ipAdapter["image"]);
+        Assert.Equal(new object[] { "2", 0 }, ipAdapter["clip_vision"]);
+
+        // 2. KSampler (Node 3) MUST receive IPAdapter Advanced output (Node 10, index 0), NOT raw checkpoint model!
+        var ksampler = (Dictionary<string, object>)((Dictionary<string, object>)graph["3"])["inputs"];
+        Assert.Equal(new object[] { "10", 0 }, ksampler["model"]);
+        Assert.Equal(new object[] { "6", 0 }, ksampler["positive"]);
+        Assert.Equal(new object[] { "7", 0 }, ksampler["negative"]);
+        Assert.Equal(new object[] { "5", 0 }, ksampler["latent_image"]);
+
+        // 3. VAE Decode (Node 9) MUST receive KSampler Latent (Node 3) and Checkpoint VAE (Node 4, index 2)
+        var vaeDecode = (Dictionary<string, object>)((Dictionary<string, object>)graph["9"])["inputs"];
+        Assert.Equal(new object[] { "3", 0 }, vaeDecode["samples"]);
+        Assert.Equal(new object[] { "4", 2 }, vaeDecode["vae"]);
+
+        // 4. SaveImage (Node 11) MUST receive VAE Decode image (Node 9, index 0)
+        var saveImage = (Dictionary<string, object>)((Dictionary<string, object>)graph["11"])["inputs"];
+        Assert.Equal(new object[] { "9", 0 }, saveImage["images"]);
+    }
 }
