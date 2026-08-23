@@ -12,16 +12,27 @@ public sealed class VisualStateResolver : IVisualStateResolver
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISceneStateTrackerService? _sceneStateTracker;
+    private readonly IVisualGenerationProfileProvider _profileProvider;
     private readonly ILogger<VisualStateResolver> _logger;
 
     public VisualStateResolver(
         IUnitOfWork unitOfWork,
         ISceneStateTrackerService? sceneStateTracker,
-        ILogger<VisualStateResolver> logger)
+        IVisualGenerationProfileProvider? profileProvider,
+        ILogger<VisualStateResolver>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _sceneStateTracker = sceneStateTracker;
-        _logger = logger;
+        _profileProvider = profileProvider ?? new VisualGenerationProfileProvider();
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<VisualStateResolver>.Instance;
+    }
+
+    public VisualStateResolver(
+        IUnitOfWork unitOfWork,
+        ISceneStateTrackerService? sceneStateTracker,
+        ILogger<VisualStateResolver>? logger = null)
+        : this(unitOfWork, sceneStateTracker, new VisualGenerationProfileProvider(), logger)
+    {
     }
 
     public async Task<(SessionSceneState SceneState, TransientVisualState TransientState, VisualSnapshot Snapshot)> ResolveTurnVisualStateAsync(
@@ -73,11 +84,7 @@ public sealed class VisualStateResolver : IVisualStateResolver
             defaultExpression: currentMood.ToString()
         );
 
-        var generationProfile = GenerationProfile.CreateDefault(
-            workflow: "VisualIdentity",
-            workflowVersion: 1,
-            parametersJson: "{\"ipAdapter\":{\"weight\":0.45,\"endAt\":0.70}}"
-        );
+        var generationProfile = _profileProvider.ResolveProfile(character);
 
         var snapshot = VisualSnapshot.Create(
             turnId: turnId,

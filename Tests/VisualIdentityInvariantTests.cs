@@ -898,6 +898,76 @@ public sealed class VisualIdentityInvariantTests
         });
     }
 
+    [Fact]
+    public void DbExceptionClassifier_CorrectlyDistinguishes_TransientVsPermanentExceptions()
+    {
+        // Transient errors
+        Assert.True(DbExceptionClassifier.IsTransient(new DbUpdateConcurrencyException("Concurrency conflict")));
+        Assert.True(DbExceptionClassifier.IsTransient(new TimeoutException("DB timeout")));
+        Assert.True(DbExceptionClassifier.IsTransient(new IOException("Storage socket dropped")));
+        Assert.True(DbExceptionClassifier.IsTransient(new GpuTransientException("Server error 503")));
+
+        // Permanent errors
+        Assert.False(DbExceptionClassifier.IsTransient(new GpuNonTransientException("Bad prompt 400")));
+        Assert.False(DbExceptionClassifier.IsTransient(new ArgumentException("Invalid arguments")));
+        Assert.False(DbExceptionClassifier.IsTransient(new InvalidOperationException("Schema corruption")));
+    }
+
+    [Fact]
+    public async Task VisualGenerationProfileProvider_ResolvesConfigurableIPAdapterSettings_FreezesIntoVisualSnapshot()
+    {
+        // 1. Setup custom configuration for IP-Adapter weights
+        var inMemoryConfig = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:DefaultWorkflow"] = "VisualIdentityV2",
+            ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = "2",
+            ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.35",
+            ["AiProviders:ImageGeneration:IPAdapter:EndAt"] = "0.60"
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
+
+        var profileProvider = new VisualGenerationProfileProvider(configuration);
+        var resolver = new VisualStateResolver(
+            unitOfWork: null!,
+            sceneStateTracker: null,
+            profileProvider: profileProvider,
+            logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<VisualStateResolver>.Instance
+        );
+
+        var visualIdentity = new CharacterVisualIdentity(
+            Face: "delicate youthful features",
+            Hair: "long flowing silver-white hair",
+            Eyes: "blue eyes",
+            Skin: "fair skin",
+            Body: "slender",
+            AgeAppearance: "early 20s",
+            ClothingStyle: "starry robe",
+            Accessories: null,
+            VisualTraits: null,
+            CanonicalReferenceUrl: "canonical.png"
+        );
+
+        var character = new Character("Aria", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy", visualIdentity: visualIdentity);
+
+        var session = new ChatSession(character.Id, Guid.NewGuid(), "Chat with Aria");
+
+        // 2. Resolve turn visual state
+        var (_, _, snapshot) = await resolver.ResolveTurnVisualStateAsync(
+            character: character,
+            session: session,
+            userMessage: "Hello Aria",
+            assistantReply: "Greetings traveler",
+            currentMood: CharacterMood.Happy,
+            turnId: Guid.NewGuid()
+        );
+
+        // 3. Assert GenerationProfile is dynamically configured and frozen into snapshot
+        Assert.Equal("VisualIdentityV2", snapshot.GenerationProfile.Workflow);
+        Assert.Equal(2, snapshot.GenerationProfile.WorkflowVersion);
+        Assert.Contains("\"weight\":0.35", snapshot.GenerationProfile.ParametersJson);
+        Assert.Contains("\"endAt\":0.60", snapshot.GenerationProfile.ParametersJson);
+    }
+
     private sealed class ComfyUIImageGenerationIntegrationTests_InMemoryStorageService : IStorageService
     {
         public Task<string> SaveImageAsync(byte[] imageBytes, string fileName, string contentType = "image/jpeg", CancellationToken ct = default)
