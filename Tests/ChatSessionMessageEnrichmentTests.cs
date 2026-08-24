@@ -295,4 +295,11 @@ public sealed class ChatSessionMessageEnrichmentTests
         Assert.Equal("https://storage.cdn/elysia_rev1.png", enrichedAssistant.SceneImageUrl);
         Assert.Equal("completed", enrichedAssistant.SceneImageStatus);
     }
+
+    [Fact]
+    public void FromJobStatus_WhenGivenUnknownStatus_ThrowsArgumentOutOfRangeException()
+    {
+        var invalidStatus = (ImageJobStatus)999;
+        Assert.Throws<ArgumentOutOfRangeException>(() => SceneImageStatuses.FromJobStatus(invalidStatus));
+    }
 }

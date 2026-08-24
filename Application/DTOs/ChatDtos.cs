@@ -9,6 +9,7 @@ public static class SceneImageStatuses
     public const string Processing = "processing";
     public const string Completed = "completed";
     public const string Failed = "failed";
+    public const string Cancelled = "cancelled";
 
     public static string FromJobStatus(ImageJobStatus status) => status switch
     {
@@ -16,7 +17,8 @@ public static class SceneImageStatuses
         ImageJobStatus.Processing => Processing,
         ImageJobStatus.Completed => Completed,
         ImageJobStatus.Failed => Failed,
-        _ => Pending
+        ImageJobStatus.Cancelled => Cancelled,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, $"Unsupported {nameof(ImageJobStatus)} value: '{status}'.")
     };
 }
 
