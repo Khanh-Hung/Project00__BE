@@ -40,12 +40,14 @@ public sealed record VisualSnapshot(
     {
         ArgumentNullException.ThrowIfNull(generationProfile, nameof(generationProfile));
 
-        // Prefer CanonicalReferenceUrl (tight face crop) if available; fallback to FullBodyUrl or Character AvatarUrl
+        // Strict resolution hierarchy: CanonicalReferenceUrl (tight face crop) -> Character AvatarUrl -> FullBodyUrl
         var resolvedIdentityRef = !string.IsNullOrWhiteSpace(visualIdentity?.CanonicalReferenceUrl)
             ? visualIdentity.CanonicalReferenceUrl
-            : (!string.IsNullOrWhiteSpace(visualIdentity?.FullBodyUrl)
-                ? visualIdentity.FullBodyUrl
-                : fallbackReferenceUrl);
+            : (!string.IsNullOrWhiteSpace(fallbackReferenceUrl)
+                ? fallbackReferenceUrl
+                : (!string.IsNullOrWhiteSpace(visualIdentity?.FullBodyUrl)
+                    ? visualIdentity.FullBodyUrl
+                    : null));
 
         var defaultNegatives = negativeConstraints 
             ?? "deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
