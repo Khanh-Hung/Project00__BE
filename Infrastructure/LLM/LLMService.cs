@@ -271,6 +271,16 @@ public sealed class LLMService : ILLMService
             .Replace("<exact same face>", "")
             .Replace("<exact same intricate outfit>", "");
 
+        if (string.IsNullOrWhiteSpace(cleanAvatarPrompt))
+        {
+            cleanAvatarPrompt = $"masterpiece, best quality, {genderTag}, solo, close-up face portrait, face focus, looking at viewer, highly detailed face, expressive eyes, vibrant colors, cinematic lighting, 8k, pixiv trending";
+        }
+
+        if (!cleanAvatarPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
+        {
+            cleanAvatarPrompt = $"masterpiece, best quality, {genderTag}, solo, close-up face portrait, face focus, looking at viewer, " + cleanAvatarPrompt;
+        }
+
         if (string.IsNullOrWhiteSpace(cleanFullBodyPrompt))
         {
             cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, elegant posture, highly detailed face, expressive eyes, vibrant colors, cinematic lighting, 8k, pixiv trending";
@@ -281,20 +291,30 @@ public sealed class LLMService : ILLMService
             cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, sharp focus, " + cleanFullBodyPrompt;
         }
 
-        // 1. Generate the authoritative Single Master Character Standee (Full-Body / Waist-up)
-        var masterRequest = new ImageGenerationRequest(
-            Prompt: cleanFullBodyPrompt,
+        // Step 1: Generate Close-up Face Avatar via TextToImage
+        var avatarRequest = new ImageGenerationRequest(
+            Prompt: cleanAvatarPrompt,
             Width: 512,
-            Height: 768,
+            Height: 512,
             NegativePrompt: "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error",
             Workflow: "TextToImage",
             WorkflowVersion: 1
         );
 
-        var fullBodyUrl = await _imageService.GenerateImageAsync(masterRequest, ct);
+        var avatarUrl = await _imageService.GenerateImageAsync(avatarRequest, ct);
 
-        // 2. Extract Avatar directly from Master Standee's Face (100% Identity Guaranteed)
-        var avatarUrl = await CropFaceAvatarFromMasterAsync(fullBodyUrl, ct);
+        // Step 2: Generate Full-Body Standee via VisualIdentity Workflow (IP-Adapter conditioned on the Avatar)
+        var fullBodyRequest = new ImageGenerationRequest(
+            Prompt: cleanFullBodyPrompt,
+            Width: 512,
+            Height: 768,
+            ReferenceImageUrl: avatarUrl,
+            NegativePrompt: "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error",
+            Workflow: "VisualIdentity",
+            WorkflowVersion: 1
+        );
+
+        var fullBodyUrl = await _imageService.GenerateImageAsync(fullBodyRequest, ct);
 
         return new GenerateAvatarResponse(avatarUrl, cleanAvatarPrompt, avatarUrl, fullBodyUrl, cleanFullBodyPrompt);
     }
