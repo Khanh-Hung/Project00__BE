@@ -8,6 +8,8 @@ using Application.Features.Chat.Commands.SendChatMessage;
 using Application.Features.Chat.Commands.TriggerTurnSceneImage;
 using Application.Features.Chat.Queries.GetCharacterMemories;
 using Application.Features.Chat.Queries.GetChatSession;
+using Application.Features.Chat.Queries.GetSceneImageStatus;
+using Application.Features.Chat.Queries.GetTurnSceneImages;
 using Application.Features.Chat.Queries.GetUserChatSessions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -118,6 +120,26 @@ public sealed class ChatController : ControllerBase
     public async Task<IActionResult> GenerateTurnImage(Guid sessionId, Guid turnId, CancellationToken ct)
     {
         var result = await _sender.Send(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Queries status and metadata of an async scene image generation job by GenerationRequestId
+    /// </summary>
+    [HttpGet("scene-images/{generationRequestId:guid}")]
+    public async Task<IActionResult> GetSceneImageStatus(Guid generationRequestId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new GetSceneImageStatusQuery(generationRequestId), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Gets all scene image artifacts generated for a specific conversation turn
+    /// </summary>
+    [HttpGet("sessions/{sessionId:guid}/turns/{turnId:guid}/images")]
+    public async Task<IActionResult> GetTurnSceneImages(Guid sessionId, Guid turnId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new GetTurnSceneImagesQuery(sessionId, turnId), ct);
         return result.ToActionResult();
     }
 

@@ -139,3 +139,29 @@ public record TriggerSceneImageResponse(
     Guid TurnId,
     string Status = "queued"
 );
+
+public record SceneImageStatusResponse(
+    Guid GenerationRequestId,
+    Guid TurnId,
+    Guid SessionId,
+    string Status, // "queued", "pending", "processing", "completed", "failed", "cancelled"
+    string? ImageUrl = null,
+    string? FailureReason = null,
+    bool? IsRetryable = null,
+    int? SceneRevision = null,
+    string? Prompt = null,
+    DateTime? CreatedAt = null
+);
+
+public record SceneImageDto(
+    Guid Id,
+    Guid SessionId,
+    Guid CharacterId,
+    Guid TurnId,
+    int SceneRevision,
+    Guid GenerationRequestId,
+    string ImageUrl,
+    string Prompt,
+    bool IsCurrent,
+    DateTime CreatedAt
+);

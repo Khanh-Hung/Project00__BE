@@ -1,0 +1,156 @@
+using System.Text.Json;
+using Application.Abstractions.Auth;
+using Application.Abstractions.Data;
+using Application.Abstractions.Responses;
+using Application.Common;
+using Application.DTOs;
+using Domain.Entities;
+using Domain.Enums;
+using MediatR;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+
+namespace Application.Features.Chat.Queries.GetSceneImageStatus;
+
+public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageStatusQuery, Result<SceneImageStatusResponse>>
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUserProvider _currentUserProvider;
+    private readonly ILogger<GetSceneImageStatusHandler> _logger;
+
+    public GetSceneImageStatusHandler(
+        IUnitOfWork unitOfWork,
+        ICurrentUserProvider currentUserProvider,
+        ILogger<GetSceneImageStatusHandler> logger)
+    {
+        _unitOfWork = unitOfWork;
+        _currentUserProvider = currentUserProvider;
+        _logger = logger;
+    }
+
+    public async Task<Result<SceneImageStatusResponse>> Handle(GetSceneImageStatusQuery query, CancellationToken cancellationToken)
+    {
+        // 1. Resolve Authenticated User
+        if (string.IsNullOrEmpty(_currentUserProvider.CurrentUserId) || !Guid.TryParse(_currentUserProvider.CurrentUserId, out var currentUserId))
+        {
+            return Result<SceneImageStatusResponse>.Failure(
+                StatusCodes.Status401Unauthorized,
+                "Authentication is required to query scene image status.");
+        }
+
+        var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
+        var jobRepo = _unitOfWork.GetRepository<ImageGenerationJob>();
+        var sessionRepo = _unitOfWork.GetRepository<ChatSession>();
+        var outboxRepo = _unitOfWork.GetRepository<OutboxMessage>();
+
+        // 2. Check if image generation already completed and SceneImage is stored
+        var sceneImage = await sceneImageRepo.GetAsync(
+            i => i.GenerationRequestId == query.GenerationRequestId,
+            cancellationToken);
+
+        if (sceneImage != null)
+        {
+            var session = await sessionRepo.GetByIdAsync(sceneImage.SessionId, cancellationToken);
+            if (session != null && session.UserId.HasValue && session.UserId.Value != Guid.Empty && session.UserId.Value != currentUserId)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status403Forbidden,
+                    "You do not have access to this generation request.");
+            }
+
+            return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
+                GenerationRequestId: sceneImage.GenerationRequestId,
+                TurnId: sceneImage.TurnId,
+                SessionId: sceneImage.SessionId,
+                Status: "completed",
+                ImageUrl: sceneImage.ImageUrl,
+                SceneRevision: sceneImage.SceneRevision,
+                Prompt: sceneImage.Prompt,
+                CreatedAt: sceneImage.CreatedAt
+            ));
+        }
+
+        // 3. Check if active or failed ImageGenerationJob exists
+        var job = await jobRepo.GetAsync(
+            j => j.GenerationRequestId == query.GenerationRequestId,
+            cancellationToken);
+
+        if (job != null)
+        {
+            var session = await sessionRepo.GetByIdAsync(job.SessionId, cancellationToken);
+            if (session != null && session.UserId.HasValue && session.UserId.Value != Guid.Empty && session.UserId.Value != currentUserId)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status403Forbidden,
+                    "You do not have access to this generation request.");
+            }
+
+            var statusStr = job.Status switch
+            {
+                ImageJobStatus.Completed => "completed",
+                ImageJobStatus.Processing => "processing",
+                ImageJobStatus.Pending => "pending",
+                ImageJobStatus.Failed => "failed",
+                ImageJobStatus.Cancelled => "cancelled",
+                _ => job.Status.ToString().ToLowerInvariant()
+            };
+
+            return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
+                GenerationRequestId: job.GenerationRequestId,
+                TurnId: job.TurnId,
+                SessionId: job.SessionId,
+                Status: statusStr,
+                FailureReason: job.FailureReason,
+                IsRetryable: job.IsRetryable,
+                SceneRevision: job.SceneRevision,
+                CreatedAt: job.CreatedAt
+            ));
+        }
+
+        // 4. Check if request is still queued in durable Outbox table
+        var outboxMessages = await outboxRepo.GetAllAsync(
+            m => m.EventType == OutboxEventTypes.SceneImageGeneration,
+            cancellationToken);
+
+        foreach (var msg in outboxMessages)
+        {
+            if (msg.PayloadJson.Contains(query.GenerationRequestId.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                SceneImageGenerationOutboxPayload? payload = null;
+                try
+                {
+                    payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg.PayloadJson);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse Outbox payload for message {Id}", msg.Id);
+                }
+
+                if (payload != null && payload.GenerationRequestId == query.GenerationRequestId)
+                {
+                    if (payload.UserId != Guid.Empty && payload.UserId != currentUserId)
+                    {
+                        return Result<SceneImageStatusResponse>.Failure(
+                            StatusCodes.Status403Forbidden,
+                            "You do not have access to this generation request.");
+                    }
+
+                    return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
+                        GenerationRequestId: payload.GenerationRequestId,
+                        TurnId: payload.TurnId,
+                        SessionId: payload.Snapshot.SessionId,
+                        Status: "queued",
+                        SceneRevision: payload.Snapshot.SceneRevision,
+                        Prompt: null,
+                        CreatedAt: msg.CreatedAt
+                    ));
+                }
+            }
+        }
+
+        // 5. Not found anywhere
+        return Result<SceneImageStatusResponse>.Failure(
+            StatusCodes.Status404NotFound,
+            $"Scene image generation request '{query.GenerationRequestId}' was not found.");
+    }
+}
