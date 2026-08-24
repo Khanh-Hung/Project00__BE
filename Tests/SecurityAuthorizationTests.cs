@@ -302,4 +302,53 @@ public class SecurityAuthorizationTests
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCodes.Status404NotFound, result.StatusCode);
     }
+
+    [Fact]
+    public async Task GetMyCharacters_Returns_Only_Current_Users_Characters()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        var userA = Guid.NewGuid();
+        var userB = Guid.NewGuid();
+
+        await using var context = new ProjectDbContext(options);
+        var charA = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy");
+        charA.SetCreated(DateTime.UtcNow, userA.ToString());
+
+        var charB = new Character("Bob", "Warrior", "", "Brave", "Hello", "Fantasy");
+        charB.SetCreated(DateTime.UtcNow, userB.ToString());
+
+        await context.Characters.AddRangeAsync(charA, charB);
+        await context.SaveChangesAsync();
+
+        var unitOfWork = new UnitOfWork(context);
+        var userAProvider = new TestCurrentUserProvider(userA.ToString());
+        var handler = new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersHandler(unitOfWork, userAProvider);
+
+        var result = await handler.Handle(new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersQuery(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value!);
+        Assert.Equal("Alice", result.Value![0].Name);
+    }
+
+    [Fact]
+    public async Task GetMyCharacters_Rejects_Unauthenticated()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var context = new ProjectDbContext(options);
+        var unitOfWork = new UnitOfWork(context);
+        var unauthenticatedProvider = new TestCurrentUserProvider(null);
+        var handler = new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersHandler(unitOfWork, unauthenticatedProvider);
+
+        var result = await handler.Handle(new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersQuery(), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
+    }
 }
