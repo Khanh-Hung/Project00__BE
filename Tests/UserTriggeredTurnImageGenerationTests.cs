@@ -813,7 +813,9 @@ public sealed class UserTriggeredTurnImageGenerationTests
         var charId = Guid.NewGuid();
         var dbName = Guid.NewGuid().ToString();
 
-        var (db, uow, userProvider, handler) = CreateHarness(dbName, userId.ToString());
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
 
         var frozenSnapshot = CreateTestSnapshot(sessionId, turnId, characterId: charId);
         var turn = new CharacterTurn(
@@ -832,22 +834,29 @@ public sealed class UserTriggeredTurnImageGenerationTests
             relationshipStage: "Stranger",
             visualSnapshotJson: JsonSerializer.Serialize(frozenSnapshot)
         );
-        await db.CharacterTurns.AddAsync(turn);
-        await db.SaveChangesAsync();
 
-        // 100 sequential/concurrent trigger requests on the same turn (e.g. rapid user clicks / regenerations)
+        // Seed initial turn with isolated DbContext
+        await using (var seedDb = new ProjectDbContext(options))
+        {
+            await seedDb.CharacterTurns.AddAsync(turn);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // 100 concurrent trigger requests on the same turn (e.g. rapid user clicks / regenerations)
+        // Each request uses an independent ProjectDbContext + UnitOfWork pointing to the same shared in-memory database
         const int requestCount = 100;
         var tasks = Enumerable.Range(0, requestCount).Select(async _ =>
         {
-            // Each invocation creates its own handler/scope with same underlying db
-            var isolatedUow = new UnitOfWork(db);
-            var isolatedHandler = new TriggerTurnSceneImageGenerationHandler(
-                isolatedUow,
-                userProvider,
+            await using var taskDb = new ProjectDbContext(options);
+            var taskUow = new UnitOfWork(taskDb);
+            var taskUserProvider = new FakeUserProvider(userId.ToString());
+            var taskHandler = new TriggerTurnSceneImageGenerationHandler(
+                taskUow,
+                taskUserProvider,
                 NullLogger<TriggerTurnSceneImageGenerationHandler>.Instance
             );
 
-            return await isolatedHandler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+            return await taskHandler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
         });
 
         // Run concurrently
@@ -866,15 +875,18 @@ public sealed class UserTriggeredTurnImageGenerationTests
         var generatedIds = results.Select(r => r.Value!.GenerationRequestId).ToList();
         Assert.Equal(requestCount, generatedIds.Distinct().Count());
 
-        // Assert all 100 Outbox messages exist in database
-        var outboxMessages = await db.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration).ToListAsync();
-        Assert.Equal(requestCount, outboxMessages.Count);
+        // Assert all 100 Outbox messages exist in database via a fresh verification DbContext
+        await using (var verifyDb = new ProjectDbContext(options))
+        {
+            var outboxMessages = await verifyDb.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration).ToListAsync();
+            Assert.Equal(requestCount, outboxMessages.Count);
 
-        var outboxRequestIds = outboxMessages
-            .Select(m => JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson)!.GenerationRequestId)
-            .ToList();
+            var outboxRequestIds = outboxMessages
+                .Select(m => JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson)!.GenerationRequestId)
+                .ToList();
 
-        Assert.Equal(requestCount, outboxRequestIds.Distinct().Count());
-        Assert.Equal(generatedIds.OrderBy(g => g), outboxRequestIds.OrderBy(g => g));
+            Assert.Equal(requestCount, outboxRequestIds.Distinct().Count());
+            Assert.Equal(generatedIds.OrderBy(g => g), outboxRequestIds.OrderBy(g => g));
+        }
     }
 }
