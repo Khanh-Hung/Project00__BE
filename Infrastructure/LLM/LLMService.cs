@@ -281,14 +281,24 @@ public sealed class LLMService : ILLMService
             cleanAvatarPrompt = $"masterpiece, best quality, {genderTag}, solo, close-up face portrait, face focus, looking at viewer, " + cleanAvatarPrompt;
         }
 
+        if (!cleanAvatarPrompt.Contains("ethereal", StringComparison.OrdinalIgnoreCase))
+        {
+            cleanAvatarPrompt += ", soft painterly lighting, ethereal atmospheric glow, luminous eyes, masterpiece, best quality";
+        }
+
         if (string.IsNullOrWhiteSpace(cleanFullBodyPrompt))
         {
-            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, elegant posture, highly detailed face, expressive eyes, vibrant colors, cinematic lighting, 8k, pixiv trending";
+            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, elegant posture, highly detailed face, expressive luminous eyes, vibrant colors, ethereal magical lighting, cinematic atmospheric glow, soft rim light, 8k, pixiv trending";
         }
 
         if (!cleanFullBodyPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
         {
             cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, sharp focus, " + cleanFullBodyPrompt;
+        }
+
+        if (!cleanFullBodyPrompt.Contains("ethereal", StringComparison.OrdinalIgnoreCase))
+        {
+            cleanFullBodyPrompt += ", ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing highlights, luminous eyes, beautiful detailed face, masterpiece, best quality";
         }
 
         var generatedSeed = Random.Shared.Next(1, int.MaxValue);
