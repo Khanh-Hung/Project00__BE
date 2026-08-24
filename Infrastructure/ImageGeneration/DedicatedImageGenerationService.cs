@@ -112,6 +112,20 @@ public class DedicatedImageGenerationService : IImageGenerationService
         }
     }
 
+    public async Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var imageUrl = await GenerateImageAsync(request, ct);
+        sw.Stop();
+        return new ImageGenerationResult(
+            ImageUrl: imageUrl,
+            Provider: "Dedicated",
+            ProviderJobId: null,
+            DurationMs: sw.ElapsedMilliseconds,
+            Seed: request.Seed ?? 0
+        );
+    }
+
     private sealed class DedicatedServerRequest
     {
         [JsonPropertyName("prompt")]

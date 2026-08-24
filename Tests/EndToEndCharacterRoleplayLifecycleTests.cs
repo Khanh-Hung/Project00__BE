@@ -309,8 +309,8 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            NullLogger<CharacterRuntime>.Instance,
-            sceneTracker
+            new VisualStateResolver(unitOfWork, sceneTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // ==========================================
@@ -521,7 +521,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
         Assert.NotNull(rev9Payload?.Snapshot);
         Assert.Equal(9, rev9Payload.Snapshot.SceneRevision);
         Assert.Equal("Moonlit Garden", rev9Payload.Snapshot.SceneState.CurrentLocation);
-        Assert.Equal("https://cdn.project00.ai/scene_rev8.png", rev9Payload.Snapshot.PreviousSceneImageUrl);
+        Assert.Equal(8, rev9Payload.Snapshot.PredecessorSceneRevision);
 
         // ==========================================
         // TURN 10: Persistent Turn Idempotency Replay
@@ -615,8 +615,8 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            NullLogger<CharacterRuntime>.Instance,
-            sceneTracker
+            new VisualStateResolver(unitOfWork, sceneTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 1: LLM attempts +99 delta -> Runtime strictly clamps to +5
@@ -672,8 +672,8 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            NullLogger<CharacterRuntime>.Instance,
-            sceneTracker
+            new VisualStateResolver(unitOfWork, sceneTracker, NullLogger<VisualStateResolver>.Instance),
+            NullLogger<CharacterRuntime>.Instance
         );
 
         // Turn 1: Propose Event FIRST_PROMISE

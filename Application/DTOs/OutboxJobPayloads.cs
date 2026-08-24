@@ -31,7 +31,8 @@ public sealed record SceneImageGenerationOutboxPayload(
     Guid TurnId,
     Guid CharacterId,
     Guid UserId,
-    VisualSnapshot Snapshot
+    VisualSnapshot Snapshot,
+    Guid GenerationRequestId
 );
 
 public sealed record MemoryExtractionOutboxPayload(

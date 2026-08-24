@@ -156,6 +156,7 @@ public sealed class OutboxReliabilityAndOrderingTests
             VisualIdentity: visualIdentity,
             SceneState: sceneState,
             TransientState: transientState,
+            GenerationProfile: GenerationProfile.CreateDefault(),
             IdentityReferenceUrl: visualIdentity.CanonicalReferenceUrl,
             PreviousSceneImageUrl: revision > 1 ? $"https://cdn.project00.ai/scenes/rev_{revision - 1}.png" : null,
             CreatedAt: Clock.Now
@@ -171,7 +172,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var turnId = Guid.NewGuid();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid()));
 
         var msg1 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
         var msg2 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
@@ -202,7 +203,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var turnId = Guid.NewGuid();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid()));
         var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
         await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
@@ -247,7 +248,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var turnId = Guid.NewGuid();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid()));
         var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
 
         await db.OutboxMessages.AddAsync(msg);
@@ -303,7 +304,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var turnId = Guid.NewGuid();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid()));
         var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
         await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
@@ -329,7 +330,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var turnId = Guid.NewGuid();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid()));
         var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
         await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
@@ -354,7 +355,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var turnId = Guid.NewGuid();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid()));
         var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
         await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
@@ -378,7 +379,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var turnId = Guid.NewGuid();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid()));
         var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
         await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
@@ -402,7 +403,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var turnId = Guid.NewGuid();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot));
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid()));
         var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
         await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
@@ -452,7 +453,7 @@ public sealed class OutboxReliabilityAndOrderingTests
 
         // Enqueue only Revision 2 without Revision 1 artifact
         var snapshot2 = CreateSnapshot(sessionId, Guid.NewGuid(), revision: 2);
-        var payload2 = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot2.TurnId, snapshot2.CharacterId, Guid.NewGuid(), snapshot2));
+        var payload2 = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot2.TurnId, snapshot2.CharacterId, Guid.NewGuid(), snapshot2, Guid.NewGuid()));
         var msg2 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload2);
         await db.OutboxMessages.AddAsync(msg2);
         await db.SaveChangesAsync();
@@ -479,8 +480,8 @@ public sealed class OutboxReliabilityAndOrderingTests
         var snapshot1 = CreateSnapshot(sessionId, Guid.NewGuid(), revision: 1);
         var snapshot2 = CreateSnapshot(sessionId, Guid.NewGuid(), revision: 2);
 
-        var msg1 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot1.TurnId, snapshot1.CharacterId, Guid.NewGuid(), snapshot1)));
-        var msg2 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot2.TurnId, snapshot2.CharacterId, Guid.NewGuid(), snapshot2)));
+        var msg1 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot1.TurnId, snapshot1.CharacterId, Guid.NewGuid(), snapshot1, Guid.NewGuid())));
+        var msg2 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot2.TurnId, snapshot2.CharacterId, Guid.NewGuid(), snapshot2, Guid.NewGuid())));
 
         msg1.MarkProcessing();
         await db.OutboxMessages.AddRangeAsync(msg1, msg2);
@@ -505,8 +506,8 @@ public sealed class OutboxReliabilityAndOrderingTests
         var snapshot1 = CreateSnapshot(sessionId, Guid.NewGuid(), revision: 1);
         var snapshot2 = CreateSnapshot(sessionId, Guid.NewGuid(), revision: 2);
 
-        var msg1 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot1.TurnId, snapshot1.CharacterId, Guid.NewGuid(), snapshot1)));
-        var msg2 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot2.TurnId, snapshot2.CharacterId, Guid.NewGuid(), snapshot2)));
+        var msg1 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot1.TurnId, snapshot1.CharacterId, Guid.NewGuid(), snapshot1, Guid.NewGuid())));
+        var msg2 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot2.TurnId, snapshot2.CharacterId, Guid.NewGuid(), snapshot2, Guid.NewGuid())));
 
         msg1.MarkFailed("Permanent GPU crash", Clock.Now, isTransient: false);
         await db.OutboxMessages.AddRangeAsync(msg1, msg2);
@@ -528,7 +529,7 @@ public sealed class OutboxReliabilityAndOrderingTests
         var (scopeFactory, db, _) = CreateTestContext(dbName);
 
         var snapshot = CreateSnapshot(Guid.NewGuid(), Guid.NewGuid(), revision: 1);
-        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot.TurnId, snapshot.CharacterId, Guid.NewGuid(), snapshot)));
+        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapshot.TurnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid())));
 
         // Simulate crash 3 minutes ago
         msg.MarkProcessing(workerId: "worker-dead", now: Clock.Now.AddMinutes(-3));
@@ -549,14 +550,15 @@ public sealed class OutboxReliabilityAndOrderingTests
         var (scopeFactory, db, imageService) = CreateTestContext(dbName);
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
+        var generationRequestId = Guid.NewGuid();
 
         // Artifact already persisted
-        var artifact = new SceneImage(sessionId, Guid.NewGuid(), turnId, 1, "https://cdn.project00.ai/existing.png", "prompt");
+        var artifact = new SceneImage(sessionId, Guid.NewGuid(), turnId, 1, "https://cdn.project00.ai/existing.png", "prompt", generationRequestId: generationRequestId);
         await db.SceneImages.AddAsync(artifact);
         await db.SaveChangesAsync();
 
         var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
-        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot)));
+        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, generationRequestId)));
         await db.OutboxMessages.AddAsync(msg);
         await db.SaveChangesAsync();
 
@@ -583,8 +585,8 @@ public sealed class OutboxReliabilityAndOrderingTests
         var snapA = CreateSnapshot(sessionA, Guid.NewGuid(), revision: 1);
         var snapB = CreateSnapshot(sessionB, Guid.NewGuid(), revision: 1);
 
-        var msgA = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapA.TurnId, snapA.CharacterId, Guid.NewGuid(), snapA)));
-        var msgB = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapB.TurnId, snapB.CharacterId, Guid.NewGuid(), snapB)));
+        var msgA = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapA.TurnId, snapA.CharacterId, Guid.NewGuid(), snapA, Guid.NewGuid())));
+        var msgB = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snapB.TurnId, snapB.CharacterId, Guid.NewGuid(), snapB, Guid.NewGuid())));
 
         await db.OutboxMessages.AddRangeAsync(msgA, msgB);
         await db.SaveChangesAsync();
@@ -621,9 +623,9 @@ public sealed class OutboxReliabilityAndOrderingTests
         var snap3 = CreateSnapshot(sessionId, Guid.NewGuid(), revision: 3);
 
         // Queue in reverse order (3, 2, 1) to test strict predecessor gating
-        var msg3 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap3.TurnId, snap3.CharacterId, Guid.NewGuid(), snap3)));
-        var msg2 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, snap2.CharacterId, Guid.NewGuid(), snap2)));
-        var msg1 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap1.TurnId, snap1.CharacterId, Guid.NewGuid(), snap1)));
+        var msg3 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap3.TurnId, snap3.CharacterId, Guid.NewGuid(), snap3, Guid.NewGuid())));
+        var msg2 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, snap2.CharacterId, Guid.NewGuid(), snap2, Guid.NewGuid())));
+        var msg1 = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap1.TurnId, snap1.CharacterId, Guid.NewGuid(), snap1, Guid.NewGuid())));
 
         await db.OutboxMessages.AddRangeAsync(msg3, msg2, msg1);
         await db.SaveChangesAsync();

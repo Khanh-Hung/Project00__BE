@@ -97,8 +97,8 @@ public class VisualContinuity8TurnBenchmarkTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                NullLogger<CharacterRuntime>.Instance,
-                tracker
+                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                NullLogger<CharacterRuntime>.Instance
             );
 
             await runtime.ProcessTurnAsync(new CharacterTurnRequest(

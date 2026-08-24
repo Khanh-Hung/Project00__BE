@@ -19,9 +19,25 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
         builder.Property(x => x.Prompt).IsRequired();
         builder.Property(x => x.IdentityReferenceUrl).HasMaxLength(2048);
         builder.Property(x => x.PreviousSceneImageUrl).HasMaxLength(2048);
+        builder.Property(x => x.GenerationRequestId).IsRequired();
+        builder.Property(x => x.IsCurrent).IsRequired().HasDefaultValue(true);
+        builder.Property(x => x.Workflow).IsRequired().HasMaxLength(128);
+        builder.Property(x => x.WorkflowVersion).IsRequired();
 
-        // Invariant: Exactly one rendered image artifact per (SessionId, SceneRevision)
-        builder.HasIndex(x => new { x.SessionId, x.SceneRevision }).IsUnique();
+        // Invariant: Unique per generation request attempt; non-unique per revision to support multiple regenerations
+        builder.HasIndex(x => new { x.SessionId, x.GenerationRequestId }).IsUnique();
+        
+        // Database invariant: At most ONE active (IsCurrent = true) artifact per (SessionId, SceneRevision)
+        builder.HasIndex(x => new { x.SessionId, x.SceneRevision })
+            .HasFilter("\"IsCurrent\" = true")
+            .IsUnique();
+
         builder.HasIndex(x => x.TurnId);
+
+        // Referential integrity to ImageGenerationJob: RESTRICT to preserve immutable historical audit trail
+        builder.HasOne<ImageGenerationJob>()
+            .WithMany()
+            .HasForeignKey(x => x.GenerationJobId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -57,4 +57,18 @@ public sealed class PollinationsImageGenerationService : IImageGenerationService
 
         return imageUrl;
     }
+
+    public async Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var imageUrl = await GenerateImageAsync(request, ct);
+        sw.Stop();
+        return new ImageGenerationResult(
+            ImageUrl: imageUrl,
+            Provider: "Pollinations",
+            ProviderJobId: null,
+            DurationMs: sw.ElapsedMilliseconds,
+            Seed: request.Seed ?? 0
+        );
+    }
 }

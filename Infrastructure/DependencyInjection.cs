@@ -36,7 +36,8 @@ public static class DependencyInjection
         services.AddScoped<Application.Abstractions.Auth.ICurrentUserProvider, CurrentUserProvider>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
-        // 3. Add Auth Services (Hasher & JWT)
+        // 3. Add Auth Services (Hasher & JWT) and DateTime Provider
+        services.AddSingleton<Domain.Common.DateTimes.IDateTimeProvider, Domain.Common.DateTimes.SystemDateTimeProvider>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
@@ -71,11 +72,26 @@ public static class DependencyInjection
         services.AddScoped<IStorageService, Infrastructure.Storage.LocalStorageService>();
         services.AddScoped<IVoiceStorage, Infrastructure.Storage.LocalVoiceStorage>();
 
-        // 6. Add Image Generation Service (Dedicated AI Server with Fallback)
+        // 6. Add Image Generation Service (ComfyUI Provider with Dedicated / Pollinations fallback)
         services.AddHttpClient<Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
         services.AddScoped<Infrastructure.ImageGeneration.PollinationsImageGenerationService>();
         services.AddHttpClient<Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
-        services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
+        services.AddScoped<Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
+        services.AddHttpClient<Infrastructure.ImageGeneration.ComfyUI.IComfyUIClient, Infrastructure.ImageGeneration.ComfyUI.ComfyUIClient>(c => c.Timeout = TimeSpan.FromSeconds(120));
+        services.AddHttpClient<Infrastructure.ImageGeneration.ComfyUI.IComfyUIInputImageService, Infrastructure.ImageGeneration.ComfyUI.ComfyUIInputImageService>();
+        services.AddSingleton<Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder, Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder>();
+        services.AddScoped<Infrastructure.ImageGeneration.ComfyUIImageGenerationService>();
+
+        var imageProvider = configuration["AiProviders:ImageProvider"];
+        if (string.Equals(imageProvider, "ComfyUI", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.ComfyUIImageGenerationService>();
+        }
+        else
+        {
+            services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
+        }
+        services.AddScoped<IImageGenerationJobHandler, Infrastructure.Services.ImageGenerationJobHandler>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
