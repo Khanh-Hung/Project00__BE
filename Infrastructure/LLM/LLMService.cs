@@ -247,26 +247,54 @@ public sealed class LLMService : ILLMService
             // fallback if Gemini prompt tags generation fails
         }
 
-        if (string.IsNullOrWhiteSpace(cleanAvatarPrompt))
+        var isMale = request.VisualIdentity?.Gender?.Equals("Male", StringComparison.OrdinalIgnoreCase) == true;
+        var genderTag = isMale ? "1boy" : "1girl";
+
+        // Clean any literal template artifacts from Gemini
+        cleanAvatarPrompt = cleanAvatarPrompt
+            .Replace("1girl/1boy", genderTag)
+            .Replace("<exact hair>", "")
+            .Replace("<exact eyes>", "")
+            .Replace("<exact face>", "")
+            .Replace("<upper outfit details>", "");
+
+        cleanFullBodyPrompt = cleanFullBodyPrompt
+            .Replace("1girl/1boy", genderTag)
+            .Replace("<exact same hair>", "")
+            .Replace("<exact same eyes>", "")
+            .Replace("<exact same face>", "")
+            .Replace("<exact same intricate outfit>", "");
+
+        if (!cleanAvatarPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
         {
-            cleanAvatarPrompt = $"masterpiece, best quality, 2d anime illustration close-up portrait of {request.Name ?? "anime character"}, {request.Title ?? "fantasy hero"}, beautiful expressive eyes, highly detailed face, vibrant colors, cinematic lighting, 8k, pixiv trending";
+            cleanAvatarPrompt = $"masterpiece, best quality, {genderTag}, solo, close-up face portrait, face focus, looking at viewer, " + cleanAvatarPrompt;
         }
 
-        if (string.IsNullOrWhiteSpace(cleanFullBodyPrompt))
+        if (!cleanFullBodyPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
         {
-            cleanFullBodyPrompt = cleanAvatarPrompt
-                .Replace("close-up portrait", "waist-up character portrait")
-                .Replace("close up", "waist-up character portrait")
-                + ", waist-up character portrait, elegant upper body posture, luxurious outfit details, beautiful detailed face, sharp focus, masterpiece, best quality, 8k";
+            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, sharp focus, " + cleanFullBodyPrompt;
         }
 
-        if (!cleanAvatarPrompt.Contains("close-up", StringComparison.OrdinalIgnoreCase) && !cleanAvatarPrompt.Contains("face focus", StringComparison.OrdinalIgnoreCase))
-        {
-            cleanAvatarPrompt = "masterpiece, best quality, 1girl, solo, close-up face portrait, face focus, looking at viewer, " + cleanAvatarPrompt;
-        }
+        var avatarRequest = new ImageGenerationRequest(
+            Prompt: cleanAvatarPrompt,
+            Width: 512,
+            Height: 512,
+            NegativePrompt: "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error",
+            Workflow: "TextToImage",
+            WorkflowVersion: 1
+        );
 
-        var avatarUrl = await _imageService.GenerateImageAsync(cleanAvatarPrompt, 1024, 1024, ct);
-        var fullBodyUrl = await _imageService.GenerateImageAsync(cleanFullBodyPrompt, 1024, 1024, ct);
+        var fullBodyRequest = new ImageGenerationRequest(
+            Prompt: cleanFullBodyPrompt,
+            Width: 512,
+            Height: 768,
+            NegativePrompt: "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error",
+            Workflow: "TextToImage",
+            WorkflowVersion: 1
+        );
+
+        var avatarUrl = await _imageService.GenerateImageAsync(avatarRequest, ct);
+        var fullBodyUrl = await _imageService.GenerateImageAsync(fullBodyRequest, ct);
 
         return new GenerateAvatarResponse(avatarUrl, cleanAvatarPrompt, avatarUrl, fullBodyUrl, cleanFullBodyPrompt);
     }

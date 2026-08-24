@@ -221,6 +221,10 @@ public static class CharacterGenerationPrompts
             }
         }
 
+        var coreGenderTag = (visualIdentity?.Gender?.Equals("Male", StringComparison.OrdinalIgnoreCase) == true)
+            ? "1boy, solo"
+            : "1girl, solo";
+
         return $$"""
             You are an Elite Character Concept Artist & Visual Designer specializing in creating 100% CONSISTENT Character Art Sheets (Close-Up Avatar Portrait + Full-Body Standee).
 
@@ -232,18 +236,19 @@ public static class CharacterGenerationPrompts
             - Specified Visual Identity (CRITICAL - YOU MUST DIRECTLY TRANSLATE THESE SPECIFIC ATTRIBUTES INTO BOTH PROMPTS):
             {{(string.IsNullOrWhiteSpace(visualDetails) ? "- Design a distinct, captivating, coherent visual design fitting the lore and title" : visualDetails)}}
 
-            CRITICAL CONSISTENCY REQUIREMENT:
-            Both the Avatar and Full-Body images MUST represent the EXACT SAME CHARACTER.
-            - Hair color and hairstyle MUST BE IDENTICAL.
-            - Eye color MUST BE IDENTICAL.
-            - Outfit style, fabric, and color palette MUST BE IDENTICAL.
-            - Facial features and aesthetic MUST BE IDENTICAL.
+            CRITICAL REQUIREMENTS:
+            1. EXACTLY ONE PERSON (SOLO): The image MUST depict ONLY {{name ?? "the single character"}}. Never output tags for companions, groups, couples, or secondary people.
+            2. CONSISTENCY: Both the Avatar and Full-Body images MUST represent the EXACT SAME CHARACTER.
+               - Hair color and hairstyle MUST BE IDENTICAL.
+               - Eye color MUST BE IDENTICAL.
+               - Outfit style, fabric, and color palette MUST BE IDENTICAL.
+               - Facial features and aesthetic MUST BE IDENTICAL.
 
             OUTPUT FORMAT:
             You must output EXACTLY two lines starting with 'AVATAR:' and 'FULLBODY:' containing comma-separated English image prompt tags:
 
-            AVATAR: masterpiece, best quality, anime aesthetic, 1girl/1boy, solo, close-up face portrait, face focus, expressive luminous eyes, gentle smile, <exact hair>, <exact eyes>, <exact face>, <upper outfit details>, beautiful anime lighting, pixiv trending, highly detailed, 8k
-            FULLBODY: masterpiece, best quality, anime aesthetic, 1girl/1boy, solo, waist-up standing portrait, elegant upper body posture, <exact same hair>, <exact same eyes>, <exact same face>, <exact same intricate outfit>, luxurious clothing details, beautiful dynamic anime lighting, pixiv trending, sharp focus, 8k
+            AVATAR: masterpiece, best quality, {{coreGenderTag}}, close-up face portrait, face focus, expressive luminous eyes, gentle smile, <exact hair>, <exact eyes>, <exact face>, <upper outfit details>, beautiful anime lighting, pixiv trending, highly detailed, 8k
+            FULLBODY: masterpiece, best quality, {{coreGenderTag}}, waist-up standing portrait, elegant upper body posture, <exact same hair>, <exact same eyes>, <exact same face>, <exact same intricate outfit>, luxurious clothing details, beautiful dynamic anime lighting, pixiv trending, sharp focus, 8k
 
             Output ONLY these two lines.
             """;
