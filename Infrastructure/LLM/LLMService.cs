@@ -291,11 +291,14 @@ public sealed class LLMService : ILLMService
             cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, sharp focus, " + cleanFullBodyPrompt;
         }
 
+        var generatedSeed = Random.Shared.Next(1, int.MaxValue);
+
         // Step 1: Generate Close-up Face Avatar via TextToImage
         var avatarRequest = new ImageGenerationRequest(
             Prompt: cleanAvatarPrompt,
             Width: 512,
             Height: 512,
+            Seed: generatedSeed,
             NegativePrompt: "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error",
             Workflow: "TextToImage",
             WorkflowVersion: 1
@@ -308,6 +311,7 @@ public sealed class LLMService : ILLMService
             Prompt: cleanFullBodyPrompt,
             Width: 512,
             Height: 768,
+            Seed: generatedSeed,
             ReferenceImageUrl: avatarUrl,
             NegativePrompt: "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error",
             Workflow: "VisualIdentity",

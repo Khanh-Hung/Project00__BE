@@ -20,7 +20,7 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
         var negativePrompt = !string.IsNullOrWhiteSpace(request.NegativePrompt) ? request.NegativePrompt : defaultNegative;
 
         var modelName = !string.IsNullOrWhiteSpace(request.Model) ? request.Model : "meinamix_meinaV11.safetensors";
-        var seed = request.Seed ?? Random.Shared.Next(1, int.MaxValue);
+        var seed = request.Seed ?? throw new GpuNonTransientException("Seed is required for deterministic VisualIdentity workflow execution.");
         var width = request.Width > 0 ? request.Width : 512;
         var height = request.Height > 0 ? request.Height : 768;
         var steps = request.Steps ?? 30;
