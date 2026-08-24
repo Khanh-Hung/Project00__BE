@@ -1300,6 +1300,27 @@ public sealed class VisualIdentityInvariantTests
         var sanitizedData = ComfyUIInputImageService.SanitizeUrlForLogging(validDataUrl);
         Assert.StartsWith("data:image/png;base64,[length:", sanitizedData);
         Assert.DoesNotContain("iVBORw0KGgoAAAANSUhEUg", sanitizedData);
+
+        // 7. Magic bytes detection unit check
+        var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00 };
+        Assert.True(ComfyUIInputImageService.ValidateImageMagicBytes(pngBytes, out var detectedPng));
+        Assert.Equal("image/png", detectedPng);
+
+        var jpegBytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10 };
+        Assert.True(ComfyUIInputImageService.ValidateImageMagicBytes(jpegBytes, out var detectedJpeg));
+        Assert.Equal("image/jpeg", detectedJpeg);
+
+        var webpBytes = new byte[] { 0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50 };
+        Assert.True(ComfyUIInputImageService.ValidateImageMagicBytes(webpBytes, out var detectedWebp));
+        Assert.Equal("image/webp", detectedWebp);
+
+        var plainTextBytes = System.Text.Encoding.UTF8.GetBytes("<html><body>not an image</body></html>");
+        Assert.False(ComfyUIInputImageService.ValidateImageMagicBytes(plainTextBytes, out _));
+
+        // 8. Fake PNG payload (data URL with valid base64 characters but non-image bytes)
+        var fakePngDataUrl = "data:image/png;base64," + Convert.ToBase64String(plainTextBytes);
+        var exFake = await Assert.ThrowsAsync<GpuNonTransientException>(() => service.EnsureImageUploadedAsync(fakePngDataUrl));
+        Assert.Contains("not a valid supported image format", exFake.Message);
     }
 
     private sealed class ComfyUIImageGenerationIntegrationTests_InMemoryStorageService : IStorageService

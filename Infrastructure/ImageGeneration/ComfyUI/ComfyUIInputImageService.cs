@@ -152,12 +152,23 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                     throw new GpuNonTransientException($"Remote reference image exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
                 }
 
-                imageBytes = await responseMessage.Content.ReadAsByteArrayAsync(ct);
+                await using var responseStream = await responseMessage.Content.ReadAsStreamAsync(ct);
+                using var memoryStream = new MemoryStream();
+                var buffer = new byte[8192];
+                int bytesRead;
+                long totalBytes = 0;
 
-                if (imageBytes.Length > MaxReferenceImageBytes)
+                while ((bytesRead = await responseStream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
                 {
-                    throw new GpuNonTransientException($"Remote reference image exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
+                    totalBytes += bytesRead;
+                    if (totalBytes > MaxReferenceImageBytes)
+                    {
+                        throw new GpuNonTransientException($"Remote reference image stream exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
+                    }
+                    await memoryStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
                 }
+
+                imageBytes = memoryStream.ToArray();
             }
             else
             {
@@ -194,6 +205,12 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                         throw new GpuNonTransientException($"Reference image could not be resolved from path or URL: '{SanitizeUrlForLogging(referenceImageUrl)}'");
                     }
                 }
+            }
+
+            // Strict Image Header / Magic Bytes Validation (fails fast before sending invalid bytes to ComfyUI)
+            if (!ValidateImageMagicBytes(imageBytes, out var detectedMime))
+            {
+                throw new GpuNonTransientException("The reference image content is not a valid supported image format (PNG, JPEG, or WebP).");
             }
         }
         catch (GpuNonTransientException)
@@ -247,6 +264,39 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
             _logger.LogError(ex, "Error uploading reference image to ComfyUI at '{ServerUrl}'", serverUrl);
             throw new GpuTransientException($"Failed to communicate with ComfyUI upload endpoint: {ex.Message}", statusCode: null, innerException: ex);
         }
+    }
+
+    public static bool ValidateImageMagicBytes(ReadOnlySpan<byte> bytes, out string detectedFormat)
+    {
+        detectedFormat = "unknown";
+        if (bytes.Length < 4) return false;
+
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if (bytes.Length >= 8 &&
+            bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
+            bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A)
+        {
+            detectedFormat = "image/png";
+            return true;
+        }
+
+        // JPEG: FF D8 FF
+        if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+        {
+            detectedFormat = "image/jpeg";
+            return true;
+        }
+
+        // WebP: RIFF (bytes 0-3) + WEBP (bytes 8-11)
+        if (bytes.Length >= 12 &&
+            bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+            bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50)
+        {
+            detectedFormat = "image/webp";
+            return true;
+        }
+
+        return false;
     }
 
     public static string SanitizeUrlForLogging(string? url)
