@@ -27,7 +27,7 @@ public record ChatMessageDto(
     DateTime Timestamp,
     Guid? TurnId = null,
     string? SceneImageUrl = null,
-    string? SceneImageStatus = null, // "queued", "pending", "processing", "completed", "failed"
+    string? SceneImageStatus = null, // BE hydration: "pending", "processing", "completed", "failed"; FE optimistic/trigger: "queued"
     Guid? GenerationRequestId = null
 );
 
