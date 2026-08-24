@@ -36,8 +36,8 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
 
         var serverUrl = _configuration["AiProviders:ComfyUI:ServerUrl"]?.TrimEnd('/') ?? "http://127.0.0.1:8188";
 
-        // 1. Resolve image bytes from Storage, Local File, or Remote URL with SSRF and Size limits
-        byte[] imageBytes;
+        // 1. Resolve HttpContent from Storage, Local File, or Remote URL with SSRF and Size limits
+        HttpContent? fileContent = null;
         string fileName = Path.GetFileName(referenceImageUrl.Split('?')[0]);
         if (string.IsNullOrWhiteSpace(fileName) || !fileName.Contains('.'))
         {
@@ -82,6 +82,7 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                     throw new GpuNonTransientException("Base64 data image URL payload cannot be empty.");
                 }
 
+                byte[] imageBytes;
                 try
                 {
                     imageBytes = Convert.FromBase64String(base64Data);
@@ -101,6 +102,11 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                     throw new GpuNonTransientException("Decoded reference image is empty (0 bytes).");
                 }
 
+                if (!ValidateImageMagicBytes(imageBytes, out _))
+                {
+                    throw new GpuNonTransientException("The reference image content is not a valid supported image format (PNG, JPEG, or WebP).");
+                }
+
                 var ext = mime switch
                 {
                     "jpeg" or "jpg" => ".jpg",
@@ -108,6 +114,7 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                     _ => ".png"
                 };
                 fileName = $"{Guid.NewGuid():N}{ext}";
+                fileContent = new ByteArrayContent(imageBytes);
             }
             else if (referenceImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 referenceImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
@@ -153,7 +160,7 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                 }
 
                 await using var responseStream = await responseMessage.Content.ReadAsStreamAsync(ct);
-                using var memoryStream = new MemoryStream();
+                var memoryStream = new MemoryStream();
                 var buffer = new byte[8192];
                 int bytesRead;
                 long totalBytes = 0;
@@ -163,12 +170,41 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                     totalBytes += bytesRead;
                     if (totalBytes > MaxReferenceImageBytes)
                     {
+                        memoryStream.Dispose();
                         throw new GpuNonTransientException($"Remote reference image stream exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
                     }
                     await memoryStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
                 }
 
-                imageBytes = memoryStream.ToArray();
+                if (memoryStream.Length == 0)
+                {
+                    memoryStream.Dispose();
+                    throw new GpuNonTransientException("Remote reference image is empty (0 bytes).");
+                }
+
+                // Validate magic bytes from memoryStream without duplicating buffer via ToArray()
+                ReadOnlySpan<byte> headerSpan;
+                if (memoryStream.TryGetBuffer(out var segment))
+                {
+                    headerSpan = segment.AsSpan(0, (int)Math.Min(16, memoryStream.Length));
+                }
+                else
+                {
+                    memoryStream.Position = 0;
+                    var smallHeader = new byte[16];
+                    var read = memoryStream.Read(smallHeader, 0, 16);
+                    headerSpan = smallHeader.AsSpan(0, read);
+                }
+
+                if (!ValidateImageMagicBytes(headerSpan, out _))
+                {
+                    memoryStream.Dispose();
+                    throw new GpuNonTransientException("The reference image content is not a valid supported image format (PNG, JPEG, or WebP).");
+                }
+
+                // Stream directly into HttpContent with zero extra buffer duplication
+                memoryStream.Position = 0;
+                fileContent = new StreamContent(memoryStream);
             }
             else
             {
@@ -178,47 +214,51 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                     throw new GpuNonTransientException($"Invalid reference image path containing directory traversal: '{SanitizeUrlForLogging(referenceImageUrl)}'");
                 }
 
+                string resolvedPath;
                 if (File.Exists(referenceImageUrl))
                 {
-                    var fileInfo = new FileInfo(referenceImageUrl);
-                    if (fileInfo.Length > MaxReferenceImageBytes)
-                    {
-                        throw new GpuNonTransientException($"Local reference image exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
-                    }
-                    imageBytes = await File.ReadAllBytesAsync(referenceImageUrl, ct);
+                    resolvedPath = referenceImageUrl;
                 }
                 else
                 {
-                    // Try resolving relative path from current directory or wwwroot
                     var possiblePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", referenceImageUrl.TrimStart('/', '\\'));
                     if (File.Exists(possiblePath))
                     {
-                        var fileInfo = new FileInfo(possiblePath);
-                        if (fileInfo.Length > MaxReferenceImageBytes)
-                        {
-                            throw new GpuNonTransientException($"Local reference image exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
-                        }
-                        imageBytes = await File.ReadAllBytesAsync(possiblePath, ct);
+                        resolvedPath = possiblePath;
                     }
                     else
                     {
                         throw new GpuNonTransientException($"Reference image could not be resolved from path or URL: '{SanitizeUrlForLogging(referenceImageUrl)}'");
                     }
                 }
-            }
 
-            // Strict Image Header / Magic Bytes Validation (fails fast before sending invalid bytes to ComfyUI)
-            if (!ValidateImageMagicBytes(imageBytes, out var detectedMime))
-            {
-                throw new GpuNonTransientException("The reference image content is not a valid supported image format (PNG, JPEG, or WebP).");
+                var fileInfo = new FileInfo(resolvedPath);
+                if (fileInfo.Length > MaxReferenceImageBytes)
+                {
+                    throw new GpuNonTransientException($"Local reference image exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
+                }
+
+                var fileStream = new FileStream(resolvedPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var headerBuffer = new byte[16];
+                var read = await fileStream.ReadAsync(headerBuffer.AsMemory(0, 16), ct);
+                if (!ValidateImageMagicBytes(headerBuffer.AsSpan(0, read), out _))
+                {
+                    fileStream.Dispose();
+                    throw new GpuNonTransientException("The reference image content is not a valid supported image format (PNG, JPEG, or WebP).");
+                }
+
+                fileStream.Position = 0;
+                fileContent = new StreamContent(fileStream);
             }
         }
         catch (GpuNonTransientException)
         {
+            fileContent?.Dispose();
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            fileContent?.Dispose();
             _logger.LogError(ex, "Failed to download reference image from '{Url}'", SanitizeUrlForLogging(referenceImageUrl));
             throw new GpuNonTransientException($"Failed to retrieve reference image from '{SanitizeUrlForLogging(referenceImageUrl)}': {ex.Message}", statusCode: null, innerException: ex);
         }
@@ -227,7 +267,6 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
         try
         {
             using var form = new MultipartFormDataContent();
-            var fileContent = new ByteArrayContent(imageBytes);
             fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(GetContentType(fileName));
             form.Add(fileContent, "image", fileName);
             form.Add(new StringContent("true"), "overwrite");
