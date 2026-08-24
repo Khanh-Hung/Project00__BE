@@ -190,6 +190,15 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         {
             // 4. Deterministic prompt compilation purely from frozen VisualSnapshot
             var compiledPrompt = _visualCompiler.CompileScenePrompt(snapshot);
+            var resolvedReferenceImageUrl = snapshot.IdentityReferenceUrl;
+            if (string.IsNullOrWhiteSpace(resolvedReferenceImageUrl))
+            {
+                var character = await _dbContext.Characters.AsNoTracking().FirstOrDefaultAsync(c => c.Id == snapshot.CharacterId, ct);
+                resolvedReferenceImageUrl = character?.VisualIdentity?.CanonicalReferenceUrl
+                    ?? character?.VisualIdentity?.FullBodyUrl
+                    ?? character?.AvatarUrl;
+            }
+
             var imageReq = ImageGenerationRequest.FromSnapshot(
                 snapshot: snapshot,
                 compiledPrompt: compiledPrompt,
@@ -200,7 +209,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     job.SetProviderJobId(promptId);
                     await _dbContext.SaveChangesAsync(token);
                 }
-            );
+            ) with { ReferenceImageUrl = resolvedReferenceImageUrl };
 
             // 5. Generate Image via configured Provider
             var genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);

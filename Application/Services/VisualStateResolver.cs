@@ -96,7 +96,8 @@ public sealed class VisualStateResolver : IVisualStateResolver
             transientState: transientState,
             generationProfile: generationProfile,
             previousSceneImageUrl: null,
-            predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null
+            predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null,
+            fallbackReferenceUrl: character.AvatarUrl
         );
 
         return (updatedSceneState, transientState, snapshot);

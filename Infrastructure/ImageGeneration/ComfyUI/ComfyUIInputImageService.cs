@@ -42,7 +42,21 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
 
         try
         {
-            if (referenceImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            if (referenceImageUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+            {
+                var commaIndex = referenceImageUrl.IndexOf(',');
+                if (commaIndex != -1)
+                {
+                    var base64Data = referenceImageUrl.Substring(commaIndex + 1);
+                    imageBytes = Convert.FromBase64String(base64Data);
+                    fileName = $"{Guid.NewGuid():N}.png";
+                }
+                else
+                {
+                    throw new GpuNonTransientException("Invalid base64 data image URL format.");
+                }
+            }
+            else if (referenceImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 referenceImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {
                 if (!Uri.TryCreate(referenceImageUrl, UriKind.Absolute, out var uri))

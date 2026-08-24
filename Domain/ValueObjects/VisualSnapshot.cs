@@ -35,15 +35,17 @@ public sealed record VisualSnapshot(
         GenerationProfile generationProfile,
         string? previousSceneImageUrl = null,
         int? predecessorSceneRevision = null,
-        string? negativeConstraints = null)
+        string? negativeConstraints = null,
+        string? fallbackReferenceUrl = null)
     {
         ArgumentNullException.ThrowIfNull(generationProfile, nameof(generationProfile));
 
-        // Strict Canonical Reference: strictly use CanonicalReferenceUrl (tight face crop).
-        // No fallback to full-body or avatar to prevent outfit/style leakage.
+        // Prefer CanonicalReferenceUrl (tight face crop) if available; fallback to FullBodyUrl or Character AvatarUrl
         var resolvedIdentityRef = !string.IsNullOrWhiteSpace(visualIdentity?.CanonicalReferenceUrl)
             ? visualIdentity.CanonicalReferenceUrl
-            : null;
+            : (!string.IsNullOrWhiteSpace(visualIdentity?.FullBodyUrl)
+                ? visualIdentity.FullBodyUrl
+                : fallbackReferenceUrl);
 
         var defaultNegatives = negativeConstraints 
             ?? "deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
