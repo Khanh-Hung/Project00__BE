@@ -115,15 +115,36 @@ public record GeneratedCharacterDto(
     List<GeneratedLorebookDto>? InitialLorebookEntries = null
 );
 
-public record GenerateAvatarRequest(
-    string? Name = null,
-    string? Title = null,
-    string? Category = null,
-    string? PersonalityPrompt = null,
-    string? Idea = null,
-    WorldGenre? WorldGenre = null,
-    CharacterVisualIdentity? VisualIdentity = null
-);
+public record GenerateAvatarRequest
+{
+    public string? Name { get; init; }
+    public string? Title { get; init; }
+    public string? Category { get; init; }
+    public string? PersonalityPrompt { get; init; }
+    public string? Idea { get; init; }
+    public WorldGenre? WorldGenre { get; init; }
+    public CharacterVisualIdentity? VisualIdentity { get; init; }
+
+    public GenerateAvatarRequest() { }
+
+    public GenerateAvatarRequest(
+        string? name = null,
+        string? title = null,
+        string? category = null,
+        string? personalityPrompt = null,
+        string? idea = null,
+        WorldGenre? worldGenre = null,
+        CharacterVisualIdentity? visualIdentity = null)
+    {
+        Name = name;
+        Title = title;
+        Category = category;
+        PersonalityPrompt = personalityPrompt;
+        Idea = idea;
+        WorldGenre = worldGenre;
+        VisualIdentity = visualIdentity;
+    }
+}
 
 public record GenerateAvatarResponse(
     string ImageUrl,
