@@ -62,7 +62,11 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
         if (int.TryParse(_configuration["AiProviders:ComfyUI:PollIntervalMs"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInterval)) pollIntervalMs = parsedInterval;
         if (int.TryParse(_configuration["AiProviders:ComfyUI:TimeoutSeconds"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTimeout)) timeoutSeconds = parsedTimeout;
 
-        var targetWorkflow = request.Workflow ?? (string.IsNullOrWhiteSpace(request.ReferenceImageUrl) ? "TextToImage" : "VisualIdentity");
+        var targetWorkflow = request.Workflow;
+        if (string.IsNullOrWhiteSpace(request.ReferenceImageUrl) && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
+        {
+            targetWorkflow = "TextToImage";
+        }
         var targetVersion = request.WorkflowVersion;
         string promptId = request.ProviderJobId ?? string.Empty;
         IComfyUIWorkflowBuilder? builder = null;
