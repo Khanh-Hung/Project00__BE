@@ -6,7 +6,11 @@ public record ChatMessageDto(
     Guid Id,
     MessageRole Role,
     string Content,
-    DateTime Timestamp
+    DateTime Timestamp,
+    Guid? TurnId = null,
+    string? SceneImageUrl = null,
+    string? SceneImageStatus = null, // "queued", "pending", "processing", "completed", "failed"
+    Guid? GenerationRequestId = null
 );
 
 public record RelationshipEventDto(
@@ -91,7 +95,8 @@ public record SendMessageResponse(
     RelationshipEventDto? UnlockedEvent = null,
     bool HasWalkedOut = false,
     string? WalkOutReason = null,
-    SessionStatus SessionStatus = SessionStatus.Active
+    SessionStatus SessionStatus = SessionStatus.Active,
+    Guid? TurnId = null
 );
 
 public record RelationshipEventProposal(
