@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.LLM.Prompts;
@@ -14,11 +15,16 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserProvider _currentUserProvider;
+    private readonly IDateTimeProvider _dateTimeProvider;
 
-    public GetChatSessionHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetChatSessionHandler(
+        IUnitOfWork unitOfWork,
+        ICurrentUserProvider currentUserProvider,
+        IDateTimeProvider? dateTimeProvider = null)
     {
         _unitOfWork = unitOfWork;
         _currentUserProvider = currentUserProvider;
+        _dateTimeProvider = dateTimeProvider ?? new SystemDateTimeProvider();
     }
 
     public async Task<Result<ChatSessionDto>> Handle(GetChatSessionQuery query, CancellationToken cancellationToken)
@@ -105,7 +111,7 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
             .GroupBy(t => t.AssistantMessageId)
             .ToDictionary(g => g.Key, g => g.First());
 
-        var now = DateTime.UtcNow;
+        var now = _dateTimeProvider.UtcNow;
 
         var messages = session.Messages.Select(m =>
         {
@@ -124,8 +130,8 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
 
                     // 1. In-flight jobs (Pending or Processing with valid, unexpired lease) ALWAYS take highest precedence for active polling
                     var activeJob = turnJobs
-                        .Where(j => j.Status == ImageJobStatus.Pending ||
-                                   (j.Status == ImageJobStatus.Processing && (!j.LeaseUntil.HasValue || j.LeaseUntil.Value > now)))
+                        .Where(j => (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing) &&
+                                   (!j.LeaseUntil.HasValue || j.LeaseUntil.Value > now))
                         .OrderByDescending(j => j.CreatedAt)
                         .FirstOrDefault();
 
@@ -147,7 +153,7 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
                         // 3. No active job and no completed image; check if a failed or stale job occurred
                         var failedOrStaleJob = turnJobs
                             .Where(j => j.Status == ImageJobStatus.Failed ||
-                                       (j.Status == ImageJobStatus.Processing && j.LeaseUntil.HasValue && j.LeaseUntil.Value <= now))
+                                       (j.LeaseUntil.HasValue && j.LeaseUntil.Value <= now))
                             .OrderByDescending(j => j.CreatedAt)
                             .FirstOrDefault();
 

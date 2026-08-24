@@ -31,6 +31,16 @@ public sealed class ChatSessionMessageEnrichmentTests
         }
     }
 
+    private sealed class FakeDateTimeProvider : IDateTimeProvider
+    {
+        public DateTime UtcNow { get; set; }
+
+        public FakeDateTimeProvider(DateTime? utcNow = null)
+        {
+            UtcNow = utcNow ?? DateTime.UtcNow;
+        }
+    }
+
     [Fact]
     public async Task GetChatSession_EnrichesAssistantMessagesWithTurnIdAndCompletedSceneImage()
     {
@@ -432,7 +442,9 @@ public sealed class ChatSessionMessageEnrichmentTests
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
-        var handler = new GetChatSessionHandler(uow, userProvider);
+        var fixedTime = new DateTime(2026, 8, 24, 12, 0, 0, DateTimeKind.Utc);
+        var timeProvider = new FakeDateTimeProvider(fixedTime);
+        var handler = new GetChatSessionHandler(uow, userProvider, timeProvider);
 
         var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
         await db.Characters.AddAsync(character);
@@ -476,10 +488,10 @@ public sealed class ChatSessionMessageEnrichmentTests
         );
         await db.SceneImages.AddAsync(sceneImage1);
 
-        // Stale regeneration Job (Lease expired 5 minutes ago)
+        // Stale regeneration Job (Lease expired 5 minutes before fixedTime)
         var staleJob = new ImageGenerationJob(session.Id, turnId, character.Id, 2, generationRequestId: genReqStaleJob);
-        staleJob.MarkProcessing("comfy-stale", "worker-dead", TimeSpan.FromMinutes(2), DateTime.UtcNow.AddMinutes(-10));
-        staleJob.ExpireLease(DateTime.UtcNow.AddMinutes(-5));
+        staleJob.MarkProcessing("comfy-stale", "worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-10));
+        staleJob.ExpireLease(fixedTime.AddMinutes(-5));
         await db.ImageGenerationJobs.AddAsync(staleJob);
         await db.SaveChangesAsync();
 
@@ -505,7 +517,9 @@ public sealed class ChatSessionMessageEnrichmentTests
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
-        var handler = new GetChatSessionHandler(uow, userProvider);
+        var fixedTime = new DateTime(2026, 8, 24, 12, 0, 0, DateTimeKind.Utc);
+        var timeProvider = new FakeDateTimeProvider(fixedTime);
+        var handler = new GetChatSessionHandler(uow, userProvider, timeProvider);
 
         var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
         await db.Characters.AddAsync(character);
@@ -537,8 +551,8 @@ public sealed class ChatSessionMessageEnrichmentTests
 
         // Stale Job with expired lease and no prior image
         var staleJob = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqStaleJob);
-        staleJob.MarkProcessing("comfy-stale", "worker-dead", TimeSpan.FromMinutes(2), DateTime.UtcNow.AddMinutes(-10));
-        staleJob.ExpireLease(DateTime.UtcNow.AddMinutes(-5));
+        staleJob.MarkProcessing("comfy-stale", "worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-10));
+        staleJob.ExpireLease(fixedTime.AddMinutes(-5));
         await db.ImageGenerationJobs.AddAsync(staleJob);
         await db.SaveChangesAsync();
 
