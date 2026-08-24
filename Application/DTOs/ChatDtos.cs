@@ -133,3 +133,9 @@ public record RegenerateResponse(
     bool LevelUp = false,
     RelationshipEventDto? UnlockedEvent = null
 );
+
+public record TriggerSceneImageResponse(
+    Guid GenerationRequestId,
+    Guid TurnId,
+    string Status = "queued"
+);

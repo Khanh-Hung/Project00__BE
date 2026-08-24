@@ -205,6 +205,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
 
         var eventsJson = JsonSerializer.Serialize(eventsDto);
         var memoriesJson = JsonSerializer.Serialize(activeMemoriesDto);
+        var visualSnapshotJson = visualSnapshot != null ? JsonSerializer.Serialize(visualSnapshot) : null;
 
         // Prepare persistent idempotency record with verified message IDs and full deterministic snapshot
         var turnRecord = new CharacterTurn(
@@ -224,7 +225,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
             relationshipId: relationship?.Id ?? Guid.Empty,
             lastInteractedAt: relationship?.LastInteractedAt ?? Clock.Now,
             eventsJson: eventsJson,
-            activeMemoriesJson: memoriesJson
+            activeMemoriesJson: memoriesJson,
+            visualSnapshotJson: visualSnapshotJson
         );
         await turnRepo.AddAsync(turnRecord, ct);
 
@@ -275,7 +277,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
         }
 
         // Outbox Job 3: Scene Image Generation (if requested)
-        if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
+        if (request.Options?.GenerateImage == true && character.VisualIdentity != null && visualSnapshot != null)
         {
             var scenePayload = new SceneImageGenerationOutboxPayload(
                 TurnId: turnId,
@@ -478,8 +480,18 @@ public sealed class CharacterRuntime : ICharacterRuntime
             .Select(m => new CharacterMemoryDto(m.Id, m.Content, m.Type, m.Importance, 1.0m, m.CreatedAt))
             .ToList();
 
+        var (effectiveStreamSceneState, effectiveStreamTransientState, streamVisualSnapshot) = await BuildTurnVisualStateAndSnapshotAsync(
+            character,
+            session,
+            request.UserMessage,
+            aiTurn.Reply,
+            currentMood,
+            turnId,
+            ct);
+
         var eventsJson = JsonSerializer.Serialize(eventsDto);
         var memoriesJson = JsonSerializer.Serialize(activeMemoriesDto);
+        var streamVisualSnapshotJson = streamVisualSnapshot != null ? JsonSerializer.Serialize(streamVisualSnapshot) : null;
 
         // Prepare persistent idempotency record
         var turnRecord = new CharacterTurn(
@@ -499,7 +511,8 @@ public sealed class CharacterRuntime : ICharacterRuntime
             relationshipId: relationship?.Id ?? Guid.Empty,
             lastInteractedAt: relationship?.LastInteractedAt ?? Clock.Now,
             eventsJson: eventsJson,
-            activeMemoriesJson: memoriesJson
+            activeMemoriesJson: memoriesJson,
+            visualSnapshotJson: streamVisualSnapshotJson
         );
         await turnRepo.AddAsync(turnRecord, ct);
 
@@ -539,16 +552,7 @@ public sealed class CharacterRuntime : ICharacterRuntime
             await outboxRepo.AddAsync(new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(voicePayload)), ct);
         }
 
-        var (effectiveStreamSceneState, effectiveStreamTransientState, streamVisualSnapshot) = await BuildTurnVisualStateAndSnapshotAsync(
-            character,
-            session,
-            request.UserMessage,
-            aiTurn.Reply,
-            currentMood,
-            turnId,
-            ct);
-
-        if (request.Options?.GenerateImage == true && character.VisualIdentity != null)
+        if (request.Options?.GenerateImage == true && character.VisualIdentity != null && streamVisualSnapshot != null)
         {
             var scenePayload = new SceneImageGenerationOutboxPayload(
                 TurnId: turnId,

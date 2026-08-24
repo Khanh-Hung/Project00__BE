@@ -21,6 +21,9 @@ public class Result<T>
     public static Result<T> Success(T value)
         => new(true, value, new List<string>());
 
+    public static Result<T> Success(T value, int statusCode)
+        => new(true, value, new List<string>(), statusCode);
+
     public static Result<T> Failure(params string[] errors)
     {
         if (errors == null || errors.Length == 0)

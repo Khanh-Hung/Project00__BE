@@ -23,6 +23,7 @@ public sealed class CharacterTurnConfiguration : IEntityTypeConfiguration<Charac
         builder.Property(t => t.LastInteractedAt);
         builder.Property(t => t.EventsJson).HasColumnType("jsonb");
         builder.Property(t => t.ActiveMemoriesJson).HasColumnType("jsonb");
+        builder.Property(t => t.VisualSnapshotJson).HasColumnType("jsonb");
 
         // Unique constraint on TurnId for strict persistent idempotency across servers and restarts
         builder.HasIndex(t => t.TurnId)

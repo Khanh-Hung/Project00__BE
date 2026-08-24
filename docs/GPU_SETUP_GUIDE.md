@@ -33,7 +33,7 @@ print("⏳ Đang nạp model FLUX.1-schnell vào GPU...")
 pipe = FluxPipeline.from_pretrained(
     "black-forest-labs/FLUX.1-schnell",
     torch_dtype=torch.bfloat16,
-    token="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"
+    token="YOUR_HUGGINGFACE_TOKEN_HERE" # Thay bằng token của bạn từ https://huggingface.co/settings/tokens
 ).to("cuda")
 print("✅ FLUX ĐÃ SẴN SÀNG 100%!")
 
