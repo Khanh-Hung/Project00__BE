@@ -79,7 +79,7 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
         var turnIds = turns.Select(t => t.TurnId).ToHashSet();
 
         List<SceneImage> currentSceneImages = new();
-        List<ImageGenerationJob> recentJobs = new();
+        List<ImageGenerationJob> turnGenerationJobs = new();
 
         if (turnIds.Count > 0)
         {
@@ -87,7 +87,7 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
                 i => i.SessionId == session.Id && i.IsCurrent && turnIds.Contains(i.TurnId),
                 cancellationToken)).ToList();
 
-            recentJobs = (await jobRepo.GetAllAsync(
+            turnGenerationJobs = (await jobRepo.GetAllAsync(
                 j => j.SessionId == session.Id && turnIds.Contains(j.TurnId) &&
                      (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Failed),
                 cancellationToken)).ToList();
@@ -97,13 +97,15 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
             .GroupBy(i => i.TurnId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(i => i.CreatedAt).First());
 
-        var jobsByTurn = recentJobs
+        var jobsByTurn = turnGenerationJobs
             .GroupBy(j => j.TurnId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var turnsByAssistantMsgId = turns
             .GroupBy(t => t.AssistantMessageId)
             .ToDictionary(g => g.Key, g => g.First());
+
+        var now = DateTime.UtcNow;
 
         var messages = session.Messages.Select(m =>
         {
@@ -120,9 +122,10 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
                     var hasCurrentImage = currentImagesByTurn.TryGetValue(turn.TurnId, out var img);
                     var turnJobs = jobsByTurn.TryGetValue(turn.TurnId, out var jobList) ? jobList : new List<ImageGenerationJob>();
 
-                    // 1. In-flight jobs (Pending or Processing) ALWAYS take highest precedence for active polling & live state
+                    // 1. In-flight jobs (Pending or Processing with valid, unexpired lease) ALWAYS take highest precedence for active polling
                     var activeJob = turnJobs
-                        .Where(j => j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing)
+                        .Where(j => j.Status == ImageJobStatus.Pending ||
+                                   (j.Status == ImageJobStatus.Processing && (!j.LeaseUntil.HasValue || j.LeaseUntil.Value > now)))
                         .OrderByDescending(j => j.CreatedAt)
                         .FirstOrDefault();
 
@@ -134,23 +137,24 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
                     }
                     else if (hasCurrentImage)
                     {
-                        // 2. No active in-flight job, but a completed current image exists
+                        // 2. No active in-flight job, but a completed current image exists (even if a subsequent regeneration job crashed or had an expired lease)
                         sceneImageUrl = img!.ImageUrl;
                         sceneImageStatus = SceneImageStatuses.Completed;
                         genReqId = img.GenerationRequestId;
                     }
                     else
                     {
-                        // 3. No active job and no completed image; check if a failed job occurred
-                        var failedJob = turnJobs
-                            .Where(j => j.Status == ImageJobStatus.Failed)
+                        // 3. No active job and no completed image; check if a failed or stale job occurred
+                        var failedOrStaleJob = turnJobs
+                            .Where(j => j.Status == ImageJobStatus.Failed ||
+                                       (j.Status == ImageJobStatus.Processing && j.LeaseUntil.HasValue && j.LeaseUntil.Value <= now))
                             .OrderByDescending(j => j.CreatedAt)
                             .FirstOrDefault();
 
-                        if (failedJob != null)
+                        if (failedOrStaleJob != null)
                         {
                             sceneImageStatus = SceneImageStatuses.Failed;
-                            genReqId = failedJob.GenerationRequestId;
+                            genReqId = failedOrStaleJob.GenerationRequestId;
                         }
                     }
                 }
