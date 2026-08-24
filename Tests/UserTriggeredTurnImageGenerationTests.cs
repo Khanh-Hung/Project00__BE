@@ -53,7 +53,12 @@ public sealed class UserTriggeredTurnImageGenerationTests
         return (db, uow, userProvider, handler);
     }
 
-    private static VisualSnapshot CreateTestSnapshot(Guid sessionId, Guid turnId, string outfit = "White Dress", int revision = 1)
+    private static VisualSnapshot CreateTestSnapshot(
+        Guid sessionId,
+        Guid turnId,
+        Guid? characterId = null,
+        string outfit = "White Dress",
+        int revision = 1)
     {
         var profile = GenerationProfile.CreateDefault(
             workflow: "VisualIdentity",
@@ -64,7 +69,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
         return VisualSnapshot.Create(
             turnId: turnId,
             sessionId: sessionId,
-            characterId: Guid.NewGuid(),
+            characterId: characterId ?? Guid.NewGuid(),
             sceneRevision: revision,
             visualIdentity: new CharacterVisualIdentity(
                 Face: "Delicate face",
@@ -157,8 +162,8 @@ public sealed class UserTriggeredTurnImageGenerationTests
 
         var (db, uow, _, handler) = CreateHarness(dbName, userId.ToString());
 
-        // 1. Turn 10 frozen snapshot: Outfit = White Dress
-        var frozenTurn10Snapshot = CreateTestSnapshot(sessionId, turnId, outfit: "White Dress");
+        // 1. Turn 10 frozen snapshot: Outfit = White Dress, matching characterId: charId
+        var frozenTurn10Snapshot = CreateTestSnapshot(sessionId, turnId, characterId: charId, outfit: "White Dress");
 
         var turn10 = new CharacterTurn(
             turnId: turnId,
@@ -446,30 +451,18 @@ public sealed class UserTriggeredTurnImageGenerationTests
     public void Test9_GenerateImage_DoesNotBlockOnComfyUI_ArchitecturalDecoupling()
     {
         // Architectural Invariant Test:
-        // Verify that TriggerTurnSceneImageGenerationHandler has ZERO dependency on GPU/ComfyUI/LLM services.
-        // It strictly coordinates with IUnitOfWork and ICurrentUserProvider to enqueue durable Outbox messages.
+        // Verify that TriggerTurnSceneImageGenerationHandler constructor contract strictly accepts only the 3 thin trigger dependencies.
         var handlerType = typeof(TriggerTurnSceneImageGenerationHandler);
         var constructors = handlerType.GetConstructors();
         Assert.Single(constructors);
 
         var paramTypes = constructors[0].GetParameters().Select(p => p.ParameterType).ToList();
 
-        // Assert required decoupled dependencies
+        // Constructor contract: Exactly 3 parameters (IUnitOfWork, ICurrentUserProvider, ILogger<TriggerTurnSceneImageGenerationHandler>)
+        Assert.Equal(3, paramTypes.Count);
         Assert.Contains(typeof(IUnitOfWork), paramTypes);
         Assert.Contains(typeof(ICurrentUserProvider), paramTypes);
         Assert.Contains(typeof(ILogger<TriggerTurnSceneImageGenerationHandler>), paramTypes);
-
-        // Assert strictly NO heavy/downstream GPU or LLM dependencies
-        Assert.DoesNotContain(paramTypes, t => t.Name.Contains("ComfyUI", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(paramTypes, t => t.Name.Contains("ImageGenerationService", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(paramTypes, t => t.Name.Contains("LLMService", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(paramTypes, t => t.Name.Contains("VisualStateResolver", StringComparison.OrdinalIgnoreCase));
-
-        // Assert handler fields also contain no prohibited services
-        var fieldTypes = handlerType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic).Select(f => f.FieldType).ToList();
-        Assert.DoesNotContain(fieldTypes, t => t.Name.Contains("ComfyUI", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(fieldTypes, t => t.Name.Contains("ImageGenerationService", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(fieldTypes, t => t.Name.Contains("LLMService", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -680,5 +673,208 @@ public sealed class UserTriggeredTurnImageGenerationTests
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
         Assert.Contains("Failed to read frozen visual snapshot", result.Errors[0]);
+    }
+
+    [Fact]
+    public async Task Test16_SnapshotIdentityMismatch_TurnIdMismatch_Returns500()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var mismatchTurnId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, handler) = CreateHarness(dbName, userId.ToString());
+
+        // Snapshot has mismatchTurnId, but Turn entity has turnId
+        var snapshotWithWrongTurnId = CreateTestSnapshot(sessionId, mismatchTurnId, characterId: charId);
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: userId,
+            characterId: charId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Hello",
+            assistantReply: "Hi",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger",
+            visualSnapshotJson: JsonSerializer.Serialize(snapshotWithWrongTurnId)
+        );
+        await db.CharacterTurns.AddAsync(turn);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("Frozen visual snapshot identity does not match", result.Errors[0]);
+
+        var outboxCount = await db.OutboxMessages.CountAsync();
+        Assert.Equal(0, outboxCount);
+    }
+
+    [Fact]
+    public async Task Test17_SnapshotIdentityMismatch_SessionIdMismatch_Returns500()
+    {
+        var sessionId = Guid.NewGuid();
+        var mismatchSessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, handler) = CreateHarness(dbName, userId.ToString());
+
+        // Snapshot has mismatchSessionId, but Turn entity has sessionId
+        var snapshotWithWrongSessionId = CreateTestSnapshot(mismatchSessionId, turnId, characterId: charId);
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: userId,
+            characterId: charId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Hello",
+            assistantReply: "Hi",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger",
+            visualSnapshotJson: JsonSerializer.Serialize(snapshotWithWrongSessionId)
+        );
+        await db.CharacterTurns.AddAsync(turn);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("Frozen visual snapshot identity does not match", result.Errors[0]);
+
+        var outboxCount = await db.OutboxMessages.CountAsync();
+        Assert.Equal(0, outboxCount);
+    }
+
+    [Fact]
+    public async Task Test18_SnapshotIdentityMismatch_CharacterIdMismatch_Returns500()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var mismatchCharId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, handler) = CreateHarness(dbName, userId.ToString());
+
+        // Snapshot has mismatchCharId, but Turn entity has charId
+        var snapshotWithWrongCharId = CreateTestSnapshot(sessionId, turnId, characterId: mismatchCharId);
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: userId,
+            characterId: charId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Hello",
+            assistantReply: "Hi",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger",
+            visualSnapshotJson: JsonSerializer.Serialize(snapshotWithWrongCharId)
+        );
+        await db.CharacterTurns.AddAsync(turn);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("Frozen visual snapshot identity does not match", result.Errors[0]);
+
+        var outboxCount = await db.OutboxMessages.CountAsync();
+        Assert.Equal(0, outboxCount);
+    }
+
+    [Fact]
+    public async Task Test19_ConcurrentGenerateRequests_ProduceUniqueGenerationRequestIds_NoCollisions()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, uow, userProvider, handler) = CreateHarness(dbName, userId.ToString());
+
+        var frozenSnapshot = CreateTestSnapshot(sessionId, turnId, characterId: charId);
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: userId,
+            characterId: charId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Hello",
+            assistantReply: "Hi",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger",
+            visualSnapshotJson: JsonSerializer.Serialize(frozenSnapshot)
+        );
+        await db.CharacterTurns.AddAsync(turn);
+        await db.SaveChangesAsync();
+
+        // 100 sequential/concurrent trigger requests on the same turn (e.g. rapid user clicks / regenerations)
+        const int requestCount = 100;
+        var tasks = Enumerable.Range(0, requestCount).Select(async _ =>
+        {
+            // Each invocation creates its own handler/scope with same underlying db
+            var isolatedUow = new UnitOfWork(db);
+            var isolatedHandler = new TriggerTurnSceneImageGenerationHandler(
+                isolatedUow,
+                userProvider,
+                NullLogger<TriggerTurnSceneImageGenerationHandler>.Instance
+            );
+
+            return await isolatedHandler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+        });
+
+        // Run concurrently
+        var results = await Task.WhenAll(tasks);
+
+        // Assert all 100 succeeded with 202 Accepted
+        Assert.All(results, r =>
+        {
+            Assert.True(r.IsSuccess);
+            Assert.Equal(StatusCodes.Status202Accepted, r.StatusCode);
+            Assert.Equal(turnId, r.Value!.TurnId);
+            Assert.Equal("queued", r.Value.Status);
+        });
+
+        // Assert all 100 GenerationRequestIds are unique (Zero collisions)
+        var generatedIds = results.Select(r => r.Value!.GenerationRequestId).ToList();
+        Assert.Equal(requestCount, generatedIds.Distinct().Count());
+
+        // Assert all 100 Outbox messages exist in database
+        var outboxMessages = await db.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration).ToListAsync();
+        Assert.Equal(requestCount, outboxMessages.Count);
+
+        var outboxRequestIds = outboxMessages
+            .Select(m => JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson)!.GenerationRequestId)
+            .ToList();
+
+        Assert.Equal(requestCount, outboxRequestIds.Distinct().Count());
+        Assert.Equal(generatedIds.OrderBy(g => g), outboxRequestIds.OrderBy(g => g));
     }
 }

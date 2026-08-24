@@ -88,10 +88,22 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
                 "Visual snapshot is invalid or empty for this turn.");
         }
 
-        // 4. Generate a NEW GenerationRequestId (guaranteeing unique identity for regenerations)
+        // 4. Validate Snapshot Identity Invariant (TurnId, SessionId, CharacterId must strictly match Turn entity)
+        if (snapshot.TurnId != turn.TurnId || snapshot.SessionId != turn.SessionId || snapshot.CharacterId != turn.CharacterId)
+        {
+            _logger.LogError(
+                "Frozen VisualSnapshot identity mismatch for TurnId {TurnId}: Snapshot(TurnId={SnapTurnId}, SessionId={SnapSessionId}, CharacterId={SnapCharId}) vs Turn(TurnId={TurnId}, SessionId={SessionId}, CharacterId={CharacterId})",
+                turn.TurnId, snapshot.TurnId, snapshot.SessionId, snapshot.CharacterId, turn.TurnId, turn.SessionId, turn.CharacterId);
+
+            return Result<TriggerSceneImageResponse>.Failure(
+                StatusCodes.Status500InternalServerError,
+                "Frozen visual snapshot identity does not match turn metadata.");
+        }
+
+        // 5. Generate a NEW GenerationRequestId (guaranteeing unique identity for regenerations)
         var generationRequestId = Guid.NewGuid();
 
-        // 5. Enqueue Outbox Message with the FROZEN VisualSnapshot
+        // 6. Enqueue Outbox Message with the FROZEN VisualSnapshot
         var scenePayload = new SceneImageGenerationOutboxPayload(
             TurnId: turn.TurnId,
             CharacterId: turn.CharacterId,
