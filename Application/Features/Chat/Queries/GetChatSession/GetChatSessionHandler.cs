@@ -95,7 +95,7 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
 
             turnGenerationJobs = (await jobRepo.GetAllAsync(
                 j => j.SessionId == session.Id && turnIds.Contains(j.TurnId) &&
-                     (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Failed),
+                     (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Failed || j.Status == ImageJobStatus.Cancelled),
                 cancellationToken)).ToList();
         }
 
@@ -143,24 +143,27 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
                     }
                     else if (hasCurrentImage)
                     {
-                        // 2. No active in-flight job, but a completed current image exists (even if a subsequent regeneration job crashed or had an expired lease)
+                        // 2. No active in-flight job, but a completed current image exists (even if a subsequent regeneration job was cancelled or had an expired lease)
                         sceneImageUrl = img!.ImageUrl;
                         sceneImageStatus = SceneImageStatuses.Completed;
                         genReqId = img.GenerationRequestId;
                     }
                     else
                     {
-                        // 3. No active job and no completed image; check if a failed or stale processing job occurred
-                        var failedOrStaleJob = turnJobs
+                        // 3. No active job and no completed image; check if a terminal (Failed/Cancelled) or stale processing job occurred
+                        var terminalOrStaleJob = turnJobs
                             .Where(j => j.Status == ImageJobStatus.Failed ||
+                                       j.Status == ImageJobStatus.Cancelled ||
                                        (j.Status == ImageJobStatus.Processing && j.LeaseUntil.HasValue && j.LeaseUntil.Value <= now))
                             .OrderByDescending(j => j.CreatedAt)
                             .FirstOrDefault();
 
-                        if (failedOrStaleJob != null)
+                        if (terminalOrStaleJob != null)
                         {
-                            sceneImageStatus = SceneImageStatuses.Failed;
-                            genReqId = failedOrStaleJob.GenerationRequestId;
+                            sceneImageStatus = terminalOrStaleJob.Status == ImageJobStatus.Processing
+                                ? SceneImageStatuses.Failed
+                                : SceneImageStatuses.FromJobStatus(terminalOrStaleJob.Status);
+                            genReqId = terminalOrStaleJob.GenerationRequestId;
                         }
                     }
                 }

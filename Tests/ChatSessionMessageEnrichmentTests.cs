@@ -627,6 +627,61 @@ public sealed class ChatSessionMessageEnrichmentTests
     }
 
     [Fact]
+    public async Task GetChatSession_WhenTurnHasCancelledJob_EnrichesMessageWithCancelledStatus()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var db = new ProjectDbContext(options);
+        var uow = new UnitOfWork(db);
+        var userId = Guid.NewGuid();
+        var userProvider = new FakeUserProvider(userId.ToString());
+        var handler = new GetChatSessionHandler(uow, userProvider, new FakeDateTimeProvider());
+
+        var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
+        await db.Characters.AddAsync(character);
+
+        var session = new ChatSession(character.Id, userId, "Chat with Elysia");
+        var userMsg = session.AddUserMessage("Hello");
+        var assistantMsg = session.AddAssistantMessage("Welcome back!");
+        await db.ChatSessions.AddAsync(session);
+
+        var turnId = Guid.NewGuid();
+        var genReqCancelled = Guid.NewGuid();
+
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: session.Id,
+            userId: userId,
+            characterId: character.Id,
+            userMessageId: userMsg.Id,
+            assistantMessageId: assistantMsg.Id,
+            userMessage: userMsg.Content,
+            assistantReply: assistantMsg.Content,
+            mood: "Joy",
+            moodIntensity: 80,
+            affectionDelta: 2,
+            affectionScore: 10,
+            relationshipStage: "Friend"
+        );
+        await db.CharacterTurns.AddAsync(turn);
+
+        var cancelledJob = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqCancelled);
+        cancelledJob.MarkCancelled();
+        await db.ImageGenerationJobs.AddAsync(cancelledJob);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new GetChatSessionQuery(session.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var enrichedAssistant = result.Value!.Messages.First(m => m.Role == MessageRole.Assistant);
+        Assert.Equal(turnId, enrichedAssistant.TurnId);
+        Assert.Equal("cancelled", enrichedAssistant.SceneImageStatus);
+        Assert.Equal(genReqCancelled, enrichedAssistant.GenerationRequestId);
+    }
+
+    [Fact]
     public void FromJobStatus_WhenGivenUnknownStatus_ThrowsArgumentOutOfRangeException()
     {
         var invalidStatus = (ImageJobStatus)999;
