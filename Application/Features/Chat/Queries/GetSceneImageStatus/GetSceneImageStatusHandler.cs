@@ -51,7 +51,15 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
         if (sceneImage != null)
         {
             var session = await sessionRepo.GetByIdAsync(sceneImage.SessionId, cancellationToken);
-            if (session != null && session.UserId.HasValue && session.UserId.Value != Guid.Empty && session.UserId.Value != currentUserId)
+            if (session == null)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status404NotFound,
+                    "Chat session for this generation request was not found.");
+            }
+
+            // Strict Fail-Closed Authorization: Session.UserId MUST exist, not be Guid.Empty, and equal CurrentUserId
+            if (!session.UserId.HasValue || session.UserId.Value == Guid.Empty || session.UserId.Value != currentUserId)
             {
                 return Result<SceneImageStatusResponse>.Failure(
                     StatusCodes.Status403Forbidden,
@@ -78,7 +86,15 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
         if (job != null)
         {
             var session = await sessionRepo.GetByIdAsync(job.SessionId, cancellationToken);
-            if (session != null && session.UserId.HasValue && session.UserId.Value != Guid.Empty && session.UserId.Value != currentUserId)
+            if (session == null)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status404NotFound,
+                    "Chat session for this generation request was not found.");
+            }
+
+            // Strict Fail-Closed Authorization: Session.UserId MUST exist, not be Guid.Empty, and equal CurrentUserId
+            if (!session.UserId.HasValue || session.UserId.Value == Guid.Empty || session.UserId.Value != currentUserId)
             {
                 return Result<SceneImageStatusResponse>.Failure(
                     StatusCodes.Status403Forbidden,
@@ -107,44 +123,43 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
             ));
         }
 
-        // 4. Check if request is still queued in durable Outbox table
-        var outboxMessages = await outboxRepo.GetAllAsync(
-            m => m.EventType == OutboxEventTypes.SceneImageGeneration,
+        // 4. Check if request is still queued in durable Outbox table (Direct persistence predicate query)
+        var requestIdStr = query.GenerationRequestId.ToString();
+        var outboxMessage = await outboxRepo.GetAsync(
+            m => m.EventType == OutboxEventTypes.SceneImageGeneration && m.PayloadJson.Contains(requestIdStr),
             cancellationToken);
 
-        foreach (var msg in outboxMessages)
+        if (outboxMessage != null)
         {
-            if (msg.PayloadJson.Contains(query.GenerationRequestId.ToString(), StringComparison.OrdinalIgnoreCase))
+            SceneImageGenerationOutboxPayload? payload = null;
+            try
             {
-                SceneImageGenerationOutboxPayload? payload = null;
-                try
+                payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(outboxMessage.PayloadJson);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse Outbox payload for message {Id}", outboxMessage.Id);
+            }
+
+            if (payload != null && payload.GenerationRequestId == query.GenerationRequestId)
+            {
+                // Strict Fail-Closed Authorization: Payload.UserId MUST not be Guid.Empty and MUST equal CurrentUserId
+                if (payload.UserId == Guid.Empty || payload.UserId != currentUserId)
                 {
-                    payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg.PayloadJson);
-                }
-                catch (JsonException ex)
-                {
-                    _logger.LogWarning(ex, "Failed to parse Outbox payload for message {Id}", msg.Id);
+                    return Result<SceneImageStatusResponse>.Failure(
+                        StatusCodes.Status403Forbidden,
+                        "You do not have access to this generation request.");
                 }
 
-                if (payload != null && payload.GenerationRequestId == query.GenerationRequestId)
-                {
-                    if (payload.UserId != Guid.Empty && payload.UserId != currentUserId)
-                    {
-                        return Result<SceneImageStatusResponse>.Failure(
-                            StatusCodes.Status403Forbidden,
-                            "You do not have access to this generation request.");
-                    }
-
-                    return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
-                        GenerationRequestId: payload.GenerationRequestId,
-                        TurnId: payload.TurnId,
-                        SessionId: payload.Snapshot.SessionId,
-                        Status: "queued",
-                        SceneRevision: payload.Snapshot.SceneRevision,
-                        Prompt: null,
-                        CreatedAt: msg.CreatedAt
-                    ));
-                }
+                return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
+                    GenerationRequestId: payload.GenerationRequestId,
+                    TurnId: payload.TurnId,
+                    SessionId: payload.Snapshot.SessionId,
+                    Status: "queued",
+                    SceneRevision: payload.Snapshot.SceneRevision,
+                    Prompt: null,
+                    CreatedAt: outboxMessage.CreatedAt
+                ));
             }
         }
 

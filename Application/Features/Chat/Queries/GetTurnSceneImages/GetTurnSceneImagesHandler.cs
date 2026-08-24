@@ -43,7 +43,8 @@ public sealed class GetTurnSceneImagesHandler : IRequestHandler<GetTurnSceneImag
                 $"Chat session '{query.SessionId}' was not found.");
         }
 
-        if (session.UserId.HasValue && session.UserId.Value != Guid.Empty && session.UserId.Value != currentUserId)
+        // Strict Fail-Closed Authorization: Session.UserId MUST exist, not be Guid.Empty, and equal CurrentUserId
+        if (!session.UserId.HasValue || session.UserId.Value == Guid.Empty || session.UserId.Value != currentUserId)
         {
             return Result<List<SceneImageDto>>.Failure(
                 StatusCodes.Status403Forbidden,

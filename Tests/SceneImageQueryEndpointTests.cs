@@ -326,6 +326,162 @@ public sealed class SceneImageQueryEndpointTests
     }
 
     [Fact]
+    public async Task GetSceneImageStatus_WhenSessionHasNullUserId_Returns403Forbidden_FailClosed()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        // Session without UserId (null)
+        var session = new ChatSession(charId, null, "Guest Session") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
+        var sceneImage = new SceneImage(
+            sessionId: sessionId,
+            characterId: charId,
+            turnId: turnId,
+            sceneRevision: 1,
+            imageUrl: "https://storage.cdn/image.png",
+            prompt: "prompt",
+            generationRequestId: requestId,
+            isCurrent: true
+        );
+        await db.SceneImages.AddAsync(sceneImage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenSessionHasEmptyUserId_Returns403Forbidden_FailClosed()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        // Session with Guid.Empty
+        var session = new ChatSession(charId, Guid.Empty, "Guest Session") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
+        var sceneImage = new SceneImage(
+            sessionId: sessionId,
+            characterId: charId,
+            turnId: turnId,
+            sceneRevision: 1,
+            imageUrl: "https://storage.cdn/image.png",
+            prompt: "prompt",
+            generationRequestId: requestId,
+            isCurrent: true
+        );
+        await db.SceneImages.AddAsync(sceneImage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenOutboxHasEmptyUserId_Returns403Forbidden_FailClosed()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId);
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: charId,
+            UserId: Guid.Empty, // Empty UserId in payload
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        await db.OutboxMessages.AddAsync(outboxMessage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenManyOutboxMessagesExist_FiltersDirectlyWithoutScanningUnrelatedMessages()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var targetRequestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        // Add 50 unrelated outbox messages
+        for (int i = 0; i < 50; i++)
+        {
+            var unrelatedSnapshot = CreateTestSnapshot(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+            var unrelatedPayload = new SceneImageGenerationOutboxPayload(
+                TurnId: Guid.NewGuid(),
+                CharacterId: Guid.NewGuid(),
+                UserId: Guid.NewGuid(),
+                Snapshot: unrelatedSnapshot,
+                GenerationRequestId: Guid.NewGuid()
+            );
+            await db.OutboxMessages.AddAsync(new OutboxMessage(
+                eventType: OutboxEventTypes.SceneImageGeneration,
+                payloadJson: JsonSerializer.Serialize(unrelatedPayload)
+            ));
+        }
+
+        // Add target message
+        var targetSnapshot = CreateTestSnapshot(sessionId, turnId, charId);
+        var targetPayload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: charId,
+            UserId: currentUserId,
+            Snapshot: targetSnapshot,
+            GenerationRequestId: targetRequestId
+        );
+        await db.OutboxMessages.AddAsync(new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(targetPayload)
+        ));
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(targetRequestId), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Value);
+        Assert.Equal("queued", result.Value.Status);
+        Assert.Equal(targetRequestId, result.Value.GenerationRequestId);
+    }
+
+    [Fact]
     public async Task GetTurnSceneImages_ReturnsAllImagesForTurn_OrderedByCreatedAtDesc()
     {
         var sessionId = Guid.NewGuid();
@@ -390,6 +546,27 @@ public sealed class SceneImageQueryEndpointTests
         var (db, _, _, _, turnImagesHandler) = CreateHarness(dbName, maliciousUserId.ToString());
 
         var session = new ChatSession(charId, ownerUserId, "Session 1") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+        await db.SaveChangesAsync();
+
+        var result = await turnImagesHandler.Handle(new GetTurnSceneImagesQuery(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetTurnSceneImages_WhenSessionHasNullOrEmptyUserId_Returns403Forbidden_FailClosed()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, _, turnImagesHandler) = CreateHarness(dbName, currentUserId.ToString());
+
+        var session = new ChatSession(charId, null, "Guest Session") { Id = sessionId };
         await db.ChatSessions.AddAsync(session);
         await db.SaveChangesAsync();
 
