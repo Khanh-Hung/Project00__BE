@@ -20,11 +20,11 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
     public GetChatSessionHandler(
         IUnitOfWork unitOfWork,
         ICurrentUserProvider currentUserProvider,
-        IDateTimeProvider? dateTimeProvider = null)
+        IDateTimeProvider dateTimeProvider)
     {
         _unitOfWork = unitOfWork;
         _currentUserProvider = currentUserProvider;
-        _dateTimeProvider = dateTimeProvider ?? new SystemDateTimeProvider();
+        _dateTimeProvider = dateTimeProvider;
     }
 
     public async Task<Result<ChatSessionDto>> Handle(GetChatSessionQuery query, CancellationToken cancellationToken)
@@ -150,10 +150,10 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
                     }
                     else
                     {
-                        // 3. No active job and no completed image; check if a failed or stale job occurred
+                        // 3. No active job and no completed image; check if a failed or stale processing job occurred
                         var failedOrStaleJob = turnJobs
                             .Where(j => j.Status == ImageJobStatus.Failed ||
-                                       (j.LeaseUntil.HasValue && j.LeaseUntil.Value <= now))
+                                       (j.Status == ImageJobStatus.Processing && j.LeaseUntil.HasValue && j.LeaseUntil.Value <= now))
                             .OrderByDescending(j => j.CreatedAt)
                             .FirstOrDefault();
 

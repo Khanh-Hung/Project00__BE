@@ -10,6 +10,7 @@ using Application.Features.Lorebook.Commands.CreateLorebookEntry;
 using Application.Features.Lorebook.Commands.DeleteLorebookEntry;
 using Application.Features.UserProfile.Commands.UpdateUserProfile;
 using Application.Interfaces;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
@@ -47,7 +48,7 @@ public class SecurityAuthorizationTests
 
         var unitOfWork = new UnitOfWork(context);
         var userBProvider = new TestCurrentUserProvider(userB.ToString());
-        var handler = new GetChatSessionHandler(unitOfWork, userBProvider);
+        var handler = new GetChatSessionHandler(unitOfWork, userBProvider, new SystemDateTimeProvider());
 
         var result = await handler.Handle(new GetChatSessionQuery(sessionA.Id), CancellationToken.None);
 

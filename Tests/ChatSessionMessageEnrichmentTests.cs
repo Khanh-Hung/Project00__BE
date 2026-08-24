@@ -52,7 +52,7 @@ public sealed class ChatSessionMessageEnrichmentTests
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
-        var handler = new GetChatSessionHandler(uow, userProvider);
+        var handler = new GetChatSessionHandler(uow, userProvider, new FakeDateTimeProvider());
 
         var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
         await db.Characters.AddAsync(character);
@@ -119,7 +119,7 @@ public sealed class ChatSessionMessageEnrichmentTests
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
-        var handler = new GetChatSessionHandler(uow, userProvider);
+        var handler = new GetChatSessionHandler(uow, userProvider, new FakeDateTimeProvider());
 
         var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
         await db.Characters.AddAsync(character);
@@ -175,7 +175,7 @@ public sealed class ChatSessionMessageEnrichmentTests
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
-        var handler = new GetChatSessionHandler(uow, userProvider);
+        var handler = new GetChatSessionHandler(uow, userProvider, new FakeDateTimeProvider());
 
         var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
         await db.Characters.AddAsync(character);
@@ -246,7 +246,7 @@ public sealed class ChatSessionMessageEnrichmentTests
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
-        var handler = new GetChatSessionHandler(uow, userProvider);
+        var handler = new GetChatSessionHandler(uow, userProvider, new FakeDateTimeProvider());
 
         var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
         await db.Characters.AddAsync(character);
@@ -317,7 +317,7 @@ public sealed class ChatSessionMessageEnrichmentTests
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
-        var handler = new GetChatSessionHandler(uow, userProvider);
+        var handler = new GetChatSessionHandler(uow, userProvider, new FakeDateTimeProvider());
 
         var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
         await db.Characters.AddAsync(character);
@@ -380,7 +380,7 @@ public sealed class ChatSessionMessageEnrichmentTests
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
-        var handler = new GetChatSessionHandler(uow, userProvider);
+        var handler = new GetChatSessionHandler(uow, userProvider, new FakeDateTimeProvider());
 
         var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
         await db.Characters.AddAsync(character);
@@ -562,6 +562,66 @@ public sealed class ChatSessionMessageEnrichmentTests
         var enrichedAssistant = result.Value!.Messages.First(m => m.Role == MessageRole.Assistant);
         Assert.Equal(turnId, enrichedAssistant.TurnId);
         // Stale expired-lease job with no completed image is marked failed to enable retry
+        Assert.Equal("failed", enrichedAssistant.SceneImageStatus);
+        Assert.Equal(genReqStaleJob, enrichedAssistant.GenerationRequestId);
+    }
+
+    [Fact]
+    public async Task GetChatSession_WhenTurnHasProcessingJobWithLeaseUntilEqualToNow_IsTreatedAsStaleAndMarksFailed()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var db = new ProjectDbContext(options);
+        var uow = new UnitOfWork(db);
+        var userId = Guid.NewGuid();
+        var userProvider = new FakeUserProvider(userId.ToString());
+        var fixedTime = new DateTime(2026, 8, 24, 12, 0, 0, DateTimeKind.Utc);
+        var timeProvider = new FakeDateTimeProvider(fixedTime);
+        var handler = new GetChatSessionHandler(uow, userProvider, timeProvider);
+
+        var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
+        await db.Characters.AddAsync(character);
+
+        var session = new ChatSession(character.Id, userId, "Chat with Elysia");
+        var userMsg = session.AddUserMessage("Hello");
+        var assistantMsg = session.AddAssistantMessage("Welcome back!");
+        await db.ChatSessions.AddAsync(session);
+
+        var turnId = Guid.NewGuid();
+        var genReqStaleJob = Guid.NewGuid();
+
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: session.Id,
+            userId: userId,
+            characterId: character.Id,
+            userMessageId: userMsg.Id,
+            assistantMessageId: assistantMsg.Id,
+            userMessage: userMsg.Content,
+            assistantReply: assistantMsg.Content,
+            mood: "Joy",
+            moodIntensity: 80,
+            affectionDelta: 2,
+            affectionScore: 10,
+            relationshipStage: "Friend"
+        );
+        await db.CharacterTurns.AddAsync(turn);
+
+        // Boundary test: Lease expired EXACTLY at fixedTime (LeaseUntil == now)
+        var staleJob = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqStaleJob);
+        staleJob.MarkProcessing("comfy-stale", "worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-2));
+        staleJob.ExpireLease(fixedTime);
+        await db.ImageGenerationJobs.AddAsync(staleJob);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new GetChatSessionQuery(session.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var enrichedAssistant = result.Value!.Messages.First(m => m.Role == MessageRole.Assistant);
+        Assert.Equal(turnId, enrichedAssistant.TurnId);
+        // Boundary: LeaseUntil == now is treated as expired/stale (not in-flight) and marks failed
         Assert.Equal("failed", enrichedAssistant.SceneImageStatus);
         Assert.Equal(genReqStaleJob, enrichedAssistant.GenerationRequestId);
     }
