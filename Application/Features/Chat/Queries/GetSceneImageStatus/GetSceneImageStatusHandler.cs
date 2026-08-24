@@ -143,12 +143,28 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
 
             if (payload != null && payload.GenerationRequestId == query.GenerationRequestId)
             {
-                // Strict Fail-Closed Authorization: Payload.UserId MUST not be Guid.Empty and MUST equal CurrentUserId
-                if (payload.UserId == Guid.Empty || payload.UserId != currentUserId)
+                var session = await sessionRepo.GetByIdAsync(payload.Snapshot.SessionId, cancellationToken);
+                if (session == null)
+                {
+                    return Result<SceneImageStatusResponse>.Failure(
+                        StatusCodes.Status404NotFound,
+                        "Chat session for this generation request was not found.");
+                }
+
+                // Strict Fail-Closed Authorization: ChatSession.UserId is the source of truth
+                if (!session.UserId.HasValue || session.UserId.Value == Guid.Empty || session.UserId.Value != currentUserId)
                 {
                     return Result<SceneImageStatusResponse>.Failure(
                         StatusCodes.Status403Forbidden,
                         "You do not have access to this generation request.");
+                }
+
+                // Consistency Invariant: Payload.UserId MUST strictly match Session.UserId
+                if (payload.UserId == Guid.Empty || payload.UserId != session.UserId.Value)
+                {
+                    return Result<SceneImageStatusResponse>.Failure(
+                        StatusCodes.Status403Forbidden,
+                        "Generation request payload ownership mismatch.");
                 }
 
                 return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(

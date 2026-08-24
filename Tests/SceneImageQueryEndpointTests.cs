@@ -206,6 +206,9 @@ public sealed class SceneImageQueryEndpointTests
 
         var (db, _, _, statusHandler, _) = CreateHarness(dbName, userId.ToString());
 
+        var session = new ChatSession(charId, userId, "Session 1") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
         var snapshot = CreateTestSnapshot(sessionId, turnId, charId);
         var payload = new SceneImageGenerationOutboxPayload(
             TurnId: turnId,
@@ -407,6 +410,9 @@ public sealed class SceneImageQueryEndpointTests
 
         var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
 
+        var session = new ChatSession(charId, currentUserId, "Session 1") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
         var snapshot = CreateTestSnapshot(sessionId, turnId, charId);
         var payload = new SceneImageGenerationOutboxPayload(
             TurnId: turnId,
@@ -430,6 +436,121 @@ public sealed class SceneImageQueryEndpointTests
     }
 
     [Fact]
+    public async Task GetSceneImageStatus_WhenOutboxSessionOwnerMismatch_Returns403Forbidden()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var ownerUserId = Guid.NewGuid();
+        var maliciousUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        // Harness is maliciousUserId
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, maliciousUserId.ToString());
+
+        // Session belongs to ownerUserId, NOT maliciousUserId
+        var session = new ChatSession(charId, ownerUserId, "Owner Session") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId);
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: charId,
+            UserId: maliciousUserId, // Payload forged with maliciousUserId, but session is owned by ownerUserId
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        await db.OutboxMessages.AddAsync(outboxMessage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenOutboxSessionDoesNotExist_Returns404NotFound()
+    {
+        var nonExistentSessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        var snapshot = CreateTestSnapshot(nonExistentSessionId, turnId, charId);
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: charId,
+            UserId: currentUserId,
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        await db.OutboxMessages.AddAsync(outboxMessage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status404NotFound, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenOutboxPayloadUserIdMismatchesSessionUserId_Returns403Forbidden()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        // Session belongs to currentUserId
+        var session = new ChatSession(charId, currentUserId, "Session 1") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId);
+        // Payload has otherUserId instead of session owner currentUserId
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: charId,
+            UserId: otherUserId,
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        await db.OutboxMessages.AddAsync(outboxMessage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+        Assert.Contains("ownership mismatch", result.Errors[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task GetSceneImageStatus_WhenManyOutboxMessagesExist_FiltersDirectlyWithoutScanningUnrelatedMessages()
     {
         var sessionId = Guid.NewGuid();
@@ -440,6 +561,9 @@ public sealed class SceneImageQueryEndpointTests
         var dbName = Guid.NewGuid().ToString();
 
         var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        var session = new ChatSession(charId, currentUserId, "Target Session") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
 
         // Add 50 unrelated outbox messages
         for (int i = 0; i < 50; i++)
