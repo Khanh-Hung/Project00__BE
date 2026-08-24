@@ -621,6 +621,23 @@ public sealed class SceneImageQueryEndpointTests
         var session = new ChatSession(charId, userId, "Session 1") { Id = sessionId };
         await db.ChatSessions.AddAsync(session);
 
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: userId,
+            characterId: charId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Hello",
+            assistantReply: "Hi",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger"
+        );
+        await db.CharacterTurns.AddAsync(turn);
+
         var image1 = new SceneImage(
             sessionId: sessionId,
             characterId: charId,
@@ -671,6 +688,23 @@ public sealed class SceneImageQueryEndpointTests
 
         var session = new ChatSession(charId, ownerUserId, "Session 1") { Id = sessionId };
         await db.ChatSessions.AddAsync(session);
+
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: ownerUserId,
+            characterId: charId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Hello",
+            assistantReply: "Hi",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger"
+        );
+        await db.CharacterTurns.AddAsync(turn);
         await db.SaveChangesAsync();
 
         var result = await turnImagesHandler.Handle(new GetTurnSceneImagesQuery(sessionId, turnId), CancellationToken.None);
@@ -692,6 +726,23 @@ public sealed class SceneImageQueryEndpointTests
 
         var session = new ChatSession(charId, null, "Guest Session") { Id = sessionId };
         await db.ChatSessions.AddAsync(session);
+
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: currentUserId,
+            characterId: charId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Hello",
+            assistantReply: "Hi",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger"
+        );
+        await db.CharacterTurns.AddAsync(turn);
         await db.SaveChangesAsync();
 
         var result = await turnImagesHandler.Handle(new GetTurnSceneImagesQuery(sessionId, turnId), CancellationToken.None);
@@ -717,6 +768,27 @@ public sealed class SceneImageQueryEndpointTests
     }
 
     [Fact]
+    public async Task GetTurnSceneImages_WhenTurnDoesNotExistInSession_Returns404NotFound()
+    {
+        var sessionId = Guid.NewGuid();
+        var nonExistentTurnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, _, turnImagesHandler) = CreateHarness(dbName, userId.ToString());
+
+        var session = new ChatSession(charId, userId, "Session 1") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+        await db.SaveChangesAsync();
+
+        var result = await turnImagesHandler.Handle(new GetTurnSceneImagesQuery(sessionId, nonExistentTurnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status404NotFound, result.StatusCode);
+    }
+
+    [Fact]
     public async Task GetTurnSceneImages_Unauthenticated_Returns401Unauthorized()
     {
         var sessionId = Guid.NewGuid();
@@ -729,6 +801,65 @@ public sealed class SceneImageQueryEndpointTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenOutboxSnapshotSessionIdMismatchesSessionId_Returns500InternalServerError()
+    {
+        var sessionId = Guid.NewGuid();
+        var mismatchSessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        var session1 = new ChatSession(charId, currentUserId, "Session 1") { Id = sessionId };
+        var session2 = new ChatSession(charId, currentUserId, "Session 2") { Id = mismatchSessionId };
+        await db.ChatSessions.AddRangeAsync(session1, session2);
+
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: currentUserId,
+            characterId: charId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Hello",
+            assistantReply: "Hi",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger"
+        );
+        await db.CharacterTurns.AddAsync(turn);
+
+        // Snapshot has mismatchSessionId, but turn is in sessionId
+        var snapshotWithWrongSessionId = CreateTestSnapshot(mismatchSessionId, turnId, charId);
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: charId,
+            UserId: currentUserId,
+            Snapshot: snapshotWithWrongSessionId,
+            GenerationRequestId: requestId
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        await db.OutboxMessages.AddAsync(outboxMessage);
+        await db.SaveChangesAsync();
+
+        // Query status
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("mismatch", result.Errors[0], StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

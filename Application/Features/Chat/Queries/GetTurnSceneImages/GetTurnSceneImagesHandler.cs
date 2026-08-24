@@ -51,7 +51,27 @@ public sealed class GetTurnSceneImagesHandler : IRequestHandler<GetTurnSceneImag
                 "You do not have access to this chat session.");
         }
 
-        // 3. Query all SceneImages for the given Session and Turn
+        // 3. Verify Turn exists in this Session and belongs to the authenticated user
+        var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
+        var turn = await turnRepo.GetAsync(
+            t => t.TurnId == query.TurnId && t.SessionId == query.SessionId,
+            cancellationToken);
+
+        if (turn == null)
+        {
+            return Result<List<SceneImageDto>>.Failure(
+                StatusCodes.Status404NotFound,
+                $"Turn '{query.TurnId}' in session '{query.SessionId}' was not found.");
+        }
+
+        if (turn.UserId != currentUserId)
+        {
+            return Result<List<SceneImageDto>>.Failure(
+                StatusCodes.Status403Forbidden,
+                "You do not have access to this turn.");
+        }
+
+        // 4. Query all SceneImages for the given Session and Turn
         var images = await sceneImageRepo.GetAllAsync(
             i => i.SessionId == query.SessionId && i.TurnId == query.TurnId,
             cancellationToken);
