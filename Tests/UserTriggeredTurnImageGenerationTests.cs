@@ -1,5 +1,7 @@
+using System.Reflection;
 using System.Text.Json;
 using Application.Abstractions.Auth;
+using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Application.Features.Chat.Commands.TriggerTurnSceneImage;
@@ -10,6 +12,7 @@ using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -354,9 +357,10 @@ public sealed class UserTriggeredTurnImageGenerationTests
     {
         var sessionId = Guid.NewGuid();
         var nonExistentTurnId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var dbName = Guid.NewGuid().ToString();
 
-        var (_, _, _, handler) = CreateHarness(dbName);
+        var (_, _, _, handler) = CreateHarness(dbName, userId.ToString());
 
         var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, nonExistentTurnId), CancellationToken.None);
 
@@ -439,7 +443,37 @@ public sealed class UserTriggeredTurnImageGenerationTests
     }
 
     [Fact]
-    public async Task Test9_GenerateImage_DoesNotBlockOnComfyUI()
+    public void Test9_GenerateImage_DoesNotBlockOnComfyUI_ArchitecturalDecoupling()
+    {
+        // Architectural Invariant Test:
+        // Verify that TriggerTurnSceneImageGenerationHandler has ZERO dependency on GPU/ComfyUI/LLM services.
+        // It strictly coordinates with IUnitOfWork and ICurrentUserProvider to enqueue durable Outbox messages.
+        var handlerType = typeof(TriggerTurnSceneImageGenerationHandler);
+        var constructors = handlerType.GetConstructors();
+        Assert.Single(constructors);
+
+        var paramTypes = constructors[0].GetParameters().Select(p => p.ParameterType).ToList();
+
+        // Assert required decoupled dependencies
+        Assert.Contains(typeof(IUnitOfWork), paramTypes);
+        Assert.Contains(typeof(ICurrentUserProvider), paramTypes);
+        Assert.Contains(typeof(ILogger<TriggerTurnSceneImageGenerationHandler>), paramTypes);
+
+        // Assert strictly NO heavy/downstream GPU or LLM dependencies
+        Assert.DoesNotContain(paramTypes, t => t.Name.Contains("ComfyUI", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(paramTypes, t => t.Name.Contains("ImageGenerationService", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(paramTypes, t => t.Name.Contains("LLMService", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(paramTypes, t => t.Name.Contains("VisualStateResolver", StringComparison.OrdinalIgnoreCase));
+
+        // Assert handler fields also contain no prohibited services
+        var fieldTypes = handlerType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic).Select(f => f.FieldType).ToList();
+        Assert.DoesNotContain(fieldTypes, t => t.Name.Contains("ComfyUI", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(fieldTypes, t => t.Name.Contains("ImageGenerationService", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(fieldTypes, t => t.Name.Contains("LLMService", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Test10_Authorization_UserOwnsTurn_Succeeds202()
     {
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -468,12 +502,183 @@ public sealed class UserTriggeredTurnImageGenerationTests
         await db.CharacterTurns.AddAsync(turn);
         await db.SaveChangesAsync();
 
-        // Triggering is purely durable outbox scheduling; returns in under a second without calling ComfyUI
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
-        stopwatch.Stop();
 
         Assert.True(result.IsSuccess);
-        Assert.True(stopwatch.ElapsedMilliseconds < 500); // Instantaneous outbox enqueue
+        Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task Test11_Authorization_CrossUser_Returns403Forbidden()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var ownerUserId = Guid.NewGuid();
+        var maliciousUserId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        // Harness is configured with maliciousUserId as current authenticated user
+        var (db, _, _, handler) = CreateHarness(dbName, maliciousUserId.ToString());
+
+        var frozenSnapshot = CreateTestSnapshot(sessionId, turnId);
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: ownerUserId, // Turn belongs to ownerUserId, NOT maliciousUserId
+            characterId: frozenSnapshot.CharacterId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Private chat",
+            assistantReply: "Private reply",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger",
+            visualSnapshotJson: JsonSerializer.Serialize(frozenSnapshot)
+        );
+        await db.CharacterTurns.AddAsync(turn);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+        Assert.Contains("permission", result.Errors[0], StringComparison.OrdinalIgnoreCase);
+
+        // Invariant: No outbox message created on unauthorized trigger
+        var outboxCount = await db.OutboxMessages.CountAsync();
+        Assert.Equal(0, outboxCount);
+    }
+
+    [Fact]
+    public async Task Test12_Authorization_EmptyLegacyUserId_Returns403Forbidden_NoImplicitBypass()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, handler) = CreateHarness(dbName, currentUserId.ToString());
+
+        var frozenSnapshot = CreateTestSnapshot(sessionId, turnId);
+        var turnWithEmptyUser = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: Guid.Empty, // Legacy / guest unassigned turn
+            characterId: frozenSnapshot.CharacterId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Guest message",
+            assistantReply: "Guest reply",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger",
+            visualSnapshotJson: JsonSerializer.Serialize(frozenSnapshot)
+        );
+        await db.CharacterTurns.AddAsync(turnWithEmptyUser);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+
+        // Invariant: Must NOT allow implicit bypass for Guid.Empty turns
+        var outboxCount = await db.OutboxMessages.CountAsync();
+        Assert.Equal(0, outboxCount);
+    }
+
+    [Fact]
+    public async Task Test13_Authorization_UnauthenticatedUser_Returns401Unauthorized()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        // Harness without authenticated user
+        var (_, _, _, handler) = CreateHarness(dbName, currentUserId: null);
+
+        var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task Test14_WrongSession_Returns404NotFound()
+    {
+        var correctSessionId = Guid.NewGuid();
+        var wrongSessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, handler) = CreateHarness(dbName, userId.ToString());
+
+        var frozenSnapshot = CreateTestSnapshot(correctSessionId, turnId);
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: correctSessionId, // Turn is in correctSessionId
+            userId: userId,
+            characterId: frozenSnapshot.CharacterId,
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Message in session A",
+            assistantReply: "Reply in session A",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger",
+            visualSnapshotJson: JsonSerializer.Serialize(frozenSnapshot)
+        );
+        await db.CharacterTurns.AddAsync(turn);
+        await db.SaveChangesAsync();
+
+        // Querying with wrongSessionId must return 404
+        var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(wrongSessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status404NotFound, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task Test15_SnapshotCorruption_Returns500InternalServerError()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, handler) = CreateHarness(dbName, userId.ToString());
+
+        // Corrupted JSON in VisualSnapshotJson
+        var turnWithCorruptedSnapshot = new CharacterTurn(
+            turnId: turnId,
+            sessionId: sessionId,
+            userId: userId,
+            characterId: Guid.NewGuid(),
+            userMessageId: Guid.NewGuid(),
+            assistantMessageId: Guid.NewGuid(),
+            userMessage: "Corrupted message",
+            assistantReply: "Corrupted reply",
+            mood: "Neutral",
+            moodIntensity: 50,
+            affectionDelta: 0,
+            affectionScore: 0,
+            relationshipStage: "Stranger",
+            visualSnapshotJson: "{corrupted-invalid-json-data: true"
+        );
+        await db.CharacterTurns.AddAsync(turnWithCorruptedSnapshot);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("Failed to read frozen visual snapshot", result.Errors[0]);
     }
 }

@@ -30,9 +30,17 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
 
     public async Task<Result<TriggerSceneImageResponse>> Handle(TriggerTurnSceneImageGenerationCommand command, CancellationToken cancellationToken)
     {
+        // 1. Resolve Authenticated User (Strict Auth invariant)
+        if (string.IsNullOrEmpty(_currentUserProvider.CurrentUserId) || !Guid.TryParse(_currentUserProvider.CurrentUserId, out var currentUserId))
+        {
+            return Result<TriggerSceneImageResponse>.Failure(
+                StatusCodes.Status401Unauthorized,
+                "Authentication is required to generate scene images.");
+        }
+
         var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
 
-        // 1. Fetch CharacterTurn by TurnId and SessionId
+        // 2. Fetch CharacterTurn by TurnId and SessionId (Session Isolation)
         var turn = await turnRepo.GetAsync(
             t => t.TurnId == command.TurnId && t.SessionId == command.SessionId,
             cancellationToken);
@@ -44,15 +52,12 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
                 $"Turn '{command.TurnId}' in session '{command.SessionId}' was not found.");
         }
 
-        // 2. Validate Ownership if user is authenticated
-        if (!string.IsNullOrEmpty(_currentUserProvider.CurrentUserId) && Guid.TryParse(_currentUserProvider.CurrentUserId, out var uid))
+        // 3. Strict Ownership Authorization: Turn.UserId MUST strictly equal CurrentUserId (No Guid.Empty bypass)
+        if (turn.UserId != currentUserId)
         {
-            if (turn.UserId != Guid.Empty && turn.UserId != uid)
-            {
-                return Result<TriggerSceneImageResponse>.Failure(
-                    StatusCodes.Status403Forbidden,
-                    "You do not have permission to generate images for this turn.");
-            }
+            return Result<TriggerSceneImageResponse>.Failure(
+                StatusCodes.Status403Forbidden,
+                "You do not have permission to generate images for this turn.");
         }
 
         // 3. Ensure VisualSnapshot was frozen and preserved on the turn
