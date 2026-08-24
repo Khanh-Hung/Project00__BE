@@ -297,6 +297,131 @@ public sealed class ChatSessionMessageEnrichmentTests
     }
 
     [Fact]
+    public async Task GetChatSession_WhenTurnHasActiveAndFailedJobs_PrioritizesActiveJobOverFailedJob()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var db = new ProjectDbContext(options);
+        var uow = new UnitOfWork(db);
+        var userId = Guid.NewGuid();
+        var userProvider = new FakeUserProvider(userId.ToString());
+        var handler = new GetChatSessionHandler(uow, userProvider);
+
+        var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
+        await db.Characters.AddAsync(character);
+
+        var session = new ChatSession(character.Id, userId, "Chat with Elysia");
+        var userMsg = session.AddUserMessage("Hello");
+        var assistantMsg = session.AddAssistantMessage("Welcome back!");
+        await db.ChatSessions.AddAsync(session);
+
+        var turnId = Guid.NewGuid();
+        var genReqActive = Guid.NewGuid();
+        var genReqFailed = Guid.NewGuid();
+
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: session.Id,
+            userId: userId,
+            characterId: character.Id,
+            userMessageId: userMsg.Id,
+            assistantMessageId: assistantMsg.Id,
+            userMessage: userMsg.Content,
+            assistantReply: assistantMsg.Content,
+            mood: "Joy",
+            moodIntensity: 80,
+            affectionDelta: 2,
+            affectionScore: 10,
+            relationshipStage: "Friend"
+        );
+        await db.CharacterTurns.AddAsync(turn);
+
+        // Job 1 (Active / Processing, created earlier)
+        var jobActive = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqActive);
+        jobActive.MarkProcessing("comfy-1", "worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow.AddMinutes(-2));
+        await db.ImageGenerationJobs.AddAsync(jobActive);
+
+        // Job 2 (Failed, created later)
+        var jobFailed = new ImageGenerationJob(session.Id, turnId, character.Id, 2, generationRequestId: genReqFailed);
+        jobFailed.MarkFailed("cancelled", isRetryable: true);
+        await db.ImageGenerationJobs.AddAsync(jobFailed);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new GetChatSessionQuery(session.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var enrichedAssistant = result.Value!.Messages.First(m => m.Role == MessageRole.Assistant);
+        Assert.Equal(turnId, enrichedAssistant.TurnId);
+        // Active in-flight job takes precedence over failed job regardless of CreatedAt timestamp
+        Assert.Equal("processing", enrichedAssistant.SceneImageStatus);
+        Assert.Equal(genReqActive, enrichedAssistant.GenerationRequestId);
+    }
+
+    [Fact]
+    public async Task GetChatSession_WhenTurnHasFailedAndProcessingJobs_PrioritizesProcessingJobOverFailedJob()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var db = new ProjectDbContext(options);
+        var uow = new UnitOfWork(db);
+        var userId = Guid.NewGuid();
+        var userProvider = new FakeUserProvider(userId.ToString());
+        var handler = new GetChatSessionHandler(uow, userProvider);
+
+        var character = new Character("Elysia", "Herrscher of Human", "avatar.png", "Flirty", "Default greeting", "Anime", new List<string>());
+        await db.Characters.AddAsync(character);
+
+        var session = new ChatSession(character.Id, userId, "Chat with Elysia");
+        var userMsg = session.AddUserMessage("Hello");
+        var assistantMsg = session.AddAssistantMessage("Welcome back!");
+        await db.ChatSessions.AddAsync(session);
+
+        var turnId = Guid.NewGuid();
+        var genReqFailed = Guid.NewGuid();
+        var genReqProcessing = Guid.NewGuid();
+
+        var turn = new CharacterTurn(
+            turnId: turnId,
+            sessionId: session.Id,
+            userId: userId,
+            characterId: character.Id,
+            userMessageId: userMsg.Id,
+            assistantMessageId: assistantMsg.Id,
+            userMessage: userMsg.Content,
+            assistantReply: assistantMsg.Content,
+            mood: "Joy",
+            moodIntensity: 80,
+            affectionDelta: 2,
+            affectionScore: 10,
+            relationshipStage: "Friend"
+        );
+        await db.CharacterTurns.AddAsync(turn);
+
+        // Job 1 (Failed, created earlier)
+        var jobFailed = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqFailed);
+        jobFailed.MarkFailed("Network error", isRetryable: true);
+        await db.ImageGenerationJobs.AddAsync(jobFailed);
+
+        // Job 2 (Processing, created later)
+        var jobProcessing = new ImageGenerationJob(session.Id, turnId, character.Id, 2, generationRequestId: genReqProcessing);
+        jobProcessing.MarkProcessing("comfy-2", "worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        await db.ImageGenerationJobs.AddAsync(jobProcessing);
+        await db.SaveChangesAsync();
+
+        var result = await handler.Handle(new GetChatSessionQuery(session.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var enrichedAssistant = result.Value!.Messages.First(m => m.Role == MessageRole.Assistant);
+        Assert.Equal(turnId, enrichedAssistant.TurnId);
+        Assert.Equal("processing", enrichedAssistant.SceneImageStatus);
+        Assert.Equal(genReqProcessing, enrichedAssistant.GenerationRequestId);
+    }
+
+    [Fact]
     public void FromJobStatus_WhenGivenUnknownStatus_ThrowsArgumentOutOfRangeException()
     {
         var invalidStatus = (ImageJobStatus)999;
