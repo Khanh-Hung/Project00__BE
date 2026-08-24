@@ -178,10 +178,17 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
                         "Frozen snapshot identity mismatch in queued generation request.");
                 }
 
-                // Consistency Invariant: Turn entity (if persisted) MUST match Session and Character
+                // Consistency Invariant: Turn entity MUST exist and match Session, Character, and UserId
                 var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
                 var turn = await turnRepo.GetAsync(t => t.TurnId == payload.TurnId, cancellationToken);
-                if (turn != null && (turn.SessionId != session.Id || turn.CharacterId != session.CharacterId || turn.UserId != currentUserId))
+                if (turn == null)
+                {
+                    return Result<SceneImageStatusResponse>.Failure(
+                        StatusCodes.Status500InternalServerError,
+                        "Character turn for this queued generation request was not found.");
+                }
+
+                if (turn.SessionId != session.Id || turn.CharacterId != session.CharacterId || turn.UserId != currentUserId)
                 {
                     return Result<SceneImageStatusResponse>.Failure(
                         StatusCodes.Status500InternalServerError,
