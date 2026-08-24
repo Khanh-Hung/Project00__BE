@@ -123,16 +123,15 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
             ));
         }
 
-        // 4. Check if request is still queued in durable Outbox table
-        var pendingOutboxMessages = await outboxRepo.GetAllAsync(
-            m => m.EventType == OutboxEventTypes.SceneImageGeneration &&
-                 (m.Status == OutboxStatus.Pending || m.Status == OutboxStatus.Processing),
+        // 4. Check if request is in durable Outbox table
+        var outboxMessages = await outboxRepo.GetAllAsync(
+            m => m.EventType == OutboxEventTypes.SceneImageGeneration,
             cancellationToken);
 
         OutboxMessage? outboxMessage = null;
         SceneImageGenerationOutboxPayload? payload = null;
 
-        foreach (var msg in pendingOutboxMessages)
+        foreach (var msg in outboxMessages)
         {
             try
             {
@@ -204,11 +203,26 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
                     "Turn metadata mismatch in queued generation request.");
             }
 
+            if (outboxMessage.Status == OutboxStatus.Failed)
+            {
+                return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
+                    GenerationRequestId: payload.GenerationRequestId,
+                    TurnId: payload.TurnId,
+                    SessionId: payload.Snapshot.SessionId,
+                    Status: "failed",
+                    FailureReason: outboxMessage.LastError ?? "Máy chủ vẽ ảnh AI tạm thời chưa sẵn sàng hoặc chưa được khởi động. Vui lòng thử lại sau.",
+                    IsRetryable: true,
+                    SceneRevision: payload.Snapshot.SceneRevision,
+                    Prompt: null,
+                    CreatedAt: outboxMessage.CreatedAt
+                ));
+            }
+
             return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
                 GenerationRequestId: payload.GenerationRequestId,
                 TurnId: payload.TurnId,
                 SessionId: payload.Snapshot.SessionId,
-                Status: "queued",
+                Status: outboxMessage.Status == OutboxStatus.Processing ? "processing" : "queued",
                 SceneRevision: payload.Snapshot.SceneRevision,
                 Prompt: null,
                 CreatedAt: outboxMessage.CreatedAt
