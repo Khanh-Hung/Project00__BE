@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Application.Features.Chat.Commands.ImagineScene;
 
+[Obsolete("Use POST /api/v1/chat/sessions/{sessionId}/turns/{turnId}/image instead.")]
 public record ImagineSceneCommand(GenerateSceneImageRequest Request) : IRequest<Result<GenerateAvatarResponse>>;
 
 public sealed class ImagineSceneHandler : IRequestHandler<ImagineSceneCommand, Result<GenerateAvatarResponse>>

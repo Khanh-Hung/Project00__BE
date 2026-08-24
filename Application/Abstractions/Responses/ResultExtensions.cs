@@ -14,7 +14,16 @@ public static class ResultExtensions
         };
 
         if (result.IsSuccess)
+        {
+            if (result.StatusCode.HasValue)
+            {
+                return new ObjectResult(response)
+                {
+                    StatusCode = result.StatusCode.Value
+                };
+            }
             return new OkObjectResult(response);
+        }
 
         if (result.StatusCode.HasValue)
             return new ObjectResult(response)

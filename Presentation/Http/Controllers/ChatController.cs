@@ -5,6 +5,7 @@ using Application.Features.Chat.Commands.DeleteChatSession;
 using Application.Features.Chat.Commands.ImagineScene;
 using Application.Features.Chat.Commands.RollbackChatMessage;
 using Application.Features.Chat.Commands.SendChatMessage;
+using Application.Features.Chat.Commands.TriggerTurnSceneImage;
 using Application.Features.Chat.Queries.GetCharacterMemories;
 using Application.Features.Chat.Queries.GetChatSession;
 using Application.Features.Chat.Queries.GetUserChatSessions;
@@ -111,8 +112,19 @@ public sealed class ChatController : ControllerBase
     }
 
     /// <summary>
-    /// Generates dynamic illustration image for a specific moment in chat
+    /// Triggers async scene image generation for a specific conversation turn using its frozen VisualSnapshot
     /// </summary>
+    [HttpPost("sessions/{sessionId:guid}/turns/{turnId:guid}/image")]
+    public async Task<IActionResult> GenerateTurnImage(Guid sessionId, Guid turnId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Generates dynamic illustration image for a specific moment in chat (Legacy synchronous endpoint)
+    /// </summary>
+    [Obsolete("Use POST /api/v1/chat/sessions/{sessionId}/turns/{turnId}/image instead.")]
     [HttpPost("imagine-scene")]
     public async Task<IActionResult> ImagineScene([FromBody] GenerateSceneImageRequest request, CancellationToken ct)
     {

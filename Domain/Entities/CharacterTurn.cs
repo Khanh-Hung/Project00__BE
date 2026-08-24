@@ -21,6 +21,7 @@ public sealed class CharacterTurn : BaseEntity
     public DateTime LastInteractedAt { get; private set; }
     public string? EventsJson { get; private set; }
     public string? ActiveMemoriesJson { get; private set; }
+    public string? VisualSnapshotJson { get; private set; }
 
     private CharacterTurn() { } // EF Core
 
@@ -41,7 +42,8 @@ public sealed class CharacterTurn : BaseEntity
         Guid relationshipId = default,
         DateTime lastInteractedAt = default,
         string? eventsJson = null,
-        string? activeMemoriesJson = null)
+        string? activeMemoriesJson = null,
+        string? visualSnapshotJson = null)
     {
         TurnId = turnId;
         SessionId = sessionId;
@@ -60,5 +62,6 @@ public sealed class CharacterTurn : BaseEntity
         LastInteractedAt = lastInteractedAt;
         EventsJson = eventsJson;
         ActiveMemoriesJson = activeMemoriesJson;
+        VisualSnapshotJson = visualSnapshotJson;
     }
 }
