@@ -63,12 +63,37 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
         var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
         var jobRepo = _unitOfWork.GetRepository<ImageGenerationJob>();
 
-        var turns = await turnRepo.GetAllAsync(t => t.SessionId == session.Id, cancellationToken);
-        var sceneImages = await sceneImageRepo.GetAllAsync(i => i.SessionId == session.Id, cancellationToken);
-        var activeJobs = await jobRepo.GetAllAsync(j => j.SessionId == session.Id && (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Failed), cancellationToken);
+        var assistantMsgIds = session.Messages
+            .Where(m => m.Role == MessageRole.Assistant)
+            .Select(m => m.Id)
+            .ToHashSet();
 
-        var currentImagesByTurn = sceneImages
-            .Where(i => i.IsCurrent)
+        List<CharacterTurn> turns = new();
+        if (assistantMsgIds.Count > 0)
+        {
+            turns = (await turnRepo.GetAllAsync(
+                t => t.SessionId == session.Id && assistantMsgIds.Contains(t.AssistantMessageId),
+                cancellationToken)).ToList();
+        }
+
+        var turnIds = turns.Select(t => t.TurnId).ToHashSet();
+
+        List<SceneImage> currentSceneImages = new();
+        List<ImageGenerationJob> activeJobs = new();
+
+        if (turnIds.Count > 0)
+        {
+            currentSceneImages = (await sceneImageRepo.GetAllAsync(
+                i => i.SessionId == session.Id && i.IsCurrent && turnIds.Contains(i.TurnId),
+                cancellationToken)).ToList();
+
+            activeJobs = (await jobRepo.GetAllAsync(
+                j => j.SessionId == session.Id && turnIds.Contains(j.TurnId) &&
+                     (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Failed),
+                cancellationToken)).ToList();
+        }
+
+        var currentImagesByTurn = currentSceneImages
             .GroupBy(i => i.TurnId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(i => i.CreatedAt).First());
 
@@ -92,21 +117,25 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
                 if (turnsByAssistantMsgId.TryGetValue(m.Id, out var turn))
                 {
                     turnId = turn.TurnId;
-                    if (currentImagesByTurn.TryGetValue(turn.TurnId, out var img))
+                    var hasCurrentImage = currentImagesByTurn.TryGetValue(turn.TurnId, out var img);
+                    var hasActiveJob = activeJobsByTurn.TryGetValue(turn.TurnId, out var job);
+
+                    if (hasActiveJob && (job!.Status == ImageJobStatus.Pending || job.Status == ImageJobStatus.Processing))
                     {
-                        sceneImageUrl = img.ImageUrl;
-                        sceneImageStatus = "completed";
+                        // In-flight generation/regeneration takes precedence for live status
+                        sceneImageStatus = SceneImageStatuses.FromJobStatus(job.Status);
+                        genReqId = job.GenerationRequestId;
+                        sceneImageUrl = hasCurrentImage ? img!.ImageUrl : null;
+                    }
+                    else if (hasCurrentImage)
+                    {
+                        sceneImageUrl = img!.ImageUrl;
+                        sceneImageStatus = SceneImageStatuses.Completed;
                         genReqId = img.GenerationRequestId;
                     }
-                    else if (activeJobsByTurn.TryGetValue(turn.TurnId, out var job))
+                    else if (hasActiveJob && job!.Status == ImageJobStatus.Failed)
                     {
-                        sceneImageStatus = job.Status switch
-                        {
-                            ImageJobStatus.Processing => "processing",
-                            ImageJobStatus.Pending => "pending",
-                            ImageJobStatus.Failed => "failed",
-                            _ => null
-                        };
+                        sceneImageStatus = SceneImageStatuses.Failed;
                         genReqId = job.GenerationRequestId;
                     }
                 }

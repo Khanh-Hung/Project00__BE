@@ -2,6 +2,24 @@ using Domain.Enums;
 
 namespace Application.DTOs;
 
+public static class SceneImageStatuses
+{
+    public const string Queued = "queued";
+    public const string Pending = "pending";
+    public const string Processing = "processing";
+    public const string Completed = "completed";
+    public const string Failed = "failed";
+
+    public static string FromJobStatus(ImageJobStatus status) => status switch
+    {
+        ImageJobStatus.Pending => Pending,
+        ImageJobStatus.Processing => Processing,
+        ImageJobStatus.Completed => Completed,
+        ImageJobStatus.Failed => Failed,
+        _ => Pending
+    };
+}
+
 public record ChatMessageDto(
     Guid Id,
     MessageRole Role,
