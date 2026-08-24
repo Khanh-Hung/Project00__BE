@@ -730,4 +730,125 @@ public sealed class SceneImageQueryEndpointTests
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
     }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenOutboxSnapshotTurnIdMismatchesPayloadTurnId_Returns500InternalServerError()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var mismatchTurnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        var session = new ChatSession(charId, currentUserId, "Session 1") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
+        // Snapshot has mismatchTurnId, but payload has turnId
+        var snapshotWithWrongTurnId = CreateTestSnapshot(sessionId, mismatchTurnId, charId);
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: charId,
+            UserId: currentUserId,
+            Snapshot: snapshotWithWrongTurnId,
+            GenerationRequestId: requestId
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        await db.OutboxMessages.AddAsync(outboxMessage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("identity mismatch", result.Errors[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenOutboxSnapshotCharacterIdMismatchesPayloadCharacterId_Returns500InternalServerError()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var mismatchCharId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        var session = new ChatSession(charId, currentUserId, "Session 1") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
+        // Snapshot has mismatchCharId, but payload has charId
+        var snapshotWithWrongCharId = CreateTestSnapshot(sessionId, turnId, mismatchCharId);
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: charId,
+            UserId: currentUserId,
+            Snapshot: snapshotWithWrongCharId,
+            GenerationRequestId: requestId
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        await db.OutboxMessages.AddAsync(outboxMessage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("identity mismatch", result.Errors[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetSceneImageStatus_WhenOutboxCharacterIdMismatchesSessionCharacterId_Returns500InternalServerError()
+    {
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var sessionCharId = Guid.NewGuid();
+        var otherCharId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var (db, _, _, statusHandler, _) = CreateHarness(dbName, currentUserId.ToString());
+
+        // Session has sessionCharId
+        var session = new ChatSession(sessionCharId, currentUserId, "Session 1") { Id = sessionId };
+        await db.ChatSessions.AddAsync(session);
+
+        // Payload has otherCharId
+        var snapshot = CreateTestSnapshot(sessionId, turnId, otherCharId);
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: otherCharId,
+            UserId: currentUserId,
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        await db.OutboxMessages.AddAsync(outboxMessage);
+        await db.SaveChangesAsync();
+
+        var result = await statusHandler.Handle(new GetSceneImageStatusQuery(requestId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("identity mismatch", result.Errors[0], StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -167,6 +167,17 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
                         "Generation request payload ownership mismatch.");
                 }
 
+                // Consistency Invariant: Snapshot identity (TurnId, SessionId, CharacterId) MUST strictly match payload metadata and session
+                if (payload.Snapshot.SessionId != session.Id ||
+                    payload.Snapshot.TurnId != payload.TurnId ||
+                    payload.Snapshot.CharacterId != payload.CharacterId ||
+                    session.CharacterId != payload.CharacterId)
+                {
+                    return Result<SceneImageStatusResponse>.Failure(
+                        StatusCodes.Status500InternalServerError,
+                        "Frozen snapshot identity mismatch in queued generation request.");
+                }
+
                 return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
                     GenerationRequestId: payload.GenerationRequestId,
                     TurnId: payload.TurnId,
