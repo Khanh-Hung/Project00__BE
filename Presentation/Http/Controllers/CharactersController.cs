@@ -7,6 +7,7 @@ using Application.Features.Characters.Commands.GenerateCharacterAI;
 using Application.Features.Characters.Commands.UpdateCharacter;
 using Application.Features.Characters.Queries.GenerateRandomIdeas;
 using Application.Features.Characters.Queries.GetCharacterById;
+using Application.Features.Characters.Queries.GetMyCharacters;
 using Application.Features.Characters.Queries.GetPublicCharacters;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -24,6 +25,16 @@ public sealed class CharactersController : ControllerBase
     public CharactersController(ISender sender)
     {
         _sender = sender;
+    }
+
+    /// <summary>
+    /// Gets characters created by the current authenticated user (Studio)
+    /// </summary>
+    [HttpGet("mine")]
+    public async Task<IActionResult> GetMyCharacters(CancellationToken ct)
+    {
+        var result = await _sender.Send(new GetMyCharactersQuery(), ct);
+        return result.ToActionResult();
     }
 
     /// <summary>
