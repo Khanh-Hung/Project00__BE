@@ -86,14 +86,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     .OrderByDescending(j => j.CreatedAt)
                     .FirstOrDefaultAsync(ct);
 
-                if (predJob != null && predJob.Status == ImageJobStatus.Failed && !predJob.IsRetryable)
-                {
-                    _logger.LogWarning("[SceneGenerationFailed] Blocking Revision {Revision} because predecessor Revision {PredRev} failed permanently.",
-                        snapshot.SceneRevision, predRev);
-                    throw new GpuNonTransientException($"Predecessor Revision {predRev} failed permanently.");
-                }
-
-                // Check predecessor outbox message if job hasn't been created yet or failed at outbox level
+                // Check predecessor outbox message if job hasn't been created yet
                 var predecessorMsg = await _dbContext.OutboxMessages
                     .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration)
                     .ToListAsync(ct);
@@ -108,16 +101,19 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     catch { return false; }
                 });
 
-                if (predMatchingMsg != null && predMatchingMsg.Status == OutboxStatus.Failed)
+                bool isPredInFlight = (predJob != null && (predJob.Status == ImageJobStatus.Pending || predJob.Status == ImageJobStatus.Processing)) ||
+                                      (predMatchingMsg != null && (predMatchingMsg.Status == OutboxStatus.Pending || predMatchingMsg.Status == OutboxStatus.Processing));
+
+                if (isPredInFlight)
                 {
-                    _logger.LogWarning("[SceneGenerationFailed] Blocking Revision {Revision} because predecessor Revision {PredRev} failed permanently in Outbox.",
+                    _logger.LogInformation("[SceneGenerationDeferred] Deferring Revision {Revision} because predecessor Revision {PredRev} is currently in-flight.",
                         snapshot.SceneRevision, predRev);
-                    throw new GpuNonTransientException($"Predecessor Revision {predRev} failed permanently.");
+                    return new JobExecutionResult(JobExecutionStatus.Deferred, $"Predecessor Revision {predRev} not yet completed");
                 }
 
-                _logger.LogInformation("[SceneGenerationDeferred] Deferring Revision {Revision} because predecessor Revision {PredRev} has no active current artifact yet.",
-                    snapshot.SceneRevision, predRev);
-                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Predecessor Revision {predRev} not yet completed");
+                // If predecessor is not in-flight and not completed (e.g. failed or was never requested on turn 1),
+                // do NOT fail this revision! Fall back to generating independently using the Character's canonical identity reference.
+                _logger.LogInformation("[SceneGenerationPredecessorFallback] Predecessor Revision {PredRev} not present or failed. Proceeding with independent visual identity.", predRev);
             }
         }
 
