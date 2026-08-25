@@ -85,7 +85,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             {
                 foreach (var feature in identity.SignatureFeatures)
                 {
-                    if (feature.Importance == FeatureImportance.Critical || feature.Persistence == FeaturePersistence.EveryTurn)
+                    if (feature.ShouldInject(isSameScene: true))
                     {
                         if (!string.IsNullOrWhiteSpace(feature.PositiveTokens))
                         {
@@ -174,7 +174,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             {
                 foreach (var feature in identity.SignatureFeatures)
                 {
-                    if (feature.Importance == FeatureImportance.Critical || feature.Persistence == FeaturePersistence.EveryTurn)
+                    if (feature.ShouldInject(isSameScene: true))
                     {
                         if (!string.IsNullOrWhiteSpace(feature.PositiveTokens))
                         {
