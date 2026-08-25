@@ -10,14 +10,18 @@ public sealed record SignatureFeature(
     FeaturePersistence Persistence = FeaturePersistence.EveryTurn
 )
 {
-    public bool ShouldInject(bool isSameScene = true)
+    public bool ShouldInject(Slot2Context context)
     {
-        if (Persistence == FeaturePersistence.EveryTurn)
-            return true;
+        return Persistence switch
+        {
+            FeaturePersistence.EveryTurn => true,
+            FeaturePersistence.SameSceneOnly => context == Slot2Context.SameScene,
+            _ => Importance == FeatureImportance.Critical && context != Slot2Context.SceneTransition
+        };
+    }
 
-        if (Persistence == FeaturePersistence.SameSceneOnly && isSameScene)
-            return true;
-
-        return Importance == FeatureImportance.Critical;
+    public bool ShouldInject(bool isSameScene)
+    {
+        return ShouldInject(isSameScene ? Slot2Context.SameScene : Slot2Context.SceneTransition);
     }
 }

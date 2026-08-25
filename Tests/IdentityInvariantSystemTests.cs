@@ -155,6 +155,33 @@ public sealed class IdentityInvariantSystemTests
     }
 
     [Theory]
+    [InlineData(FeaturePersistence.EveryTurn, FeatureImportance.Critical, Slot2Context.ColdStart, true)]
+    [InlineData(FeaturePersistence.EveryTurn, FeatureImportance.Critical, Slot2Context.SameScene, true)]
+    [InlineData(FeaturePersistence.EveryTurn, FeatureImportance.Critical, Slot2Context.SceneTransition, true)]
+    [InlineData(FeaturePersistence.EveryTurn, FeatureImportance.Contextual, Slot2Context.SceneTransition, true)]
+    [InlineData(FeaturePersistence.SameSceneOnly, FeatureImportance.Critical, Slot2Context.SameScene, true)]
+    [InlineData(FeaturePersistence.SameSceneOnly, FeatureImportance.Critical, Slot2Context.SceneTransition, false)]
+    [InlineData(FeaturePersistence.SameSceneOnly, FeatureImportance.Contextual, Slot2Context.SameScene, true)]
+    [InlineData(FeaturePersistence.SameSceneOnly, FeatureImportance.Contextual, Slot2Context.SceneTransition, false)]
+    public void SignatureFeature_ShouldInject_AdheresToExplicitContextSemantics(
+        FeaturePersistence persistence,
+        FeatureImportance importance,
+        Slot2Context context,
+        bool expectedShouldInject)
+    {
+        var feature = new SignatureFeature(
+            Name: "TestFeature",
+            PositiveTokens: "test feature tokens",
+            Importance: importance,
+            Persistence: persistence
+        );
+
+        var result = feature.ShouldInject(context);
+
+        Assert.Equal(expectedShouldInject, result);
+    }
+
+    [Theory]
     [InlineData(true, false, 0.0, 0.0, false)]
     [InlineData(false, false, 0.15, 0.30, true)]
     [InlineData(false, true, 0.08, 0.20, true)]

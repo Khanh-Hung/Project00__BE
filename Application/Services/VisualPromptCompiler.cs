@@ -174,7 +174,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             {
                 foreach (var feature in identity.SignatureFeatures)
                 {
-                    if (feature.ShouldInject(isSameScene: true))
+                    if (feature.ShouldInject(snapshot.Context))
                     {
                         if (!string.IsNullOrWhiteSpace(feature.PositiveTokens))
                         {

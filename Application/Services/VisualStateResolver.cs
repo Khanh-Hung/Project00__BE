@@ -114,6 +114,8 @@ public sealed class VisualStateResolver : IVisualStateResolver
             }
         }
 
+        var slot2Context = isColdStart ? Domain.Enums.Slot2Context.ColdStart : (isTransition ? Domain.Enums.Slot2Context.SceneTransition : Domain.Enums.Slot2Context.SameScene);
+
         var snapshot = VisualSnapshot.Create(
             turnId: turnId,
             sessionId: session.Id,
@@ -127,7 +129,8 @@ public sealed class VisualStateResolver : IVisualStateResolver
             predecessorSceneRevision: predecessorRevision,
             predecessorSceneImageId: frozenPredecessorSceneImageId,
             fallbackReferenceUrl: character.AvatarUrl,
-            sceneDescription: delta.SceneDescription
+            sceneDescription: delta.SceneDescription,
+            slot2Context: slot2Context
         );
 
         return (updatedSceneState, transientState, snapshot);

@@ -18,7 +18,7 @@ namespace Tests;
 
 public sealed class ProductionBenchmarkCompilerExporter
 {
-    private sealed class ExportableTurnRequest
+    public sealed class ExportableTurnRequest
     {
         public string CharacterId { get; set; } = string.Empty;
         public string CharacterName { get; set; } = string.Empty;
@@ -39,8 +39,7 @@ public sealed class ProductionBenchmarkCompilerExporter
         public List<string> NegativeActionPrompts { get; set; } = new();
     }
 
-    [Fact]
-    public async Task Export_Authoritative_Production_Generation_Requests()
+    public static async Task<List<ExportableTurnRequest>> GenerateAllAuthoritativeRequestsAsync()
     {
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -166,7 +165,14 @@ public sealed class ProductionBenchmarkCompilerExporter
 
         await ProcessCharacterScenarioAsync(db, unitOfWork, compiler, profileProvider, valerius, valeriusSession, "character_03_valerius", valeriusTurns, exportedList);
 
-        // Export to JSON
+        return exportedList;
+    }
+
+    [Fact]
+    public async Task Export_Authoritative_Production_Generation_Requests()
+    {
+        var exportedList = await GenerateAllAuthoritativeRequestsAsync();
+
         var artifactsDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "eval_artifacts_v23"));
         Directory.CreateDirectory(artifactsDir);
         var jsonPath = Path.Combine(artifactsDir, "authoritative_compiled_requests.json");
@@ -175,6 +181,39 @@ public sealed class ProductionBenchmarkCompilerExporter
 
         Assert.Equal(24, exportedList.Count);
         Assert.True(File.Exists(jsonPath));
+    }
+
+    [Fact]
+    public async Task Assert_Committed_Authoritative_Requests_JSON_Is_Not_Stale()
+    {
+        var freshlyGenerated = await GenerateAllAuthoritativeRequestsAsync();
+
+        var artifactsDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "eval_artifacts_v23"));
+        var jsonPath = Path.Combine(artifactsDir, "authoritative_compiled_requests.json");
+
+        Assert.True(File.Exists(jsonPath), $"Committed JSON not found at: {jsonPath}");
+
+        var committedJson = await File.ReadAllTextAsync(jsonPath);
+        var committedList = JsonSerializer.Deserialize<List<ExportableTurnRequest>>(committedJson);
+
+        Assert.NotNull(committedList);
+        Assert.Equal(freshlyGenerated.Count, committedList.Count);
+
+        for (int i = 0; i < freshlyGenerated.Count; i++)
+        {
+            var fresh = freshlyGenerated[i];
+            var comm = committedList[i];
+
+            Assert.Equal(fresh.CharacterId, comm.CharacterId);
+            Assert.Equal(fresh.Turn, comm.Turn);
+            Assert.Equal(fresh.CompiledPrompt, comm.CompiledPrompt);
+            Assert.Equal(fresh.CompiledNegative, comm.CompiledNegative);
+            Assert.Equal(fresh.IdentityReferenceUrl, comm.IdentityReferenceUrl);
+            Assert.Equal(fresh.PreviousSceneImageUrl, comm.PreviousSceneImageUrl);
+            Assert.Equal(fresh.Slot2Weight, comm.Slot2Weight, precision: 4);
+            Assert.Equal(fresh.Slot2EndAt, comm.Slot2EndAt, precision: 4);
+            Assert.Equal(fresh.Slot2Active, comm.Slot2Active);
+        }
     }
 
     private static async Task ProcessCharacterScenarioAsync(
