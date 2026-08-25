@@ -248,7 +248,7 @@ public static class CharacterGenerationPrompts
             You must output EXACTLY two lines starting with 'AVATAR:' and 'FULLBODY:' containing comma-separated English image prompt tags:
 
             AVATAR: masterpiece, best quality, {{coreGenderTag}}, close-up face portrait, face focus, expressive luminous eyes, gentle subtle expression, <exact hair>, <exact eyes>, <exact face>, <upper outfit details>, soft painterly anime lighting, ethereal atmospheric glow, pixiv trending, highly detailed, 8k
-            FULLBODY: masterpiece, best quality, {{coreGenderTag}}, waist-up standing portrait, elegant posture, <exact same hair>, <exact same eyes>, <exact same face>, <exact same intricate outfit>, luxurious outfit details, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing accents, luminous eyes, beautiful detailed face, pixiv trending, sharp focus, 8k
+            FULLBODY: masterpiece, best quality, {{coreGenderTag}}, waist-up standing portrait, dynamic graceful posture, slight 3/4 turn, looking at viewer, <exact same hair>, <exact same eyes>, <exact same face>, <exact same intricate outfit>, luxurious outfit details, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, luminous expressive eyes, delicate beautiful face, soft painterly anime aesthetic, pixiv trending, sharp focus, 8k
 
             Output ONLY these two lines.
             """;

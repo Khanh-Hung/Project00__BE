@@ -288,20 +288,21 @@ public sealed class LLMService : ILLMService
 
         if (string.IsNullOrWhiteSpace(cleanFullBodyPrompt))
         {
-            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, elegant posture, highly detailed face, expressive luminous eyes, vibrant colors, ethereal magical lighting, cinematic atmospheric glow, soft rim light, 8k, pixiv trending";
+            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, dynamic graceful posture, slight 3/4 turn, looking at viewer, delicate beautiful face, expressive luminous eyes, vibrant colors, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, soft painterly anime aesthetic, 8k, pixiv trending";
         }
 
         if (!cleanFullBodyPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
         {
-            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, sharp focus, " + cleanFullBodyPrompt;
+            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, dynamic graceful posture, sharp focus, " + cleanFullBodyPrompt;
         }
 
         if (!cleanFullBodyPrompt.Contains("ethereal", StringComparison.OrdinalIgnoreCase))
         {
-            cleanFullBodyPrompt += ", ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing highlights, luminous eyes, beautiful detailed face, masterpiece, best quality";
+            cleanFullBodyPrompt += ", slight 3/4 turn, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, luminous eyes, delicate beautiful face, soft painterly anime aesthetic, masterpiece, best quality";
         }
 
         var generatedSeed = Random.Shared.Next(1, int.MaxValue);
+        const string enhancedNegativePrompt = "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error, stiff pose, flat lighting, dull colors, bad face, deformed eyes, crossed eyes";
 
         // Step 1: Generate Close-up Face Avatar via TextToImage
         var avatarRequest = new ImageGenerationRequest(
@@ -309,21 +310,22 @@ public sealed class LLMService : ILLMService
             Width: 512,
             Height: 512,
             Seed: generatedSeed,
-            NegativePrompt: "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error",
+            NegativePrompt: enhancedNegativePrompt,
             Workflow: "TextToImage",
             WorkflowVersion: 1
         );
 
         var avatarUrl = await _imageService.GenerateImageAsync(avatarRequest, ct);
 
-        // Step 2: Generate Full-Body Standee via VisualIdentity Workflow (IP-Adapter conditioned on the Avatar)
+        // Step 2: Generate Full-Body Standee via VisualIdentity Workflow (IP-Adapter conditioned on the Avatar with optimal artistic freedom)
         var fullBodyRequest = new ImageGenerationRequest(
             Prompt: cleanFullBodyPrompt,
             Width: 512,
             Height: 768,
             Seed: generatedSeed,
             ReferenceImageUrl: avatarUrl,
-            NegativePrompt: "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error",
+            ParametersJson: "{\"ipAdapter\":{\"weight\":0.38,\"endAt\":0.60}}",
+            NegativePrompt: enhancedNegativePrompt,
             Workflow: "VisualIdentity",
             WorkflowVersion: 1
         );
