@@ -116,6 +116,73 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                 fileName = $"{Guid.NewGuid():N}{ext}";
                 fileContent = new ByteArrayContent(imageBytes);
             }
+            else if (referenceImageUrl.Contains("uploads/", StringComparison.OrdinalIgnoreCase) ||
+                     (!referenceImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !referenceImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+            {
+                // Path traversal protection
+                if (referenceImageUrl.Contains(".."))
+                {
+                    throw new GpuNonTransientException($"Invalid reference image path containing directory traversal: '{SanitizeUrlForLogging(referenceImageUrl)}'");
+                }
+
+                string resolvedPath;
+                if (File.Exists(referenceImageUrl))
+                {
+                    resolvedPath = referenceImageUrl;
+                }
+                else
+                {
+                    string relativePath = referenceImageUrl;
+                    var uploadIdx = relativePath.IndexOf("uploads/", StringComparison.OrdinalIgnoreCase);
+                    if (uploadIdx >= 0)
+                    {
+                        relativePath = relativePath.Substring(uploadIdx);
+                    }
+                    else
+                    {
+                        relativePath = relativePath.TrimStart('/', '\\');
+                    }
+
+                    var possiblePath1 = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath.Replace('/', Path.DirectorySeparatorChar));
+                    var possiblePath2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot", relativePath.Replace('/', Path.DirectorySeparatorChar));
+                    var possiblePath3 = Path.Combine(Directory.GetCurrentDirectory(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+                    if (File.Exists(possiblePath1))
+                    {
+                        resolvedPath = possiblePath1;
+                    }
+                    else if (File.Exists(possiblePath2))
+                    {
+                        resolvedPath = possiblePath2;
+                    }
+                    else if (File.Exists(possiblePath3))
+                    {
+                        resolvedPath = possiblePath3;
+                    }
+                    else
+                    {
+                        throw new GpuNonTransientException($"Reference image could not be resolved from path or URL: '{SanitizeUrlForLogging(referenceImageUrl)}'");
+                    }
+                }
+
+                var fileInfo = new FileInfo(resolvedPath);
+                if (fileInfo.Length > MaxReferenceImageBytes)
+                {
+                    throw new GpuNonTransientException($"Local reference image exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
+                }
+
+                var fileStream = new FileStream(resolvedPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var headerBuffer = new byte[16];
+                var read = await fileStream.ReadAsync(headerBuffer.AsMemory(0, 16), ct);
+                if (!ValidateImageMagicBytes(headerBuffer.AsSpan(0, read), out _))
+                {
+                    fileStream.Dispose();
+                    throw new GpuNonTransientException("The reference image content is not a valid supported image format (PNG, JPEG, or WebP).");
+                }
+
+                fileStream.Position = 0;
+                fileContent = new StreamContent(fileStream);
+            }
             else if (referenceImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 referenceImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {
@@ -205,50 +272,6 @@ public sealed class ComfyUIInputImageService : IComfyUIInputImageService
                 // Stream directly into HttpContent with zero extra buffer duplication
                 memoryStream.Position = 0;
                 fileContent = new StreamContent(memoryStream);
-            }
-            else
-            {
-                // Path traversal protection
-                if (referenceImageUrl.Contains(".."))
-                {
-                    throw new GpuNonTransientException($"Invalid reference image path containing directory traversal: '{SanitizeUrlForLogging(referenceImageUrl)}'");
-                }
-
-                string resolvedPath;
-                if (File.Exists(referenceImageUrl))
-                {
-                    resolvedPath = referenceImageUrl;
-                }
-                else
-                {
-                    var possiblePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", referenceImageUrl.TrimStart('/', '\\'));
-                    if (File.Exists(possiblePath))
-                    {
-                        resolvedPath = possiblePath;
-                    }
-                    else
-                    {
-                        throw new GpuNonTransientException($"Reference image could not be resolved from path or URL: '{SanitizeUrlForLogging(referenceImageUrl)}'");
-                    }
-                }
-
-                var fileInfo = new FileInfo(resolvedPath);
-                if (fileInfo.Length > MaxReferenceImageBytes)
-                {
-                    throw new GpuNonTransientException($"Local reference image exceeds maximum allowed size of {MaxReferenceImageBytes / (1024 * 1024)} MB.");
-                }
-
-                var fileStream = new FileStream(resolvedPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                var headerBuffer = new byte[16];
-                var read = await fileStream.ReadAsync(headerBuffer.AsMemory(0, 16), ct);
-                if (!ValidateImageMagicBytes(headerBuffer.AsSpan(0, read), out _))
-                {
-                    fileStream.Dispose();
-                    throw new GpuNonTransientException("The reference image content is not a valid supported image format (PNG, JPEG, or WebP).");
-                }
-
-                fileStream.Position = 0;
-                fileContent = new StreamContent(fileStream);
             }
         }
         catch (GpuNonTransientException)
