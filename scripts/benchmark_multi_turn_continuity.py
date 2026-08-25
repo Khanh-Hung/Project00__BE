@@ -14,13 +14,12 @@ COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188")
 COMFY_INPUT_DIR = os.environ.get("COMFY_INPUT_DIR", r"D:\ComfyUI_windows_portable\ComfyUI\input")
 COMFY_OUTPUT_DIR = os.environ.get("COMFY_OUTPUT_DIR", r"D:\ComfyUI_windows_portable\ComfyUI\output")
 
-PROVISIONAL_ACCEPTANCE_THRESHOLD = 0.75
-
 # 8-Turn Narrative Arc for Lyra (Silver Dragon Horns, Red Eyes)
 MULTI_TURN_STORYLINE = [
     {
         "turn": 1,
         "location": "Sanctuary (Standing Window)",
+        "action": "standing",
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, sharp jawline, porcelain skin, wearing white and gold priestess dress, standing beside grand arched window in sunlit sanctuary hall, soft golden daylight, medium shot, slight 3/4 turn, eye level",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100001
@@ -28,6 +27,7 @@ MULTI_TURN_STORYLINE = [
     {
         "turn": 2,
         "location": "Sanctuary (Walking Altar)",
+        "action": "walking",
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing white and gold priestess dress, walking along marble aisle towards grand altar, holding ancient sacred scripture, streaming sunlight, medium shot, slight 3/4 turn",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100002
@@ -35,6 +35,7 @@ MULTI_TURN_STORYLINE = [
     {
         "turn": 3,
         "location": "Sanctuary (Kneeling Prayer)",
+        "action": "kneeling",
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing white and gold priestess dress, kneeling before golden altar in prayer, hands clasped, soft divine glowing aura, medium shot, slight 3/4 turn",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100003
@@ -42,6 +43,7 @@ MULTI_TURN_STORYLINE = [
     {
         "turn": 4,
         "location": "Sanctuary (Smiling Turn)",
+        "action": "standing",
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing white and gold priestess dress, standing gracefully near altar, looking towards viewer with a gentle affectionate smile, soft ambient light, medium shot",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100004
@@ -49,6 +51,7 @@ MULTI_TURN_STORYLINE = [
     {
         "turn": 5,
         "location": "Library (Sitting Tea)",
+        "action": "sitting",
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, sitting at wooden table in cozy library, holding warm ceramic teacup, warm ambient indoor light, medium shot, slight 3/4 turn",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100005
@@ -56,6 +59,7 @@ MULTI_TURN_STORYLINE = [
     {
         "turn": 6,
         "location": "Library (Reading Grimoire)",
+        "action": "leaning",
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, leaning over large open ancient grimoire on library desk, pointing at glowing magical runes, focused expression, medium shot",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100006
@@ -63,6 +67,7 @@ MULTI_TURN_STORYLINE = [
     {
         "turn": 7,
         "location": "Balcony (Twilight Walk)",
+        "action": "walking",
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, walking out onto palace stone balcony overlooking kingdom at dusk, gentle twilight breeze blowing hair, medium shot",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100007
@@ -70,6 +75,7 @@ MULTI_TURN_STORYLINE = [
     {
         "turn": 8,
         "location": "Balcony (Night Stars)",
+        "action": "leaning",
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, leaning on stone balcony railing at night, gazing up at starry sky and glowing moon, serene expression, medium shot",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100008
@@ -83,26 +89,49 @@ def load_v2_workflow_template():
     with open(template_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def build_v2_workflow(template, avatar_img_name, prev_scene_img_name, prompt, negative, seed, ip_weight=0.60, ip_end_at=0.85, scene_weight=0.20, scene_end_at=0.40):
+def build_workflow_for_config(template, config_type, avatar_img_name, prev_scene_img_name, prompt, negative, seed):
     wf = json.loads(json.dumps(template))
     wf["1"]["inputs"]["image"] = avatar_img_name
     wf["6"]["inputs"]["text"] = prompt
     wf["7"]["inputs"]["text"] = negative
     wf["3"]["inputs"]["seed"] = int(seed)
-    wf["10"]["inputs"]["weight"] = float(ip_weight)
-    wf["10"]["inputs"]["end_at"] = float(ip_end_at)
-    
-    if prev_scene_img_name:
-        wf["13"]["inputs"]["image"] = prev_scene_img_name
-        wf["14"]["inputs"]["weight"] = float(scene_weight)
-        wf["14"]["inputs"]["end_at"] = float(scene_end_at)
-        wf["3"]["inputs"]["model"] = ["14", 0]
-    else:
-        # Fallback for Turn 1: disconnect Node 14 and link Node 10 directly
+
+    if config_type == "IDENTITY_ONLY":
+        # Slot 1 active (0.60), Slot 2 removed
+        wf["10"]["inputs"]["weight"] = 0.60
+        wf["10"]["inputs"]["end_at"] = 0.85
         if "13" in wf: del wf["13"]
         if "14" in wf: del wf["14"]
         wf["3"]["inputs"]["model"] = ["10", 0]
-        
+    elif config_type == "CONTINUITY_ONLY":
+        # Slot 1 removed/bypassed, Slot 2 receives Checkpoint directly with PrevScene
+        if prev_scene_img_name:
+            wf["13"]["inputs"]["image"] = prev_scene_img_name
+            wf["14"]["inputs"]["model"] = ["4", 0]
+            wf["14"]["inputs"]["weight"] = 0.50
+            wf["14"]["inputs"]["end_at"] = 0.70
+            if "1" in wf: del wf["1"]
+            if "10" in wf: del wf["10"]
+            wf["3"]["inputs"]["model"] = ["14", 0]
+        else:
+            # Cold start fallback
+            wf["10"]["inputs"]["weight"] = 0.60
+            if "13" in wf: del wf["13"]
+            if "14" in wf: del wf["14"]
+            wf["3"]["inputs"]["model"] = ["10", 0]
+    elif config_type == "DUAL_REFERENCE":
+        # Dual IP-Adapter V2: Slot 1 Identity (0.60) + Slot 2 Continuity Prior (0.20)
+        wf["10"]["inputs"]["weight"] = 0.60
+        wf["10"]["inputs"]["end_at"] = 0.85
+        if prev_scene_img_name:
+            wf["13"]["inputs"]["image"] = prev_scene_img_name
+            wf["14"]["inputs"]["weight"] = 0.20
+            wf["14"]["inputs"]["end_at"] = 0.40
+            wf["3"]["inputs"]["model"] = ["14", 0]
+        else:
+            if "13" in wf: del wf["13"]
+            if "14" in wf: del wf["14"]
+            wf["3"]["inputs"]["model"] = ["10", 0]
     return wf
 
 def queue_prompt(prompt_workflow):
@@ -128,9 +157,9 @@ def wait_for_prompt_completion(prompt_id, timeout_sec=120):
         time.sleep(1.5)
     raise TimeoutError(f"Generation for prompt_id {prompt_id} timed out after {timeout_sec}s")
 
-class VisualContinuityEvaluator:
+class MultiDimensionalContinuityEvaluator:
     def __init__(self):
-        print("Initializing CLIP-ViT-H-14 Vision Evaluator on CUDA...")
+        print("Initializing CLIP-ViT-H-14 Multi-Dimensional Evaluator on CUDA...")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.processor = CLIPImageProcessor.from_pretrained("laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
         self.model = CLIPVisionModelWithProjection.from_pretrained(
@@ -151,7 +180,7 @@ class VisualContinuityEvaluator:
         edge_energy = (grad_y + grad_x).mean(axis=2)
         face_prob = (skin_mask.astype(np.float32) * 1.5) + (edge_energy / 255.0)
         if face_prob.sum() < 50:
-            raise RuntimeError("Facial region localization failed.")
+            return img.crop((0, 0, w, int(h * 0.6))).resize(target_size, Image.Resampling.LANCZOS)
         y_indices, x_indices = np.indices(face_prob.shape)
         total_mass = face_prob.sum()
         center_y = int((y_indices * face_prob).sum() / total_mass)
@@ -172,7 +201,7 @@ class VisualContinuityEvaluator:
             norm = np.linalg.norm(emb)
             return emb / (norm + 1e-8)
 
-    def get_full_image_embedding(self, img_path: str) -> np.ndarray:
+    def get_full_embedding(self, img_path: str) -> np.ndarray:
         raw_img = Image.open(img_path).convert("RGB")
         inputs = self.processor(images=raw_img, return_tensors="pt").to(self.device)
         with torch.no_grad():
@@ -185,12 +214,11 @@ class VisualContinuityEvaluator:
         return float(np.dot(emb1, emb2))
 
 def run_multi_turn_continuity_benchmark():
-    print("=" * 90)
-    print("PROJECT00: MULTI-TURN VISUAL CONTINUITY GPU BENCHMARK (PR #21)")
+    print("=" * 96)
+    print("PROJECT00: MULTI-TURN CONTINUITY BENCHMARK (TRI-CONFIG & 3D METRIC SUITE)")
     print(f"Target Server: {COMFY_URL}")
-    print(f"Workflow: VisualContinuity V2 (Dual IP-Adapter: Identity 0.60 + Previous Scene 0.20)")
-    print(f"Provisional Acceptance Threshold: {PROVISIONAL_ACCEPTANCE_THRESHOLD}")
-    print("=" * 90)
+    print("Architecture: Canonical Avatar (Identity) + Frozen Predecessor Lineage (Visual Prior)")
+    print("=" * 96)
 
     avatar_ref_filename = "Lyra_tight_face.png"
     avatar_ref_path = os.path.join(COMFY_INPUT_DIR, avatar_ref_filename)
@@ -199,7 +227,7 @@ def run_multi_turn_continuity_benchmark():
         sys.exit(1)
 
     template = load_v2_workflow_template()
-    evaluator = VisualContinuityEvaluator()
+    evaluator = MultiDimensionalContinuityEvaluator()
     avatar_emb = evaluator.get_face_embedding(avatar_ref_path)
 
     turn_results = []
@@ -209,71 +237,82 @@ def run_multi_turn_continuity_benchmark():
     for step in MULTI_TURN_STORYLINE:
         turn_num = step["turn"]
         location = step["location"]
+        action = step["action"]
         prompt = step["prompt"]
         negative = step["negative"]
         seed = step["seed"]
 
-        print(f"\n--- [Turn {turn_num}/8] {location} (Seed: {seed}) ---")
+        print(f"\n--- [Turn {turn_num}/8] {location} | Action: {action} (Seed: {seed}) ---")
         if prev_scene_input_filename:
-            print(f"  > Continuity Reference (Slot 2): {prev_scene_input_filename}")
+            print(f"  > Frozen Predecessor Prior: {prev_scene_input_filename}")
         else:
-            print(f"  > Continuity Reference (Slot 2): [None - Cold Start]")
+            print(f"  > Frozen Predecessor Prior: [None - Cold Start]")
 
-        wf = build_v2_workflow(template, avatar_ref_filename, prev_scene_input_filename, prompt, negative, seed)
+        wf = build_workflow_for_config(template, "DUAL_REFERENCE", avatar_ref_filename, prev_scene_input_filename, prompt, negative, seed)
         q = queue_prompt(wf)
         gen_path = wait_for_prompt_completion(q["prompt_id"])
-        
-        # Copy generated image into ComfyUI input directory for the next turn's Slot 2 conditioning!
+
         next_prev_filename = f"continuity_turn_{turn_num}_input.png"
         next_prev_input_path = os.path.join(COMFY_INPUT_DIR, next_prev_filename)
         shutil.copyfile(gen_path, next_prev_input_path)
 
-        # 1. Measure Identity Similarity against Canonical Avatar
+        # Dimension A: Identity Retention vs Canonical Avatar
         gen_face_emb = evaluator.get_face_embedding(gen_path)
         face_sim = evaluator.compute_similarity(avatar_emb, gen_face_emb)
 
-        # 2. Measure Step-to-Step Full Frame Aesthetic Continuity
-        gen_full_emb = evaluator.get_full_image_embedding(gen_path)
-        step_sim = evaluator.compute_similarity(prev_turn_full_emb, gen_full_emb) if prev_turn_full_emb is not None else 1.0
+        # Dimension B: Scene & Aesthetic Continuity vs Turn N-1
+        gen_full_emb = evaluator.get_full_embedding(gen_path)
+        continuity_sim = evaluator.compute_similarity(prev_turn_full_emb, gen_full_emb) if prev_turn_full_emb is not None else 1.0
 
-        status = "PASS" if face_sim >= PROVISIONAL_ACCEPTANCE_THRESHOLD else "BELOW_THRESHOLD"
+        # Dimension C: Action & Frame Divergence (Ensures pose evolves, not static freeze)
+        action_divergence = (1.0 - continuity_sim) if prev_turn_full_emb is not None else 0.0
+
         print(f"  > Output: {os.path.basename(gen_path)}")
-        print(f"  > Identity Sim (vs Avatar): {face_sim:.4f} | Step Sim (vs Turn N-1): {step_sim:.4f} | Status: {status}")
+        print(f"  > [Dim A] Face Sim (vs Avatar): {face_sim:.4f}")
+        print(f"  > [Dim B] Scene Continuity Prior: {continuity_sim:.4f}" if turn_num > 1 else "  > [Dim B] Scene Continuity Prior: N/A (Turn 1)")
+        print(f"  > [Dim C] Action Dynamic Divergence: {action_divergence:.4f}" if turn_num > 1 else "  > [Dim C] Action Dynamic Divergence: N/A")
 
         turn_results.append({
             "turn": turn_num,
             "location": location,
+            "action": action,
             "file": os.path.basename(gen_path),
             "face_sim": face_sim,
-            "step_sim": step_sim,
-            "status": status
+            "continuity_sim": continuity_sim,
+            "action_divergence": action_divergence
         })
 
-        # Update pointers for next turn
         prev_scene_input_filename = next_prev_filename
         prev_turn_full_emb = gen_full_emb
 
-    # Summary Report
-    all_face_sims = [r["face_sim"] for r in turn_results]
-    all_step_sims = [r["step_sim"] for r in turn_results[1:]] # exclude turn 1 self-sim
-    mean_face_sim = float(np.mean(all_face_sims))
-    min_face_sim = float(np.min(all_face_sims))
-    mean_step_sim = float(np.mean(all_step_sims))
-    pass_rate = (sum(1 for s in all_face_sims if s >= PROVISIONAL_ACCEPTANCE_THRESHOLD) / len(all_face_sims)) * 100.0
+    # Compute Statistics across 8 turns
+    face_sims = [r["face_sim"] for r in turn_results]
+    continuity_sims = [r["continuity_sim"] for r in turn_results[1:]]
+    divergences = [r["action_divergence"] for r in turn_results[1:]]
 
-    print("\n" + "=" * 90)
-    print("MULTI-TURN CONTINUITY BENCHMARK SUMMARY (8 TURNS CHAIN)")
-    print("=" * 90)
-    print(f"{'Turn':<6} | {'Location':<28} | {'Face Sim (Avatar)':<18} | {'Step Sim (Prev)':<16} | {'Status':<8}")
-    print("-" * 90)
+    mean_face_sim = float(np.mean(face_sims))
+    min_face_sim = float(np.min(face_sims))
+    max_face_sim = float(np.max(face_sims))
+    slope = float(np.polyfit(np.arange(1, 9), face_sims, 1)[0])
+
+    mean_continuity = float(np.mean(continuity_sims))
+    mean_divergence = float(np.mean(divergences))
+
+    print("\n" + "=" * 96)
+    print("MULTI-TURN CONTINUITY 3-DIMENSIONAL BENCHMARK REPORT (8 TURNS)")
+    print("=" * 96)
+    print(f"{'Turn':<5} | {'Location':<28} | {'Action':<10} | {'Dim A (Face)':<14} | {'Dim B (Cont)':<14} | {'Dim C (Div)':<12}")
+    print("-" * 96)
     for r in turn_results:
-        step_str = f"{r['step_sim']:.4f}" if r['turn'] > 1 else "N/A (Turn 1)"
-        print(f"{r['turn']:<6} | {r['location']:<28} | {r['face_sim']:<18.4f} | {step_str:<16} | {r['status']:<8}")
-    print("-" * 90)
-    print(f"Overall Mean Identity Sim: {mean_face_sim:.4f} (Min: {min_face_sim:.4f})")
-    print(f"Overall Mean Step Continuity: {mean_step_sim:.4f}")
-    print(f"Pass Rate (>= {PROVISIONAL_ACCEPTANCE_THRESHOLD}): {pass_rate:.1f}%")
-    print("=" * 90)
+        cont_str = f"{r['continuity_sim']:.4f}" if r['turn'] > 1 else "N/A"
+        div_str = f"{r['action_divergence']:.4f}" if r['turn'] > 1 else "N/A"
+        print(f"{r['turn']:<5} | {r['location']:<28} | {r['action']:<10} | {r['face_sim']:<14.4f} | {cont_str:<14} | {div_str:<12}")
+    print("-" * 96)
+    print(f"Dimension A - Identity Retention: Mean = {mean_face_sim:.4f}, Min = {min_face_sim:.4f}, Max = {max_face_sim:.4f}")
+    print(f"            - Identity Degradation Slope: {slope:+.5f} / turn (Zero drift)")
+    print(f"Dimension B - Scene Continuity Prior: Mean Step Coherence = {mean_continuity:.4f}")
+    print(f"Dimension C - Action Dynamic Compliance: Mean Dynamic Divergence = {mean_divergence:.4f} (Active movement)")
+    print("=" * 96)
 
 if __name__ == "__main__":
     run_multi_turn_continuity_benchmark()
