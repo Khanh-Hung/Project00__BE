@@ -28,9 +28,9 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
         var sampler = !string.IsNullOrWhiteSpace(request.Sampler) ? request.Sampler : "euler_ancestral";
         var scheduler = !string.IsNullOrWhiteSpace(request.Scheduler) ? request.Scheduler : "karras";
 
-        // Parse IPAdapter weights from ParametersJson (fallback 0.45 / 0.70)
-        float ipAdapterWeight = 0.45f;
-        float ipAdapterEndAt = 0.70f;
+        // Parse IPAdapter weights from ParametersJson (calibrated default: 0.65 / 0.85 for high identity fidelity)
+        float ipAdapterWeight = 0.65f;
+        float ipAdapterEndAt = 0.85f;
 
         if (!string.IsNullOrWhiteSpace(request.ParametersJson))
         {

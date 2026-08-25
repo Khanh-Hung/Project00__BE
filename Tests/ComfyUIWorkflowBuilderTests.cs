@@ -57,8 +57,8 @@ public sealed class ComfyUIWorkflowBuilderTests
         var node10 = Assert.IsAssignableFrom<Dictionary<string, object>>(graph["10"]);
         Assert.Equal("IPAdapterAdvanced", node10["class_type"]);
         var node10Inputs = Assert.IsAssignableFrom<Dictionary<string, object>>(node10["inputs"]);
-        Assert.Equal(0.45, (double)node10Inputs["weight"], precision: 2);
-        Assert.Equal(0.70, (double)node10Inputs["end_at"], precision: 2);
+        Assert.Equal(0.65, (double)node10Inputs["weight"], precision: 2);
+        Assert.Equal(0.85, (double)node10Inputs["end_at"], precision: 2);
         Assert.Equal("linear", node10Inputs["weight_type"]);
         Assert.Equal("K+V", node10Inputs["embeds_scaling"]);
 
