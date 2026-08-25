@@ -17,6 +17,7 @@ public sealed record VisualSnapshot(
     string? IdentityReferenceUrl = null,
     string? PreviousSceneImageUrl = null,
     int? PredecessorSceneRevision = null,
+    Guid? PredecessorSceneImageId = null,
     string? NegativeConstraints = null,
     DateTime? CreatedAt = null,
     VisualSceneDescription? SceneDescription = null
@@ -36,6 +37,7 @@ public sealed record VisualSnapshot(
         GenerationProfile generationProfile,
         string? previousSceneImageUrl = null,
         int? predecessorSceneRevision = null,
+        Guid? predecessorSceneImageId = null,
         string? negativeConstraints = null,
         string? fallbackReferenceUrl = null,
         VisualSceneDescription? sceneDescription = null)
@@ -66,6 +68,7 @@ public sealed record VisualSnapshot(
             IdentityReferenceUrl: resolvedIdentityRef,
             PreviousSceneImageUrl: previousSceneImageUrl,
             PredecessorSceneRevision: predecessorSceneRevision ?? (sceneRevision > 1 ? sceneRevision - 1 : null),
+            PredecessorSceneImageId: predecessorSceneImageId,
             NegativeConstraints: defaultNegatives,
             CreatedAt: DateTime.UtcNow,
             SceneDescription: sceneDescription
