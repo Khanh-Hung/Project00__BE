@@ -25,7 +25,11 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     /// Resolves the generation profile for a turn snapshot.
     /// Note: Character is accepted to support future per-character generation policies; current baseline resolves from configuration.
     /// </summary>
-    public GenerationProfile ResolveProfile(Character character, string? workflowOverride = null)
+    public GenerationProfile ResolveProfile(
+        Character character,
+        string? workflowOverride = null,
+        bool isTransition = false,
+        bool isColdStart = false)
     {
         string workflow = DefaultWorkflow;
         if (workflowOverride != null)
@@ -92,38 +96,12 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             endAt = parsedEndAt;
         }
 
-        // 4. Strict validation of Scene Continuity Weight & EndAt (default 0.20 / 0.40)
-        float sceneWeight = 0.20f;
-        var sceneWeightStr = _configuration?["AiProviders:ImageGeneration:SceneContinuity:Weight"];
-        if (!string.IsNullOrWhiteSpace(sceneWeightStr))
-        {
-            if (!float.TryParse(sceneWeightStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSceneWeight)
-                || float.IsNaN(parsedSceneWeight)
-                || float.IsInfinity(parsedSceneWeight)
-                || parsedSceneWeight < 0.0f
-                || parsedSceneWeight > 1.0f)
-            {
-                throw new InvalidOperationException(
-                    $"Invalid configuration for 'AiProviders:ImageGeneration:SceneContinuity:Weight': '{sceneWeightStr}'. Weight must be a valid number between 0.0 and 1.0.");
-            }
-            sceneWeight = parsedSceneWeight;
-        }
+        // 4. Resolve Context-Aware Scene Continuity Parameters from Policy
+        var effectivePolicy = Slot2ConditioningPolicy.FromConfiguration(_configuration);
+        var (resolvedWeight, resolvedEndAt, _) = effectivePolicy.Resolve(isColdStart, isTransition);
 
-        float sceneEndAt = 0.40f;
-        var sceneEndAtStr = _configuration?["AiProviders:ImageGeneration:SceneContinuity:EndAt"];
-        if (!string.IsNullOrWhiteSpace(sceneEndAtStr))
-        {
-            if (!float.TryParse(sceneEndAtStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSceneEndAt)
-                || float.IsNaN(parsedSceneEndAt)
-                || float.IsInfinity(parsedSceneEndAt)
-                || parsedSceneEndAt < 0.0f
-                || parsedSceneEndAt > 1.0f)
-            {
-                throw new InvalidOperationException(
-                    $"Invalid configuration for 'AiProviders:ImageGeneration:SceneContinuity:EndAt': '{sceneEndAtStr}'. EndAt must be a valid number between 0.0 and 1.0.");
-            }
-            sceneEndAt = parsedSceneEndAt;
-        }
+        float sceneWeight = (float)resolvedWeight;
+        float sceneEndAt = (float)resolvedEndAt;
 
         // 5. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
         var parametersJson = JsonSerializer.Serialize(new

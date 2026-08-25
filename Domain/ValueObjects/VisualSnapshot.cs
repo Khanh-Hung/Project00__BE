@@ -1,3 +1,5 @@
+using Domain.Enums;
+
 namespace Domain.ValueObjects;
 
 /// <summary>
@@ -20,7 +22,8 @@ public sealed record VisualSnapshot(
     Guid? PredecessorSceneImageId = null,
     string? NegativeConstraints = null,
     DateTime? CreatedAt = null,
-    VisualSceneDescription? SceneDescription = null
+    VisualSceneDescription? SceneDescription = null,
+    Slot2Context Context = Slot2Context.ColdStart
 )
 {
     /// <summary>
@@ -40,7 +43,8 @@ public sealed record VisualSnapshot(
         Guid? predecessorSceneImageId = null,
         string? negativeConstraints = null,
         string? fallbackReferenceUrl = null,
-        VisualSceneDescription? sceneDescription = null)
+        VisualSceneDescription? sceneDescription = null,
+        Slot2Context? slot2Context = null)
     {
         ArgumentNullException.ThrowIfNull(generationProfile, nameof(generationProfile));
 
@@ -55,6 +59,10 @@ public sealed record VisualSnapshot(
 
         var defaultNegatives = negativeConstraints 
             ?? "deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
+
+        var resolvedContext = slot2Context ?? (sceneRevision <= 1 || string.IsNullOrWhiteSpace(previousSceneImageUrl)
+            ? Slot2Context.ColdStart
+            : Slot2Context.SameScene);
 
         return new VisualSnapshot(
             TurnId: turnId,
@@ -71,7 +79,8 @@ public sealed record VisualSnapshot(
             PredecessorSceneImageId: predecessorSceneImageId,
             NegativeConstraints: defaultNegatives,
             CreatedAt: DateTime.UtcNow,
-            SceneDescription: sceneDescription
+            SceneDescription: sceneDescription,
+            Context: resolvedContext
         );
     }
 }

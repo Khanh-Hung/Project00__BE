@@ -84,7 +84,15 @@ public sealed class VisualStateResolver : IVisualStateResolver
             defaultExpression: currentMood.ToString()
         );
 
-        var generationProfile = _profileProvider.ResolveProfile(character);
+        bool isColdStart = targetRevision <= 1;
+        bool isTransition = !string.IsNullOrWhiteSpace(delta.LocationChange) && !string.Equals(delta.LocationChange, oldState.CurrentLocation, StringComparison.OrdinalIgnoreCase);
+
+        var generationProfile = _profileProvider.ResolveProfile(
+            character: character,
+            workflowOverride: null,
+            isTransition: isTransition,
+            isColdStart: isColdStart
+        );
 
         string? frozenPreviousSceneImageUrl = null;
         Guid? frozenPredecessorSceneImageId = null;
@@ -106,6 +114,8 @@ public sealed class VisualStateResolver : IVisualStateResolver
             }
         }
 
+        var slot2Context = isColdStart ? Domain.Enums.Slot2Context.ColdStart : (isTransition ? Domain.Enums.Slot2Context.SceneTransition : Domain.Enums.Slot2Context.SameScene);
+
         var snapshot = VisualSnapshot.Create(
             turnId: turnId,
             sessionId: session.Id,
@@ -119,7 +129,8 @@ public sealed class VisualStateResolver : IVisualStateResolver
             predecessorSceneRevision: predecessorRevision,
             predecessorSceneImageId: frozenPredecessorSceneImageId,
             fallbackReferenceUrl: character.AvatarUrl,
-            sceneDescription: delta.SceneDescription
+            sceneDescription: delta.SceneDescription,
+            slot2Context: slot2Context
         );
 
         return (updatedSceneState, transientState, snapshot);

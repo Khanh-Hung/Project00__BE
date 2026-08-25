@@ -5,5 +5,9 @@ namespace Application.Interfaces;
 
 public interface IVisualGenerationProfileProvider
 {
-    GenerationProfile ResolveProfile(Character character, string? workflowOverride = null);
+    GenerationProfile ResolveProfile(
+        Character character,
+        string? workflowOverride = null,
+        bool isTransition = false,
+        bool isColdStart = false);
 }

@@ -52,11 +52,17 @@ public sealed class OutboxReliabilityAndOrderingTests
         public string CompileScenePrompt(VisualSnapshot snapshot)
             => $"1girl, Elysia, outfit: {snapshot.SceneState.CurrentOutfit}, location: {snapshot.SceneState.CurrentLocation}";
 
-        public string CompileScenePrompt(Character character, SceneContext context, CharacterRelationship? relationship)
+        public string CompileScenePrompt(Character character, SceneContext context, CharacterRelationship? relationship, Domain.Enums.Slot2Context slot2Context = Domain.Enums.Slot2Context.SameScene)
             => $"1girl, {character.Name}";
 
         public string CompileAvatarPrompt(Character character)
             => $"1girl, avatar {character.Name}";
+
+        public string CompileNegativePrompt(VisualSnapshot snapshot, string? customNegative = null)
+            => "low quality, blurry";
+
+        public string CompileNegativePrompt(CharacterVisualIdentity? identity, string? customNegative = null)
+            => "low quality, blurry";
     }
 
     private sealed class DummyMemoryTrigger : IMemoryExtractionTrigger
