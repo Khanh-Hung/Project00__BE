@@ -18,7 +18,8 @@ public sealed record VisualSnapshot(
     string? PreviousSceneImageUrl = null,
     int? PredecessorSceneRevision = null,
     string? NegativeConstraints = null,
-    DateTime? CreatedAt = null
+    DateTime? CreatedAt = null,
+    VisualSceneDescription? SceneDescription = null
 )
 {
     /// <summary>
@@ -36,7 +37,8 @@ public sealed record VisualSnapshot(
         string? previousSceneImageUrl = null,
         int? predecessorSceneRevision = null,
         string? negativeConstraints = null,
-        string? fallbackReferenceUrl = null)
+        string? fallbackReferenceUrl = null,
+        VisualSceneDescription? sceneDescription = null)
     {
         ArgumentNullException.ThrowIfNull(generationProfile, nameof(generationProfile));
 
@@ -65,7 +67,8 @@ public sealed record VisualSnapshot(
             PreviousSceneImageUrl: previousSceneImageUrl,
             PredecessorSceneRevision: predecessorSceneRevision ?? (sceneRevision > 1 ? sceneRevision - 1 : null),
             NegativeConstraints: defaultNegatives,
-            CreatedAt: DateTime.UtcNow
+            CreatedAt: DateTime.UtcNow,
+            SceneDescription: sceneDescription
         );
     }
 }
