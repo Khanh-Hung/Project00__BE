@@ -14,6 +14,14 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
 
         if (identity != null)
         {
+            var gender = identity.ResolvedGender;
+            if (gender == GenderPresentation.Male)
+                traits.Add("1man, male, masculine face");
+            else if (gender == GenderPresentation.Androgynous)
+                traits.Add("androgynous, 1person");
+            else
+                traits.Add("1girl, female, feminine face");
+
             if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) traits.Add(identity.AgeAppearance);
             if (!string.IsNullOrWhiteSpace(identity.Hair)) traits.Add(identity.Hair);
             if (!string.IsNullOrWhiteSpace(identity.Eyes)) traits.Add(identity.Eyes);
@@ -23,6 +31,17 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             if (!string.IsNullOrWhiteSpace(identity.ClothingStyle)) traits.Add(identity.ClothingStyle);
             if (!string.IsNullOrWhiteSpace(identity.Accessories)) traits.Add(identity.Accessories);
             if (!string.IsNullOrWhiteSpace(identity.VisualTraits)) traits.Add(identity.VisualTraits);
+
+            if (identity.SignatureFeatures != null)
+            {
+                foreach (var feature in identity.SignatureFeatures)
+                {
+                    if (!string.IsNullOrWhiteSpace(feature.PositiveTokens))
+                    {
+                        traits.Add(feature.PositiveTokens);
+                    }
+                }
+            }
         }
         else
         {
@@ -43,6 +62,14 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         // 1. Immutable Visual Foundation (Hierarchy: Identity > Scene > Mood > Relationship)
         if (identity != null)
         {
+            var gender = identity.ResolvedGender;
+            if (gender == GenderPresentation.Male)
+                characterTags.Add("1man, male, masculine face");
+            else if (gender == GenderPresentation.Androgynous)
+                characterTags.Add("androgynous, 1person");
+            else
+                characterTags.Add("1girl, female, feminine face");
+
             if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) characterTags.Add(identity.AgeAppearance);
             if (!string.IsNullOrWhiteSpace(identity.Hair)) characterTags.Add(identity.Hair);
             if (!string.IsNullOrWhiteSpace(identity.Eyes)) characterTags.Add(identity.Eyes);
@@ -57,6 +84,20 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             }
             if (!string.IsNullOrWhiteSpace(identity.Accessories)) characterTags.Add(identity.Accessories);
             if (!string.IsNullOrWhiteSpace(identity.VisualTraits)) characterTags.Add(identity.VisualTraits);
+
+            if (identity.SignatureFeatures != null)
+            {
+                foreach (var feature in identity.SignatureFeatures)
+                {
+                    if (feature.Importance == FeatureImportance.Critical || feature.Persistence == FeaturePersistence.EveryTurn)
+                    {
+                        if (!string.IsNullOrWhiteSpace(feature.PositiveTokens))
+                        {
+                            characterTags.Add(feature.PositiveTokens);
+                        }
+                    }
+                }
+            }
         }
         else
         {
@@ -117,10 +158,13 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         var identity = snapshot.VisualIdentity;
         if (identity != null)
         {
-            if (!string.IsNullOrWhiteSpace(identity.Gender))
-                allTags.Add(identity.Gender.Equals("Female", StringComparison.OrdinalIgnoreCase) ? "1girl" : "1boy");
+            var gender = identity.ResolvedGender;
+            if (gender == GenderPresentation.Male)
+                allTags.Add("1man, male, masculine face");
+            else if (gender == GenderPresentation.Androgynous)
+                allTags.Add("androgynous, 1person");
             else
-                allTags.Add("1girl");
+                allTags.Add("1girl, female, feminine face");
 
             if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) allTags.Add(identity.AgeAppearance);
             if (!string.IsNullOrWhiteSpace(identity.Hair)) allTags.Add(identity.Hair);
@@ -130,6 +174,21 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             if (!string.IsNullOrWhiteSpace(identity.Body)) allTags.Add(identity.Body);
             if (!string.IsNullOrWhiteSpace(identity.Accessories)) allTags.Add(identity.Accessories);
             if (!string.IsNullOrWhiteSpace(identity.VisualTraits)) allTags.Add(identity.VisualTraits);
+
+            // Canonical Signature Feature Invariant Injection (Prevents micro-feature dilution)
+            if (identity.SignatureFeatures != null)
+            {
+                foreach (var feature in identity.SignatureFeatures)
+                {
+                    if (feature.Importance == FeatureImportance.Critical || feature.Persistence == FeaturePersistence.EveryTurn)
+                    {
+                        if (!string.IsNullOrWhiteSpace(feature.PositiveTokens))
+                        {
+                            allTags.Add(feature.PositiveTokens);
+                        }
+                    }
+                }
+            }
         }
         else
         {
@@ -197,6 +256,62 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
 
         var cleanTags = DeduplicateAndClean(allTags);
         return string.Join(", ", cleanTags);
+    }
+
+    /// <summary>
+    /// Compiles deterministic negative invariant prompt with generic gender-opposing tokens and signature feature exclusions.
+    /// </summary>
+    public string CompileNegativePrompt(VisualSnapshot snapshot, string? customNegative = null)
+    {
+        return CompileNegativePrompt(snapshot?.VisualIdentity, customNegative ?? snapshot?.NegativeConstraints);
+    }
+
+    /// <summary>
+    /// Compiles deterministic negative invariant prompt with generic gender-opposing tokens and signature feature exclusions.
+    /// </summary>
+    public string CompileNegativePrompt(CharacterVisualIdentity? identity, string? customNegative = null)
+    {
+        var negativeTags = new List<string>();
+
+        // Tier 1: Generic Quality & Multi-subject Artifact Negative Anchor
+        negativeTags.Add("2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality");
+
+        // Tier 2: Generic Gender-Opposing Invariant Gating
+        if (identity != null)
+        {
+            var gender = identity.ResolvedGender;
+            if (gender == GenderPresentation.Male)
+            {
+                // Strict suppression of anime checkpoint female prior
+                negativeTags.Add("1girl, anime girl, female, woman, breasts, feminine face, female clothing, dress, skirt");
+            }
+            else if (gender == GenderPresentation.Female)
+            {
+                // Strict suppression of male traits for female personas
+                negativeTags.Add("1man, anime man, male, boy, masculine face, facial hair, beard, mustache");
+            }
+
+            // Tier 3: Feature-specific negative tokens
+            if (identity.SignatureFeatures != null)
+            {
+                foreach (var feature in identity.SignatureFeatures)
+                {
+                    if (!string.IsNullOrWhiteSpace(feature.NegativeTokens))
+                    {
+                        negativeTags.Add(feature.NegativeTokens);
+                    }
+                }
+            }
+        }
+
+        // Tier 4: Custom negative constraints if provided
+        if (!string.IsNullOrWhiteSpace(customNegative))
+        {
+            negativeTags.Add(customNegative);
+        }
+
+        var cleanNegatives = DeduplicateAndClean(negativeTags);
+        return string.Join(", ", cleanNegatives);
     }
 
     private static List<string> DeduplicateAndClean(IEnumerable<string> tags)

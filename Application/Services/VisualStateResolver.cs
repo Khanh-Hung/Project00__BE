@@ -84,7 +84,15 @@ public sealed class VisualStateResolver : IVisualStateResolver
             defaultExpression: currentMood.ToString()
         );
 
-        var generationProfile = _profileProvider.ResolveProfile(character);
+        bool isColdStart = targetRevision <= 1;
+        bool isTransition = !string.IsNullOrWhiteSpace(delta.LocationChange) && !string.Equals(delta.LocationChange, oldState.CurrentLocation, StringComparison.OrdinalIgnoreCase);
+
+        var generationProfile = _profileProvider.ResolveProfile(
+            character: character,
+            workflowOverride: null,
+            isTransition: isTransition,
+            isColdStart: isColdStart
+        );
 
         string? frozenPreviousSceneImageUrl = null;
         Guid? frozenPredecessorSceneImageId = null;

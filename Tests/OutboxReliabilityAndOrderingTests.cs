@@ -57,6 +57,12 @@ public sealed class OutboxReliabilityAndOrderingTests
 
         public string CompileAvatarPrompt(Character character)
             => $"1girl, avatar {character.Name}";
+
+        public string CompileNegativePrompt(VisualSnapshot snapshot, string? customNegative = null)
+            => "low quality, blurry";
+
+        public string CompileNegativePrompt(CharacterVisualIdentity? identity, string? customNegative = null)
+            => "low quality, blurry";
     }
 
     private sealed class DummyMemoryTrigger : IMemoryExtractionTrigger

@@ -8,4 +8,6 @@ public interface IVisualPromptCompiler
     string CompileAvatarPrompt(Character character);
     string CompileScenePrompt(Character character, SceneContext scene, CharacterRelationship? relationship = null);
     string CompileScenePrompt(VisualSnapshot snapshot);
+    string CompileNegativePrompt(VisualSnapshot snapshot, string? customNegative = null);
+    string CompileNegativePrompt(CharacterVisualIdentity? identity, string? customNegative = null);
 }

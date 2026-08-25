@@ -25,7 +25,12 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     /// Resolves the generation profile for a turn snapshot.
     /// Note: Character is accepted to support future per-character generation policies; current baseline resolves from configuration.
     /// </summary>
-    public GenerationProfile ResolveProfile(Character character, string? workflowOverride = null)
+    public GenerationProfile ResolveProfile(
+        Character character,
+        string? workflowOverride = null,
+        bool isTransition = false,
+        bool isColdStart = false,
+        Slot2ConditioningPolicy? slot2Policy = null)
     {
         string workflow = DefaultWorkflow;
         if (workflowOverride != null)
@@ -92,8 +97,11 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             endAt = parsedEndAt;
         }
 
-        // 4. Strict validation of Scene Continuity Weight & EndAt (default 0.20 / 0.40)
-        float sceneWeight = 0.20f;
+        // 4. Resolve Context-Aware Scene Continuity Parameters from Policy & Configuration
+        var effectivePolicy = slot2Policy ?? Slot2ConditioningPolicy.Default;
+        var (policyWeight, policyEndAt, _) = effectivePolicy.Resolve(isColdStart, isTransition);
+
+        float sceneWeight = (float)policyWeight;
         var sceneWeightStr = _configuration?["AiProviders:ImageGeneration:SceneContinuity:Weight"];
         if (!string.IsNullOrWhiteSpace(sceneWeightStr))
         {
@@ -109,7 +117,7 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             sceneWeight = parsedSceneWeight;
         }
 
-        float sceneEndAt = 0.40f;
+        float sceneEndAt = (float)policyEndAt;
         var sceneEndAtStr = _configuration?["AiProviders:ImageGeneration:SceneContinuity:EndAt"];
         if (!string.IsNullOrWhiteSpace(sceneEndAtStr))
         {

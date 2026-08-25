@@ -190,9 +190,11 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         {
             // 4. Deterministic prompt compilation purely from frozen VisualSnapshot
             var compiledPrompt = _visualCompiler.CompileScenePrompt(snapshot);
+            var compiledNegative = _visualCompiler.CompileNegativePrompt(snapshot);
             var imageReq = ImageGenerationRequest.FromSnapshot(
                 snapshot: snapshot,
                 compiledPrompt: compiledPrompt,
+                compiledNegative: compiledNegative,
                 previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
                 providerJobId: job.ProviderJobId,
                 onPromptQueuedAsync: async (promptId, token) =>

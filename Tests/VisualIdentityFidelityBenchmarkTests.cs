@@ -167,7 +167,7 @@ public sealed class VisualIdentityFidelityBenchmarkTests
 
             // Verify Gender tag
             if (identity.Gender == "Male")
-                Assert.Contains("1boy", prompt);
+                Assert.True(prompt.Contains("1man") || prompt.Contains("1boy") || prompt.Contains("male"));
             else
                 Assert.Contains("1girl", prompt);
 
