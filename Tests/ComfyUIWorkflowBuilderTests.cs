@@ -194,6 +194,13 @@ public sealed class ComfyUIWorkflowBuilderTests
         if (System.IO.Directory.Exists(scriptsDir))
         {
             var templatePath = System.IO.Path.Combine(scriptsDir, "production_workflow_v1_template.json");
+            if (System.IO.File.Exists(templatePath))
+            {
+                var existingJson = System.IO.File.ReadAllText(templatePath);
+                using var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson);
+                using var currentDoc = System.Text.Json.JsonDocument.Parse(json);
+                Assert.Equal(currentDoc.RootElement.GetRawText().Length > 0, existingDoc.RootElement.GetRawText().Length > 0);
+            }
             System.IO.File.WriteAllText(templatePath, json);
             Assert.True(System.IO.File.Exists(templatePath));
         }

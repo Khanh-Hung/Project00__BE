@@ -80,11 +80,11 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
                 ["class_type"] = "IPAdapterAdvanced",
                 ["inputs"] = new Dictionary<string, object>
                 {
-                    ["weight"] = (double)ipAdapterWeight,
+                    ["weight"] = Math.Round((double)ipAdapterWeight, 4),
                     ["weight_type"] = "linear",
                     ["combine_embeds"] = "concat",
                     ["start_at"] = 0.0,
-                    ["end_at"] = (double)ipAdapterEndAt,
+                    ["end_at"] = Math.Round((double)ipAdapterEndAt, 4),
                     ["embeds_scaling"] = "K+V",
                     ["model"] = new object[] { "4", 0 },
                     ["ipadapter"] = new object[] { "8", 0 },
