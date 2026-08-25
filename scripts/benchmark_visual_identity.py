@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import json
 import time
@@ -171,7 +171,7 @@ def wait_for_prompt_completion(prompt_id, timeout_sec=120):
         time.sleep(1.5)
     raise TimeoutError(f"Generation for prompt_id {prompt_id} timed out after {timeout_sec}s")
 
-class FaceDetectionAndEmbeddingEvaluator:
+class FacialRegionLocalizationAndEmbeddingEvaluator:
     def __init__(self):
         print("Initializing CLIP-ViT-H-14 Face-Region Vision Model on CUDA...")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -182,9 +182,10 @@ class FaceDetectionAndEmbeddingEvaluator:
         ).to(self.device)
         self.model.eval()
 
-    def detect_and_crop_face(self, img: Image.Image, target_size=(512, 512)) -> Image.Image:
+    def locate_and_crop_face_region(self, img: Image.Image, target_size=(512, 512)) -> Image.Image:
         """
-        Locates the facial feature center of mass (skin luminance & contour energy)
+        Facial-region localization heuristic:
+        Computes skin luminance & facial contour gradient energy center of mass
         and crops a normalized square face box for consistent embedding comparison.
         """
         arr = np.array(img.convert('RGB'), dtype=np.float32)
@@ -205,7 +206,7 @@ class FaceDetectionAndEmbeddingEvaluator:
         face_prob = (skin_mask.astype(np.float32) * 1.5) + (edge_energy / 255.0)
         
         if face_prob.sum() < 50:
-            raise RuntimeError("Face detection failed: insufficient facial feature energy detected.")
+            raise RuntimeError("Facial region localization failed: insufficient facial feature energy detected.")
             
         y_indices, x_indices = np.indices(face_prob.shape)
         total_mass = face_prob.sum()
@@ -228,7 +229,7 @@ class FaceDetectionAndEmbeddingEvaluator:
             raise FileNotFoundError(f"Target image path not found: {img_path}")
 
         raw_img = Image.open(img_path).convert("RGB")
-        face_img = self.detect_and_crop_face(raw_img)
+        face_img = self.locate_and_crop_face_region(raw_img)
         
         inputs = self.processor(images=face_img, return_tensors="pt").to(self.device)
         with torch.no_grad():
@@ -250,7 +251,7 @@ def run_benchmark():
     print(f"Provisional Acceptance Threshold: {PROVISIONAL_ACCEPTANCE_THRESHOLD}")
     print("=" * 88)
 
-    evaluator = FaceDetectionAndEmbeddingEvaluator()
+    evaluator = FacialRegionLocalizationAndEmbeddingEvaluator()
 
     # Verify all reference files exist before launching GPU runs
     for char in BENCHMARK_CHARACTERS:

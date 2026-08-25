@@ -1,4 +1,4 @@
-﻿using Application.Interfaces;
+using Application.Interfaces;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -93,13 +93,19 @@ public sealed class VisualIdentityFidelityBenchmarkTests
         )
     };
 
+    /// <summary>
+    /// Contract regression test verifying that explicit IPAdapter parameter overrides (e.g. 0.55 / 0.75)
+    /// in ParametersJson are respected across multiple seeds and character archetypes,
+    /// while physical prompt invariants are strictly preserved.
+    /// (Production default parameters 0.65 / 0.85 are verified in ComfyUIWorkflowBuilderTests).
+    /// </summary>
     [Theory]
     [InlineData(0)] // Archetype 1: Silver Priestess
     [InlineData(1)] // Archetype 2: Blonde Mage
     [InlineData(2)] // Archetype 3: Raven Knight
     [InlineData(3)] // Archetype 4: Pastel Healer
     [InlineData(4)] // Archetype 5: Crimson Assassin
-    public void Benchmark_5_Archetypes_Preserve_Physical_Identity_Invariants_Across_10_Random_Seeds(int archetypeIndex)
+    public void WorkflowBuilder_Respects_Explicit_IPAdapter_Override_Across_5_Archetypes_And_10_Seeds(int archetypeIndex)
     {
         var (name, identity, defaultOutfit) = Archetypes[archetypeIndex];
 
