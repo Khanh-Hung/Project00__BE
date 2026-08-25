@@ -9,9 +9,13 @@ import numpy as np
 from PIL import Image
 from transformers import CLIPVisionModelWithProjection, CLIPImageProcessor
 
+# Configurable environment variables with local defaults
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188")
 COMFY_INPUT_DIR = os.environ.get("COMFY_INPUT_DIR", r"D:\ComfyUI_windows_portable\ComfyUI\input")
 COMFY_OUTPUT_DIR = os.environ.get("COMFY_OUTPUT_DIR", r"D:\ComfyUI_windows_portable\ComfyUI\output")
+
+# Provisional acceptance threshold for benchmark gate
+PROVISIONAL_ACCEPTANCE_THRESHOLD = 0.75
 
 # 3 Distinct Canonical Benchmark Characters with real avatar files in ComfyUI/input
 BENCHMARK_CHARACTERS = [
@@ -74,7 +78,7 @@ BENCHMARK_CHARACTERS = [
     }
 ]
 
-def build_workflow(reference_img_name, prompt, negative, seed, ip_weight=0.65, ip_end_at=0.85):
+def build_workflow(reference_img_name, prompt, negative, seed, ip_weight, ip_end_at):
     return {
         "1": {
             "class_type": "LoadImage",
@@ -167,9 +171,9 @@ def wait_for_prompt_completion(prompt_id, timeout_sec=120):
         time.sleep(1.5)
     raise TimeoutError(f"Generation for prompt_id {prompt_id} timed out after {timeout_sec}s")
 
-class FaceIdentityEvaluator:
+class FaceDetectionAndEmbeddingEvaluator:
     def __init__(self):
-        print("Loading CLIP-ViT-H-14 Face-Centric Vision Evaluator...")
+        print("Initializing CLIP-ViT-H-14 Face-Region Vision Model on CUDA...")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.processor = CLIPImageProcessor.from_pretrained("laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
         self.model = CLIPVisionModelWithProjection.from_pretrained(
@@ -178,49 +182,83 @@ class FaceIdentityEvaluator:
         ).to(self.device)
         self.model.eval()
 
-    def crop_face_region(self, img: Image.Image, is_avatar_ref: bool = False) -> Image.Image:
-        """Extract centered head & face region to isolate facial identity from background/dress."""
-        w, h = img.size
-        if is_avatar_ref:
-            # Avatar is already a close-up/square face crop
-            return img
-        # For generated 512x768 medium shot, crop the head & face upper bounding box
-        left = int(w * 0.12)
-        top = int(h * 0.02)
-        right = int(w * 0.88)
-        bottom = int(h * 0.52)
-        return img.crop((left, top, right, bottom))
+    def detect_and_crop_face(self, img: Image.Image, target_size=(512, 512)) -> Image.Image:
+        """
+        Locates the facial feature center of mass (skin luminance & contour energy)
+        and crops a normalized square face box for consistent embedding comparison.
+        """
+        arr = np.array(img.convert('RGB'), dtype=np.float32)
+        h, w, _ = arr.shape
+        
+        upper_h = max(int(h * 0.65), min(h, 200))
+        upper_arr = arr[:upper_h, :, :]
+        
+        # Skin tone luminance filter
+        r, g, b = upper_arr[:,:,0], upper_arr[:,:,1], upper_arr[:,:,2]
+        skin_mask = (r > 110) & (g > 80) & (b > 70) & (np.abs(r - g) < 90)
+        
+        # Edge gradient energy filter for facial contours (eyes, brows, mouth)
+        grad_y = np.abs(np.diff(upper_arr, axis=0, prepend=upper_arr[:1,:,:]))
+        grad_x = np.abs(np.diff(upper_arr, axis=1, prepend=upper_arr[:,:1,:]))
+        edge_energy = (grad_y + grad_x).mean(axis=2)
+        
+        face_prob = (skin_mask.astype(np.float32) * 1.5) + (edge_energy / 255.0)
+        
+        if face_prob.sum() < 50:
+            raise RuntimeError("Face detection failed: insufficient facial feature energy detected.")
+            
+        y_indices, x_indices = np.indices(face_prob.shape)
+        total_mass = face_prob.sum()
+        center_y = int((y_indices * face_prob).sum() / total_mass)
+        center_x = int((x_indices * face_prob).sum() / total_mass)
+        
+        box_size = int(min(w, h) * 0.60)
+        half = box_size // 2
+        
+        x1 = max(0, min(center_x - half, w - box_size))
+        y1 = max(0, min(center_y - half, h - box_size))
+        x2 = x1 + box_size
+        y2 = y1 + box_size
+        
+        cropped = img.crop((x1, y1, x2, y2))
+        return cropped.resize(target_size, Image.Resampling.LANCZOS)
 
-    def get_face_embedding(self, img_path: str, is_avatar_ref: bool = False) -> np.ndarray:
-        try:
-            raw_img = Image.open(img_path).convert("RGB")
-            face_img = self.crop_face_region(raw_img, is_avatar_ref=is_avatar_ref)
-            inputs = self.processor(images=face_img, return_tensors="pt").to(self.device)
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                emb = outputs.image_embeds.squeeze().cpu().numpy()
-                norm = np.linalg.norm(emb)
-                return emb / (norm + 1e-8)
-        except Exception as ex:
-            print(f"[ERROR] Failed to extract face embedding from {img_path}: {ex}")
-            return np.zeros(1024)
+    def get_face_embedding(self, img_path: str) -> np.ndarray:
+        if not os.path.exists(img_path):
+            raise FileNotFoundError(f"Target image path not found: {img_path}")
+
+        raw_img = Image.open(img_path).convert("RGB")
+        face_img = self.detect_and_crop_face(raw_img)
+        
+        inputs = self.processor(images=face_img, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            emb = outputs.image_embeds.squeeze().cpu().numpy()
+            norm = np.linalg.norm(emb)
+            if norm == 0:
+                raise RuntimeError(f"Zero vector embedding extracted from {img_path}")
+            return emb / norm
 
     def compute_similarity(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
-        if np.all(emb1 == 0) or np.all(emb2 == 0):
-            return 0.0
         return float(np.dot(emb1, emb2))
 
-def run_face_identity_benchmark():
-    print("=" * 86)
-    print("PROJECT00: EMPIRICAL FACE-CENTRIC VISUAL IDENTITY GPU BENCHMARK")
+def run_benchmark():
+    print("=" * 88)
+    print("PROJECT00: EMPIRICAL FACE-REGION VISUAL IDENTITY GPU BENCHMARK (PHASE 20.1)")
     print(f"Target Server: {COMFY_URL}")
-    print(f"Metric: CLIP-ViT-H-14 Face-Region Cosine Similarity")
-    print("=" * 86)
+    print(f"Metric: Face-Region Visual Similarity (CLIP-ViT-H-14 normalized cosine)")
+    print(f"Provisional Acceptance Threshold: {PROVISIONAL_ACCEPTANCE_THRESHOLD}")
+    print("=" * 88)
 
-    evaluator = FaceIdentityEvaluator()
-    THRESHOLD = 0.75 # Calibrated Face Cosine Similarity Threshold
+    evaluator = FaceDetectionAndEmbeddingEvaluator()
 
-    # Configurations to benchmark: Baseline (0.55/0.75) vs Candidate (0.65/0.85)
+    # Verify all reference files exist before launching GPU runs
+    for char in BENCHMARK_CHARACTERS:
+        ref_path = os.path.join(COMFY_INPUT_DIR, char["reference_image"])
+        if not os.path.exists(ref_path):
+            print(f"[FATAL] Missing canonical reference image at: {ref_path}")
+            sys.exit(1)
+
     configs = [
         {"name": "Baseline (Weight=0.55, EndAt=0.75)", "weight": 0.55, "end_at": 0.75},
         {"name": "Candidate (Weight=0.65, EndAt=0.85)", "weight": 0.65, "end_at": 0.85}
@@ -229,20 +267,17 @@ def run_face_identity_benchmark():
     summary_records = []
 
     for cfg in configs:
-        print(f"\n{'#' * 86}")
+        print(f"\n{'#' * 88}")
         print(f"RUNNING CONFIGURATION: {cfg['name']}")
-        print(f"{'#' * 86}")
+        print(f"{'#' * 88}")
 
         cfg_all_scores = []
 
         for char in BENCHMARK_CHARACTERS:
             char_name = char["name"]
             ref_path = os.path.join(COMFY_INPUT_DIR, char["reference_image"])
-            if not os.path.exists(ref_path):
-                print(f"[WARN] Missing reference image at {ref_path}, skipping {char_name}")
-                continue
+            ref_emb = evaluator.get_face_embedding(ref_path)
 
-            ref_emb = evaluator.get_face_embedding(ref_path, is_avatar_ref=True)
             print(f"\n--- Archetype: {char_name} ---")
 
             for scn in char["scenarios"]:
@@ -253,17 +288,17 @@ def run_face_identity_benchmark():
                     q = queue_prompt(wf)
                     gen_path = wait_for_prompt_completion(q["prompt_id"])
 
-                    gen_emb = evaluator.get_face_embedding(gen_path, is_avatar_ref=False)
+                    gen_emb = evaluator.get_face_embedding(gen_path)
                     sim = evaluator.compute_similarity(ref_emb, gen_emb)
                     cfg_all_scores.append(sim)
 
-                    status = "PASS" if sim >= THRESHOLD else "BELOW_THRESHOLD"
+                    status = "PASS" if sim >= PROVISIONAL_ACCEPTANCE_THRESHOLD else "BELOW_THRESHOLD"
                     print(f"    [Seed {seed}] File: {os.path.basename(gen_path)} | Face Sim: {sim:.4f} | Status: {status}")
 
         mean_sim = float(np.mean(cfg_all_scores))
         min_sim = float(np.min(cfg_all_scores))
         std_sim = float(np.std(cfg_all_scores))
-        pass_count = sum(1 for s in cfg_all_scores if s >= THRESHOLD)
+        pass_count = sum(1 for s in cfg_all_scores if s >= PROVISIONAL_ACCEPTANCE_THRESHOLD)
         pass_rate = (pass_count / len(cfg_all_scores)) * 100.0 if cfg_all_scores else 0.0
 
         summary_records.append({
@@ -275,14 +310,23 @@ def run_face_identity_benchmark():
             "samples": len(cfg_all_scores)
         })
 
-    print("\n" + "=" * 86)
+    # Compute comparative improvements
+    base_mean = summary_records[0]["mean"]
+    cand_mean = summary_records[1]["mean"]
+    abs_diff = cand_mean - base_mean
+    rel_diff = (abs_diff / base_mean) * 100.0 if base_mean > 0 else 0.0
+
+    print("\n" + "=" * 88)
     print("FINAL COMPARISON: BASELINE (0.55/0.75) vs CANDIDATE (0.65/0.85)")
-    print("=" * 86)
-    print(f"{'Configuration':<40} | {'Mean Sim':<10} | {'Min Sim':<10} | {'StdDev':<10} | {'Pass Rate':<10}")
-    print("-" * 86)
+    print("=" * 88)
+    print(f"{'Configuration':<42} | {'Mean Sim':<10} | {'Min Sim':<10} | {'StdDev':<10} | {'Pass Rate':<10}")
+    print("-" * 88)
     for r in summary_records:
-        print(f"{r['config']:<40} | {r['mean']:<10.4f} | {r['min']:<10.4f} | {r['std']:<10.4f} | {r['pass_rate']:<9.1f}%")
-    print("=" * 86)
+        print(f"{r['config']:<42} | {r['mean']:<10.4f} | {r['min']:<10.4f} | {r['std']:<10.4f} | {r['pass_rate']:<9.1f}%")
+    print("-" * 88)
+    print(f"Candidate Improvement: +{abs_diff:.4f} absolute cosine similarity (+{rel_diff:.2f}% relative improvement)")
+    print(f"Provisional Acceptance Threshold ({PROVISIONAL_ACCEPTANCE_THRESHOLD}): {'ALL PASSED [OK]' if summary_records[1]['pass_rate'] == 100.0 else 'FAILED'}")
+    print("=" * 88)
 
 if __name__ == "__main__":
-    run_face_identity_benchmark()
+    run_benchmark()
