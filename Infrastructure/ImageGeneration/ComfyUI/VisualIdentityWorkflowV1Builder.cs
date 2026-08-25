@@ -85,7 +85,7 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
                     ["combine_embeds"] = "concat",
                     ["start_at"] = 0.0,
                     ["end_at"] = (double)ipAdapterEndAt,
-                    ["embeds_scaling"] = "V only",
+                    ["embeds_scaling"] = "K+V",
                     ["model"] = new object[] { "4", 0 },
                     ["ipadapter"] = new object[] { "8", 0 },
                     ["image"] = new object[] { "1", 0 },

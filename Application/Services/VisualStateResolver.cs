@@ -45,7 +45,7 @@ public sealed class VisualStateResolver : IVisualStateResolver
         CancellationToken ct = default)
     {
         var oldState = session.SceneState ?? new SessionSceneState(
-            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
+            CurrentLocation: character.WorldName ?? character.Title ?? "Sanctuary",
             CurrentPosition: "Central Area",
             CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
             CurrentTimeOfDay: "Daytime",
