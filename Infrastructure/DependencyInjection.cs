@@ -80,6 +80,7 @@ public static class DependencyInjection
         services.AddHttpClient<Infrastructure.ImageGeneration.ComfyUI.IComfyUIClient, Infrastructure.ImageGeneration.ComfyUI.ComfyUIClient>(c => c.Timeout = TimeSpan.FromSeconds(120));
         services.AddHttpClient<Infrastructure.ImageGeneration.ComfyUI.IComfyUIInputImageService, Infrastructure.ImageGeneration.ComfyUI.ComfyUIInputImageService>();
         services.AddSingleton<Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder, Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder>();
+        services.AddSingleton<Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder, Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder>();
         services.AddSingleton<Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder, Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder>();
         services.AddScoped<Infrastructure.ImageGeneration.ComfyUIImageGenerationService>();
 

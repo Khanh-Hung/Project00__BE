@@ -73,11 +73,24 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
 
         if (string.IsNullOrWhiteSpace(promptId))
         {
-            // 1. Ensure Reference Image is uploaded if required by workflow
+            // 1. Ensure Reference and Previous Scene Images are uploaded if required by workflow
             string resolvedReferenceImageName = string.Empty;
             if (!string.IsNullOrWhiteSpace(request.ReferenceImageUrl))
             {
                 resolvedReferenceImageName = await _inputImageService.EnsureImageUploadedAsync(request.ReferenceImageUrl, ct);
+            }
+
+            string? resolvedPreviousSceneImageName = null;
+            if (!string.IsNullOrWhiteSpace(request.PreviousSceneImageUrl))
+            {
+                try
+                {
+                    resolvedPreviousSceneImageName = await _inputImageService.EnsureImageUploadedAsync(request.PreviousSceneImageUrl, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to upload previous scene image '{Url}'. Falling back to single-slot identity mode.", request.PreviousSceneImageUrl);
+                }
             }
 
             // 2. Select Workflow Builder by exact (Workflow, WorkflowVersion) match - NO SILENT FALLBACK!
@@ -86,7 +99,7 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
                 b.WorkflowVersion == targetVersion)
                 ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not available on this server.");
 
-            var workflowGraph = builder.BuildWorkflow(request, resolvedReferenceImageName);
+            var workflowGraph = builder.BuildWorkflow(request, resolvedReferenceImageName, resolvedPreviousSceneImageName);
 
             // 3. Post Prompt Graph to ComfyUI Client
             promptId = await _comfyClient.QueuePromptAsync(workflowGraph, ct);

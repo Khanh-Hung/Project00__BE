@@ -7,4 +7,12 @@ public interface IComfyUIWorkflowBuilder
     string WorkflowName { get; }
     int WorkflowVersion { get; }
     Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName);
+
+    Dictionary<string, object> BuildWorkflow(
+        ImageGenerationRequest request,
+        string resolvedReferenceImageName,
+        string? resolvedPreviousSceneImageName)
+    {
+        return BuildWorkflow(request, resolvedReferenceImageName);
+    }
 }

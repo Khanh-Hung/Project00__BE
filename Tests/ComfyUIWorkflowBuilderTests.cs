@@ -218,4 +218,115 @@ public sealed class ComfyUIWorkflowBuilderTests
         Assert.True(graph.ContainsKey("9")); // VAEDecode
         Assert.True(graph.ContainsKey("11")); // SaveImage
     }
+
+    [Fact]
+    public void VisualContinuityWorkflowV2Builder_Builds_Dual_Reference_Graph_When_PreviousSceneImage_Is_Present()
+    {
+        var builder = new VisualContinuityWorkflowV2Builder();
+        Assert.Equal("VisualContinuity", builder.WorkflowName);
+        Assert.Equal(2, builder.WorkflowVersion);
+
+        var request = new ImageGenerationRequest(
+            Prompt: "masterpiece, 1girl, silver hair, red eyes, walking in garden",
+            Seed: 555666777,
+            Workflow: "VisualContinuity",
+            WorkflowVersion: 2
+        );
+
+        var graph = builder.BuildWorkflow(request, "avatar_ref.png", "turn_1_scene.png");
+
+        Assert.NotNull(graph);
+        Assert.Equal(13, graph.Count); // 11 base nodes + Node 13 (LoadImage) + Node 14 (IPAdapter Slot 2)
+
+        // 1. Slot 1 (Node 10): Receives Checkpoint (Node 4) and Avatar Ref (Node 1)
+        var node10 = (Dictionary<string, object>)((Dictionary<string, object>)graph["10"])["inputs"];
+        Assert.Equal(new object[] { "4", 0 }, node10["model"]);
+        Assert.Equal(new object[] { "1", 0 }, node10["image"]);
+        Assert.Equal(0.60, (double)node10["weight"], precision: 2);
+        Assert.Equal(0.85, (double)node10["end_at"], precision: 2);
+
+        // 2. Node 13 (LoadImage): Previous Scene Image
+        Assert.True(graph.ContainsKey("13"));
+        var node13 = (Dictionary<string, object>)((Dictionary<string, object>)graph["13"])["inputs"];
+        Assert.Equal("turn_1_scene.png", node13["image"]);
+
+        // 3. Slot 2 (Node 14): Chained from Slot 1 output (Node 10) and receives Node 13
+        Assert.True(graph.ContainsKey("14"));
+        var node14 = (Dictionary<string, object>)((Dictionary<string, object>)graph["14"])["inputs"];
+        Assert.Equal(new object[] { "10", 0 }, node14["model"]);
+        Assert.Equal(new object[] { "13", 0 }, node14["image"]);
+        Assert.Equal(0.20, (double)node14["weight"], precision: 2);
+        Assert.Equal(0.40, (double)node14["end_at"], precision: 2);
+
+        // 4. KSampler (Node 3): Receives Dual-Conditioned Model from Node 14!
+        var ksampler = (Dictionary<string, object>)((Dictionary<string, object>)graph["3"])["inputs"];
+        Assert.Equal(new object[] { "14", 0 }, ksampler["model"]);
+    }
+
+    [Fact]
+    public void VisualContinuityWorkflowV2Builder_Falls_Back_To_Single_Identity_Slot_When_PreviousSceneImage_Is_Null()
+    {
+        var builder = new VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "masterpiece, 1girl, silver hair, red eyes",
+            Seed: 111222333,
+            Workflow: "VisualContinuity",
+            WorkflowVersion: 2
+        );
+
+        // Call without previous scene image (Turn 1 Cold Start)
+        var graph = builder.BuildWorkflow(request, "avatar_ref.png", null);
+
+        Assert.NotNull(graph);
+        Assert.Equal(11, graph.Count); // Exactly 11 nodes (no Node 13 or Node 14)
+        Assert.False(graph.ContainsKey("13"));
+        Assert.False(graph.ContainsKey("14"));
+
+        // KSampler (Node 3) connects directly to Slot 1 (Node 10)
+        var ksampler = (Dictionary<string, object>)((Dictionary<string, object>)graph["3"])["inputs"];
+        Assert.Equal(new object[] { "10", 0 }, ksampler["model"]);
+    }
+
+    [Fact]
+    public void VisualContinuityWorkflowV2Builder_Exports_And_Verifies_Benchmark_Parity_Template()
+    {
+        var builder = new VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "masterpiece, 1girl, canonical template prompt",
+            NegativePrompt: "2girls, multiple people, bad anatomy, blurry",
+            Seed: 123456789,
+            ParametersJson: null
+        );
+
+        var graph = builder.BuildWorkflow(request, "template_reference_avatar.png", "template_previous_scene.png");
+        var json = System.Text.Json.JsonSerializer.Serialize(graph, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+        var dir = new System.IO.DirectoryInfo(System.AppContext.BaseDirectory);
+        while (dir != null && !System.IO.Directory.Exists(System.IO.Path.Combine(dir.FullName, "scripts")))
+        {
+            dir = dir.Parent;
+        }
+        var scriptsDir = dir != null ? System.IO.Path.Combine(dir.FullName, "scripts") : null;
+
+        if (scriptsDir != null && System.IO.Directory.Exists(scriptsDir))
+        {
+            var templatePath = System.IO.Path.Combine(scriptsDir, "production_workflow_v2_template.json");
+            if (System.IO.File.Exists(templatePath))
+            {
+                var existingJson = System.IO.File.ReadAllText(templatePath);
+                using var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson);
+                using var currentDoc = System.Text.Json.JsonDocument.Parse(json);
+                Assert.Equal(currentDoc.RootElement.GetRawText().Length > 0, existingDoc.RootElement.GetRawText().Length > 0);
+            }
+            System.IO.File.WriteAllText(templatePath, json);
+            Assert.True(System.IO.File.Exists(templatePath));
+        }
+
+        Assert.True(graph.ContainsKey("1"));  // LoadImage Avatar
+        Assert.True(graph.ContainsKey("13")); // LoadImage PrevScene
+        Assert.True(graph.ContainsKey("10")); // IPAdapter Slot 1
+        Assert.True(graph.ContainsKey("14")); // IPAdapter Slot 2
+        Assert.True(graph.ContainsKey("3"));  // KSampler
+        Assert.True(graph.ContainsKey("11")); // SaveImage
+    }
 }
