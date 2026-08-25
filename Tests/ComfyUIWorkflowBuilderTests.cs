@@ -57,8 +57,8 @@ public sealed class ComfyUIWorkflowBuilderTests
         var node10 = Assert.IsAssignableFrom<Dictionary<string, object>>(graph["10"]);
         Assert.Equal("IPAdapterAdvanced", node10["class_type"]);
         var node10Inputs = Assert.IsAssignableFrom<Dictionary<string, object>>(node10["inputs"]);
-        Assert.Equal(0.65, (double)node10Inputs["weight"], precision: 2);
-        Assert.Equal(0.85, (double)node10Inputs["end_at"], precision: 2);
+        Assert.Equal(0.45, (double)node10Inputs["weight"], precision: 2);
+        Assert.Equal(0.70, (double)node10Inputs["end_at"], precision: 2);
         Assert.Equal("linear", node10Inputs["weight_type"]);
         Assert.Equal("K+V", node10Inputs["embeds_scaling"]);
 
@@ -154,5 +154,24 @@ public sealed class ComfyUIWorkflowBuilderTests
         // 4. SaveImage (Node 11) MUST receive VAE Decode image (Node 9, index 0)
         var saveImage = (Dictionary<string, object>)((Dictionary<string, object>)graph["11"])["inputs"];
         Assert.Equal(new object[] { "9", 0 }, saveImage["images"]);
+    }
+
+    [Fact]
+    public void VisualIdentityWorkflowV1Builder_Uses_Calibrated_Default_Parameters_When_ParametersJson_Is_Null()
+    {
+        var builder = new VisualIdentityWorkflowV1Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "masterpiece, 1girl, silver hair, red eyes",
+            Seed: 987654321,
+            ParametersJson: null
+        );
+
+        var graph = builder.BuildWorkflow(request, "ref.png");
+        var node10 = Assert.IsAssignableFrom<Dictionary<string, object>>(graph["10"]);
+        var inputs = Assert.IsAssignableFrom<Dictionary<string, object>>(node10["inputs"]);
+
+        Assert.Equal(0.65, (double)inputs["weight"], precision: 2);
+        Assert.Equal(0.85, (double)inputs["end_at"], precision: 2);
+        Assert.Equal("K+V", inputs["embeds_scaling"]);
     }
 }
