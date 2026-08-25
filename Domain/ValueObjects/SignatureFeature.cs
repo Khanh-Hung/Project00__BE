@@ -19,9 +19,4 @@ public sealed record SignatureFeature(
             _ => Importance == FeatureImportance.Critical && context != Slot2Context.SceneTransition
         };
     }
-
-    public bool ShouldInject(bool isSameScene)
-    {
-        return ShouldInject(isSameScene ? Slot2Context.SameScene : Slot2Context.SceneTransition);
-    }
 }

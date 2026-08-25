@@ -52,7 +52,11 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         return $"solo, close-up portrait, {identityTags}, looking at viewer, gentle smile, atmospheric lighting, detailed background";
     }
 
-    public string CompileScenePrompt(Character character, SceneContext scene, CharacterRelationship? relationship = null)
+    public string CompileScenePrompt(
+        Character character,
+        SceneContext scene,
+        CharacterRelationship? relationship = null,
+        Slot2Context context = Slot2Context.SameScene)
     {
         var identity = character.VisualIdentity;
         var characterTags = new List<string>();
@@ -85,7 +89,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             {
                 foreach (var feature in identity.SignatureFeatures)
                 {
-                    if (feature.ShouldInject(isSameScene: true))
+                    if (feature.ShouldInject(context))
                     {
                         if (!string.IsNullOrWhiteSpace(feature.PositiveTokens))
                         {

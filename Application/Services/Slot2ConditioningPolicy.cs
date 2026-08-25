@@ -22,37 +22,41 @@ public sealed record Slot2ConditioningPolicy(
     {
         if (configuration == null) return Default;
 
-        double sameWeight = Default.SameSceneWeight;
-        double sameEndAt = Default.SameSceneEndAt;
-        double transWeight = Default.TransitionWeight;
-        double transEndAt = Default.TransitionEndAt;
-        bool bypassColdStart = Default.BypassOnColdStart;
-
         var sameWeightStr = configuration["AiProviders:ImageGeneration:Slot2Policy:SameSceneWeight"]
             ?? configuration["AiProviders:ImageGeneration:SceneContinuity:SameSceneWeight"]
             ?? configuration["AiProviders:ImageGeneration:SceneContinuity:Weight"];
-        if (double.TryParse(sameWeightStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSameWeight))
-            sameWeight = Math.Clamp(parsedSameWeight, 0.0, 1.0);
+        double sameWeight = ParseValidatedUnitInterval(
+            "AiProviders:ImageGeneration:Slot2Policy:SameSceneWeight",
+            sameWeightStr,
+            Default.SameSceneWeight);
 
         var sameEndAtStr = configuration["AiProviders:ImageGeneration:Slot2Policy:SameSceneEndAt"]
             ?? configuration["AiProviders:ImageGeneration:SceneContinuity:SameSceneEndAt"]
             ?? configuration["AiProviders:ImageGeneration:SceneContinuity:EndAt"];
-        if (double.TryParse(sameEndAtStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSameEndAt))
-            sameEndAt = Math.Clamp(parsedSameEndAt, 0.0, 1.0);
+        double sameEndAt = ParseValidatedUnitInterval(
+            "AiProviders:ImageGeneration:Slot2Policy:SameSceneEndAt",
+            sameEndAtStr,
+            Default.SameSceneEndAt);
 
         var transWeightStr = configuration["AiProviders:ImageGeneration:Slot2Policy:TransitionWeight"]
             ?? configuration["AiProviders:ImageGeneration:SceneContinuity:TransitionWeight"];
-        if (double.TryParse(transWeightStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedTransWeight))
-            transWeight = Math.Clamp(parsedTransWeight, 0.0, 1.0);
+        double transWeight = ParseValidatedUnitInterval(
+            "AiProviders:ImageGeneration:Slot2Policy:TransitionWeight",
+            transWeightStr,
+            Default.TransitionWeight);
 
         var transEndAtStr = configuration["AiProviders:ImageGeneration:Slot2Policy:TransitionEndAt"]
             ?? configuration["AiProviders:ImageGeneration:SceneContinuity:TransitionEndAt"];
-        if (double.TryParse(transEndAtStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedTransEndAt))
-            transEndAt = Math.Clamp(parsedTransEndAt, 0.0, 1.0);
+        double transEndAt = ParseValidatedUnitInterval(
+            "AiProviders:ImageGeneration:Slot2Policy:TransitionEndAt",
+            transEndAtStr,
+            Default.TransitionEndAt);
 
         var bypassStr = configuration["AiProviders:ImageGeneration:Slot2Policy:BypassOnColdStart"];
-        if (bool.TryParse(bypassStr, out var parsedBypass))
-            bypassColdStart = parsedBypass;
+        bool bypassColdStart = ParseValidatedBool(
+            "AiProviders:ImageGeneration:Slot2Policy:BypassOnColdStart",
+            bypassStr,
+            Default.BypassOnColdStart);
 
         return new Slot2ConditioningPolicy(
             SameSceneWeight: sameWeight,
@@ -61,6 +65,38 @@ public sealed record Slot2ConditioningPolicy(
             TransitionEndAt: transEndAt,
             BypassOnColdStart: bypassColdStart
         );
+    }
+
+    private static double ParseValidatedUnitInterval(string keyName, string? valueStr, double defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(valueStr))
+            return defaultValue;
+
+        if (!double.TryParse(valueStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.IsNaN(parsed)
+            || double.IsInfinity(parsed)
+            || parsed < 0.0
+            || parsed > 1.0)
+        {
+            throw new InvalidOperationException(
+                $"Invalid configuration for '{keyName}': '{valueStr}'. Value must be a valid number between 0.0 and 1.0.");
+        }
+
+        return parsed;
+    }
+
+    private static bool ParseValidatedBool(string keyName, string? valueStr, bool defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(valueStr))
+            return defaultValue;
+
+        if (!bool.TryParse(valueStr, out var parsed))
+        {
+            throw new InvalidOperationException(
+                $"Invalid configuration for '{keyName}': '{valueStr}'. Value must be a boolean ('true' or 'false').");
+        }
+
+        return parsed;
     }
 
     public Slot2ConditioningDecision Decide(bool isColdStart, bool isTransition)

@@ -207,6 +207,20 @@ public sealed class IdentityInvariantSystemTests
         Assert.Equal(expectedActive, decision.IsActive);
     }
 
+    [Theory]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:SameSceneWeight", "invalid_number")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:SameSceneWeight", "1.5")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:SameSceneWeight", "-0.1")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:TransitionWeight", "NaN")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:BypassOnColdStart", "not_a_bool")]
+    public void Slot2ConditioningPolicy_FromConfiguration_ThrowsOnInvalidConfiguration(string key, string invalidValue)
+    {
+        var config = new Microsoft.Extensions.Configuration.ConfigurationManager();
+        config[key] = invalidValue;
+
+        Assert.Throws<InvalidOperationException>(() => Slot2ConditioningPolicy.FromConfiguration(config));
+    }
+
     [Fact]
     public async Task VisualStateResolver_MultiTurnPipeline_GuaranteesCanonicalReferenceImmutability_And_DynamicSlot2Resolution()
     {

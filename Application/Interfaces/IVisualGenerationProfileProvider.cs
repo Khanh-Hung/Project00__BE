@@ -1,4 +1,3 @@
-using Application.Services;
 using Domain.Entities;
 using Domain.ValueObjects;
 
@@ -10,6 +9,5 @@ public interface IVisualGenerationProfileProvider
         Character character,
         string? workflowOverride = null,
         bool isTransition = false,
-        bool isColdStart = false,
-        Slot2ConditioningPolicy? slot2Policy = null);
+        bool isColdStart = false);
 }

@@ -29,8 +29,7 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         Character character,
         string? workflowOverride = null,
         bool isTransition = false,
-        bool isColdStart = false,
-        Slot2ConditioningPolicy? slot2Policy = null)
+        bool isColdStart = false)
     {
         string workflow = DefaultWorkflow;
         if (workflowOverride != null)
@@ -98,7 +97,7 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         }
 
         // 4. Resolve Context-Aware Scene Continuity Parameters from Policy
-        var effectivePolicy = slot2Policy ?? Slot2ConditioningPolicy.FromConfiguration(_configuration);
+        var effectivePolicy = Slot2ConditioningPolicy.FromConfiguration(_configuration);
         var (resolvedWeight, resolvedEndAt, _) = effectivePolicy.Resolve(isColdStart, isTransition);
 
         float sceneWeight = (float)resolvedWeight;
