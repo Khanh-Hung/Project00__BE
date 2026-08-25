@@ -19,6 +19,8 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
                 traits.Add("1man, male, masculine face");
             else if (gender == GenderPresentation.Androgynous)
                 traits.Add("androgynous, 1person");
+            else if (gender == GenderPresentation.NonBinary)
+                traits.Add("non-binary, 1person, androgynous appearance");
             else
                 traits.Add("1girl, female, feminine face");
 
@@ -67,6 +69,8 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
                 characterTags.Add("1man, male, masculine face");
             else if (gender == GenderPresentation.Androgynous)
                 characterTags.Add("androgynous, 1person");
+            else if (gender == GenderPresentation.NonBinary)
+                characterTags.Add("non-binary, 1person, androgynous appearance");
             else
                 characterTags.Add("1girl, female, feminine face");
 
@@ -163,6 +167,8 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
                 allTags.Add("1man, male, masculine face");
             else if (gender == GenderPresentation.Androgynous)
                 allTags.Add("androgynous, 1person");
+            else if (gender == GenderPresentation.NonBinary)
+                allTags.Add("non-binary, 1person, androgynous appearance");
             else
                 allTags.Add("1girl, female, feminine face");
 
@@ -282,14 +288,15 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
             var gender = identity.ResolvedGender;
             if (gender == GenderPresentation.Male)
             {
-                // Strict suppression of anime checkpoint female prior
-                negativeTags.Add("1girl, anime girl, female, woman, breasts, feminine face, female clothing, dress, skirt");
+                // Strict suppression of anime checkpoint female prior (facial and anatomical dimorphism)
+                negativeTags.Add("1girl, anime girl, female, woman, breasts, feminine face");
             }
             else if (gender == GenderPresentation.Female)
             {
                 // Strict suppression of male traits for female personas
                 negativeTags.Add("1man, anime man, male, boy, masculine face, facial hair, beard, mustache");
             }
+            // Androgynous and NonBinary do not aggressively suppress either gender to permit flexible expression
 
             // Tier 3: Feature-specific negative tokens
             if (identity.SignatureFeatures != null)

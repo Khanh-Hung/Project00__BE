@@ -22,9 +22,11 @@ public sealed record CharacterVisualIdentity(
     public GenderPresentation ResolvedGender =>
         GenderPresentation != GenderPresentation.Female
             ? GenderPresentation
-            : (Gender?.Equals("Male", StringComparison.OrdinalIgnoreCase) == true
+            : (Gender?.Equals("Male", StringComparison.OrdinalIgnoreCase) == true || Gender?.Equals("Man", StringComparison.OrdinalIgnoreCase) == true
                 ? GenderPresentation.Male
                 : (Gender?.Equals("Androgynous", StringComparison.OrdinalIgnoreCase) == true
                     ? GenderPresentation.Androgynous
-                    : GenderPresentation.Female));
+                    : (Gender?.Equals("NonBinary", StringComparison.OrdinalIgnoreCase) == true || Gender?.Equals("Non-Binary", StringComparison.OrdinalIgnoreCase) == true
+                        ? GenderPresentation.NonBinary
+                        : GenderPresentation.Female)));
 }
