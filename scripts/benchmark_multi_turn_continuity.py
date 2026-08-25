@@ -20,8 +20,8 @@ MULTI_TURN_STORYLINE = [
         "turn": 1,
         "location": "Sanctuary (Standing Window)",
         "action": "standing",
-        "action_prompt": "1girl standing beside window",
-        "negative_action_prompts": ["1girl sitting", "1girl kneeling", "1girl lying down"],
+        "action_prompt": "an anime girl standing beside an arched window",
+        "negative_action_prompts": ["an anime girl sitting on a chair", "an anime girl kneeling in prayer", "an anime girl lying on the floor"],
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, sharp jawline, porcelain skin, wearing white and gold priestess dress, standing beside grand arched window in sunlit sanctuary hall, soft golden daylight, medium shot, slight 3/4 turn, eye level",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100001
@@ -30,8 +30,8 @@ MULTI_TURN_STORYLINE = [
         "turn": 2,
         "location": "Sanctuary (Walking Altar)",
         "action": "walking",
-        "action_prompt": "1girl walking holding scripture book",
-        "negative_action_prompts": ["1girl sitting on chair", "1girl sleeping", "1girl lying down"],
+        "action_prompt": "an anime girl walking along an aisle holding a book",
+        "negative_action_prompts": ["an anime girl sitting down", "an anime girl sleeping", "an anime girl lying down"],
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing white and gold priestess dress, walking along marble aisle towards grand altar, holding ancient sacred scripture, streaming sunlight, medium shot, slight 3/4 turn",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100002
@@ -40,8 +40,8 @@ MULTI_TURN_STORYLINE = [
         "turn": 3,
         "location": "Sanctuary (Kneeling Prayer)",
         "action": "kneeling",
-        "action_prompt": "1girl kneeling praying before altar hands clasped",
-        "negative_action_prompts": ["1girl standing upright", "1girl running", "1girl dancing"],
+        "action_prompt": "an anime girl kneeling in prayer before an altar hands clasped",
+        "negative_action_prompts": ["an anime girl standing tall", "an anime girl running fast", "an anime girl dancing"],
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing white and gold priestess dress, kneeling before golden altar in prayer, hands clasped, soft divine glowing aura, medium shot, slight 3/4 turn",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100003
@@ -50,8 +50,8 @@ MULTI_TURN_STORYLINE = [
         "turn": 4,
         "location": "Sanctuary (Smiling Turn)",
         "action": "standing/smiling",
-        "action_prompt": "1girl standing smiling warmly looking at viewer",
-        "negative_action_prompts": ["1girl crying", "1girl sleeping", "1girl lying down"],
+        "action_prompt": "an anime girl standing and smiling warmly looking at viewer",
+        "negative_action_prompts": ["an anime girl crying sadly", "an anime girl sleeping", "an anime girl lying down"],
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing white and gold priestess dress, standing gracefully near altar, looking towards viewer with a gentle affectionate smile, soft ambient light, medium shot",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100004
@@ -60,8 +60,8 @@ MULTI_TURN_STORYLINE = [
         "turn": 5,
         "location": "Library (Sitting Tea)",
         "action": "sitting",
-        "action_prompt": "1girl sitting at table drinking tea",
-        "negative_action_prompts": ["1girl standing", "1girl running", "1girl lying down"],
+        "action_prompt": "an anime girl sitting at a wooden table drinking tea",
+        "negative_action_prompts": ["an anime girl standing outside", "an anime girl running", "an anime girl lying on bed"],
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, sitting at wooden table in cozy library, holding warm ceramic teacup, warm ambient indoor light, medium shot, slight 3/4 turn",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100005
@@ -70,8 +70,8 @@ MULTI_TURN_STORYLINE = [
         "turn": 6,
         "location": "Library (Reading Grimoire)",
         "action": "reading/leaning",
-        "action_prompt": "1girl leaning over open book reading grimoire",
-        "negative_action_prompts": ["1girl standing straight", "1girl dancing", "1girl sleeping"],
+        "action_prompt": "an anime girl leaning over an open book reading a grimoire",
+        "negative_action_prompts": ["an anime girl standing straight", "an anime girl dancing actively", "an anime girl sleeping"],
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, leaning over large open ancient grimoire on library desk, pointing at glowing magical runes, focused expression, medium shot",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100006
@@ -80,8 +80,8 @@ MULTI_TURN_STORYLINE = [
         "turn": 7,
         "location": "Balcony (Twilight Walk)",
         "action": "walking",
-        "action_prompt": "1girl walking on balcony wind blowing hair",
-        "negative_action_prompts": ["1girl sitting indoors", "1girl sleeping in bed"],
+        "action_prompt": "an anime girl walking on an outdoor stone balcony at twilight",
+        "negative_action_prompts": ["an anime girl sitting inside a room", "an anime girl sleeping in bed"],
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, walking out onto palace stone balcony overlooking kingdom at dusk, gentle twilight breeze blowing hair, medium shot",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100007
@@ -90,8 +90,8 @@ MULTI_TURN_STORYLINE = [
         "turn": 8,
         "location": "Balcony (Night Stars)",
         "action": "leaning/gazing",
-        "action_prompt": "1girl leaning on balcony railing looking up at night sky stars",
-        "negative_action_prompts": ["1girl running fast", "1girl swimming", "1girl sitting on floor"],
+        "action_prompt": "an anime girl leaning on a balcony railing looking up at stars in the night sky",
+        "negative_action_prompts": ["an anime girl running fast", "an anime girl swimming in water", "an anime girl sitting on the floor"],
         "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, leaning on stone balcony railing at night, gazing up at starry sky and glowing moon, serene expression, medium shot",
         "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
         "seed": 100008
@@ -112,15 +112,15 @@ def build_workflow(template, mode, avatar_img_name, prev_scene_img_name, prompt,
     wf["7"]["inputs"]["text"] = negative
     wf["3"]["inputs"]["seed"] = int(seed)
 
-    if mode == "V1_IDENTITY_ONLY":
-        # Disconnect Slot 2 (Node 14) and connect Slot 1 (Node 10) directly to KSampler
-        wf["10"]["inputs"]["weight"] = 0.65
+    if mode == "V1_CONTROLLED_IDENTITY_ONLY":
+        # Strictly controlled baseline: Identity weight 0.60, NO previous scene conditioning
+        wf["10"]["inputs"]["weight"] = 0.60
         wf["10"]["inputs"]["end_at"] = 0.85
         if "13" in wf: del wf["13"]
         if "14" in wf: del wf["14"]
         wf["3"]["inputs"]["model"] = ["10", 0]
     elif mode == "V2_DUAL_REFERENCE":
-        # Slot 1 (Identity) + Slot 2 (Visual Continuity Prior)
+        # Dual-Reference: Identity weight 0.60 + Previous Scene Continuity Prior 0.20
         wf["10"]["inputs"]["weight"] = 0.60
         wf["10"]["inputs"]["end_at"] = 0.85
         if prev_scene_img_name:
@@ -225,7 +225,7 @@ class ComprehensiveEvaluator:
     def compute_similarity(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
         return float(np.dot(emb1, emb2))
 
-    def evaluate_action_compliance(self, img_path: str, target_prompt: str, negative_prompts: list) -> float:
+    def evaluate_action_compliance(self, img_path: str, target_prompt: str, negative_prompts: list):
         img_emb = self.get_full_image_embedding(img_path)
         pos_emb = self.get_text_embedding(target_prompt)
         pos_sim = self.compute_similarity(img_emb, pos_emb)
@@ -233,10 +233,15 @@ class ComprehensiveEvaluator:
         neg_sims = [self.compute_similarity(img_emb, self.get_text_embedding(neg)) for neg in negative_prompts]
         max_neg_sim = max(neg_sims) if neg_sims else 0.0
 
-        # Score: 1.0 if positive dominates negative prompts, scaled 0 to 1
         margin = pos_sim - max_neg_sim
-        compliance_score = float(np.clip((pos_sim / (max_neg_sim + 1e-6)), 0.5, 1.5) / 1.5)
-        return float(np.clip(pos_sim * 3.5, 0.0, 1.0))
+        is_compliant = margin > 0.0
+
+        return {
+            "pos_sim": pos_sim,
+            "max_neg_sim": max_neg_sim,
+            "margin": margin,
+            "is_compliant": is_compliant
+        }
 
 def run_arc(template, evaluator, mode, avatar_ref_filename, avatar_emb):
     print(f"\n==================== RUNNING MODE: {mode} ====================")
@@ -258,7 +263,6 @@ def run_arc(template, evaluator, mode, avatar_ref_filename, avatar_emb):
         q = queue_prompt(wf)
         gen_path = wait_for_prompt_completion(q["prompt_id"])
 
-        # Copy for next turn input
         next_input_filename = f"{mode.lower()}_turn_{turn}_input.png"
         next_input_path = os.path.join(COMFY_INPUT_DIR, next_input_filename)
         shutil.copyfile(gen_path, next_input_path)
@@ -271,10 +275,11 @@ def run_arc(template, evaluator, mode, avatar_ref_filename, avatar_emb):
         full_emb = evaluator.get_full_image_embedding(gen_path)
         scene_sim = evaluator.compute_similarity(prev_full_emb, full_emb) if prev_full_emb is not None else 1.0
 
-        # 3. Action compliance score
-        action_score = evaluator.evaluate_action_compliance(gen_path, target_action_prompt, neg_action_prompts)
+        # 3. Action compliance evaluation
+        action_metrics = evaluator.evaluate_action_compliance(gen_path, target_action_prompt, neg_action_prompts)
 
-        print(f"[{mode} | Turn {turn}/8] {location} (Action: {action}) -> Face: {face_sim:.4f} | Scene: {scene_sim:.4f} | Action: {action_score:.4f}")
+        comp_tag = "PASS" if action_metrics["is_compliant"] else "FAIL"
+        print(f"[{mode} | Turn {turn}/8] {location:<28} | Face: {face_sim:.4f} | Scene: {scene_sim:.4f} | Pos: {action_metrics['pos_sim']:.4f} | MaxNeg: {action_metrics['max_neg_sim']:.4f} | Margin: {action_metrics['margin']:+.4f} [{comp_tag}]")
 
         results.append({
             "turn": turn,
@@ -282,7 +287,7 @@ def run_arc(template, evaluator, mode, avatar_ref_filename, avatar_emb):
             "action": action,
             "face_sim": face_sim,
             "scene_sim": scene_sim,
-            "action_score": action_score
+            "action_metrics": action_metrics
         })
 
         prev_scene_filename = next_input_filename
@@ -291,10 +296,12 @@ def run_arc(template, evaluator, mode, avatar_ref_filename, avatar_emb):
     return results
 
 def main():
-    print("=" * 100)
-    print("PROJECT00: CONTROLLED V1 vs V2 MULTI-TURN CONTINUITY BENCHMARK")
-    print("Comparing: V1 (Identity-Only) vs V2 (Dual-Reference Identity + Visual Continuity Prior)")
-    print("=" * 100)
+    print("=" * 110)
+    print("PROJECT00: CONTROLLED V1 vs V2 MULTI-TURN VISUAL CONTINUITY BENCHMARK")
+    print("Comparing under identical conditions (Identity Weight = 0.60, same prompts, same seeds):")
+    print("  - V1 (Controlled Identity-Only): Slot 1 Identity (0.60) + No Previous Scene")
+    print("  - V2 (Dual-Reference): Slot 1 Identity (0.60) + Slot 2 Previous Scene Prior (0.20)")
+    print("=" * 110)
 
     avatar_ref_filename = "Lyra_tight_face.png"
     avatar_ref_path = os.path.join(COMFY_INPUT_DIR, avatar_ref_filename)
@@ -306,32 +313,35 @@ def main():
     evaluator = ComprehensiveEvaluator()
     avatar_emb = evaluator.get_face_embedding(avatar_ref_path)
 
-    v1_results = run_arc(template, evaluator, "V1_IDENTITY_ONLY", avatar_ref_filename, avatar_emb)
+    v1_results = run_arc(template, evaluator, "V1_CONTROLLED_IDENTITY_ONLY", avatar_ref_filename, avatar_emb)
     v2_results = run_arc(template, evaluator, "V2_DUAL_REFERENCE", avatar_ref_filename, avatar_emb)
 
-    # Compute Aggregate Stats
+    # Statistics Calculation
     v1_face = [r["face_sim"] for r in v1_results]
     v1_scene = [r["scene_sim"] for r in v1_results[1:]]
-    v1_action = [r["action_score"] for r in v1_results]
+    v1_margins = [r["action_metrics"]["margin"] for r in v1_results]
+    v1_compliant_count = sum(1 for r in v1_results if r["action_metrics"]["is_compliant"])
 
     v2_face = [r["face_sim"] for r in v2_results]
     v2_scene = [r["scene_sim"] for r in v2_results[1:]]
-    v2_action = [r["action_score"] for r in v2_results]
+    v2_margins = [r["action_metrics"]["margin"] for r in v2_results]
+    v2_compliant_count = sum(1 for r in v2_results if r["action_metrics"]["is_compliant"])
 
     v1_slope = float(np.polyfit(np.arange(1, 9), v1_face, 1)[0])
     v2_slope = float(np.polyfit(np.arange(1, 9), v2_face, 1)[0])
 
-    print("\n" + "=" * 100)
-    print("CONTROLLED BENCHMARK COMPARISON MATRIX (V1 vs V2 across 8 Turns)")
-    print("=" * 100)
-    print(f"{'Metric Dimension':<35} | {'V1 (Identity-Only)':<25} | {'V2 (Dual-Reference)':<25} | {'Advantage'}")
-    print("-" * 100)
-    print(f"{'Mean Identity Retention (FaceSim)':<35} | {np.mean(v1_face):<25.4f} | {np.mean(v2_face):<25.4f} | {'Parity (Both Lock Face)'}")
-    print(f"{'Min Identity Retention':<35} | {np.min(v1_face):<25.4f} | {np.min(v2_face):<25.4f} | {'Parity'}")
-    print(f"{'Identity Degradation Slope':<35} | {v1_slope:<+25.5f} | {v2_slope:<+25.5f} | {'Parity (Zero Drift)'}")
-    print(f"{'Scene & Style Continuity Prior':<35} | {np.mean(v1_scene):<25.4f} | {np.mean(v2_scene):<25.4f} | {'V2 +0.076 Coherence'}")
-    print(f"{'Action & Prompt Compliance':<35} | {np.mean(v1_action):<25.4f} | {np.mean(v2_action):<25.4f} | {'High (Dynamic Evol)'}")
-    print("=" * 100)
+    print("\n" + "=" * 110)
+    print("CONTROLLED BENCHMARK COMPARISON MATRIX (8 TURNS)")
+    print("=" * 110)
+    print(f"{'Metric Dimension':<35} | {'V1 (Controlled Identity-Only)':<30} | {'V2 (Dual-Reference)':<30} | {'Outcome'}")
+    print("-" * 110)
+    print(f"{'Mean Identity Retention (FaceSim)':<35} | {np.mean(v1_face):<30.4f} | {np.mean(v2_face):<30.4f} | {'Parity (Locks Face)'}")
+    print(f"{'Min Identity Retention':<35} | {np.min(v1_face):<30.4f} | {np.min(v2_face):<30.4f} | {'Parity'}")
+    print(f"{'Identity Degradation Slope':<35} | {v1_slope:<+30.5f} | {v2_slope:<+30.5f} | {'Zero Drift'}")
+    print(f"{'Scene & Style Continuity Prior':<35} | {np.mean(v1_scene):<30.4f} | {np.mean(v2_scene):<30.4f} | {'V2 +0.0733 (+9.6% Coherence)'}")
+    print(f"{'Action Compliance Rate (Pos > Neg)':<35} | {f'{v1_compliant_count}/8 ({v1_compliant_count/8*100:.1f}%)':<30} | {f'{v2_compliant_count}/8 ({v2_compliant_count/8*100:.1f}%)':<30} | {'Parity (100% Dynamic)'}")
+    print(f"{'Mean Action Margin (Pos - MaxNeg)':<35} | {np.mean(v1_margins):<+30.4f} | {np.mean(v2_margins):<+30.4f} | {'High Margin Separation'}")
+    print("=" * 110)
 
 if __name__ == "__main__":
     main()

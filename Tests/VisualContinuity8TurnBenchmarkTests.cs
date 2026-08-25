@@ -393,6 +393,66 @@ public class VisualContinuity8TurnBenchmarkTests
         Assert.NotEqual(imageB.ImageUrl, turn2Snapshot.PreviousSceneImageUrl);
     }
 
+    [Fact]
+    public async Task VisualSnapshot_Concurrent_Predecessor_Resolution_Observes_Committed_State_And_Freezes_Permanently()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(dbName)
+            .Options;
+
+        var sessionId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var uow = new UnitOfWork(new ProjectDbContext(options));
+        var sceneRepo = uow.GetRepository<SceneImage>();
+
+        var character = new Character(
+            name: "Lyra",
+            title: "Saintess",
+            avatarUrl: "https://cloud.storage/lyra.png",
+            personalityPrompt: "Calm",
+            greeting: "Greetings",
+            category: "Anime",
+            visualIdentity: new CharacterVisualIdentity(Gender: "Female", AgeAppearance: "19", Hair: "White", Eyes: "Red", ClothingStyle: "Dress", CanonicalReferenceUrl: "https://cloud.storage/lyra_canonical.png")
+        );
+
+        // Turn 1 Committed Artifact Image 1
+        var image1Id = Guid.NewGuid();
+        var image1Url = "https://cloud.storage/scene_rev1_committed.png";
+        var image1 = new SceneImage(sessionId, characterId, Guid.NewGuid(), 1, image1Url, "Scene 1", isCurrent: true);
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(image1, image1Id);
+        await sceneRepo.AddAsync(image1);
+        await uow.SaveChangesAsync();
+
+        var session = new ChatSession(characterId, Guid.NewGuid(), "Roleplay");
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(session, sessionId);
+        session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
+
+        var resolver = new VisualStateResolver(uow, null);
+
+        // Transaction 1: Turn 2 Resolves Turn 1 Predecessor
+        var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(character, session, "Action 2", "Reply 2", CharacterMood.Happy, Guid.NewGuid());
+        Assert.Equal(image1Id, turn2Snapshot.PredecessorSceneImageId);
+        Assert.Equal(image1Url, turn2Snapshot.PreviousSceneImageUrl);
+
+        // Concurrent Event: Turn 2 Finishes GPU and commits its own Artifact Image 2
+        var image2Id = Guid.NewGuid();
+        var image2Url = "https://cloud.storage/scene_rev2_committed.png";
+        var image2 = new SceneImage(sessionId, characterId, Guid.NewGuid(), 2, image2Url, "Scene 2", isCurrent: true);
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(image2, image2Id);
+        await sceneRepo.AddAsync(image2);
+        await uow.SaveChangesAsync();
+
+        // Transaction 2: Turn 3 Resolves Turn 2 Predecessor
+        var (_, _, turn3Snapshot) = await resolver.ResolveTurnVisualStateAsync(character, session, "Action 3", "Reply 3", CharacterMood.Happy, Guid.NewGuid());
+        Assert.Equal(image2Id, turn3Snapshot.PredecessorSceneImageId);
+        Assert.Equal(image2Url, turn3Snapshot.PreviousSceneImageUrl);
+
+        // Invariant: Both snapshots remain locked to their respective committed states
+        Assert.Equal(image1Id, turn2Snapshot.PredecessorSceneImageId);
+        Assert.Equal(image2Id, turn3Snapshot.PredecessorSceneImageId);
+    }
+
     private sealed class TestSceneTracker : ISceneStateTrackerService
     {
         public SceneStateDelta? NextDelta { get; set; }
