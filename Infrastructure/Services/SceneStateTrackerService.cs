@@ -181,7 +181,7 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
                     VisualSceneDescription? sceneDesc = null;
                     if (deltaDto.SceneDescription != null)
                     {
-                        sceneDesc = new VisualSceneDescription(
+                        var rawDesc = new VisualSceneDescription(
                             shotType: deltaDto.SceneDescription.ShotType,
                             cameraAngle: deltaDto.SceneDescription.CameraAngle,
                             subjectPlacement: deltaDto.SceneDescription.SubjectPlacement,
@@ -190,6 +190,14 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
                             lightingStyle: deltaDto.SceneDescription.LightingStyle,
                             atmosphere: deltaDto.SceneDescription.Atmosphere,
                             englishPromptTags: deltaDto.SceneDescription.EnglishPromptTags
+                        );
+
+                        sceneDesc = VisualSceneDescription.Sanitize(
+                            rawDesc,
+                            character.VisualIdentity,
+                            baseState,
+                            userMessage,
+                            assistantMessage
                         );
                     }
 

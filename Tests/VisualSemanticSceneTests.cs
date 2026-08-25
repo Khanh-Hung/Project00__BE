@@ -201,4 +201,114 @@ public sealed class VisualSemanticSceneTests
         var occurrences = prompt1.Split(", ").Count(t => t.Equals("standing", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(1, occurrences);
     }
+
+    [Fact]
+    public void SceneDescription_Sanitizer_Removes_Conflicting_Hair_And_Eye_Colors()
+    {
+        var identity = new CharacterVisualIdentity(
+            Gender: "Female",
+            Hair: "long silver hair in neat updo",
+            Eyes: "emerald green eyes"
+        );
+
+        var baseState = new SessionSceneState(
+            CurrentLocation: "Sanctuary",
+            CurrentOutfit: "white robe"
+        );
+
+        // Raw LLM output containing hallucinated blonde hair and red eyes
+        var rawDesc = new VisualSceneDescription(
+            shotType: "medium shot",
+            cameraAngle: "eye level",
+            englishPromptTags: new[] { "blonde hair", "red eyes", "silver hair", "emerald green eyes", "looking at viewer" }
+        );
+
+        var sanitized = VisualSceneDescription.Sanitize(
+            rawDesc,
+            identity,
+            baseState,
+            userMessage: "Hello",
+            assistantMessage: "Greetings traveler"
+        );
+
+        // Conflicting blonde hair and red eyes must be stripped; silver hair and emerald eyes preserved
+        Assert.DoesNotContain("blonde hair", sanitized.EnglishPromptTags);
+        Assert.DoesNotContain("red eyes", sanitized.EnglishPromptTags);
+        Assert.Contains("silver hair", sanitized.EnglishPromptTags);
+        Assert.Contains("emerald green eyes", sanitized.EnglishPromptTags);
+        Assert.Contains("looking at viewer", sanitized.EnglishPromptTags);
+    }
+
+    [Fact]
+    public void SceneDescription_Sanitizer_Strips_Hallucinated_Outdoor_And_Sunset_Tags_When_Indoors_At_Night()
+    {
+        var identity = new CharacterVisualIdentity(
+            Gender: "Female",
+            Hair: "silver hair",
+            Eyes: "emerald eyes"
+        );
+
+        var baseState = new SessionSceneState(
+            CurrentLocation: "Bedroom",
+            CurrentPosition: "Bed",
+            CurrentOutfit: "silk nightgown",
+            CurrentTimeOfDay: "Midnight"
+        );
+
+        // Raw LLM output hallucinating a sunset beach while sitting in bedroom at midnight
+        var rawDesc = new VisualSceneDescription(
+            shotType: "medium shot",
+            detailedEnvironment: "tropical beach with sunset ocean view",
+            lightingStyle: "vibrant golden hour sunset light",
+            englishPromptTags: new[] { "medium shot", "beach", "ocean", "sunset", "golden hour", "sitting on bed" }
+        );
+
+        var sanitized = VisualSceneDescription.Sanitize(
+            rawDesc,
+            identity,
+            baseState,
+            userMessage: "Chúc nàng ngủ ngon.",
+            assistantMessage: "Ngủ ngon nhé chàng."
+        );
+
+        // Must strip beach, ocean, sunset, golden hour
+        Assert.DoesNotContain("beach", sanitized.EnglishPromptTags);
+        Assert.DoesNotContain("ocean", sanitized.EnglishPromptTags);
+        Assert.DoesNotContain("sunset", sanitized.EnglishPromptTags);
+        Assert.DoesNotContain("golden hour", sanitized.EnglishPromptTags);
+        Assert.Contains("sitting on bed", sanitized.EnglishPromptTags);
+        Assert.Contains("warm indoor ambient light", sanitized.LightingStyle);
+    }
+
+    [Fact]
+    public void SceneDescription_Sanitizer_Allows_Legitimate_Outdoor_Tags_When_Dialogue_Explicitly_Mentions_It()
+    {
+        var identity = new CharacterVisualIdentity(
+            Gender: "Female",
+            Hair: "silver hair",
+            Eyes: "emerald eyes"
+        );
+
+        var baseState = new SessionSceneState(
+            CurrentLocation: "Sanctuary",
+            CurrentOutfit: "traveler cloak"
+        );
+
+        var rawDesc = new VisualSceneDescription(
+            shotType: "wide shot",
+            englishPromptTags: new[] { "wide shot", "garden", "flowers", "walking outdoors" }
+        );
+
+        var sanitized = VisualSceneDescription.Sanitize(
+            rawDesc,
+            identity,
+            baseState,
+            userMessage: "Chúng ta cùng ra khu vườn ngoài trời dạo bước nhé.",
+            assistantMessage: "Vâng, khu vườn đầy hoa hôm nay thật đẹp."
+        );
+
+        // Garden / outdoor tags are allowed because dialogue explicitly mentioned it
+        Assert.Contains("garden", sanitized.EnglishPromptTags);
+        Assert.Contains("flowers", sanitized.EnglishPromptTags);
+    }
 }
