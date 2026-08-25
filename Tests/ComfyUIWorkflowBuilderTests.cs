@@ -60,7 +60,7 @@ public sealed class ComfyUIWorkflowBuilderTests
         Assert.Equal(0.45, (double)node10Inputs["weight"], precision: 2);
         Assert.Equal(0.70, (double)node10Inputs["end_at"], precision: 2);
         Assert.Equal("linear", node10Inputs["weight_type"]);
-        Assert.Equal("V only", node10Inputs["embeds_scaling"]);
+        Assert.Equal("K+V", node10Inputs["embeds_scaling"]);
 
         // Node 4: CheckpointLoaderSimple
         Assert.True(graph.ContainsKey("4"));

@@ -40,11 +40,11 @@ public sealed record VisualSnapshot(
     {
         ArgumentNullException.ThrowIfNull(generationProfile, nameof(generationProfile));
 
-        // Strict resolution hierarchy: Tight square face crop (AvatarUrl / CanonicalReferenceUrl) -> FullBodyUrl
-        var resolvedIdentityRef = !string.IsNullOrWhiteSpace(fallbackReferenceUrl)
-            ? fallbackReferenceUrl
-            : (!string.IsNullOrWhiteSpace(visualIdentity?.CanonicalReferenceUrl)
-                ? visualIdentity.CanonicalReferenceUrl
+        // Strict resolution hierarchy: CanonicalReferenceUrl (tight face crop) -> Character AvatarUrl -> FullBodyUrl
+        var resolvedIdentityRef = !string.IsNullOrWhiteSpace(visualIdentity?.CanonicalReferenceUrl)
+            ? visualIdentity.CanonicalReferenceUrl
+            : (!string.IsNullOrWhiteSpace(fallbackReferenceUrl)
+                ? fallbackReferenceUrl
                 : (!string.IsNullOrWhiteSpace(visualIdentity?.FullBodyUrl)
                     ? visualIdentity.FullBodyUrl
                     : null));
