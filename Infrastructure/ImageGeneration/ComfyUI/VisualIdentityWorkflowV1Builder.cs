@@ -28,9 +28,9 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
         var sampler = !string.IsNullOrWhiteSpace(request.Sampler) ? request.Sampler : "euler_ancestral";
         var scheduler = !string.IsNullOrWhiteSpace(request.Scheduler) ? request.Scheduler : "karras";
 
-        // Parse IPAdapter weights from ParametersJson (fallback 0.45 / 0.70)
-        float ipAdapterWeight = 0.45f;
-        float ipAdapterEndAt = 0.70f;
+        // Parse IPAdapter weights from ParametersJson (calibrated default: 0.65 / 0.85 for high identity fidelity)
+        float ipAdapterWeight = 0.65f;
+        float ipAdapterEndAt = 0.85f;
 
         if (!string.IsNullOrWhiteSpace(request.ParametersJson))
         {
@@ -80,11 +80,11 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
                 ["class_type"] = "IPAdapterAdvanced",
                 ["inputs"] = new Dictionary<string, object>
                 {
-                    ["weight"] = (double)ipAdapterWeight,
+                    ["weight"] = Math.Round((double)ipAdapterWeight, 4),
                     ["weight_type"] = "linear",
                     ["combine_embeds"] = "concat",
                     ["start_at"] = 0.0,
-                    ["end_at"] = (double)ipAdapterEndAt,
+                    ["end_at"] = Math.Round((double)ipAdapterEndAt, 4),
                     ["embeds_scaling"] = "K+V",
                     ["model"] = new object[] { "4", 0 },
                     ["ipadapter"] = new object[] { "8", 0 },

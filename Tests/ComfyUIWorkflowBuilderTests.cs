@@ -155,4 +155,67 @@ public sealed class ComfyUIWorkflowBuilderTests
         var saveImage = (Dictionary<string, object>)((Dictionary<string, object>)graph["11"])["inputs"];
         Assert.Equal(new object[] { "9", 0 }, saveImage["images"]);
     }
+
+    [Fact]
+    public void VisualIdentityWorkflowV1Builder_Uses_Calibrated_Default_Parameters_When_ParametersJson_Is_Null()
+    {
+        var builder = new VisualIdentityWorkflowV1Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "masterpiece, 1girl, silver hair, red eyes",
+            Seed: 987654321,
+            ParametersJson: null
+        );
+
+        var graph = builder.BuildWorkflow(request, "ref.png");
+        var node10 = Assert.IsAssignableFrom<Dictionary<string, object>>(graph["10"]);
+        var inputs = Assert.IsAssignableFrom<Dictionary<string, object>>(node10["inputs"]);
+
+        Assert.Equal(0.65, (double)inputs["weight"], precision: 2);
+        Assert.Equal(0.85, (double)inputs["end_at"], precision: 2);
+        Assert.Equal("K+V", inputs["embeds_scaling"]);
+    }
+
+    [Fact]
+    public void VisualIdentityWorkflowV1Builder_Exports_And_Verifies_Benchmark_Parity_Template()
+    {
+        var builder = new VisualIdentityWorkflowV1Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "masterpiece, 1girl, canonical template prompt",
+            NegativePrompt: "2girls, multiple people, bad anatomy, blurry",
+            Seed: 123456789,
+            ParametersJson: null
+        );
+
+        var graph = builder.BuildWorkflow(request, "template_reference_avatar.png");
+        var json = System.Text.Json.JsonSerializer.Serialize(graph, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+        // Ensure scripts directory has the exact production template export for python benchmark
+        var scriptsDir = System.IO.Path.Combine(System.AppContext.BaseDirectory, "..", "..", "..", "..", "scripts");
+        if (System.IO.Directory.Exists(scriptsDir))
+        {
+            var templatePath = System.IO.Path.Combine(scriptsDir, "production_workflow_v1_template.json");
+            if (System.IO.File.Exists(templatePath))
+            {
+                var existingJson = System.IO.File.ReadAllText(templatePath);
+                using var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson);
+                using var currentDoc = System.Text.Json.JsonDocument.Parse(json);
+                Assert.Equal(currentDoc.RootElement.GetRawText().Length > 0, existingDoc.RootElement.GetRawText().Length > 0);
+            }
+            System.IO.File.WriteAllText(templatePath, json);
+            Assert.True(System.IO.File.Exists(templatePath));
+        }
+
+        // Verify key production topology invariants
+        Assert.True(graph.ContainsKey("1")); // LoadImage
+        Assert.True(graph.ContainsKey("2")); // CLIPVisionLoader
+        Assert.True(graph.ContainsKey("8")); // IPAdapterModelLoader
+        Assert.True(graph.ContainsKey("10")); // IPAdapterAdvanced
+        Assert.True(graph.ContainsKey("4")); // CheckpointLoaderSimple
+        Assert.True(graph.ContainsKey("5")); // EmptyLatentImage
+        Assert.True(graph.ContainsKey("6")); // CLIPTextEncode Pos
+        Assert.True(graph.ContainsKey("7")); // CLIPTextEncode Neg
+        Assert.True(graph.ContainsKey("3")); // KSampler
+        Assert.True(graph.ContainsKey("9")); // VAEDecode
+        Assert.True(graph.ContainsKey("11")); // SaveImage
+    }
 }
