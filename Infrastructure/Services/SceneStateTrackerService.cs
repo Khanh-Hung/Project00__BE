@@ -178,6 +178,21 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
 
                 if (deltaDto != null)
                 {
+                    var provisionalDelta = new SceneStateDelta(
+                        LocationChange: deltaDto.LocationChange,
+                        PositionChange: deltaDto.PositionChange,
+                        OutfitChange: deltaDto.OutfitChange,
+                        TimeOfDayChange: deltaDto.TimeOfDayChange,
+                        PoseChange: deltaDto.PoseChange,
+                        ActionChange: deltaDto.ActionChange,
+                        ExpressionChange: deltaDto.ExpressionChange,
+                        HeldItemsChange: deltaDto.HeldItemsChange,
+                        AtmosphereChange: deltaDto.AtmosphereChange,
+                        Evidence: deltaDto.Evidence
+                    );
+
+                    var projectedState = baseState.ApplyDelta(provisionalDelta);
+
                     VisualSceneDescription? sceneDesc = null;
                     if (deltaDto.SceneDescription != null)
                     {
@@ -195,25 +210,13 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
                         sceneDesc = VisualSceneDescription.Sanitize(
                             rawDesc,
                             character.VisualIdentity,
-                            baseState,
+                            projectedState,
                             userMessage,
                             assistantMessage
                         );
                     }
 
-                    return new SceneStateDelta(
-                        LocationChange: deltaDto.LocationChange,
-                        PositionChange: deltaDto.PositionChange,
-                        OutfitChange: deltaDto.OutfitChange,
-                        TimeOfDayChange: deltaDto.TimeOfDayChange,
-                        PoseChange: deltaDto.PoseChange,
-                        ActionChange: deltaDto.ActionChange,
-                        ExpressionChange: deltaDto.ExpressionChange,
-                        HeldItemsChange: deltaDto.HeldItemsChange,
-                        AtmosphereChange: deltaDto.AtmosphereChange,
-                        Evidence: deltaDto.Evidence,
-                        SceneDescription: sceneDesc
-                    );
+                    return provisionalDelta with { SceneDescription = sceneDesc };
                 }
             }
         }

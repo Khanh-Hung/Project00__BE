@@ -1,4 +1,4 @@
-﻿using Application.Services;
+using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -310,5 +310,52 @@ public sealed class VisualSemanticSceneTests
         // Garden / outdoor tags are allowed because dialogue explicitly mentioned it
         Assert.Contains("garden", sanitized.EnglishPromptTags);
         Assert.Contains("flowers", sanitized.EnglishPromptTags);
+    }
+
+    [Fact]
+    public void SceneDescription_Sanitizer_Validates_Against_Projected_State_When_Location_Changes_In_Turn()
+    {
+        var identity = new CharacterVisualIdentity(
+            Gender: "Female",
+            Hair: "silver hair",
+            Eyes: "emerald eyes"
+        );
+
+        // Turn N-1 old state was in Bedroom (indoor)
+        var oldState = new SessionSceneState(
+            CurrentLocation: "Bedroom",
+            CurrentPosition: "Bed",
+            CurrentOutfit: "white gown",
+            CurrentTimeOfDay: "Daytime"
+        );
+
+        // Turn N delta explicitly moves to Royal Courtyard (outdoor)
+        var delta = new SceneStateDelta(
+            LocationChange: "Royal Courtyard",
+            PositionChange: "Near Central Fountain"
+        );
+
+        var projectedState = oldState.ApplyDelta(delta);
+
+        var rawDesc = new VisualSceneDescription(
+            shotType: "medium shot",
+            detailedEnvironment: "open royal courtyard with marble fountains and stone pillars",
+            englishPromptTags: new[] { "medium shot", "royal courtyard", "stone fountains", "outdoor plaza", "standing near fountain" }
+        );
+
+        var sanitized = VisualSceneDescription.Sanitize(
+            rawDesc,
+            identity,
+            projectedState,
+            userMessage: "Hãy đi ra sân điện.",
+            assistantMessage: "Vâng, ta cùng đi."
+        );
+
+        // Assert - Tags MUST survive because projected state is now Royal Courtyard (outdoor)
+        Assert.Contains("royal courtyard", sanitized.EnglishPromptTags);
+        Assert.Contains("stone fountains", sanitized.EnglishPromptTags);
+        Assert.Contains("outdoor plaza", sanitized.EnglishPromptTags);
+        Assert.Contains("standing near fountain", sanitized.EnglishPromptTags);
+        Assert.Equal("open royal courtyard with marble fountains and stone pillars", sanitized.DetailedEnvironment);
     }
 }

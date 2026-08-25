@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 
 namespace Domain.ValueObjects;
 
@@ -41,13 +41,13 @@ public sealed record VisualSceneDescription
     }
 
     /// <summary>
-    /// Performs semantic validation and factual anchoring against the character identity and persistent scene state.
+    /// Performs semantic validation and factual anchoring against the character identity and projected persistent scene state for Turn N.
     /// Strips conflicting identity tags (hair/eyes) and unmentioned hallucinated environments/lighting (e.g. sunset, beach).
     /// </summary>
     public static VisualSceneDescription Sanitize(
         VisualSceneDescription? rawDesc,
         CharacterVisualIdentity? identity,
-        SessionSceneState baseState,
+        SessionSceneState projectedState,
         string userMessage,
         string assistantMessage)
     {
@@ -65,12 +65,20 @@ public sealed record VisualSceneDescription
         var charEyes = identity?.Eyes?.ToLowerInvariant() ?? string.Empty;
         var knownEyeColors = new[] { "blue eyes", "green eyes", "emerald eyes", "red eyes", "brown eyes", "amber eyes", "purple eyes", "golden eyes" };
 
-        // 3. Environmental Grounding: Check if indoor setting
-        var location = baseState.CurrentLocation?.ToLowerInvariant() ?? string.Empty;
-        var isIndoors = location.Contains("room") || location.Contains("bedroom") || location.Contains("library") 
-                     || location.Contains("workshop") || location.Contains("temple") || location.Contains("sanctuary") 
-                     || location.Contains("castle") || location.Contains("hall") || location.Contains("kitchen") 
-                     || location.Contains("phòng") || location.Contains("đại điện");
+        // 3. Environmental Grounding: Check if projected location is indoor vs outdoor setting
+        var location = projectedState.CurrentLocation?.ToLowerInvariant() ?? string.Empty;
+        var isExplicitlyOutdoorLocation = location.Contains("courtyard") || location.Contains("garden") || location.Contains("balcony")
+            || location.Contains("street") || location.Contains("plaza") || location.Contains("park") || location.Contains("beach")
+            || location.Contains("forest") || location.Contains("mountain") || location.Contains("terrace") || location.Contains("rooftop")
+            || location.Contains("sân") || location.Contains("vườn") || location.Contains("ngoài");
+
+        var isIndoors = !isExplicitlyOutdoorLocation && (
+            location.Contains("room") || location.Contains("bedroom") || location.Contains("library") 
+            || location.Contains("workshop") || location.Contains("temple") || location.Contains("sanctuary") 
+            || location.Contains("castle") || location.Contains("hall") || location.Contains("kitchen") 
+            || location.Contains("phòng") || location.Contains("đại điện") || location.Contains("bay") 
+            || location.Contains("cabin") || location.Contains("bridge") || location.Contains("laboratory")
+        );
 
         var hasOutdoorDialogue = combinedDialogue.Contains("outdoor") || combinedDialogue.Contains("outside") 
                               || combinedDialogue.Contains("garden") || combinedDialogue.Contains("beach") 
@@ -78,12 +86,13 @@ public sealed record VisualSceneDescription
                               || combinedDialogue.Contains("forest") || combinedDialogue.Contains("mountain") 
                               || combinedDialogue.Contains("bãi biển") || combinedDialogue.Contains("khu vườn") 
                               || combinedDialogue.Contains("rừng") || combinedDialogue.Contains("ngoài trời") 
-                              || combinedDialogue.Contains("ban công") || combinedDialogue.Contains("balcony");
+                              || combinedDialogue.Contains("ban công") || combinedDialogue.Contains("balcony")
+                              || combinedDialogue.Contains("courtyard") || combinedDialogue.Contains("sân");
 
         var forbiddenOutdoorTags = new[] { "beach", "ocean", "seashore", "deep forest", "in the forest", "jungle" };
 
         // 4. TimeOfDay Grounding
-        var timeOfDay = baseState.CurrentTimeOfDay?.ToLowerInvariant() ?? string.Empty;
+        var timeOfDay = projectedState.CurrentTimeOfDay?.ToLowerInvariant() ?? string.Empty;
         var isNight = timeOfDay.Contains("night") || timeOfDay.Contains("midnight") || timeOfDay.Contains("đêm");
         var hasSunsetDialogue = combinedDialogue.Contains("sunset") || combinedDialogue.Contains("sunrise") 
                              || combinedDialogue.Contains("hoàng hôn") || combinedDialogue.Contains("bình minh");
@@ -142,14 +151,14 @@ public sealed record VisualSceneDescription
         var sanitizedLighting = rawDesc.LightingStyle;
         if (isNight && !hasSunsetDialogue && !string.IsNullOrEmpty(sanitizedLighting) && forbiddenDayTags.Any(f => sanitizedLighting.ToLowerInvariant().Contains(f)))
         {
-            sanitizedLighting = "warm indoor ambient light, soft room glow";
+            sanitizedLighting = isIndoors ? "warm indoor ambient light, soft room glow" : "night ambient light, soft moonlight";
         }
 
         // Sanitize DetailedEnvironment if outdoor hallucinated while indoors
         var sanitizedEnvironment = rawDesc.DetailedEnvironment;
         if (isIndoors && !hasOutdoorDialogue && !string.IsNullOrEmpty(sanitizedEnvironment) && forbiddenOutdoorTags.Any(f => sanitizedEnvironment.ToLowerInvariant().Contains(f)))
         {
-            sanitizedEnvironment = $"indoor {baseState.CurrentLocation} setting";
+            sanitizedEnvironment = $"indoor {projectedState.CurrentLocation} setting";
         }
 
         return new VisualSceneDescription(
