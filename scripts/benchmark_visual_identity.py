@@ -7,32 +7,74 @@ import urllib.parse
 import torch
 import numpy as np
 from PIL import Image
-import torchvision.transforms as transforms
-import torchvision.models as models
+from transformers import CLIPVisionModelWithProjection, CLIPImageProcessor
 
-COMFY_URL = "http://127.0.0.1:8188"
-COMFY_INPUT_DIR = r"D:\ComfyUI_windows_portable\ComfyUI\input"
-COMFY_OUTPUT_DIR = r"D:\ComfyUI_windows_portable\ComfyUI\output"
+COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188")
+COMFY_INPUT_DIR = os.environ.get("COMFY_INPUT_DIR", r"D:\ComfyUI_windows_portable\ComfyUI\input")
+COMFY_OUTPUT_DIR = os.environ.get("COMFY_OUTPUT_DIR", r"D:\ComfyUI_windows_portable\ComfyUI\output")
 
-# Define 2 Real Benchmark Characters with their canonical face crops and diverse scene prompts
+# 3 Distinct Canonical Benchmark Characters with real avatar files in ComfyUI/input
 BENCHMARK_CHARACTERS = [
     {
-        "name": "Lyra (Sanctuary - Standing Pose)",
+        "id": "char_lyra",
+        "name": "Lyra (Silver Dragon Horns & Red Eyes)",
         "reference_image": "Lyra_tight_face.png",
-        "prompt": "masterpiece, best quality, solo, 1girl, delicate elegant face, sharp jawline, long silver hair in neat updo, sharp emerald green eyes, porcelain white skin, wearing white gown with dark green corset, standing beside arched window in grand sanctuary hall, soft natural daylight, medium shot, slight 3/4 turn, eye level",
-        "negative": "2girls, multiple people, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, blurry, low quality",
-        "seeds": [100001, 200002, 300003]
+        "scenarios": [
+            {
+                "name": "Sanctuary (Standing)",
+                "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, sharp jawline, porcelain skin, wearing white and gold dress, standing beside arched window in grand sanctuary hall, soft natural daylight, medium shot, slight 3/4 turn, eye level",
+                "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, extra digits, cropped, blurry, low quality",
+                "seeds": [700001, 700002, 700003]
+            },
+            {
+                "name": "Library (Sitting)",
+                "prompt": "masterpiece, best quality, solo, 1girl, long white hair, striking red eyes, black horns with red accents on head, delicate elegant face, porcelain skin, wearing silk traveler cloak, sitting at wooden table in cozy library, holding ceramic teacup, warm ambient indoor light, medium shot, slight 3/4 turn",
+                "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
+                "seeds": [700004, 700005, 700006]
+            }
+        ]
     },
     {
-        "name": "Lyra (Library - Sitting Pose)",
-        "reference_image": "Lyra_tight_face.png",
-        "prompt": "masterpiece, best quality, solo, 1girl, delicate elegant face, sharp jawline, long silver hair in neat updo, sharp emerald green eyes, porcelain white skin, wearing silk traveler cloak, sitting at wooden table in cozy library, holding ceramic teacup, warm ambient indoor light, medium shot, slight 3/4 turn",
-        "negative": "2girls, multiple people, bad anatomy, bad hands, missing fingers, cropped, blurry, low quality",
-        "seeds": [400004, 500005, 600006]
+        "id": "char_b",
+        "name": "Archetype B (Golden Twilight Mage)",
+        "reference_image": "13d535721d7e4326ad78e3052f7a3bcd_TextToImage_v1_00020_.png",
+        "scenarios": [
+            {
+                "name": "Observatory (Standing)",
+                "prompt": "masterpiece, best quality, solo, 1girl, delicate youthful face, expressive eyes, long flowing hair, wearing elegant magical robe, standing in celestial observatory, starlight illumination, medium shot, slight 3/4 turn",
+                "negative": "2girls, multiple people, bad anatomy, bad hands, cropped, blurry, low quality",
+                "seeds": [800001, 800002, 800003]
+            },
+            {
+                "name": "Courtyard (Walking)",
+                "prompt": "masterpiece, best quality, solo, 1girl, delicate youthful face, expressive eyes, long flowing hair, wearing traveler cloak, walking in stone courtyard near fountain, daylight, medium shot, slight 3/4 turn",
+                "negative": "2girls, multiple people, bad anatomy, bad hands, cropped, blurry, low quality",
+                "seeds": [800004, 800005, 800006]
+            }
+        ]
+    },
+    {
+        "id": "char_c",
+        "name": "Archetype C (Raven Shadow Knight)",
+        "reference_image": "225563c3071a4717b623481cf72a0f32_TextToImage_v1_00021_.png",
+        "scenarios": [
+            {
+                "name": "Armory (Standing)",
+                "prompt": "masterpiece, best quality, solo, 1boy, handsome chiseled face, determined jawline, dark spiky hair, wearing dark knight tunic with silver pauldrons, standing in armory hall, torchlight ambient, medium shot, slight 3/4 turn",
+                "negative": "2boys, multiple people, bad anatomy, bad hands, cropped, blurry, low quality",
+                "seeds": [900001, 900002, 900003]
+            },
+            {
+                "name": "Balcony (Overlooking)",
+                "prompt": "masterpiece, best quality, solo, 1boy, handsome chiseled face, dark spiky hair, wearing dark knight tunic, standing on stone balcony overlooking kingdom at dusk, twilight lighting, medium shot, slight 3/4 turn",
+                "negative": "2boys, multiple people, bad anatomy, bad hands, cropped, blurry, low quality",
+                "seeds": [900004, 900005, 900006]
+            }
+        ]
     }
 ]
 
-def build_visual_identity_workflow(reference_img_name, prompt, negative, seed, ip_weight=0.55, ip_end_at=0.75):
+def build_workflow(reference_img_name, prompt, negative, seed, ip_weight=0.65, ip_end_at=0.85):
     return {
         "1": {
             "class_type": "LoadImage",
@@ -98,7 +140,7 @@ def build_visual_identity_workflow(reference_img_name, prompt, negative, seed, i
         },
         "12": {
             "class_type": "SaveImage",
-            "inputs": { "filename_prefix": f"Benchmark_Identity_{seed}", "images": ["9", 0] }
+            "inputs": { "filename_prefix": f"Benchmark_FaceID_{seed}", "images": ["9", 0] }
         }
     }
 
@@ -125,82 +167,122 @@ def wait_for_prompt_completion(prompt_id, timeout_sec=120):
         time.sleep(1.5)
     raise TimeoutError(f"Generation for prompt_id {prompt_id} timed out after {timeout_sec}s")
 
-class FeatureExtractor:
+class FaceIdentityEvaluator:
     def __init__(self):
+        print("Loading CLIP-ViT-H-14 Face-Centric Vision Evaluator...")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        weights = models.ResNet50_Weights.DEFAULT
-        self.model = models.resnet50(weights=weights).to(self.device)
+        self.processor = CLIPImageProcessor.from_pretrained("laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
+        self.model = CLIPVisionModelWithProjection.from_pretrained(
+            "laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
+            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
+        ).to(self.device)
         self.model.eval()
-        self.feature_layer = torch.nn.Sequential(*list(self.model.children())[:-1])
-        self.preprocess = weights.transforms()
 
-    def get_embedding(self, img_path):
-        img = Image.open(img_path).convert("RGB")
-        tensor = self.preprocess(img).unsqueeze(0).to(self.device)
-        with torch.no_grad():
-            feat = self.feature_layer(tensor).squeeze().cpu().numpy()
-            norm = np.linalg.norm(feat)
-            return feat / (norm + 1e-8)
+    def crop_face_region(self, img: Image.Image, is_avatar_ref: bool = False) -> Image.Image:
+        """Extract centered head & face region to isolate facial identity from background/dress."""
+        w, h = img.size
+        if is_avatar_ref:
+            # Avatar is already a close-up/square face crop
+            return img
+        # For generated 512x768 medium shot, crop the head & face upper bounding box
+        left = int(w * 0.12)
+        top = int(h * 0.02)
+        right = int(w * 0.88)
+        bottom = int(h * 0.52)
+        return img.crop((left, top, right, bottom))
 
-    def cosine_similarity(self, emb1, emb2):
+    def get_face_embedding(self, img_path: str, is_avatar_ref: bool = False) -> np.ndarray:
+        try:
+            raw_img = Image.open(img_path).convert("RGB")
+            face_img = self.crop_face_region(raw_img, is_avatar_ref=is_avatar_ref)
+            inputs = self.processor(images=face_img, return_tensors="pt").to(self.device)
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                emb = outputs.image_embeds.squeeze().cpu().numpy()
+                norm = np.linalg.norm(emb)
+                return emb / (norm + 1e-8)
+        except Exception as ex:
+            print(f"[ERROR] Failed to extract face embedding from {img_path}: {ex}")
+            return np.zeros(1024)
+
+    def compute_similarity(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
+        if np.all(emb1 == 0) or np.all(emb2 == 0):
+            return 0.0
         return float(np.dot(emb1, emb2))
 
-def run_benchmark():
-    print("=" * 78)
-    print("PROJECT00: EMPIRICAL VISUAL IDENTITY GPU BENCHMARK (PHASE 20.1)")
-    print(f"ComfyUI Target: {COMFY_URL}")
-    print("=" * 78)
+def run_face_identity_benchmark():
+    print("=" * 86)
+    print("PROJECT00: EMPIRICAL FACE-CENTRIC VISUAL IDENTITY GPU BENCHMARK")
+    print(f"Target Server: {COMFY_URL}")
+    print(f"Metric: CLIP-ViT-H-14 Face-Region Cosine Similarity")
+    print("=" * 86)
 
-    extractor = FeatureExtractor()
-    IDENTITY_SIMILARITY_THRESHOLD = 0.65
-    results = []
+    evaluator = FaceIdentityEvaluator()
+    THRESHOLD = 0.75 # Calibrated Face Cosine Similarity Threshold
 
-    for char_idx, char in enumerate(BENCHMARK_CHARACTERS):
-        char_name = char["name"]
-        ref_filename = char["reference_image"]
-        ref_path = os.path.join(COMFY_INPUT_DIR, ref_filename)
-        
-        if not os.path.exists(ref_path):
-            print(f"[WARN] Reference image not found at {ref_path}, skipping {char_name}")
-            continue
+    # Configurations to benchmark: Baseline (0.55/0.75) vs Candidate (0.65/0.85)
+    configs = [
+        {"name": "Baseline (Weight=0.55, EndAt=0.75)", "weight": 0.55, "end_at": 0.75},
+        {"name": "Candidate (Weight=0.65, EndAt=0.85)", "weight": 0.65, "end_at": 0.85}
+    ]
 
-        print(f"\n--- Benchmarking Archetype: {char_name} ---")
-        print(f"Reference: {ref_filename}")
-        ref_emb = extractor.get_embedding(ref_path)
+    summary_records = []
 
-        char_scores = []
-        for seed in char["seeds"]:
-            print(f"  > Generating Image for Seed={seed} with IP-Adapter (K+V, weight=0.55, endAt=0.75)...")
-            workflow = build_visual_identity_workflow(ref_filename, char["prompt"], char["negative"], seed)
-            queue_res = queue_prompt(workflow)
-            prompt_id = queue_res["prompt_id"]
+    for cfg in configs:
+        print(f"\n{'#' * 86}")
+        print(f"RUNNING CONFIGURATION: {cfg['name']}")
+        print(f"{'#' * 86}")
 
-            generated_path = wait_for_prompt_completion(prompt_id)
-            gen_emb = extractor.get_embedding(generated_path)
-            score = extractor.cosine_similarity(ref_emb, gen_emb)
-            char_scores.append(score)
-            status = "PASS" if score >= IDENTITY_SIMILARITY_THRESHOLD else "BELOW_THRESHOLD"
-            print(f"    [Completed] Image: {os.path.basename(generated_path)} | Identity Similarity: {score:.4f} | Status: {status}")
+        cfg_all_scores = []
 
-        mean_score = float(np.mean(char_scores))
-        min_score = float(np.min(char_scores))
-        results.append({
-            "character": char_name,
-            "mean_similarity": mean_score,
-            "min_similarity": min_score,
-            "samples": len(char_scores),
-            "pass": min_score >= IDENTITY_SIMILARITY_THRESHOLD
+        for char in BENCHMARK_CHARACTERS:
+            char_name = char["name"]
+            ref_path = os.path.join(COMFY_INPUT_DIR, char["reference_image"])
+            if not os.path.exists(ref_path):
+                print(f"[WARN] Missing reference image at {ref_path}, skipping {char_name}")
+                continue
+
+            ref_emb = evaluator.get_face_embedding(ref_path, is_avatar_ref=True)
+            print(f"\n--- Archetype: {char_name} ---")
+
+            for scn in char["scenarios"]:
+                scn_name = scn["name"]
+                print(f"  > Scenario: {scn_name}")
+                for seed in scn["seeds"]:
+                    wf = build_workflow(char["reference_image"], scn["prompt"], scn["negative"], seed, cfg["weight"], cfg["end_at"])
+                    q = queue_prompt(wf)
+                    gen_path = wait_for_prompt_completion(q["prompt_id"])
+
+                    gen_emb = evaluator.get_face_embedding(gen_path, is_avatar_ref=False)
+                    sim = evaluator.compute_similarity(ref_emb, gen_emb)
+                    cfg_all_scores.append(sim)
+
+                    status = "PASS" if sim >= THRESHOLD else "BELOW_THRESHOLD"
+                    print(f"    [Seed {seed}] File: {os.path.basename(gen_path)} | Face Sim: {sim:.4f} | Status: {status}")
+
+        mean_sim = float(np.mean(cfg_all_scores))
+        min_sim = float(np.min(cfg_all_scores))
+        std_sim = float(np.std(cfg_all_scores))
+        pass_count = sum(1 for s in cfg_all_scores if s >= THRESHOLD)
+        pass_rate = (pass_count / len(cfg_all_scores)) * 100.0 if cfg_all_scores else 0.0
+
+        summary_records.append({
+            "config": cfg["name"],
+            "mean": mean_sim,
+            "min": min_sim,
+            "std": std_sim,
+            "pass_rate": pass_rate,
+            "samples": len(cfg_all_scores)
         })
 
-    print("\n" + "=" * 78)
-    print("FINAL EMPIRICAL VISUAL IDENTITY BENCHMARK RESULTS")
-    print("=" * 78)
-    print(f"{'Character / Scenario':<38} | {'Mean Sim':<10} | {'Min Sim':<10} | {'Threshold':<10} | {'Status':<8}")
-    print("-" * 78)
-    for r in results:
-        status_str = "PASS [OK]" if r["pass"] else "WARN"
-        print(f"{r['character']:<38} | {r['mean_similarity']:<10.4f} | {r['min_similarity']:<10.4f} | {IDENTITY_SIMILARITY_THRESHOLD:<10.2f} | {status_str:<8}")
-    print("=" * 78)
+    print("\n" + "=" * 86)
+    print("FINAL COMPARISON: BASELINE (0.55/0.75) vs CANDIDATE (0.65/0.85)")
+    print("=" * 86)
+    print(f"{'Configuration':<40} | {'Mean Sim':<10} | {'Min Sim':<10} | {'StdDev':<10} | {'Pass Rate':<10}")
+    print("-" * 86)
+    for r in summary_records:
+        print(f"{r['config']:<40} | {r['mean']:<10.4f} | {r['min']:<10.4f} | {r['std']:<10.4f} | {r['pass_rate']:<9.1f}%")
+    print("=" * 86)
 
 if __name__ == "__main__":
-    run_benchmark()
+    run_face_identity_benchmark()
