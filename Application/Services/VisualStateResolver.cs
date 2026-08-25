@@ -86,6 +86,26 @@ public sealed class VisualStateResolver : IVisualStateResolver
 
         var generationProfile = _profileProvider.ResolveProfile(character);
 
+        string? frozenPreviousSceneImageUrl = null;
+        Guid? frozenPredecessorSceneImageId = null;
+        int? predecessorRevision = targetRevision > 1 ? targetRevision - 1 : null;
+        if (predecessorRevision.HasValue)
+        {
+            try
+            {
+                var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
+                var lastCommittedImage = await sceneImageRepo.GetAsync(
+                    img => img.SessionId == session.Id && img.SceneRevision == predecessorRevision.Value && img.IsCurrent,
+                    ct);
+                frozenPreviousSceneImageUrl = lastCommittedImage?.ImageUrl;
+                frozenPredecessorSceneImageId = lastCommittedImage?.Id;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to resolve predecessor scene image for Revision {Rev} during turn commit.", predecessorRevision.Value);
+            }
+        }
+
         var snapshot = VisualSnapshot.Create(
             turnId: turnId,
             sessionId: session.Id,
@@ -95,8 +115,9 @@ public sealed class VisualStateResolver : IVisualStateResolver
             sceneState: updatedSceneState,
             transientState: transientState,
             generationProfile: generationProfile,
-            previousSceneImageUrl: null,
-            predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null,
+            previousSceneImageUrl: frozenPreviousSceneImageUrl,
+            predecessorSceneRevision: predecessorRevision,
+            predecessorSceneImageId: frozenPredecessorSceneImageId,
             fallbackReferenceUrl: character.AvatarUrl,
             sceneDescription: delta.SceneDescription
         );

@@ -9,6 +9,7 @@ using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
@@ -243,6 +244,213 @@ public class VisualContinuity8TurnBenchmarkTests
             Assert.Contains("holding Porcelain Tea Cup", capturedRequests[6].Prompt);
             Assert.DoesNotContain("holding Porcelain Tea Cup", capturedRequests[7].Prompt);
         }
+    }
+
+    [Fact]
+    public void VisualSnapshot_ParametersJson_Is_Immutable_And_Resistant_To_Runtime_Config_Changes()
+    {
+        // 1. Initial configuration with weight = 0.20
+        var initialConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiProviders:ImageGeneration:SceneContinuity:Weight"] = "0.20",
+                ["AiProviders:ImageGeneration:SceneContinuity:EndAt"] = "0.40"
+            })
+            .Build();
+
+        var initialProvider = new VisualGenerationProfileProvider(initialConfig);
+        var character = new Character(
+            name: "Lyra",
+            title: "Saintess",
+            avatarUrl: "https://cloud.storage/lyra.png",
+            personalityPrompt: "Calm",
+            greeting: "Greetings",
+            category: "Anime",
+            visualIdentity: new CharacterVisualIdentity(
+                Gender: "Female",
+                AgeAppearance: "19",
+                Hair: "White",
+                Eyes: "Red",
+                ClothingStyle: "Silk dress",
+                CanonicalReferenceUrl: "https://cloud.storage/lyra_canonical.png"
+            )
+        );
+
+        var profile = initialProvider.ResolveProfile(character);
+        var snapshot = VisualSnapshot.Create(
+            turnId: Guid.NewGuid(),
+            sessionId: Guid.NewGuid(),
+            characterId: character.Id,
+            sceneRevision: 2,
+            visualIdentity: character.VisualIdentity,
+            sceneState: new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 2, DateTime.UtcNow),
+            transientState: null,
+            generationProfile: profile,
+            previousSceneImageUrl: "https://cloud.storage/scene_rev1.png",
+            predecessorSceneRevision: 1
+        );
+
+        // 2. Runtime configuration subsequently changes (e.g. dynamic reload to 0.35 / 0.50)
+        var updatedConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiProviders:ImageGeneration:SceneContinuity:Weight"] = "0.35",
+                ["AiProviders:ImageGeneration:SceneContinuity:EndAt"] = "0.50"
+            })
+            .Build();
+        var updatedProvider = new VisualGenerationProfileProvider(updatedConfig);
+        var newlyResolvedProfile = updatedProvider.ResolveProfile(character);
+
+        // 3. Invariant: Snapshot's parameters remain completely frozen to original 0.20
+        Assert.Contains("\"weight\":0.2", snapshot.GenerationProfile.ParametersJson);
+        Assert.Contains("\"weight\":0.35", newlyResolvedProfile.ParametersJson);
+
+        // 4. Replay execution with builder must use frozen snapshot ParametersJson
+        var builder = new global::Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = ImageGenerationRequest.FromSnapshot(snapshot, "https://cloud.storage/lyra_canonical.png");
+        var graph = builder.BuildWorkflow(request, "lyra_canonical.png", "scene_rev1.png");
+
+        var node14Inputs = (Dictionary<string, object>)((Dictionary<string, object>)graph["14"])["inputs"];
+        Assert.Equal(0.20, (double)node14Inputs["weight"], precision: 2);
+        Assert.Equal(0.40, (double)node14Inputs["end_at"], precision: 2);
+    }
+
+    [Fact]
+    public async Task VisualSnapshot_Predecessor_Lineage_Is_Frozen_And_Resistant_To_Revision_Regeneration()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(dbName)
+            .Options;
+
+        var sessionId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        // 1. Initial State: Rev 1 has committed Image A (IsCurrent = true)
+        var imageAId = Guid.NewGuid();
+        var imageAUrl = "https://cloud.storage/scene_rev1_image_A.png";
+        var imageA = new SceneImage(
+            sessionId: sessionId,
+            characterId: characterId,
+            turnId: Guid.NewGuid(),
+            sceneRevision: 1,
+            imageUrl: imageAUrl,
+            prompt: "Scene 1",
+            isCurrent: true
+        );
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(imageA, imageAId);
+
+        var uow = new UnitOfWork(new ProjectDbContext(options));
+        var sceneRepo = uow.GetRepository<SceneImage>();
+        await sceneRepo.AddAsync(imageA);
+        await uow.SaveChangesAsync();
+
+        var character = new Character(
+            name: "Lyra",
+            title: "Saintess",
+            avatarUrl: "https://cloud.storage/lyra.png",
+            personalityPrompt: "Calm",
+            greeting: "Greetings",
+            category: "Anime",
+            visualIdentity: new CharacterVisualIdentity(Gender: "Female", AgeAppearance: "19", Hair: "White", Eyes: "Red", ClothingStyle: "Dress", CanonicalReferenceUrl: "https://cloud.storage/lyra_canonical.png")
+        );
+        var session = new ChatSession(characterId, Guid.NewGuid(), "Roleplay");
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(session, sessionId);
+        session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
+
+        // 2. Turn 2 Commit: VisualStateResolver resolves and freezes predecessor
+        var resolver = new VisualStateResolver(uow, null);
+        var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(
+            character,
+            session,
+            "Walking forward",
+            "I am walking forward",
+            CharacterMood.Happy,
+            Guid.NewGuid()
+        );
+
+        Assert.Equal(imageAUrl, turn2Snapshot.PreviousSceneImageUrl);
+        Assert.Equal(imageAId, turn2Snapshot.PredecessorSceneImageId);
+        Assert.Equal(1, turn2Snapshot.PredecessorSceneRevision);
+
+        // 3. Regeneration Event: Rev 1 is regenerated into Image B (Image B becomes current, Image A IsCurrent = false)
+        imageA.SetCurrent(false);
+        var imageB = new SceneImage(
+            sessionId: sessionId,
+            characterId: characterId,
+            turnId: Guid.NewGuid(),
+            sceneRevision: 1,
+            imageUrl: "https://cloud.storage/scene_rev1_image_B_regenerated.png",
+            prompt: "Scene 1 Regenerated",
+            isCurrent: true
+        );
+        await sceneRepo.AddAsync(imageB);
+        await uow.SaveChangesAsync();
+
+        // 4. Invariant: Turn 2 snapshot remains locked to Image A (Lineage is strictly preserved forever!)
+        Assert.Equal(imageAUrl, turn2Snapshot.PreviousSceneImageUrl);
+        Assert.Equal(imageAId, turn2Snapshot.PredecessorSceneImageId);
+        Assert.NotEqual(imageB.ImageUrl, turn2Snapshot.PreviousSceneImageUrl);
+    }
+
+    [Fact]
+    public async Task VisualSnapshot_Concurrent_Predecessor_Resolution_Observes_Committed_State_And_Freezes_Permanently()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(dbName)
+            .Options;
+
+        var sessionId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var uow = new UnitOfWork(new ProjectDbContext(options));
+        var sceneRepo = uow.GetRepository<SceneImage>();
+
+        var character = new Character(
+            name: "Lyra",
+            title: "Saintess",
+            avatarUrl: "https://cloud.storage/lyra.png",
+            personalityPrompt: "Calm",
+            greeting: "Greetings",
+            category: "Anime",
+            visualIdentity: new CharacterVisualIdentity(Gender: "Female", AgeAppearance: "19", Hair: "White", Eyes: "Red", ClothingStyle: "Dress", CanonicalReferenceUrl: "https://cloud.storage/lyra_canonical.png")
+        );
+
+        // Turn 1 Committed Artifact Image 1
+        var image1Id = Guid.NewGuid();
+        var image1Url = "https://cloud.storage/scene_rev1_committed.png";
+        var image1 = new SceneImage(sessionId, characterId, Guid.NewGuid(), 1, image1Url, "Scene 1", isCurrent: true);
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(image1, image1Id);
+        await sceneRepo.AddAsync(image1);
+        await uow.SaveChangesAsync();
+
+        var session = new ChatSession(characterId, Guid.NewGuid(), "Roleplay");
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(session, sessionId);
+        session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
+
+        var resolver = new VisualStateResolver(uow, null);
+
+        // Transaction 1: Turn 2 Resolves Turn 1 Predecessor
+        var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(character, session, "Action 2", "Reply 2", CharacterMood.Happy, Guid.NewGuid());
+        Assert.Equal(image1Id, turn2Snapshot.PredecessorSceneImageId);
+        Assert.Equal(image1Url, turn2Snapshot.PreviousSceneImageUrl);
+
+        // Concurrent Event: Turn 2 Finishes GPU and commits its own Artifact Image 2
+        var image2Id = Guid.NewGuid();
+        var image2Url = "https://cloud.storage/scene_rev2_committed.png";
+        var image2 = new SceneImage(sessionId, characterId, Guid.NewGuid(), 2, image2Url, "Scene 2", isCurrent: true);
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(image2, image2Id);
+        await sceneRepo.AddAsync(image2);
+        await uow.SaveChangesAsync();
+
+        // Transaction 2: Turn 3 Resolves Turn 2 Predecessor
+        var (_, _, turn3Snapshot) = await resolver.ResolveTurnVisualStateAsync(character, session, "Action 3", "Reply 3", CharacterMood.Happy, Guid.NewGuid());
+        Assert.Equal(image2Id, turn3Snapshot.PredecessorSceneImageId);
+        Assert.Equal(image2Url, turn3Snapshot.PreviousSceneImageUrl);
+
+        // Invariant: Both snapshots remain locked to their respective committed states
+        Assert.Equal(image1Id, turn2Snapshot.PredecessorSceneImageId);
+        Assert.Equal(image2Id, turn3Snapshot.PredecessorSceneImageId);
     }
 
     private sealed class TestSceneTracker : ISceneStateTrackerService

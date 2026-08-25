@@ -92,13 +92,51 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             endAt = parsedEndAt;
         }
 
-        // 4. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
+        // 4. Strict validation of Scene Continuity Weight & EndAt (default 0.20 / 0.40)
+        float sceneWeight = 0.20f;
+        var sceneWeightStr = _configuration?["AiProviders:ImageGeneration:SceneContinuity:Weight"];
+        if (!string.IsNullOrWhiteSpace(sceneWeightStr))
+        {
+            if (!float.TryParse(sceneWeightStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSceneWeight)
+                || float.IsNaN(parsedSceneWeight)
+                || float.IsInfinity(parsedSceneWeight)
+                || parsedSceneWeight < 0.0f
+                || parsedSceneWeight > 1.0f)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid configuration for 'AiProviders:ImageGeneration:SceneContinuity:Weight': '{sceneWeightStr}'. Weight must be a valid number between 0.0 and 1.0.");
+            }
+            sceneWeight = parsedSceneWeight;
+        }
+
+        float sceneEndAt = 0.40f;
+        var sceneEndAtStr = _configuration?["AiProviders:ImageGeneration:SceneContinuity:EndAt"];
+        if (!string.IsNullOrWhiteSpace(sceneEndAtStr))
+        {
+            if (!float.TryParse(sceneEndAtStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSceneEndAt)
+                || float.IsNaN(parsedSceneEndAt)
+                || float.IsInfinity(parsedSceneEndAt)
+                || parsedSceneEndAt < 0.0f
+                || parsedSceneEndAt > 1.0f)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid configuration for 'AiProviders:ImageGeneration:SceneContinuity:EndAt': '{sceneEndAtStr}'. EndAt must be a valid number between 0.0 and 1.0.");
+            }
+            sceneEndAt = parsedSceneEndAt;
+        }
+
+        // 5. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
         var parametersJson = JsonSerializer.Serialize(new
         {
             ipAdapter = new
             {
                 weight,
                 endAt
+            },
+            sceneContinuity = new
+            {
+                weight = sceneWeight,
+                endAt = sceneEndAt
             }
         });
 
