@@ -45,7 +45,7 @@ public sealed class VisualStateResolver : IVisualStateResolver
         CancellationToken ct = default)
     {
         var oldState = session.SceneState ?? new SessionSceneState(
-            CurrentLocation: character.WorldDescription ?? character.Title ?? "Sanctuary",
+            CurrentLocation: character.WorldDescription ?? character.WorldName ?? character.Title ?? "Sanctuary",
             CurrentPosition: "Central Area",
             CurrentOutfit: character.VisualIdentity?.ClothingStyle ?? "Canonical Attire",
             CurrentTimeOfDay: "Daytime",
@@ -96,7 +96,9 @@ public sealed class VisualStateResolver : IVisualStateResolver
             transientState: transientState,
             generationProfile: generationProfile,
             previousSceneImageUrl: null,
-            predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null
+            predecessorSceneRevision: targetRevision > 1 ? targetRevision - 1 : null,
+            fallbackReferenceUrl: character.AvatarUrl,
+            sceneDescription: delta.SceneDescription
         );
 
         return (updatedSceneState, transientState, snapshot);

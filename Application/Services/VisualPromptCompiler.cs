@@ -110,73 +110,116 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
     {
         if (snapshot == null) return string.Empty;
 
-        var characterTags = new List<string> { "masterpiece", "best quality", "solo" };
+        var allTags = new List<string>();
+
+        // Tier 1: Base Quality & Character Physical Identity Foundation
+        allTags.Add("masterpiece, best quality, solo");
         var identity = snapshot.VisualIdentity;
         if (identity != null)
         {
             if (!string.IsNullOrWhiteSpace(identity.Gender))
-                characterTags.Add(identity.Gender.Equals("Female", StringComparison.OrdinalIgnoreCase) ? "1girl" : "1boy");
-            if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) characterTags.Add(identity.AgeAppearance);
-            if (!string.IsNullOrWhiteSpace(identity.Hair)) characterTags.Add(identity.Hair);
-            if (!string.IsNullOrWhiteSpace(identity.Eyes)) characterTags.Add(identity.Eyes);
-            if (!string.IsNullOrWhiteSpace(identity.Face)) characterTags.Add(identity.Face);
-            if (!string.IsNullOrWhiteSpace(identity.Skin)) characterTags.Add(identity.Skin);
-            if (!string.IsNullOrWhiteSpace(identity.Body)) characterTags.Add(identity.Body);
-            if (!string.IsNullOrWhiteSpace(identity.Accessories)) characterTags.Add(identity.Accessories);
-            if (!string.IsNullOrWhiteSpace(identity.VisualTraits)) characterTags.Add(identity.VisualTraits);
+                allTags.Add(identity.Gender.Equals("Female", StringComparison.OrdinalIgnoreCase) ? "1girl" : "1boy");
+            else
+                allTags.Add("1girl");
+
+            if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) allTags.Add(identity.AgeAppearance);
+            if (!string.IsNullOrWhiteSpace(identity.Hair)) allTags.Add(identity.Hair);
+            if (!string.IsNullOrWhiteSpace(identity.Eyes)) allTags.Add(identity.Eyes);
+            if (!string.IsNullOrWhiteSpace(identity.Face)) allTags.Add(identity.Face);
+            if (!string.IsNullOrWhiteSpace(identity.Skin)) allTags.Add(identity.Skin);
+            if (!string.IsNullOrWhiteSpace(identity.Body)) allTags.Add(identity.Body);
+            if (!string.IsNullOrWhiteSpace(identity.Accessories)) allTags.Add(identity.Accessories);
+            if (!string.IsNullOrWhiteSpace(identity.VisualTraits)) allTags.Add(identity.VisualTraits);
         }
         else
         {
-            characterTags.Add("1girl");
+            allTags.Add("1girl");
         }
 
-        var expressionTags = new List<string>();
-        var transient = snapshot.TransientState;
-        if (transient != null)
-        {
-            if (!string.IsNullOrWhiteSpace(transient.Expression)) expressionTags.Add(transient.Expression);
-            if (!string.IsNullOrWhiteSpace(transient.Gaze)) expressionTags.Add(transient.Gaze);
-            if (!string.IsNullOrWhiteSpace(transient.Gesture)) expressionTags.Add(transient.Gesture);
-        }
-        if (expressionTags.Count == 0)
-        {
-            expressionTags.Add("gentle expression, soft gaze");
-        }
-
-        var sceneTags = new List<string>();
+        // Tier 2: Persistent Scene State (Room, Position, Outfit, Time, Held Items)
         var scene = snapshot.SceneState;
         if (scene != null)
         {
             if (!string.IsNullOrWhiteSpace(scene.CurrentOutfit))
-                sceneTags.Add($"wearing {scene.CurrentOutfit}");
+                allTags.Add($"wearing {scene.CurrentOutfit}");
             else if (!string.IsNullOrWhiteSpace(identity?.ClothingStyle))
-                sceneTags.Add($"wearing {identity.ClothingStyle}");
-
-            if (transient != null)
-            {
-                if (!string.IsNullOrWhiteSpace(transient.Pose)) sceneTags.Add(transient.Pose);
-                if (!string.IsNullOrWhiteSpace(transient.Action)) sceneTags.Add(transient.Action);
-                if (!string.IsNullOrWhiteSpace(transient.Interaction)) sceneTags.Add(transient.Interaction);
-            }
+                allTags.Add($"wearing {identity.ClothingStyle}");
 
             if (!string.IsNullOrWhiteSpace(scene.CurrentPosition) && !string.IsNullOrWhiteSpace(scene.CurrentLocation))
-                sceneTags.Add($"at {scene.CurrentPosition}, in {scene.CurrentLocation}");
+                allTags.Add($"at {scene.CurrentPosition}, in {scene.CurrentLocation}");
             else if (!string.IsNullOrWhiteSpace(scene.CurrentPosition))
-                sceneTags.Add($"at {scene.CurrentPosition}");
+                allTags.Add($"at {scene.CurrentPosition}");
             else if (!string.IsNullOrWhiteSpace(scene.CurrentLocation))
-                sceneTags.Add($"in {scene.CurrentLocation}");
+                allTags.Add($"in {scene.CurrentLocation}");
 
-            if (!string.IsNullOrWhiteSpace(scene.CurrentTimeOfDay)) sceneTags.Add(scene.CurrentTimeOfDay);
-            if (!string.IsNullOrWhiteSpace(scene.HeldItems)) sceneTags.Add($"holding {scene.HeldItems}");
-            if (!string.IsNullOrWhiteSpace(scene.Atmosphere)) sceneTags.Add(scene.Atmosphere);
+            if (!string.IsNullOrWhiteSpace(scene.CurrentTimeOfDay)) allTags.Add(scene.CurrentTimeOfDay);
+            if (!string.IsNullOrWhiteSpace(scene.HeldItems) && !scene.HeldItems.Equals("none", StringComparison.OrdinalIgnoreCase))
+                allTags.Add($"holding {scene.HeldItems}");
+            if (!string.IsNullOrWhiteSpace(scene.Atmosphere)) allTags.Add(scene.Atmosphere);
+        }
+        else if (!string.IsNullOrWhiteSpace(identity?.ClothingStyle))
+        {
+            allTags.Add($"wearing {identity.ClothingStyle}");
         }
 
-        var identityPart = string.Join(", ", characterTags.Where(t => !string.IsNullOrWhiteSpace(t)));
-        var expressionPart = string.Join(", ", expressionTags.Where(t => !string.IsNullOrWhiteSpace(t)));
-        var scenePart = string.Join(", ", sceneTags.Where(t => !string.IsNullOrWhiteSpace(t)));
+        // Tier 3: Transient Action, Pose, Expression & Gaze
+        var transient = snapshot.TransientState;
+        if (transient != null)
+        {
+            if (!string.IsNullOrWhiteSpace(transient.Expression)) allTags.Add(transient.Expression);
+            if (!string.IsNullOrWhiteSpace(transient.Gaze)) allTags.Add(transient.Gaze);
+            if (!string.IsNullOrWhiteSpace(transient.Pose)) allTags.Add(transient.Pose);
+            if (!string.IsNullOrWhiteSpace(transient.Action)) allTags.Add(transient.Action);
+            if (!string.IsNullOrWhiteSpace(transient.Gesture)) allTags.Add(transient.Gesture);
+            if (!string.IsNullOrWhiteSpace(transient.Interaction)) allTags.Add(transient.Interaction);
+        }
 
-        var parts = new List<string> { identityPart, expressionPart, scenePart, "cinematic composition, dramatic lighting, detailed background" };
-        return string.Join(", ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+        // Tier 4: Structured Cinematic Composition & Narrative Understanding
+        var sceneDesc = snapshot.SceneDescription;
+        if (sceneDesc != null)
+        {
+            if (!string.IsNullOrWhiteSpace(sceneDesc.ShotType)) allTags.Add(sceneDesc.ShotType);
+            if (!string.IsNullOrWhiteSpace(sceneDesc.CameraAngle)) allTags.Add(sceneDesc.CameraAngle);
+            if (!string.IsNullOrWhiteSpace(sceneDesc.SubjectPlacement)) allTags.Add(sceneDesc.SubjectPlacement);
+            if (!string.IsNullOrWhiteSpace(sceneDesc.DetailedAction)) allTags.Add(sceneDesc.DetailedAction);
+            if (!string.IsNullOrWhiteSpace(sceneDesc.DetailedEnvironment)) allTags.Add(sceneDesc.DetailedEnvironment);
+            if (!string.IsNullOrWhiteSpace(sceneDesc.LightingStyle)) allTags.Add(sceneDesc.LightingStyle);
+            if (!string.IsNullOrWhiteSpace(sceneDesc.Atmosphere)) allTags.Add(sceneDesc.Atmosphere);
+
+            if (sceneDesc.EnglishPromptTags != null && !sceneDesc.EnglishPromptTags.IsDefaultOrEmpty)
+            {
+                allTags.AddRange(sceneDesc.EnglishPromptTags.Where(t => !string.IsNullOrWhiteSpace(t)));
+            }
+        }
+
+        // Tier 5: Aesthetic Quality & Style Anchors
+        allTags.Add("cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending");
+
+        var cleanTags = DeduplicateAndClean(allTags);
+        return string.Join(", ", cleanTags);
+    }
+
+    private static List<string> DeduplicateAndClean(IEnumerable<string> tags)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var raw in tags)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var subTags = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var sub in subTags)
+            {
+                if (string.IsNullOrWhiteSpace(sub)) continue;
+                var cleanSub = sub.Trim();
+                if (seen.Add(cleanSub))
+                {
+                    result.Add(cleanSub);
+                }
+            }
+        }
+
+        return result;
     }
 
     private static string MapMoodToVisualExpression(CharacterMood mood, int intensity)

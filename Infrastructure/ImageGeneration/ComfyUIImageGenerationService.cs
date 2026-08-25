@@ -62,15 +62,23 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
         if (int.TryParse(_configuration["AiProviders:ComfyUI:PollIntervalMs"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInterval)) pollIntervalMs = parsedInterval;
         if (int.TryParse(_configuration["AiProviders:ComfyUI:TimeoutSeconds"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTimeout)) timeoutSeconds = parsedTimeout;
 
-        var targetWorkflow = request.Workflow ?? "VisualIdentity";
+        var targetWorkflow = request.Workflow;
+        if (string.IsNullOrWhiteSpace(request.ReferenceImageUrl) && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
+        {
+            targetWorkflow = "TextToImage";
+        }
         var targetVersion = request.WorkflowVersion;
         string promptId = request.ProviderJobId ?? string.Empty;
         IComfyUIWorkflowBuilder? builder = null;
 
         if (string.IsNullOrWhiteSpace(promptId))
         {
-            // 1. Ensure Reference Image is uploaded to ComfyUI /upload/image (SSRF-protected, throws if invalid)
-            var resolvedReferenceImageName = await _inputImageService.EnsureImageUploadedAsync(request.ReferenceImageUrl, ct);
+            // 1. Ensure Reference Image is uploaded if required by workflow
+            string resolvedReferenceImageName = string.Empty;
+            if (!string.IsNullOrWhiteSpace(request.ReferenceImageUrl))
+            {
+                resolvedReferenceImageName = await _inputImageService.EnsureImageUploadedAsync(request.ReferenceImageUrl, ct);
+            }
 
             // 2. Select Workflow Builder by exact (Workflow, WorkflowVersion) match - NO SILENT FALLBACK!
             builder = _workflowBuilders.FirstOrDefault(b =>

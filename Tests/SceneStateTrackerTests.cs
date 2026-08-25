@@ -268,4 +268,57 @@ public class SceneStateTrackerTests
         var turn2State = turn1State.ApplyDelta(new SceneStateDelta(PositionChange: "Altar"), explicitRevision: 2);
         Assert.Equal(2, turn2State.SceneRevision);
     }
+
+    [Fact]
+    public void Test9_Structured_VisualSceneDescription_In_Delta_Populates_Snapshot_And_Preserves_Continuity()
+    {
+        var persistentState = new SessionSceneState(
+            CurrentLocation: "Clockwork Workshop",
+            CurrentPosition: "Assembly Table",
+            CurrentOutfit: "Leather Apron and White Shirt",
+            CurrentTimeOfDay: "Afternoon",
+            HeldItems: "Brass Screwdriver",
+            Atmosphere: "Focused",
+            SceneRevision: 2
+        );
+
+        var sceneDesc = new VisualSceneDescription(
+            shotType: "medium shot",
+            cameraAngle: "slight 3/4 turn",
+            subjectPlacement: "centered",
+            detailedAction: "standing at assembly table adjusting brass clockwork gear",
+            detailedEnvironment: "clockwork workshop, copper gears and tools on table",
+            lightingStyle: "warm afternoon sun streaming through dusty window",
+            atmosphere: "focused, intricate craftsmanship",
+            englishPromptTags: new[] { "medium shot", "clockwork workshop", "adjusting gear" }
+        );
+
+        var delta = new SceneStateDelta(
+            PoseChange: "Standing leaning forward",
+            ActionChange: "Adjusting gear",
+            SceneDescription: sceneDesc
+        );
+
+        var nextState = persistentState.ApplyDelta(delta);
+        var transient = TransientVisualState.FromDelta(delta);
+
+        var snapshot = VisualSnapshot.Create(
+            turnId: Guid.NewGuid(),
+            sessionId: Guid.NewGuid(),
+            characterId: Guid.NewGuid(),
+            sceneRevision: nextState.SceneRevision,
+            visualIdentity: null,
+            sceneState: nextState,
+            transientState: transient,
+            generationProfile: GenerationProfile.CreateDefault(seed: 999),
+            sceneDescription: delta.SceneDescription
+        );
+
+        Assert.NotNull(snapshot.SceneDescription);
+        Assert.Equal("medium shot", snapshot.SceneDescription.ShotType);
+        Assert.Equal("Clockwork Workshop", snapshot.SceneState.CurrentLocation);
+        Assert.Equal("Leather Apron and White Shirt", snapshot.SceneState.CurrentOutfit);
+        Assert.Equal("Brass Screwdriver", snapshot.SceneState.HeldItems);
+        Assert.Equal("Standing leaning forward", snapshot.TransientState?.Pose);
+    }
 }

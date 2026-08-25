@@ -38,12 +38,13 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
             effectiveUserId = uid;
         }
 
+        var effectiveTurnId = req.TurnId ?? Guid.NewGuid();
         var turnRequest = new CharacterTurnRequest(
             UserId: effectiveUserId,
             CharacterId: Guid.Empty, // Will be resolved by Runtime via Session
             SessionId: req.SessionId,
             UserMessage: req.Content,
-            TurnId: Guid.NewGuid()
+            TurnId: effectiveTurnId
         );
 
         CharacterTurnResult turnResult;
@@ -69,7 +70,7 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
 
         return Result<SendMessageResponse>.Success(new SendMessageResponse(
             UserMessage: new ChatMessageDto(Guid.NewGuid(), MessageRole.User, req.Content, Clock.Now),
-            AssistantMessage: new ChatMessageDto(turnResult.MessageId, MessageRole.Assistant, turnResult.Reply, Clock.Now),
+            AssistantMessage: new ChatMessageDto(turnResult.MessageId, MessageRole.Assistant, turnResult.Reply, Clock.Now, TurnId: effectiveTurnId),
             AffectionScore: turnResult.Relationship.AffectionScore,
             RelationshipLevel: level,
             RelationshipStage: stageName,
@@ -80,7 +81,8 @@ public sealed class SendChatMessageHandler : IRequestHandler<SendChatMessageComm
             UnlockedEvent: null,
             HasWalkedOut: turnResult.HasWalkedOut,
             WalkOutReason: turnResult.WalkOutReason,
-            SessionStatus: turnResult.SessionStatus
+            SessionStatus: turnResult.SessionStatus,
+            TurnId: effectiveTurnId
         ));
     }
 }

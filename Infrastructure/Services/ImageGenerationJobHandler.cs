@@ -95,7 +95,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
 
                 // Check predecessor outbox message if job hasn't been created yet or failed at outbox level
                 var predecessorMsg = await _dbContext.OutboxMessages
-                    .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration && m.PayloadJson.Contains(snapshot.SessionId.ToString()))
+                    .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration)
                     .ToListAsync(ct);
 
                 var predMatchingMsg = predecessorMsg.FirstOrDefault(m =>
@@ -103,7 +103,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     try
                     {
                         var p = System.Text.Json.JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson);
-                        return p?.Snapshot?.SceneRevision == predRev;
+                        return p?.Snapshot?.SessionId == snapshot.SessionId && p?.Snapshot?.SceneRevision == predRev;
                     }
                     catch { return false; }
                 });

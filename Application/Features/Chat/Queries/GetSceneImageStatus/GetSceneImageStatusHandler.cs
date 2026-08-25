@@ -123,88 +123,110 @@ public sealed class GetSceneImageStatusHandler : IRequestHandler<GetSceneImageSt
             ));
         }
 
-        // 4. Check if request is still queued in durable Outbox table (Direct persistence predicate query)
-        var requestIdStr = query.GenerationRequestId.ToString();
-        var outboxMessage = await outboxRepo.GetAsync(
-            m => m.EventType == OutboxEventTypes.SceneImageGeneration && m.PayloadJson.Contains(requestIdStr),
+        // 4. Check if request is in durable Outbox table
+        var outboxMessages = await outboxRepo.GetAllAsync(
+            m => m.EventType == OutboxEventTypes.SceneImageGeneration,
             cancellationToken);
 
-        if (outboxMessage != null)
+        OutboxMessage? outboxMessage = null;
+        SceneImageGenerationOutboxPayload? payload = null;
+
+        foreach (var msg in outboxMessages)
         {
-            SceneImageGenerationOutboxPayload? payload = null;
             try
             {
-                payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(outboxMessage.PayloadJson);
+                var p = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg.PayloadJson);
+                if (p != null && p.GenerationRequestId == query.GenerationRequestId)
+                {
+                    outboxMessage = msg;
+                    payload = p;
+                    break;
+                }
             }
             catch (JsonException ex)
             {
-                _logger.LogWarning(ex, "Failed to parse Outbox payload for message {Id}", outboxMessage.Id);
+                _logger.LogWarning(ex, "Failed to parse Outbox payload for message {Id}", msg.Id);
+            }
+        }
+
+        if (outboxMessage != null && payload != null)
+        {
+            var session = await sessionRepo.GetByIdAsync(payload.Snapshot.SessionId, cancellationToken);
+            if (session == null)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status404NotFound,
+                    "Chat session for this generation request was not found.");
             }
 
-            if (payload != null && payload.GenerationRequestId == query.GenerationRequestId)
+            // Strict Fail-Closed Authorization: ChatSession.UserId is the source of truth
+            if (!session.UserId.HasValue || session.UserId.Value == Guid.Empty || session.UserId.Value != currentUserId)
             {
-                var session = await sessionRepo.GetByIdAsync(payload.Snapshot.SessionId, cancellationToken);
-                if (session == null)
-                {
-                    return Result<SceneImageStatusResponse>.Failure(
-                        StatusCodes.Status404NotFound,
-                        "Chat session for this generation request was not found.");
-                }
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status403Forbidden,
+                    "You do not have access to this generation request.");
+            }
 
-                // Strict Fail-Closed Authorization: ChatSession.UserId is the source of truth
-                if (!session.UserId.HasValue || session.UserId.Value == Guid.Empty || session.UserId.Value != currentUserId)
-                {
-                    return Result<SceneImageStatusResponse>.Failure(
-                        StatusCodes.Status403Forbidden,
-                        "You do not have access to this generation request.");
-                }
+            // Consistency Invariant: Payload.UserId MUST strictly match Session.UserId
+            if (payload.UserId == Guid.Empty || payload.UserId != session.UserId.Value)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status403Forbidden,
+                    "Generation request payload ownership mismatch.");
+            }
 
-                // Consistency Invariant: Payload.UserId MUST strictly match Session.UserId
-                if (payload.UserId == Guid.Empty || payload.UserId != session.UserId.Value)
-                {
-                    return Result<SceneImageStatusResponse>.Failure(
-                        StatusCodes.Status403Forbidden,
-                        "Generation request payload ownership mismatch.");
-                }
+            // Consistency Invariant: Snapshot identity (TurnId, SessionId, CharacterId) MUST strictly match payload metadata and session
+            if (payload.Snapshot.SessionId != session.Id ||
+                payload.Snapshot.TurnId != payload.TurnId ||
+                payload.Snapshot.CharacterId != payload.CharacterId ||
+                session.CharacterId != payload.CharacterId)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status500InternalServerError,
+                    "Frozen snapshot identity mismatch in queued generation request.");
+            }
 
-                // Consistency Invariant: Snapshot identity (TurnId, SessionId, CharacterId) MUST strictly match payload metadata and session
-                if (payload.Snapshot.SessionId != session.Id ||
-                    payload.Snapshot.TurnId != payload.TurnId ||
-                    payload.Snapshot.CharacterId != payload.CharacterId ||
-                    session.CharacterId != payload.CharacterId)
-                {
-                    return Result<SceneImageStatusResponse>.Failure(
-                        StatusCodes.Status500InternalServerError,
-                        "Frozen snapshot identity mismatch in queued generation request.");
-                }
+            // Consistency Invariant: Turn entity MUST exist and match Session, Character, and UserId
+            var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
+            var turn = await turnRepo.GetAsync(t => t.TurnId == payload.TurnId, cancellationToken);
+            if (turn == null)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status500InternalServerError,
+                    "Character turn for this queued generation request was not found.");
+            }
 
-                // Consistency Invariant: Turn entity MUST exist and match Session, Character, and UserId
-                var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
-                var turn = await turnRepo.GetAsync(t => t.TurnId == payload.TurnId, cancellationToken);
-                if (turn == null)
-                {
-                    return Result<SceneImageStatusResponse>.Failure(
-                        StatusCodes.Status500InternalServerError,
-                        "Character turn for this queued generation request was not found.");
-                }
+            if (turn.SessionId != session.Id || turn.CharacterId != session.CharacterId || turn.UserId != currentUserId)
+            {
+                return Result<SceneImageStatusResponse>.Failure(
+                    StatusCodes.Status500InternalServerError,
+                    "Turn metadata mismatch in queued generation request.");
+            }
 
-                if (turn.SessionId != session.Id || turn.CharacterId != session.CharacterId || turn.UserId != currentUserId)
-                {
-                    return Result<SceneImageStatusResponse>.Failure(
-                        StatusCodes.Status500InternalServerError,
-                        "Turn metadata mismatch in queued generation request.");
-                }
-
+            if (outboxMessage.Status == OutboxStatus.Failed)
+            {
                 return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
                     GenerationRequestId: payload.GenerationRequestId,
                     TurnId: payload.TurnId,
                     SessionId: payload.Snapshot.SessionId,
-                    Status: "queued",
+                    Status: "failed",
+                    FailureReason: outboxMessage.LastError ?? "Máy chủ vẽ ảnh AI tạm thời chưa sẵn sàng hoặc chưa được khởi động. Vui lòng thử lại sau.",
+                    IsRetryable: true,
                     SceneRevision: payload.Snapshot.SceneRevision,
                     Prompt: null,
                     CreatedAt: outboxMessage.CreatedAt
                 ));
             }
+
+            return Result<SceneImageStatusResponse>.Success(new SceneImageStatusResponse(
+                GenerationRequestId: payload.GenerationRequestId,
+                TurnId: payload.TurnId,
+                SessionId: payload.Snapshot.SessionId,
+                Status: outboxMessage.Status == OutboxStatus.Processing ? "processing" : "queued",
+                SceneRevision: payload.Snapshot.SceneRevision,
+                Prompt: null,
+                CreatedAt: outboxMessage.CreatedAt
+            ));
         }
 
         // 5. Not found anywhere

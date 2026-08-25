@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.LLM.Prompts;
@@ -14,11 +15,16 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserProvider _currentUserProvider;
+    private readonly IDateTimeProvider _dateTimeProvider;
 
-    public GetChatSessionHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetChatSessionHandler(
+        IUnitOfWork unitOfWork,
+        ICurrentUserProvider currentUserProvider,
+        IDateTimeProvider dateTimeProvider)
     {
         _unitOfWork = unitOfWork;
         _currentUserProvider = currentUserProvider;
+        _dateTimeProvider = dateTimeProvider;
     }
 
     public async Task<Result<ChatSessionDto>> Handle(GetChatSessionQuery query, CancellationToken cancellationToken)
@@ -59,12 +65,121 @@ public sealed class GetChatSessionHandler : IRequestHandler<GetChatSessionQuery,
         var affection = relationship?.AffectionScore ?? character.DefaultAffectionScore;
         var (level, stageName, _) = Application.Common.RelationshipStageResolver.Resolve(affection, character.CustomMilestonesJson);
 
-        var messages = session.Messages.Select(m => new ChatMessageDto(
-            m.Id,
-            m.Role,
-            m.Content,
-            m.CreatedAt
-        )).ToList();
+        var turnRepo = _unitOfWork.GetRepository<CharacterTurn>();
+        var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
+        var jobRepo = _unitOfWork.GetRepository<ImageGenerationJob>();
+
+        var assistantMsgIds = session.Messages
+            .Where(m => m.Role == MessageRole.Assistant)
+            .Select(m => m.Id)
+            .ToHashSet();
+
+        List<CharacterTurn> turns = new();
+        if (assistantMsgIds.Count > 0)
+        {
+            turns = (await turnRepo.GetAllAsync(
+                t => t.SessionId == session.Id && assistantMsgIds.Contains(t.AssistantMessageId),
+                cancellationToken)).ToList();
+        }
+
+        var turnIds = turns.Select(t => t.TurnId).ToHashSet();
+
+        List<SceneImage> currentSceneImages = new();
+        List<ImageGenerationJob> turnGenerationJobs = new();
+
+        if (turnIds.Count > 0)
+        {
+            currentSceneImages = (await sceneImageRepo.GetAllAsync(
+                i => i.SessionId == session.Id && i.IsCurrent && turnIds.Contains(i.TurnId),
+                cancellationToken)).ToList();
+
+            turnGenerationJobs = (await jobRepo.GetAllAsync(
+                j => j.SessionId == session.Id && turnIds.Contains(j.TurnId) &&
+                     (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Failed || j.Status == ImageJobStatus.Cancelled),
+                cancellationToken)).ToList();
+        }
+
+        var currentImagesByTurn = currentSceneImages
+            .GroupBy(i => i.TurnId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(i => i.CreatedAt).First());
+
+        var jobsByTurn = turnGenerationJobs
+            .GroupBy(j => j.TurnId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var turnsByAssistantMsgId = turns
+            .GroupBy(t => t.AssistantMessageId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var now = _dateTimeProvider.UtcNow;
+
+        var messages = session.Messages.Select(m =>
+        {
+            Guid? turnId = null;
+            string? sceneImageUrl = null;
+            string? sceneImageStatus = null;
+            Guid? genReqId = null;
+
+            if (m.Role == MessageRole.Assistant)
+            {
+                if (turnsByAssistantMsgId.TryGetValue(m.Id, out var turn))
+                {
+                    turnId = turn.TurnId;
+                    var hasCurrentImage = currentImagesByTurn.TryGetValue(turn.TurnId, out var img);
+                    var turnJobs = jobsByTurn.TryGetValue(turn.TurnId, out var jobList) ? jobList : new List<ImageGenerationJob>();
+
+                    // 1. In-flight jobs (Pending or Processing with valid, unexpired lease) ALWAYS take highest precedence for active polling
+                    var activeJob = turnJobs
+                        .Where(j => (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Processing) &&
+                                   (!j.LeaseUntil.HasValue || j.LeaseUntil.Value > now))
+                        .OrderByDescending(j => j.CreatedAt)
+                        .FirstOrDefault();
+
+                    if (activeJob != null)
+                    {
+                        sceneImageStatus = SceneImageStatuses.FromJobStatus(activeJob.Status);
+                        genReqId = activeJob.GenerationRequestId;
+                        sceneImageUrl = hasCurrentImage ? img!.ImageUrl : null;
+                    }
+                    else if (hasCurrentImage)
+                    {
+                        // 2. No active in-flight job, but a completed current image exists (even if a subsequent regeneration job was cancelled or had an expired lease)
+                        sceneImageUrl = img!.ImageUrl;
+                        sceneImageStatus = SceneImageStatuses.Completed;
+                        genReqId = img.GenerationRequestId;
+                    }
+                    else
+                    {
+                        // 3. No active job and no completed image; check if a terminal (Failed/Cancelled) or stale processing job occurred
+                        var terminalOrStaleJob = turnJobs
+                            .Where(j => j.Status == ImageJobStatus.Failed ||
+                                       j.Status == ImageJobStatus.Cancelled ||
+                                       (j.Status == ImageJobStatus.Processing && j.LeaseUntil.HasValue && j.LeaseUntil.Value <= now))
+                            .OrderByDescending(j => j.CreatedAt)
+                            .FirstOrDefault();
+
+                        if (terminalOrStaleJob != null)
+                        {
+                            sceneImageStatus = terminalOrStaleJob.Status == ImageJobStatus.Processing
+                                ? SceneImageStatuses.Failed
+                                : SceneImageStatuses.FromJobStatus(terminalOrStaleJob.Status);
+                            genReqId = terminalOrStaleJob.GenerationRequestId;
+                        }
+                    }
+                }
+            }
+
+            return new ChatMessageDto(
+                m.Id,
+                m.Role,
+                m.Content,
+                m.CreatedAt,
+                TurnId: turnId,
+                SceneImageUrl: sceneImageUrl,
+                SceneImageStatus: sceneImageStatus,
+                GenerationRequestId: genReqId
+            );
+        }).ToList();
 
         var eventsDto = relationship?.Events.Select(e => new RelationshipEventDto(e.EventKey, e.Context, e.UnlockedAt)).ToList();
 

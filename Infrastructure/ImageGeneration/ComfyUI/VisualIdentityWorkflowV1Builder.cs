@@ -16,7 +16,7 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
             throw new GpuNonTransientException("CanonicalReferenceUrl (tight face crop) is required for VisualIdentity workflow.");
         }
 
-        var defaultNegative = "deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
+        var defaultNegative = "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
         var negativePrompt = !string.IsNullOrWhiteSpace(request.NegativePrompt) ? request.NegativePrompt : defaultNegative;
 
         var modelName = !string.IsNullOrWhiteSpace(request.Model) ? request.Model : "meinamix_meinaV11.safetensors";
@@ -85,7 +85,7 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
                     ["combine_embeds"] = "concat",
                     ["start_at"] = 0.0,
                     ["end_at"] = (double)ipAdapterEndAt,
-                    ["embeds_scaling"] = "V only",
+                    ["embeds_scaling"] = "K+V",
                     ["model"] = new object[] { "4", 0 },
                     ["ipadapter"] = new object[] { "8", 0 },
                     ["image"] = new object[] { "1", 0 },

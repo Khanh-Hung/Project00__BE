@@ -1196,6 +1196,133 @@ public sealed class VisualIdentityInvariantTests
         Assert.Contains("\"endAt\":0.6", snapshot.GenerationProfile.ParametersJson);
     }
 
+    [Fact]
+    public void VisualSnapshot_ReferenceResolution_StrictlyFollowsHierarchy_Canonical_Avatar_FullBody()
+    {
+        var turnId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var profile = GenerationProfile.CreateDefault(seed: 12345, width: 512, height: 768);
+        var sceneState = new SessionSceneState("Sanctuary", "Central", "Dress", "Day", null, "Calm", 1, Clock.Now);
+
+        // 1. Canonical Reference provided: strictly selects Canonical
+        var v1 = new CharacterVisualIdentity(CanonicalReferenceUrl: "canonical.png", FullBodyUrl: "fullbody.png");
+        var snap1 = VisualSnapshot.Create(turnId, sessionId, charId, 1, v1, sceneState, null, profile, fallbackReferenceUrl: "avatar.png");
+        Assert.Equal("canonical.png", snap1.IdentityReferenceUrl);
+
+        // 2. Canonical Reference null, Avatar provided: selects Avatar
+        var v2 = new CharacterVisualIdentity(CanonicalReferenceUrl: null, FullBodyUrl: "fullbody.png");
+        var snap2 = VisualSnapshot.Create(turnId, sessionId, charId, 1, v2, sceneState, null, profile, fallbackReferenceUrl: "avatar.png");
+        Assert.Equal("avatar.png", snap2.IdentityReferenceUrl);
+
+        // 3. Canonical and Avatar null, FullBody provided: selects FullBody
+        var v3 = new CharacterVisualIdentity(CanonicalReferenceUrl: null, FullBodyUrl: "fullbody.png");
+        var snap3 = VisualSnapshot.Create(turnId, sessionId, charId, 1, v3, sceneState, null, profile, fallbackReferenceUrl: null);
+        Assert.Equal("fullbody.png", snap3.IdentityReferenceUrl);
+
+        // 4. All null: resolves null
+        var v4 = new CharacterVisualIdentity(CanonicalReferenceUrl: null, FullBodyUrl: null);
+        var snap4 = VisualSnapshot.Create(turnId, sessionId, charId, 1, v4, sceneState, null, profile, fallbackReferenceUrl: null);
+        Assert.Null(snap4.IdentityReferenceUrl);
+    }
+
+    [Fact]
+    public async Task ImageGenerationJobHandler_StrictlyUsesFrozenSnapshotIdentityReference_AndNeverQueriesMutatedCharacter()
+    {
+        var (db, handler, imageService) = CreateHarness(Guid.NewGuid().ToString());
+        var characterId = Guid.NewGuid();
+        var initialCharacter = new Character("Alice", "Mage", "https://cloud.storage/initial_avatar.png", "Calm", "Hi", "Fantasy");
+        typeof(Character).GetProperty("Id")?.SetValue(initialCharacter, characterId);
+        await db.Characters.AddAsync(initialCharacter);
+        await db.SaveChangesAsync();
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var frozenSnapshot = CreateTestSnapshot(sessionId, turnId, revision: 1, canonicalRef: "https://cloud.storage/frozen_at_turn_commit.png");
+
+        // Mutate the character in the database AFTER turn commit
+        initialCharacter.UpdateAvatar("https://cloud.storage/changed_after_10_minutes.png");
+        await db.SaveChangesAsync();
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: frozenSnapshot,
+            GenerationRequestId: requestId
+        );
+
+        // Execute worker
+        var result = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.NotNull(imageService.LastRequest);
+        // Assert worker strictly consumed frozen snapshot value, NOT mutated character in DB
+        Assert.Equal("https://cloud.storage/frozen_at_turn_commit.png", imageService.LastRequest.ReferenceImageUrl);
+    }
+
+    [Fact]
+    public async Task ComfyUIInputImageService_Base64Validation_And_UrlSanitization_Behaviors()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var httpClient = new HttpClient();
+        var service = new ComfyUIInputImageService(httpClient, config, NullLogger<ComfyUIInputImageService>.Instance);
+
+        // 1. Valid base64 PNG data URL format check (not throwing validation error prior to comfyui upload)
+        var validDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        // 2. Unsupported MIME type check
+        var unsupportedMime = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+        var exMime = await Assert.ThrowsAsync<GpuNonTransientException>(() => service.EnsureImageUploadedAsync(unsupportedMime));
+        Assert.Contains("Unsupported data image MIME type", exMime.Message);
+
+        // 3. Malformed data URL check (missing comma or invalid header)
+        var malformedUrl = "data:image/png;something_invalid";
+        var exMalformed = await Assert.ThrowsAsync<GpuNonTransientException>(() => service.EnsureImageUploadedAsync(malformedUrl));
+        Assert.Contains("Malformed base64 data image URL", exMalformed.Message);
+
+        // 4. Invalid base64 characters check
+        var invalidBase64 = "data:image/png;base64,???not-base64???";
+        var exInvalid = await Assert.ThrowsAsync<GpuNonTransientException>(() => service.EnsureImageUploadedAsync(invalidBase64));
+        Assert.Contains("Invalid base64", exInvalid.Message);
+
+        // 5. Oversized Base64 Payload check (> 10MB)
+        var oversizedBase64 = "data:image/png;base64," + new string('A', 15 * 1024 * 1024);
+        var exOversized = await Assert.ThrowsAsync<GpuNonTransientException>(() => service.EnsureImageUploadedAsync(oversizedBase64));
+        Assert.Contains("exceeds maximum allowed size", exOversized.Message);
+
+        // 6. URL Sanitization: Strips query strings (SAS signatures) and masks base64 payloads
+        var sasUrl = "https://mystorage.blob.core.windows.net/avatars/char.png?sv=2021-08-06&sig=SECRET_KEY_12345&se=2026-08-24";
+        var sanitizedSas = ComfyUIInputImageService.SanitizeUrlForLogging(sasUrl);
+        Assert.Equal("https://mystorage.blob.core.windows.net/avatars/char.png", sanitizedSas);
+        Assert.DoesNotContain("SECRET_KEY_12345", sanitizedSas);
+
+        var sanitizedData = ComfyUIInputImageService.SanitizeUrlForLogging(validDataUrl);
+        Assert.StartsWith("data:image/png;base64,[length:", sanitizedData);
+        Assert.DoesNotContain("iVBORw0KGgoAAAANSUhEUg", sanitizedData);
+
+        // 7. Magic bytes detection unit check
+        var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00 };
+        Assert.True(ComfyUIInputImageService.ValidateImageMagicBytes(pngBytes, out var detectedPng));
+        Assert.Equal("image/png", detectedPng);
+
+        var jpegBytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10 };
+        Assert.True(ComfyUIInputImageService.ValidateImageMagicBytes(jpegBytes, out var detectedJpeg));
+        Assert.Equal("image/jpeg", detectedJpeg);
+
+        var webpBytes = new byte[] { 0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50 };
+        Assert.True(ComfyUIInputImageService.ValidateImageMagicBytes(webpBytes, out var detectedWebp));
+        Assert.Equal("image/webp", detectedWebp);
+
+        var plainTextBytes = System.Text.Encoding.UTF8.GetBytes("<html><body>not an image</body></html>");
+        Assert.False(ComfyUIInputImageService.ValidateImageMagicBytes(plainTextBytes, out _));
+
+        // 8. Fake PNG payload (data URL with valid base64 characters but non-image bytes)
+        var fakePngDataUrl = "data:image/png;base64," + Convert.ToBase64String(plainTextBytes);
+        var exFake = await Assert.ThrowsAsync<GpuNonTransientException>(() => service.EnsureImageUploadedAsync(fakePngDataUrl));
+        Assert.Contains("not a valid supported image format", exFake.Message);
+    }
+
     private sealed class ComfyUIImageGenerationIntegrationTests_InMemoryStorageService : IStorageService
     {
         public Task<string> SaveImageAsync(byte[] imageBytes, string fileName, string contentType = "image/jpeg", CancellationToken ct = default)

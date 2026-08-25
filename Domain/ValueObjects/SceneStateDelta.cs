@@ -14,5 +14,6 @@ public sealed record SceneStateDelta(
     string? ExpressionChange = null,
     string? HeldItemsChange = null,
     string? AtmosphereChange = null,
-    string? Evidence = null
+    string? Evidence = null,
+    VisualSceneDescription? SceneDescription = null
 );

@@ -18,15 +18,21 @@ public sealed class LLMService : ILLMService
     private readonly GeminiApiClient _geminiClient;
     private readonly IImageGenerationService _imageService;
     private readonly IPromptCompiler _promptCompiler;
+    private readonly IStorageService? _storageService;
+    private readonly HttpClient _httpClient;
 
     public LLMService(
         GeminiApiClient geminiClient,
         IImageGenerationService imageService,
-        IPromptCompiler promptCompiler)
+        IPromptCompiler promptCompiler,
+        IStorageService? storageService = null,
+        HttpClient? httpClient = null)
     {
         _geminiClient = geminiClient;
         _imageService = imageService;
         _promptCompiler = promptCompiler;
+        _storageService = storageService;
+        _httpClient = httpClient ?? new HttpClient();
     }
 
     private record RoleplayEventJsonDto(
@@ -247,59 +253,164 @@ public sealed class LLMService : ILLMService
             // fallback if Gemini prompt tags generation fails
         }
 
+        var isMale = request.VisualIdentity?.Gender?.Equals("Male", StringComparison.OrdinalIgnoreCase) == true;
+        var genderTag = isMale ? "1boy" : "1girl";
+
+        // Clean any literal template artifacts from Gemini
+        cleanAvatarPrompt = cleanAvatarPrompt
+            .Replace("1girl/1boy", genderTag)
+            .Replace("<exact hair>", "")
+            .Replace("<exact eyes>", "")
+            .Replace("<exact face>", "")
+            .Replace("<upper outfit details>", "");
+
+        cleanFullBodyPrompt = cleanFullBodyPrompt
+            .Replace("1girl/1boy", genderTag)
+            .Replace("<exact same hair>", "")
+            .Replace("<exact same eyes>", "")
+            .Replace("<exact same face>", "")
+            .Replace("<exact same intricate outfit>", "");
+
         if (string.IsNullOrWhiteSpace(cleanAvatarPrompt))
         {
-            cleanAvatarPrompt = $"masterpiece, best quality, 2d anime illustration close-up portrait of {request.Name ?? "anime character"}, {request.Title ?? "fantasy hero"}, beautiful expressive eyes, highly detailed face, vibrant colors, cinematic lighting, 8k, pixiv trending";
+            cleanAvatarPrompt = $"masterpiece, best quality, {genderTag}, solo, close-up face portrait, face focus, looking at viewer, highly detailed face, expressive eyes, vibrant colors, cinematic lighting, 8k, pixiv trending";
+        }
+
+        if (!cleanAvatarPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
+        {
+            cleanAvatarPrompt = $"masterpiece, best quality, {genderTag}, solo, close-up face portrait, face focus, looking at viewer, " + cleanAvatarPrompt;
+        }
+
+        if (!cleanAvatarPrompt.Contains("ethereal", StringComparison.OrdinalIgnoreCase))
+        {
+            cleanAvatarPrompt += ", soft painterly lighting, ethereal atmospheric glow, luminous eyes, masterpiece, best quality";
         }
 
         if (string.IsNullOrWhiteSpace(cleanFullBodyPrompt))
         {
-            cleanFullBodyPrompt = cleanAvatarPrompt
-                .Replace("close-up portrait", "waist-up character portrait")
-                .Replace("close up", "waist-up character portrait")
-                + ", waist-up character portrait, elegant upper body posture, luxurious outfit details, beautiful detailed face, sharp focus, masterpiece, best quality, 8k";
+            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, dynamic graceful posture, slight 3/4 turn, looking at viewer, delicate beautiful face, expressive luminous eyes, vibrant colors, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, soft painterly anime aesthetic, 8k, pixiv trending";
         }
 
-        if (!cleanAvatarPrompt.Contains("close-up", StringComparison.OrdinalIgnoreCase) && !cleanAvatarPrompt.Contains("face focus", StringComparison.OrdinalIgnoreCase))
+        if (!cleanFullBodyPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
         {
-            cleanAvatarPrompt = "masterpiece, best quality, 1girl, solo, close-up face portrait, face focus, looking at viewer, " + cleanAvatarPrompt;
+            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, dynamic graceful posture, sharp focus, " + cleanFullBodyPrompt;
         }
 
-        var avatarUrl = await _imageService.GenerateImageAsync(cleanAvatarPrompt, 1024, 1024, ct);
-        var fullBodyUrl = await _imageService.GenerateImageAsync(cleanFullBodyPrompt, 1024, 1024, ct);
+        if (!cleanFullBodyPrompt.Contains("ethereal", StringComparison.OrdinalIgnoreCase))
+        {
+            cleanFullBodyPrompt += ", slight 3/4 turn, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, luminous eyes, delicate beautiful face, soft painterly anime aesthetic, masterpiece, best quality";
+        }
+
+        var generatedSeed = Random.Shared.Next(1, int.MaxValue);
+        const string enhancedNegativePrompt = "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, watermark, blurry, low quality, mutated, text, error, stiff pose, flat lighting, dull colors, bad face, deformed eyes, crossed eyes";
+
+        // Step 1: Generate Close-up Face Avatar via TextToImage
+        var avatarRequest = new ImageGenerationRequest(
+            Prompt: cleanAvatarPrompt,
+            Width: 512,
+            Height: 512,
+            Seed: generatedSeed,
+            NegativePrompt: enhancedNegativePrompt,
+            Workflow: "TextToImage",
+            WorkflowVersion: 1
+        );
+
+        var avatarUrl = await _imageService.GenerateImageAsync(avatarRequest, ct);
+
+        // Step 2: Generate Full-Body Standee via VisualIdentity Workflow (IP-Adapter conditioned on the Avatar with optimal artistic freedom)
+        var fullBodyRequest = new ImageGenerationRequest(
+            Prompt: cleanFullBodyPrompt,
+            Width: 512,
+            Height: 768,
+            Seed: generatedSeed,
+            ReferenceImageUrl: avatarUrl,
+            ParametersJson: "{\"ipAdapter\":{\"weight\":0.38,\"endAt\":0.60}}",
+            NegativePrompt: enhancedNegativePrompt,
+            Workflow: "VisualIdentity",
+            WorkflowVersion: 1
+        );
+
+        var fullBodyUrl = await _imageService.GenerateImageAsync(fullBodyRequest, ct);
 
         return new GenerateAvatarResponse(avatarUrl, cleanAvatarPrompt, avatarUrl, fullBodyUrl, cleanFullBodyPrompt);
     }
 
-    private static string CropFaceAvatarFromMaster(string masterImageUrl)
+    private async Task<string> CropFaceAvatarFromMasterAsync(string masterImageUrl, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(masterImageUrl) || !masterImageUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(masterImageUrl))
         {
             return masterImageUrl;
         }
 
         try
         {
-            var commaIdx = masterImageUrl.IndexOf(',');
-            if (commaIdx == -1) return masterImageUrl;
+            byte[] imageBytes;
 
-            var base64Data = masterImageUrl[(commaIdx + 1)..];
-            var imageBytes = Convert.FromBase64String(base64Data);
+            if (masterImageUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+            {
+                var commaIdx = masterImageUrl.IndexOf(',');
+                if (commaIdx == -1) return masterImageUrl;
+                imageBytes = Convert.FromBase64String(masterImageUrl[(commaIdx + 1)..]);
+            }
+            else if (masterImageUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase) || masterImageUrl.Contains("/uploads/"))
+            {
+                var relativePath = masterImageUrl.TrimStart('/');
+                if (relativePath.Contains("uploads/"))
+                {
+                    relativePath = relativePath.Substring(relativePath.IndexOf("uploads/"));
+                }
+                var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath);
+                if (File.Exists(fullPath))
+                {
+                    imageBytes = await File.ReadAllBytesAsync(fullPath, ct);
+                }
+                else
+                {
+                    return masterImageUrl;
+                }
+            }
+            else if (masterImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || masterImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                imageBytes = await _httpClient.GetByteArrayAsync(masterImageUrl, ct);
+            }
+            else
+            {
+                return masterImageUrl;
+            }
 
             using var image = Image.Load(imageBytes);
 
-            // Calculate upper-center face crop box (52% of canvas, centered horizontally, 3% from top to include crown/hair)
-            int cropSize = (int)(Math.Min(image.Width, image.Height) * 0.52);
-            int cropX = (image.Width - cropSize) / 2;
-            int cropY = (int)(image.Height * 0.03);
-            if (cropY + cropSize > image.Height) cropY = 0;
+            // Calculate upper-center face crop box:
+            // For a vertical 2:3 standee (e.g., 512x768), face is centered horizontally in top 2% to 45%
+            int cropWidth = (int)(Math.Min(image.Width, image.Height) * 0.52);
+            if (cropWidth > image.Width) cropWidth = image.Width;
+            int cropHeight = cropWidth; // square 1:1 aspect ratio for avatar
+            int cropX = (image.Width - cropWidth) / 2;
+            int cropY = (int)(image.Height * 0.02);
+            if (cropY + cropHeight > image.Height)
+            {
+                cropY = Math.Max(0, image.Height - cropHeight);
+            }
 
-            image.Mutate(ctx => ctx.Crop(new Rectangle(cropX, cropY, cropSize, cropSize)));
+            var cropRect = new Rectangle(
+                Math.Max(0, cropX),
+                Math.Max(0, cropY),
+                Math.Min(cropWidth, image.Width - Math.Max(0, cropX)),
+                Math.Min(cropHeight, image.Height - Math.Max(0, cropY))
+            );
+
+            image.Mutate(ctx => ctx.Crop(cropRect));
 
             using var ms = new MemoryStream();
-            image.SaveAsJpeg(ms);
+            await image.SaveAsPngAsync(ms, ct);
             var croppedBytes = ms.ToArray();
-            return $"data:image/jpeg;base64,{Convert.ToBase64String(croppedBytes)}";
+
+            if (_storageService != null)
+            {
+                return await _storageService.SaveImageAsync(croppedBytes, "avatar_crop.png", "image/png", ct);
+            }
+
+            return $"data:image/png;base64,{Convert.ToBase64String(croppedBytes)}";
         }
         catch
         {

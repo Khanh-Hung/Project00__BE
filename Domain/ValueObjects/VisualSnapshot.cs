@@ -18,7 +18,8 @@ public sealed record VisualSnapshot(
     string? PreviousSceneImageUrl = null,
     int? PredecessorSceneRevision = null,
     string? NegativeConstraints = null,
-    DateTime? CreatedAt = null
+    DateTime? CreatedAt = null,
+    VisualSceneDescription? SceneDescription = null
 )
 {
     /// <summary>
@@ -35,15 +36,20 @@ public sealed record VisualSnapshot(
         GenerationProfile generationProfile,
         string? previousSceneImageUrl = null,
         int? predecessorSceneRevision = null,
-        string? negativeConstraints = null)
+        string? negativeConstraints = null,
+        string? fallbackReferenceUrl = null,
+        VisualSceneDescription? sceneDescription = null)
     {
         ArgumentNullException.ThrowIfNull(generationProfile, nameof(generationProfile));
 
-        // Strict Canonical Reference: strictly use CanonicalReferenceUrl (tight face crop).
-        // No fallback to full-body or avatar to prevent outfit/style leakage.
+        // Strict resolution hierarchy: CanonicalReferenceUrl (tight face crop) -> Character AvatarUrl -> FullBodyUrl
         var resolvedIdentityRef = !string.IsNullOrWhiteSpace(visualIdentity?.CanonicalReferenceUrl)
             ? visualIdentity.CanonicalReferenceUrl
-            : null;
+            : (!string.IsNullOrWhiteSpace(fallbackReferenceUrl)
+                ? fallbackReferenceUrl
+                : (!string.IsNullOrWhiteSpace(visualIdentity?.FullBodyUrl)
+                    ? visualIdentity.FullBodyUrl
+                    : null));
 
         var defaultNegatives = negativeConstraints 
             ?? "deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
@@ -61,7 +67,8 @@ public sealed record VisualSnapshot(
             PreviousSceneImageUrl: previousSceneImageUrl,
             PredecessorSceneRevision: predecessorSceneRevision ?? (sceneRevision > 1 ? sceneRevision - 1 : null),
             NegativeConstraints: defaultNegatives,
-            CreatedAt: DateTime.UtcNow
+            CreatedAt: DateTime.UtcNow,
+            SceneDescription: sceneDescription
         );
     }
 }

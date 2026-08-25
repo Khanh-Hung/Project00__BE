@@ -2,11 +2,35 @@ using Domain.Enums;
 
 namespace Application.DTOs;
 
+public static class SceneImageStatuses
+{
+    public const string Queued = "queued";
+    public const string Pending = "pending";
+    public const string Processing = "processing";
+    public const string Completed = "completed";
+    public const string Failed = "failed";
+    public const string Cancelled = "cancelled";
+
+    public static string FromJobStatus(ImageJobStatus status) => status switch
+    {
+        ImageJobStatus.Pending => Pending,
+        ImageJobStatus.Processing => Processing,
+        ImageJobStatus.Completed => Completed,
+        ImageJobStatus.Failed => Failed,
+        ImageJobStatus.Cancelled => Cancelled,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, $"Unsupported {nameof(ImageJobStatus)} value: '{status}'.")
+    };
+}
+
 public record ChatMessageDto(
     Guid Id,
     MessageRole Role,
     string Content,
-    DateTime Timestamp
+    DateTime Timestamp,
+    Guid? TurnId = null,
+    string? SceneImageUrl = null,
+    string? SceneImageStatus = null, // BE hydration: "pending", "processing", "completed", "failed"; FE optimistic/trigger: "queued"
+    Guid? GenerationRequestId = null
 );
 
 public record RelationshipEventDto(
@@ -91,7 +115,8 @@ public record SendMessageResponse(
     RelationshipEventDto? UnlockedEvent = null,
     bool HasWalkedOut = false,
     string? WalkOutReason = null,
-    SessionStatus SessionStatus = SessionStatus.Active
+    SessionStatus SessionStatus = SessionStatus.Active,
+    Guid? TurnId = null
 );
 
 public record RelationshipEventProposal(
