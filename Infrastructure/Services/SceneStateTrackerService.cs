@@ -70,28 +70,29 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
         var systemPrompt = """
             You are a Visual Continuity & Cinematic Scene Understanding Engine for an interactive roleplay game.
             
-            FUNDAMENTAL CONTINUITY INVARIANTS:
-            1. "NOTHING CHANGES IN PERSISTENT ROOM STATE UNLESS EXPLICITLY CHANGED IN THIS CONVERSATION TURN."
-            2. DO NOT invent room/outfit changes that were not explicitly mentioned or clearly acted upon in the latest dialogue.
-            3. Differentiate between:
-               - Persistent Room/Location: Macro room/place (e.g. Living Room, Garden, Bedroom, Workshop).
-               - Persistent Position: Relative spatial placement (e.g. Beside Window, At Workbench, On Sofa).
-               - Persistent Outfit: Current clothing (null if unchanged).
-               - Persistent TimeOfDay: Time of day (null if unchanged).
-               - Persistent HeldItems: Items picked up or dropped ("none" if released, null if unchanged).
-            4. Differentiate Turn-Specific Action:
-               - Pose: Bodily stance (e.g. Sitting, Standing, Stepping forward).
-               - Action: Momentary physical movement (e.g. Reaching out, Pouring tea, Covering blueprint).
-               - Expression: Facial/eye emotional state (e.g. Gentle smile, Stern cautious gaze, Blushing).
-            5. Deep Cinematic Composition (IN ENGLISH FOR STABLE DIFFUSION CLIP):
-               - shotType: "medium shot", "upper body portrait", "close-up portrait", "cowboy shot", "wide shot".
-               - cameraAngle: "slight 3/4 turn", "eye level", "dynamic side angle", "from above".
-               - subjectPlacement: "centered", "left third", "right third".
-               - detailedAction: Concrete English description of the character's physical action in this turn.
-               - detailedEnvironment: Concrete English description of background setting.
-               - lightingStyle: Concrete English description of lighting & glow.
-               - atmosphere: Concrete English atmosphere/tone.
-               - englishPromptTags: 5-10 concise English anime prompt tags.
+            STRICT ANTI-HALLUCINATION & FACTUAL ANCHORING RULES:
+            1. "NOTHING CHANGES IN PERSISTENT ROOM STATE UNLESS EXPLICITLY ACTED UPON IN THIS CONVERSATION TURN."
+            2. DO NOT invent unmentioned environments, locations, or weathers (e.g. do NOT invent gardens, sunsets, rain, or forests unless explicitly stated in the dialogue or current persistent state).
+            3. detailedEnvironment MUST STRICTLY anchor to the current persistent Location and Position (e.g. if in Bedroom, describe bedroom surroundings; do NOT invent an outdoor scene).
+            4. lightingStyle MUST STRICTLY anchor to the current persistent TimeOfDay and indoor/outdoor setting (e.g. Daytime indoors -> soft indoor daytime window light; Night indoors -> warm room lamp/candle lighting; do NOT invent sunsets or magical particles unless explicitly triggered by dialogue).
+            5. detailedAction MUST ONLY depict the concrete physical actions actually performed in this turn.
+            
+            Differentiate between:
+            - Persistent Room/Location: Macro room/place (e.g. Living Room, Garden, Bedroom, Workshop).
+            - Persistent Position: Relative spatial placement (e.g. Beside Window, At Workbench, On Sofa).
+            - Persistent Outfit: Current clothing (null if unchanged).
+            - Persistent TimeOfDay: Time of day (null if unchanged).
+            - Persistent HeldItems: Items picked up or dropped ("none" if released, null if unchanged).
+            - Turn-Specific Action: Pose, Action, Expression, Gaze in this specific turn.
+            - Deep Cinematic Composition (IN ENGLISH FOR STABLE DIFFUSION CLIP):
+              - shotType: "medium shot", "upper body portrait", "close-up portrait", "cowboy shot", "wide shot".
+              - cameraAngle: "slight 3/4 turn", "eye level", "dynamic side angle", "from above".
+              - subjectPlacement: "centered", "left third", "right third".
+              - detailedAction: Concrete English description of the character's physical action in this turn.
+              - detailedEnvironment: Fact-anchored English description of background setting based on current room.
+              - lightingStyle: Fact-anchored English description of lighting based on current time & room.
+              - atmosphere: Fact-anchored English atmosphere/tone.
+              - englishPromptTags: 5-10 concise, fact-anchored English anime prompt tags.
             
             Return JSON only matching the schema:
             {
@@ -109,9 +110,9 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
                 "shotType": "medium shot",
                 "cameraAngle": "slight 3/4 turn",
                 "subjectPlacement": "centered",
-                "detailedAction": "English description of action",
-                "detailedEnvironment": "English description of environment",
-                "lightingStyle": "English description of lighting",
+                "detailedAction": "Fact-anchored English description of action",
+                "detailedEnvironment": "Fact-anchored English description of environment",
+                "lightingStyle": "Fact-anchored English description of lighting",
                 "atmosphere": "English atmosphere",
                 "englishPromptTags": ["medium shot", "3/4 turn", "standing", "holding wrench"]
               }
@@ -181,14 +182,14 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
                     if (deltaDto.SceneDescription != null)
                     {
                         sceneDesc = new VisualSceneDescription(
-                            ShotType: deltaDto.SceneDescription.ShotType,
-                            CameraAngle: deltaDto.SceneDescription.CameraAngle,
-                            SubjectPlacement: deltaDto.SceneDescription.SubjectPlacement,
-                            DetailedAction: deltaDto.SceneDescription.DetailedAction,
-                            DetailedEnvironment: deltaDto.SceneDescription.DetailedEnvironment,
-                            LightingStyle: deltaDto.SceneDescription.LightingStyle,
-                            Atmosphere: deltaDto.SceneDescription.Atmosphere,
-                            EnglishPromptTags: deltaDto.SceneDescription.EnglishPromptTags
+                            shotType: deltaDto.SceneDescription.ShotType,
+                            cameraAngle: deltaDto.SceneDescription.CameraAngle,
+                            subjectPlacement: deltaDto.SceneDescription.SubjectPlacement,
+                            detailedAction: deltaDto.SceneDescription.DetailedAction,
+                            detailedEnvironment: deltaDto.SceneDescription.DetailedEnvironment,
+                            lightingStyle: deltaDto.SceneDescription.LightingStyle,
+                            atmosphere: deltaDto.SceneDescription.Atmosphere,
+                            englishPromptTags: deltaDto.SceneDescription.EnglishPromptTags
                         );
                     }
 
