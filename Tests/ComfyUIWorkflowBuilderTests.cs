@@ -189,21 +189,19 @@ public sealed class ComfyUIWorkflowBuilderTests
         var graph = builder.BuildWorkflow(request, "template_reference_avatar.png");
         var json = System.Text.Json.JsonSerializer.Serialize(graph, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
 
-        // Ensure scripts directory has the exact production template export for python benchmark
-        var scriptsDir = System.IO.Path.Combine(System.AppContext.BaseDirectory, "..", "..", "..", "..", "scripts");
-        if (System.IO.Directory.Exists(scriptsDir))
+        var dir = new System.IO.DirectoryInfo(System.AppContext.BaseDirectory);
+        while (dir != null && !System.IO.Directory.Exists(System.IO.Path.Combine(dir.FullName, "scripts")))
         {
-            var templatePath = System.IO.Path.Combine(scriptsDir, "production_workflow_v1_template.json");
-            if (System.IO.File.Exists(templatePath))
-            {
-                var existingJson = System.IO.File.ReadAllText(templatePath);
-                using var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson);
-                using var currentDoc = System.Text.Json.JsonDocument.Parse(json);
-                Assert.Equal(currentDoc.RootElement.GetRawText().Length > 0, existingDoc.RootElement.GetRawText().Length > 0);
-            }
-            System.IO.File.WriteAllText(templatePath, json);
-            Assert.True(System.IO.File.Exists(templatePath));
+            dir = dir.Parent;
         }
+        var scriptsDir = dir != null ? System.IO.Path.Combine(dir.FullName, "scripts") : null;
+
+        Assert.NotNull(scriptsDir);
+        var templatePath = System.IO.Path.Combine(scriptsDir!, "production_workflow_v1_template.json");
+        Assert.True(System.IO.File.Exists(templatePath), $"Template file must exist at {templatePath}");
+
+        var existingJson = System.IO.File.ReadAllText(templatePath);
+        Assert.Equal(NormalizeJson(existingJson), NormalizeJson(json));
 
         // Verify key production topology invariants
         Assert.True(graph.ContainsKey("1")); // LoadImage
@@ -308,19 +306,12 @@ public sealed class ComfyUIWorkflowBuilderTests
         }
         var scriptsDir = dir != null ? System.IO.Path.Combine(dir.FullName, "scripts") : null;
 
-        if (scriptsDir != null && System.IO.Directory.Exists(scriptsDir))
-        {
-            var templatePath = System.IO.Path.Combine(scriptsDir, "production_workflow_v2_template.json");
-            if (System.IO.File.Exists(templatePath))
-            {
-                var existingJson = System.IO.File.ReadAllText(templatePath);
-                using var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson);
-                using var currentDoc = System.Text.Json.JsonDocument.Parse(json);
-                Assert.Equal(currentDoc.RootElement.GetRawText().Length > 0, existingDoc.RootElement.GetRawText().Length > 0);
-            }
-            System.IO.File.WriteAllText(templatePath, json);
-            Assert.True(System.IO.File.Exists(templatePath));
-        }
+        Assert.NotNull(scriptsDir);
+        var templatePath = System.IO.Path.Combine(scriptsDir!, "production_workflow_v2_template.json");
+        Assert.True(System.IO.File.Exists(templatePath), $"Template file must exist at {templatePath}");
+
+        var existingJson = System.IO.File.ReadAllText(templatePath);
+        Assert.Equal(NormalizeJson(existingJson), NormalizeJson(json));
 
         Assert.True(graph.ContainsKey("1"));  // LoadImage Avatar
         Assert.True(graph.ContainsKey("13")); // LoadImage PrevScene
@@ -328,5 +319,14 @@ public sealed class ComfyUIWorkflowBuilderTests
         Assert.True(graph.ContainsKey("14")); // IPAdapter Slot 2
         Assert.True(graph.ContainsKey("3"));  // KSampler
         Assert.True(graph.ContainsKey("11")); // SaveImage
+    }
+
+    private static string NormalizeJson(string rawJson)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(rawJson);
+        return System.Text.Json.JsonSerializer.Serialize(doc.RootElement, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = false
+        });
     }
 }
