@@ -611,16 +611,17 @@ def evaluate_character(char, template, evaluator):
         else:
             weight, end_at, slot2_active = 0.15, 0.30, True
 
-        # PR #23 Negative Invariant Prompt Compilation (Domain Separated)
+        # PR #23 Negative Invariant Prompt Compilation (Generic Domain Driven)
+        gender = char.get("gender", "Female")
+        sig_neg = char.get("signature_negatives")
         neg_parts = ["2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality"]
-        if "valerius" in char["id"]:
+        if gender == "Male":
             neg_parts.append("1girl, anime girl, female, woman, breasts, feminine face")
-        elif "lyra" in char["id"]:
+        elif gender == "Female":
             neg_parts.append("1man, anime man, male, boy, masculine face, facial hair, beard, mustache")
-            neg_parts.append("deformed horns, missing horns, extra horns, asymmetrical malformed horns")
-        elif "elysia" in char["id"]:
-            neg_parts.append("1man, anime man, male, boy, masculine face, facial hair, beard, mustache")
-            neg_parts.append("human round ears, missing ears, extra ears")
+        
+        if sig_neg:
+            neg_parts.append(sig_neg)
         effective_negative = ", ".join(neg_parts)
 
         wf = build_workflow(template, char["avatar_filename"], prev_scene_filename, prompt, effective_negative, seed, weight=weight, end_at=end_at, slot2_active=slot2_active)

@@ -14,15 +14,11 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
 
         if (identity != null)
         {
-            var gender = identity.ResolvedGender;
-            if (gender == GenderPresentation.Male)
-                traits.Add("1man, male, masculine face");
-            else if (gender == GenderPresentation.Androgynous)
-                traits.Add("androgynous, 1person");
-            else if (gender == GenderPresentation.NonBinary)
-                traits.Add("non-binary, 1person, androgynous appearance");
-            else
-                traits.Add("1girl, female, feminine face");
+            var genderInvariant = GenderPromptInvariant.Resolve(identity.ResolvedGender);
+            if (!string.IsNullOrWhiteSpace(genderInvariant.PositiveTokens))
+            {
+                traits.Add(genderInvariant.PositiveTokens);
+            }
 
             if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) traits.Add(identity.AgeAppearance);
             if (!string.IsNullOrWhiteSpace(identity.Hair)) traits.Add(identity.Hair);
@@ -64,15 +60,11 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         // 1. Immutable Visual Foundation (Hierarchy: Identity > Scene > Mood > Relationship)
         if (identity != null)
         {
-            var gender = identity.ResolvedGender;
-            if (gender == GenderPresentation.Male)
-                characterTags.Add("1man, male, masculine face");
-            else if (gender == GenderPresentation.Androgynous)
-                characterTags.Add("androgynous, 1person");
-            else if (gender == GenderPresentation.NonBinary)
-                characterTags.Add("non-binary, 1person, androgynous appearance");
-            else
-                characterTags.Add("1girl, female, feminine face");
+            var genderInvariant = GenderPromptInvariant.Resolve(identity.ResolvedGender);
+            if (!string.IsNullOrWhiteSpace(genderInvariant.PositiveTokens))
+            {
+                characterTags.Add(genderInvariant.PositiveTokens);
+            }
 
             if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) characterTags.Add(identity.AgeAppearance);
             if (!string.IsNullOrWhiteSpace(identity.Hair)) characterTags.Add(identity.Hair);
@@ -162,15 +154,11 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         var identity = snapshot.VisualIdentity;
         if (identity != null)
         {
-            var gender = identity.ResolvedGender;
-            if (gender == GenderPresentation.Male)
-                allTags.Add("1man, male, masculine face");
-            else if (gender == GenderPresentation.Androgynous)
-                allTags.Add("androgynous, 1person");
-            else if (gender == GenderPresentation.NonBinary)
-                allTags.Add("non-binary, 1person, androgynous appearance");
-            else
-                allTags.Add("1girl, female, feminine face");
+            var genderInvariant = GenderPromptInvariant.Resolve(identity.ResolvedGender);
+            if (!string.IsNullOrWhiteSpace(genderInvariant.PositiveTokens))
+            {
+                allTags.Add(genderInvariant.PositiveTokens);
+            }
 
             if (!string.IsNullOrWhiteSpace(identity.AgeAppearance)) allTags.Add(identity.AgeAppearance);
             if (!string.IsNullOrWhiteSpace(identity.Hair)) allTags.Add(identity.Hair);
@@ -285,18 +273,11 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         // Tier 2: Generic Gender-Opposing Invariant Gating
         if (identity != null)
         {
-            var gender = identity.ResolvedGender;
-            if (gender == GenderPresentation.Male)
+            var genderInvariant = GenderPromptInvariant.Resolve(identity.ResolvedGender);
+            if (!string.IsNullOrWhiteSpace(genderInvariant.NegativeTokens))
             {
-                // Strict suppression of anime checkpoint female prior (facial and anatomical dimorphism)
-                negativeTags.Add("1girl, anime girl, female, woman, breasts, feminine face");
+                negativeTags.Add(genderInvariant.NegativeTokens);
             }
-            else if (gender == GenderPresentation.Female)
-            {
-                // Strict suppression of male traits for female personas
-                negativeTags.Add("1man, anime man, male, boy, masculine face, facial hair, beard, mustache");
-            }
-            // Androgynous and NonBinary do not aggressively suppress either gender to permit flexible expression
 
             // Tier 3: Feature-specific negative tokens
             if (identity.SignatureFeatures != null)

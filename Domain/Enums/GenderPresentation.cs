@@ -2,8 +2,9 @@ namespace Domain.Enums;
 
 public enum GenderPresentation
 {
-    Female = 0,
-    Male = 1,
-    Androgynous = 2,
-    NonBinary = 3
+    Unspecified = 0,
+    Female = 1,
+    Male = 2,
+    Androgynous = 3,
+    NonBinary = 4
 }

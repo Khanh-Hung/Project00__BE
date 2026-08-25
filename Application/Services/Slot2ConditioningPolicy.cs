@@ -1,4 +1,5 @@
 using System.Globalization;
+using Domain.ValueObjects;
 using Microsoft.Extensions.Configuration;
 
 namespace Application.Services;
@@ -62,18 +63,39 @@ public sealed record Slot2ConditioningPolicy(
         );
     }
 
-    public (double Weight, double EndAt, bool IsActive) Resolve(bool isColdStart, bool isTransition)
+    public Slot2ConditioningDecision Decide(bool isColdStart, bool isTransition)
     {
         if (isColdStart && BypassOnColdStart)
         {
-            return (0.0, 0.0, false);
+            return new Slot2ConditioningDecision(
+                IsActive: false,
+                Weight: 0.0f,
+                EndAt: 0.0f,
+                Context: Domain.Enums.Slot2Context.ColdStart
+            );
         }
 
         if (isTransition)
         {
-            return (TransitionWeight, TransitionEndAt, true);
+            return new Slot2ConditioningDecision(
+                IsActive: true,
+                Weight: (float)Math.Clamp(TransitionWeight, 0.0, 1.0),
+                EndAt: (float)Math.Clamp(TransitionEndAt, 0.0, 1.0),
+                Context: Domain.Enums.Slot2Context.SceneTransition
+            );
         }
 
-        return (SameSceneWeight, SameSceneEndAt, true);
+        return new Slot2ConditioningDecision(
+            IsActive: true,
+            Weight: (float)Math.Clamp(SameSceneWeight, 0.0, 1.0),
+            EndAt: (float)Math.Clamp(SameSceneEndAt, 0.0, 1.0),
+            Context: Domain.Enums.Slot2Context.SameScene
+        );
+    }
+
+    public (double Weight, double EndAt, bool IsActive) Resolve(bool isColdStart, bool isTransition)
+    {
+        var decision = Decide(isColdStart, isTransition);
+        return (decision.Weight, decision.EndAt, decision.IsActive);
     }
 }

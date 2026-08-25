@@ -15,18 +15,39 @@ public sealed record CharacterVisualIdentity(
     string? VisualTraits = null,
     string? CanonicalReferenceUrl = null,
     string? FullBodyUrl = null,
-    GenderPresentation GenderPresentation = GenderPresentation.Female,
+    GenderPresentation Presentation = GenderPresentation.Unspecified,
     IReadOnlyList<SignatureFeature>? SignatureFeatures = null
 )
 {
-    public GenderPresentation ResolvedGender =>
-        GenderPresentation != GenderPresentation.Female
-            ? GenderPresentation
-            : (Gender?.Equals("Male", StringComparison.OrdinalIgnoreCase) == true || Gender?.Equals("Man", StringComparison.OrdinalIgnoreCase) == true
-                ? GenderPresentation.Male
-                : (Gender?.Equals("Androgynous", StringComparison.OrdinalIgnoreCase) == true
-                    ? GenderPresentation.Androgynous
-                    : (Gender?.Equals("NonBinary", StringComparison.OrdinalIgnoreCase) == true || Gender?.Equals("Non-Binary", StringComparison.OrdinalIgnoreCase) == true
-                        ? GenderPresentation.NonBinary
-                        : GenderPresentation.Female)));
+    public GenderPresentation ResolvedGender
+    {
+        get
+        {
+            if (Presentation != GenderPresentation.Unspecified)
+                return Presentation;
+
+            if (string.IsNullOrWhiteSpace(Gender))
+                return GenderPresentation.Unspecified;
+
+            if (Gender.Equals("Male", StringComparison.OrdinalIgnoreCase) ||
+                Gender.Equals("Man", StringComparison.OrdinalIgnoreCase) ||
+                Gender.Equals("Boy", StringComparison.OrdinalIgnoreCase))
+                return GenderPresentation.Male;
+
+            if (Gender.Equals("Female", StringComparison.OrdinalIgnoreCase) ||
+                Gender.Equals("Woman", StringComparison.OrdinalIgnoreCase) ||
+                Gender.Equals("Girl", StringComparison.OrdinalIgnoreCase))
+                return GenderPresentation.Female;
+
+            if (Gender.Equals("Androgynous", StringComparison.OrdinalIgnoreCase))
+                return GenderPresentation.Androgynous;
+
+            if (Gender.Equals("NonBinary", StringComparison.OrdinalIgnoreCase) ||
+                Gender.Equals("Non-Binary", StringComparison.OrdinalIgnoreCase) ||
+                Gender.Equals("NB", StringComparison.OrdinalIgnoreCase))
+                return GenderPresentation.NonBinary;
+
+            return GenderPresentation.Unspecified;
+        }
+    }
 }

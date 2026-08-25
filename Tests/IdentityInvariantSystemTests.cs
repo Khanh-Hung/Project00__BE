@@ -1,12 +1,17 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Abstractions.Data;
+using Application.Common;
+using Application.DTOs;
 using Application.Interfaces;
 using Application.Services;
+using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
+using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Tests;
@@ -19,7 +24,7 @@ public sealed class IdentityInvariantSystemTests
     public void CompileNegativePrompt_WhenGenderIsMale_SuppressesFemaleTokensWithoutRestrictingClothing()
     {
         var identity = new CharacterVisualIdentity(
-            GenderPresentation: GenderPresentation.Male,
+            Presentation: GenderPresentation.Male,
             Hair: "short black hair",
             Eyes: "amber eyes"
         );
@@ -40,7 +45,7 @@ public sealed class IdentityInvariantSystemTests
     public void CompileNegativePrompt_WhenGenderIsFemale_SuppressesMaleTokens()
     {
         var identity = new CharacterVisualIdentity(
-            GenderPresentation: GenderPresentation.Female,
+            Presentation: GenderPresentation.Female,
             Hair: "long silver hair",
             Eyes: "crimson eyes"
         );
@@ -58,7 +63,7 @@ public sealed class IdentityInvariantSystemTests
     public void CompileScenePrompt_WhenGenderIsNonBinary_InjectsNonBinaryPositiveTokens()
     {
         var identity = new CharacterVisualIdentity(
-            GenderPresentation: GenderPresentation.NonBinary,
+            Presentation: GenderPresentation.NonBinary,
             Hair: "medium teal hair",
             Eyes: "violet eyes"
         );
@@ -88,7 +93,7 @@ public sealed class IdentityInvariantSystemTests
     public void CompileScenePrompt_WhenGenderIsMale_InjectsMasculinePositiveTokens()
     {
         var identity = new CharacterVisualIdentity(
-            GenderPresentation: GenderPresentation.Male,
+            Presentation: GenderPresentation.Male,
             Hair: "short black hair",
             Eyes: "amber eyes",
             ClothingStyle: "dark knight plate armor"
@@ -124,7 +129,7 @@ public sealed class IdentityInvariantSystemTests
         );
 
         var identity = new CharacterVisualIdentity(
-            GenderPresentation: GenderPresentation.Female,
+            Presentation: GenderPresentation.Female,
             Hair: "long pure silver hair",
             Eyes: "glowing red eyes",
             SignatureFeatures: new[] { hornFeature }
@@ -168,11 +173,11 @@ public sealed class IdentityInvariantSystemTests
             BypassOnColdStart: true
         );
 
-        var (weight, endAt, isActive) = policy.Resolve(isColdStart, isTransition);
+        var decision = policy.Decide(isColdStart, isTransition);
 
-        Assert.Equal(expectedWeight, weight, precision: 4);
-        Assert.Equal(expectedEndAt, endAt, precision: 4);
-        Assert.Equal(expectedActive, isActive);
+        Assert.Equal(expectedWeight, decision.Weight, precision: 4);
+        Assert.Equal(expectedEndAt, decision.EndAt, precision: 4);
+        Assert.Equal(expectedActive, decision.IsActive);
     }
 
     [Fact]
@@ -195,7 +200,7 @@ public sealed class IdentityInvariantSystemTests
 
         var visualIdentity = new CharacterVisualIdentity(
             CanonicalReferenceUrl: canonicalAvatarUrl,
-            GenderPresentation: GenderPresentation.Male,
+            Presentation: GenderPresentation.Male,
             Hair: "black hair",
             Eyes: "amber eyes",
             SignatureFeatures: new[] { hornFeature }
@@ -274,6 +279,146 @@ public sealed class IdentityInvariantSystemTests
             var sc = doc.RootElement.GetProperty("sceneContinuity");
             Assert.Equal(0.08, sc.GetProperty("weight").GetDouble(), precision: 2);
             Assert.Equal(0.20, sc.GetProperty("endAt").GetDouble(), precision: 2);
+        }
+    }
+
+    [Fact]
+    public async Task ImageGenerationJobHandler_EndToEnd_DispatchesRequest_WithCompiledInvariants_And_ImmutableReference()
+    {
+        // Arrange
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+        var unitOfWork = new UnitOfWork(db);
+
+        var canonicalAvatar = "https://cdn.project00.ai/avatars/valerius_canonical_face.png";
+        var crestFeature = new SignatureFeature(
+            Name: "ShadowCrest",
+            PositiveTokens: "obsidian knight pauldron crest",
+            NegativeTokens: "deformed crest, missing crest",
+            Importance: FeatureImportance.Critical,
+            Persistence: FeaturePersistence.EveryTurn
+        );
+
+        var identity = new CharacterVisualIdentity(
+            CanonicalReferenceUrl: canonicalAvatar,
+            Presentation: GenderPresentation.Male,
+            Hair: "short black hair",
+            Eyes: "golden amber eyes",
+            ClothingStyle: "dark plate armor",
+            SignatureFeatures: new[] { crestFeature }
+        );
+
+        var character = new Character(
+            name: "Valerius",
+            title: "Commander",
+            avatarUrl: canonicalAvatar,
+            personalityPrompt: "Loyal",
+            greeting: "Hail",
+            category: "Knight",
+            visualIdentity: identity
+        );
+        await db.Characters.AddAsync(character);
+
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(character.Id, userId, "Roleplay Session");
+        session.UpdateSceneState(new SessionSceneState("Armory", "Center", "Armor", "Day", null, "Quiet", 1, DateTime.UtcNow));
+        await db.ChatSessions.AddAsync(session);
+
+        // Turn 1 generated image in DB
+        var turn1Image = new SceneImage(session.Id, character.Id, Guid.NewGuid(), 1, "https://cdn.project00.ai/scenes/valerius_t1.png", "Prompt 1", isCurrent: true);
+        await db.SceneImages.AddAsync(turn1Image);
+        await db.SaveChangesAsync();
+
+        var stateTracker = new DummySceneStateTracker();
+        var profileProvider = new VisualGenerationProfileProvider();
+        var resolver = new VisualStateResolver(unitOfWork, stateTracker, profileProvider);
+
+        // Resolve Turn 2 (Same-Scene in Armory)
+        stateTracker.NextDelta = new SceneStateDelta(LocationChange: "Armory", ActionChange: "cleaning broadsword");
+        var (sceneState, transientState, snapshot) = await resolver.ResolveTurnVisualStateAsync(
+            character, session, "Inspect weapon", "I am sharpening the blade.", CharacterMood.Neutral, Guid.NewGuid());
+
+        var generationRequestId = Guid.NewGuid();
+        var job = new ImageGenerationJob(session.Id, snapshot.TurnId, character.Id, snapshot.SceneRevision, generationRequestId);
+        await db.ImageGenerationJobs.AddAsync(job);
+        await db.SaveChangesAsync();
+
+        var capturingService = new CapturingImageGenerationService();
+        var compiler = new VisualPromptCompiler();
+        var dateTimeProvider = new SystemDateTimeProvider();
+        var logger = NullLogger<ImageGenerationJobHandler>.Instance;
+
+        var handler = new ImageGenerationJobHandler(db, compiler, capturingService, logger, dateTimeProvider);
+
+        var payload = new SceneImageGenerationOutboxPayload(snapshot.TurnId, character.Id, userId, snapshot, generationRequestId);
+
+        // Act: Process the generation job end-to-end
+        var result = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+
+        // Assert: Job executed successfully
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.NotNull(capturingService.CapturedRequest);
+
+        var req = capturingService.CapturedRequest;
+
+        // 1. Assert masculine positive invariant tokens & signature features
+        Assert.Contains("1man", req.Prompt);
+        Assert.Contains("masculine face", req.Prompt);
+        Assert.Contains("obsidian knight pauldron crest", req.Prompt);
+        Assert.DoesNotContain("1girl", req.Prompt);
+
+        // 2. Assert anti-female negative invariant tokens & feature exclusions
+        Assert.NotNull(req.NegativePrompt);
+        Assert.Contains("1girl", req.NegativePrompt);
+        Assert.Contains("female", req.NegativePrompt);
+        Assert.Contains("woman", req.NegativePrompt);
+        Assert.Contains("breasts", req.NegativePrompt);
+        Assert.Contains("feminine face", req.NegativePrompt);
+        Assert.Contains("deformed crest", req.NegativePrompt);
+        Assert.DoesNotContain("1man", req.NegativePrompt);
+        Assert.DoesNotContain("dress", req.NegativePrompt);
+        Assert.DoesNotContain("skirt", req.NegativePrompt);
+
+        // 3. Assert Slot 1 is the canonical avatar (IMMUTABLE) and Slot 2 is Turn 1 image
+        Assert.Equal(canonicalAvatar, req.ReferenceImageUrl);
+        Assert.Equal("https://cdn.project00.ai/scenes/valerius_t1.png", req.PreviousSceneImageUrl);
+
+        // 4. Assert dynamic Slot 2 parameters are preserved in request
+        Assert.NotNull(req.ParametersJson);
+        using var doc = JsonDocument.Parse(req.ParametersJson);
+        var sc = doc.RootElement.GetProperty("sceneContinuity");
+        Assert.Equal(0.15, sc.GetProperty("weight").GetDouble(), precision: 2);
+        Assert.Equal(0.30, sc.GetProperty("endAt").GetDouble(), precision: 2);
+    }
+
+    private sealed class CapturingImageGenerationService : IImageGenerationService
+    {
+        public ImageGenerationRequest? CapturedRequest { get; private set; }
+
+        public Task<string> GenerateImageAsync(string prompt, int width, int height, CancellationToken ct = default)
+        {
+            return Task.FromResult("https://cdn.project00.ai/scenes/legacy_gen.png");
+        }
+
+        public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            CapturedRequest = request;
+            return Task.FromResult("https://cdn.project00.ai/scenes/valerius_t2.png");
+        }
+
+        public Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            CapturedRequest = request;
+            return Task.FromResult(new ImageGenerationResult(
+                ImageUrl: "https://cdn.project00.ai/scenes/valerius_t2.png",
+                Provider: "ComfyUI",
+                ProviderJobId: "job-1",
+                DurationMs: 1200,
+                Seed: 123456,
+                MetadataJson: "{\"provider\":\"ComfyUI\"}"
+            ));
         }
     }
 
