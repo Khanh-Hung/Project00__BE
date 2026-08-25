@@ -78,75 +78,28 @@ BENCHMARK_CHARACTERS = [
     }
 ]
 
-def build_workflow(reference_img_name, prompt, negative, seed, ip_weight, ip_end_at):
-    return {
-        "1": {
-            "class_type": "LoadImage",
-            "inputs": { "image": reference_img_name }
-        },
-        "2": {
-            "class_type": "CLIPVisionLoader",
-            "inputs": { "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors" }
-        },
-        "8": {
-            "class_type": "IPAdapterModelLoader",
-            "inputs": { "ipadapter_file": "ip-adapter-plus_sd15.safetensors" }
-        },
-        "10": {
-            "class_type": "IPAdapterAdvanced",
-            "inputs": {
-                "weight": float(ip_weight),
-                "weight_type": "linear",
-                "combine_embeds": "concat",
-                "start_at": 0.0,
-                "end_at": float(ip_end_at),
-                "embeds_scaling": "K+V",
-                "model": ["4", 0],
-                "ipadapter": ["8", 0],
-                "image": ["1", 0],
-                "clip_vision": ["2", 0]
-            }
-        },
-        "4": {
-            "class_type": "CheckpointLoaderSimple",
-            "inputs": { "ckpt_name": "meinamix_meinaV11.safetensors" }
-        },
-        "5": {
-            "class_type": "EmptyLatentImage",
-            "inputs": { "width": 512, "height": 768, "batch_size": 1 }
-        },
-        "6": {
-            "class_type": "CLIPTextEncode",
-            "inputs": { "text": prompt, "clip": ["4", 1] }
-        },
-        "7": {
-            "class_type": "CLIPTextEncode",
-            "inputs": { "text": negative, "clip": ["4", 1] }
-        },
-        "3": {
-            "class_type": "KSampler",
-            "inputs": {
-                "seed": int(seed),
-                "steps": 28,
-                "cfg": 7.0,
-                "sampler_name": "euler_ancestral",
-                "scheduler": "karras",
-                "denoise": 1.0,
-                "model": ["10", 0],
-                "positive": ["6", 0],
-                "negative": ["7", 0],
-                "latent_image": ["5", 0]
-            }
-        },
-        "9": {
-            "class_type": "VAEDecode",
-            "inputs": { "samples": ["3", 0], "vae": ["4", 2] }
-        },
-        "12": {
-            "class_type": "SaveImage",
-            "inputs": { "filename_prefix": f"Benchmark_FaceID_{seed}", "images": ["9", 0] }
-        }
-    }
+def load_production_workflow_template():
+    template_path = os.path.join(os.path.dirname(__file__), "production_workflow_v1_template.json")
+    if not os.path.exists(template_path):
+        raise FileNotFoundError(
+            f"Production workflow template missing at {template_path}. Run 'dotnet test' to generate it."
+        )
+    with open(template_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def build_workflow_from_production_template(template, reference_img_name, prompt, negative, seed, ip_weight, ip_end_at):
+    """
+    Constructs execution workflow directly from C# VisualIdentityWorkflowV1Builder export,
+    guaranteeing 100% mathematical and node topology parity with production backend.
+    """
+    wf = json.loads(json.dumps(template))
+    wf["1"]["inputs"]["image"] = reference_img_name
+    wf["6"]["inputs"]["text"] = prompt
+    wf["7"]["inputs"]["text"] = negative
+    wf["3"]["inputs"]["seed"] = int(seed)
+    wf["10"]["inputs"]["weight"] = float(ip_weight)
+    wf["10"]["inputs"]["end_at"] = float(ip_end_at)
+    return wf
 
 def queue_prompt(prompt_workflow):
     data = json.dumps({"prompt": prompt_workflow}).encode("utf-8")
@@ -252,6 +205,7 @@ def run_benchmark():
     print("=" * 88)
 
     evaluator = FacialRegionLocalizationAndEmbeddingEvaluator()
+    template = load_production_workflow_template()
 
     # Verify all reference files exist before launching GPU runs
     for char in BENCHMARK_CHARACTERS:
@@ -285,7 +239,7 @@ def run_benchmark():
                 scn_name = scn["name"]
                 print(f"  > Scenario: {scn_name}")
                 for seed in scn["seeds"]:
-                    wf = build_workflow(char["reference_image"], scn["prompt"], scn["negative"], seed, cfg["weight"], cfg["end_at"])
+                    wf = build_workflow_from_production_template(template, char["reference_image"], scn["prompt"], scn["negative"], seed, cfg["weight"], cfg["end_at"])
                     q = queue_prompt(wf)
                     gen_path = wait_for_prompt_completion(q["prompt_id"])
 
