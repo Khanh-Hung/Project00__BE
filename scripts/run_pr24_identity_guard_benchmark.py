@@ -199,10 +199,12 @@ def evaluate_frame_quality(img_path, avatar_path, char_name, turn_data):
     overall = 0.6 * face_sim + 0.4 * feat_score
     if inv_violated:
         status = "Failed"
-    elif face_sim < 0.75 or not feat_pass:
+    elif face_sim < 0.72 or feat_score < 0.50 or not feat_pass:
         status = "Degraded"
     else:
         status = "Passed"
+
+    eval_target_passed = (face_sim >= 0.75 and feat_score >= 0.50 and feat_pass and not inv_violated)
 
     return {
         "status": status,
@@ -210,7 +212,8 @@ def evaluate_frame_quality(img_path, avatar_path, char_name, turn_data):
         "feature_score": float(feat_score),
         "feature_passed": bool(feat_pass),
         "invariant_violated": bool(inv_violated),
-        "overall_score": float(overall)
+        "overall_score": float(overall),
+        "eval_target_passed": bool(eval_target_passed)
     }
 
 # -------------------------------------------------------------
@@ -337,6 +340,12 @@ def run_benchmark(max_turns=4, mode_filter=None):
                     dest_name = f"{char_key}_turn_{rev:02d}_att_{attempt}.png"
                     dest_path = os.path.join(char_dir, dest_name)
 
+                    if os.path.exists(dest_path) and os.path.getsize(dest_path) < 1000:
+                        try:
+                            os.remove(dest_path)
+                        except Exception:
+                            pass
+
                     if not os.path.exists(dest_path):
                         wf = build_workflow_graph(
                             template=template,
@@ -355,6 +364,10 @@ def run_benchmark(max_turns=4, mode_filter=None):
                         pid = q_res["prompt_id"]
                         fn = wait_for_execution(pid)
                         src_path = os.path.join(COMFY_OUTPUT_DIR, fn)
+                        for _ in range(20):
+                            if os.path.exists(src_path) and os.path.getsize(src_path) > 1000:
+                                break
+                            time.sleep(0.5)
                         shutil.copyfile(src_path, dest_path)
 
                     eval_res = evaluate_frame_quality(dest_path, avatar_local, char_name, turn)
@@ -450,24 +463,46 @@ def run_benchmark(max_turns=4, mode_filter=None):
     print(f"{'Metric':<32} | {'PR23 Baseline (Unguarded)':<22} | {'PR24 Guarded':<18}", flush=True)
     print("-"*80, flush=True)
 
+    # Compute aggregate metrics across characters
     m1 = results[0]
     m2 = results[1]
-
-    # Compute aggregate metrics across characters
     all_turns_m1 = [t for c in m1["characters"].values() for t in c["turns"]]
     all_turns_m2 = [t for c in m2["characters"].values() for t in c["turns"]]
 
-    worst_id_m1 = min([t["evaluation"]["face_similarity"] for t in all_turns_m1])
-    worst_id_m2 = min([t["evaluation"]["face_similarity"] for t in all_turns_m2])
+    faces_m1 = [t["evaluation"]["face_similarity"] for t in all_turns_m1]
+    faces_m2 = [t["evaluation"]["face_similarity"] for t in all_turns_m2]
 
-    avg_face_m1 = np.mean([t["evaluation"]["face_similarity"] for t in all_turns_m1])
-    avg_face_m2 = np.mean([t["evaluation"]["face_similarity"] for t in all_turns_m2])
+    worst_id_m1 = min(faces_m1)
+    worst_id_m2 = min(faces_m2)
+
+    p10_m1 = float(np.percentile(faces_m1, 10))
+    p10_m2 = float(np.percentile(faces_m2, 10))
+
+    median_m1 = float(np.median(faces_m1))
+    median_m2 = float(np.median(faces_m2))
+
+    avg_face_m1 = float(np.mean(faces_m1))
+    avg_face_m2 = float(np.mean(faces_m2))
+
+    feats_m1 = [t["evaluation"]["feature_score"] for t in all_turns_m1]
+    feats_m2 = [t["evaluation"]["feature_score"] for t in all_turns_m2]
+    avg_feat_m1 = float(np.mean(feats_m1))
+    avg_feat_m2 = float(np.mean(feats_m2))
+
+    att1_pass_m2 = sum(1 for t in all_turns_m2 if t["attempts_used"] == 1 and t["evaluation"]["status"] == "Passed")
+    att2_rec_m2 = sum(1 for t in all_turns_m2 if t["attempts_used"] == 2 and t["evaluation"]["status"] == "Passed")
+    att3_rec_m2 = sum(1 for t in all_turns_m2 if t["attempts_used"] == 3 and t["evaluation"]["status"] == "Passed")
+    retry_triggered_m2 = sum(1 for t in all_turns_m2 if t["attempts_used"] > 1)
+    exhausted_m2 = sum(1 for t in all_turns_m2 if not t["is_current"])
 
     avg_attempts_m1 = 1.0
     avg_attempts_m2 = float(np.mean([t["attempts_used"] for t in all_turns_m2]))
 
-    passed_count_m1 = sum(1 for t in all_turns_m1 if t["evaluation"]["status"] == "Passed")
-    passed_count_m2 = sum(1 for t in all_turns_m2 if t["evaluation"]["status"] == "Passed")
+    passed_guard_m1 = sum(1 for t in all_turns_m1 if t["evaluation"]["status"] == "Passed")
+    passed_guard_m2 = sum(1 for t in all_turns_m2 if t["evaluation"]["status"] == "Passed")
+
+    passed_eval_m1 = sum(1 for t in all_turns_m1 if t["evaluation"].get("eval_target_passed", False))
+    passed_eval_m2 = sum(1 for t in all_turns_m2 if t["evaluation"].get("eval_target_passed", False))
 
     quarantine_count_m1 = 0
     quarantine_count_m2 = sum(1 for t in all_turns_m2 if not t["is_current"])
@@ -483,10 +518,16 @@ def run_benchmark(max_turns=4, mode_filter=None):
     action_m2 = np.mean([c["action_margin"] for c in m2["characters"].values()])
 
     print(f"{'Mean Face Similarity':<32} | {avg_face_m1:<22.4f} | {avg_face_m2:<18.4f}", flush=True)
-    print(f"{'Worst Identity Score':<32} | {worst_id_m1:<22.4f} | {worst_id_m2:<18.4f}", flush=True)
-    print(f"{'Passed Frames (>=0.75 + feats)':<32} | {f'{passed_count_m1}/{len(all_turns_m1)}':<22} | {f'{passed_count_m2}/{len(all_turns_m2)}':<18}", flush=True)
-    print(f"{'Average Attempts per Turn':<32} | {avg_attempts_m1:<22.2f} | {avg_attempts_m2:<18.2f}", flush=True)
-    print(f"{'Quarantine Rate (Corrupt Bypassed)':<32} | {'0.0% (Unguarded)':<22} | {f'{quarantine_rate_m2:.1f}%':<18}", flush=True)
+    print(f"{'Median Face Similarity':<32} | {median_m1:<22.4f} | {median_m2:<18.4f}", flush=True)
+    print(f"{'P10 Face Similarity':<32} | {p10_m1:<22.4f} | {p10_m2:<18.4f}", flush=True)
+    print(f"{'Worst Face Score (Floor)':<32} | {worst_id_m1:<22.4f} | {worst_id_m2:<18.4f}", flush=True)
+    print(f"{'Mean Feature Retention':<32} | {avg_feat_m1:<22.4f} | {avg_feat_m2:<18.4f}", flush=True)
+    print(f"{'Guard Gate Passed (>=0.72)':<32} | {f'{passed_guard_m1}/{len(all_turns_m1)}':<22} | {f'{passed_guard_m2}/{len(all_turns_m2)}':<18}", flush=True)
+    print(f"{'Eval Target Passed (>=0.75)':<32} | {f'{passed_eval_m1}/{len(all_turns_m1)}':<22} | {f'{passed_eval_m2}/{len(all_turns_m2)}':<18}", flush=True)
+    print(f"{'Attempt 1 Pass Rate':<32} | {'100.0% (Unguarded)':<22} | {f'{(att1_pass_m2/len(all_turns_m2))*100.0:.1f}%':<18}", flush=True)
+    print(f"{'Retry Trigger Rate':<32} | {'0.0% (Unguarded)':<22} | {f'{(retry_triggered_m2/len(all_turns_m2))*100.0:.1f}%':<18}", flush=True)
+    print(f"{'Attempt 2/3 Recoveries':<32} | {'N/A':<22} | {f'{att2_rec_m2 + att3_rec_m2} frames':<18}", flush=True)
+    print(f"{'Quarantined (Exhausted)':<32} | {'0 (Unguarded)':<22} | {f'{exhausted_m2} ({quarantine_rate_m2:.1f}%)':<18}", flush=True)
     print(f"{'Same-Scene Continuity':<32} | {same_m1:<22.4f} | {same_m2:<18.4f}", flush=True)
     print(f"{'Transition Continuity':<32} | {trans_m1:<22.4f} | {trans_m2:<18.4f}", flush=True)
     print(f"{'Action Margin (CLIP)':<32} | {action_m1:<22.4f} | {action_m2:<18.4f}", flush=True)
@@ -498,4 +539,6 @@ if __name__ == "__main__":
         idx = sys.argv.index("--stage")
         if idx + 1 < len(sys.argv):
             stage = int(sys.argv[idx + 1])
-    run_benchmark(max_turns=4 if stage == 1 else 8)
+    
+    max_turns = 4 if stage == 1 else 8
+    run_benchmark(max_turns=max_turns)

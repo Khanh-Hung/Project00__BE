@@ -1,0 +1,854 @@
+[
+  {
+    "mode_id": "mode_1_baseline",
+    "mode_name": "Mode 1: Baseline PR23 (Unguarded 1-shot)",
+    "characters": {
+      "character_01_lyra": {
+        "name": "Lyra",
+        "mean_face_similarity": 0.8576,
+        "mean_feature_score": 0.5815,
+        "action_margin": -0.0178,
+        "same_scene_continuity": 0.8925,
+        "transition_continuity": 0.9294,
+        "passed_frames": "8/8",
+        "contact_sheet": "character_01_lyra_mode_1_baseline_contact_sheet.png",
+        "turns": [
+          {
+            "scene_revision": 1,
+            "attempts_used": 1,
+            "final_seed": 100001,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8106582760810852,
+              "feature_score": 0.6108559966087341,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7307373642921448,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_01_att_1.png"
+          },
+          {
+            "scene_revision": 2,
+            "attempts_used": 1,
+            "final_seed": 100002,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8720138072967529,
+              "feature_score": 0.6011743396520615,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7636780202388764,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_02_att_1.png"
+          },
+          {
+            "scene_revision": 3,
+            "attempts_used": 1,
+            "final_seed": 100003,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8379629254341125,
+              "feature_score": 0.5994940102100372,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7425753593444824,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_03_att_1.png"
+          },
+          {
+            "scene_revision": 4,
+            "attempts_used": 1,
+            "final_seed": 100004,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8566097021102905,
+              "feature_score": 0.5727308541536331,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7430581629276276,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_04_att_1.png"
+          },
+          {
+            "scene_revision": 5,
+            "attempts_used": 1,
+            "final_seed": 100005,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8494873642921448,
+              "feature_score": 0.5684165209531784,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7370590269565582,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_05_att_1.png"
+          },
+          {
+            "scene_revision": 6,
+            "attempts_used": 1,
+            "final_seed": 100006,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8719660043716431,
+              "feature_score": 0.6147887110710144,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7690950870513915,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_06_att_1.png"
+          },
+          {
+            "scene_revision": 7,
+            "attempts_used": 1,
+            "final_seed": 100007,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8844143152236938,
+              "feature_score": 0.5682726502418518,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.757957649230957,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_07_att_1.png"
+          },
+          {
+            "scene_revision": 8,
+            "attempts_used": 1,
+            "final_seed": 100008,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8777607679367065,
+              "feature_score": 0.5160791724920273,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7330881297588348,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_08_att_1.png"
+          }
+        ]
+      },
+      "character_02_elysia": {
+        "name": "Elysia",
+        "mean_face_similarity": 0.9219,
+        "mean_feature_score": 0.8122,
+        "action_margin": -0.0366,
+        "same_scene_continuity": 0.9439,
+        "transition_continuity": 0.9485,
+        "passed_frames": "8/8",
+        "contact_sheet": "character_02_elysia_mode_1_baseline_contact_sheet.png",
+        "turns": [
+          {
+            "scene_revision": 1,
+            "attempts_used": 1,
+            "final_seed": 200001,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9150776863098145,
+              "feature_score": 0.8474574536085129,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8880295932292939,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_01_att_1.png"
+          },
+          {
+            "scene_revision": 2,
+            "attempts_used": 1,
+            "final_seed": 200002,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9388137459754944,
+              "feature_score": 0.847520112991333,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.9022962927818299,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_02_att_1.png"
+          },
+          {
+            "scene_revision": 3,
+            "attempts_used": 1,
+            "final_seed": 200003,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8820401430130005,
+              "feature_score": 0.8135991841554642,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.854663759469986,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_03_att_1.png"
+          },
+          {
+            "scene_revision": 4,
+            "attempts_used": 1,
+            "final_seed": 200004,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9152894020080566,
+              "feature_score": 0.8031741082668304,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8704432845115662,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_04_att_1.png"
+          },
+          {
+            "scene_revision": 5,
+            "attempts_used": 1,
+            "final_seed": 200005,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9332766532897949,
+              "feature_score": 0.7661587297916412,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8664294838905335,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_05_att_1.png"
+          },
+          {
+            "scene_revision": 6,
+            "attempts_used": 1,
+            "final_seed": 200006,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9290223717689514,
+              "feature_score": 0.7944551408290863,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8751954793930055,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_06_att_1.png"
+          },
+          {
+            "scene_revision": 7,
+            "attempts_used": 1,
+            "final_seed": 200007,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9314250946044922,
+              "feature_score": 0.7827528119087219,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.871956181526184,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_07_att_1.png"
+          },
+          {
+            "scene_revision": 8,
+            "attempts_used": 1,
+            "final_seed": 200008,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9298954010009766,
+              "feature_score": 0.8422137349843979,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8948227345943451,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_08_att_1.png"
+          }
+        ]
+      },
+      "character_03_valerius": {
+        "name": "Valerius",
+        "mean_face_similarity": 0.8189,
+        "mean_feature_score": 0.7721,
+        "action_margin": -0.0108,
+        "same_scene_continuity": 0.884,
+        "transition_continuity": 0.9028,
+        "passed_frames": "8/8",
+        "contact_sheet": "character_03_valerius_mode_1_baseline_contact_sheet.png",
+        "turns": [
+          {
+            "scene_revision": 1,
+            "attempts_used": 1,
+            "final_seed": 300001,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.82918781042099,
+              "feature_score": 0.818148098886013,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8247719258069992,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_01_att_1.png"
+          },
+          {
+            "scene_revision": 2,
+            "attempts_used": 1,
+            "final_seed": 300002,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8725286722183228,
+              "feature_score": 0.573532722890377,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7529302924871444,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_02_att_1.png"
+          },
+          {
+            "scene_revision": 3,
+            "attempts_used": 1,
+            "final_seed": 300003,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8573012351989746,
+              "feature_score": 0.6878537982702255,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.789522260427475,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_03_att_1.png"
+          },
+          {
+            "scene_revision": 4,
+            "attempts_used": 1,
+            "final_seed": 300004,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8008245825767517,
+              "feature_score": 0.9745654948055744,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8703209474682807,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_04_att_1.png"
+          },
+          {
+            "scene_revision": 5,
+            "attempts_used": 1,
+            "final_seed": 300005,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8393992781639099,
+              "feature_score": 0.6526135951280594,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7646850049495697,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_05_att_1.png"
+          },
+          {
+            "scene_revision": 6,
+            "attempts_used": 1,
+            "final_seed": 300006,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.7975623607635498,
+              "feature_score": 0.776552252471447,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7891583174467087,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_06_att_1.png"
+          },
+          {
+            "scene_revision": 7,
+            "attempts_used": 1,
+            "final_seed": 300007,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8057310581207275,
+              "feature_score": 0.9333407059311867,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8567749172449112,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_07_att_1.png"
+          },
+          {
+            "scene_revision": 8,
+            "attempts_used": 1,
+            "final_seed": 300008,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.7483838200569153,
+              "feature_score": 0.7601265162229538,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7530808985233307,
+              "eval_target_passed": false
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_08_att_1.png"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "mode_id": "mode_2_quality_guard",
+    "mode_name": "Mode 2: PR24 Identity Quality Guard (Auto-Mitigation + Quarantine)",
+    "characters": {
+      "character_01_lyra": {
+        "name": "Lyra",
+        "mean_face_similarity": 0.8603,
+        "mean_feature_score": 0.603,
+        "action_margin": -0.0129,
+        "same_scene_continuity": 0.8855,
+        "transition_continuity": 0.9214,
+        "passed_frames": "8/8",
+        "contact_sheet": "character_01_lyra_mode_2_quality_guard_contact_sheet.png",
+        "turns": [
+          {
+            "scene_revision": 1,
+            "attempts_used": 1,
+            "final_seed": 100001,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.83974689245224,
+              "feature_score": 0.6692922413349152,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.77156503200531,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_01_att_1.png"
+          },
+          {
+            "scene_revision": 2,
+            "attempts_used": 1,
+            "final_seed": 100002,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.862393319606781,
+              "feature_score": 0.6421579718589783,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.77429918050766,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_02_att_1.png"
+          },
+          {
+            "scene_revision": 3,
+            "attempts_used": 1,
+            "final_seed": 100003,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8089459538459778,
+              "feature_score": 0.6695410907268524,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7531840085983277,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_03_att_1.png"
+          },
+          {
+            "scene_revision": 4,
+            "attempts_used": 1,
+            "final_seed": 100004,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8605775237083435,
+              "feature_score": 0.5869640707969666,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7511321425437927,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_04_att_1.png"
+          },
+          {
+            "scene_revision": 5,
+            "attempts_used": 1,
+            "final_seed": 100005,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8654994368553162,
+              "feature_score": 0.6150901615619659,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7653357267379761,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_05_att_1.png"
+          },
+          {
+            "scene_revision": 6,
+            "attempts_used": 1,
+            "final_seed": 100006,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8647531270980835,
+              "feature_score": 0.5769920647144318,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7496487021446228,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_06_att_1.png"
+          },
+          {
+            "scene_revision": 7,
+            "attempts_used": 1,
+            "final_seed": 100007,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8891726136207581,
+              "feature_score": 0.5493947416543961,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7532614648342133,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_07_att_1.png"
+          },
+          {
+            "scene_revision": 8,
+            "attempts_used": 2,
+            "final_seed": 3280571753495760176,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8916456699371338,
+              "feature_score": 0.5145452469587326,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7408055007457732,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_01_lyra_turn_08_att_2.png"
+          }
+        ]
+      },
+      "character_02_elysia": {
+        "name": "Elysia",
+        "mean_face_similarity": 0.9205,
+        "mean_feature_score": 0.8183,
+        "action_margin": -0.0341,
+        "same_scene_continuity": 0.9547,
+        "transition_continuity": 0.9561,
+        "passed_frames": "8/8",
+        "contact_sheet": "character_02_elysia_mode_2_quality_guard_contact_sheet.png",
+        "turns": [
+          {
+            "scene_revision": 1,
+            "attempts_used": 1,
+            "final_seed": 200001,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9150776863098145,
+              "feature_score": 0.8474574536085129,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8880295932292939,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_01_att_1.png"
+          },
+          {
+            "scene_revision": 2,
+            "attempts_used": 1,
+            "final_seed": 200002,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9307551980018616,
+              "feature_score": 0.8776462376117706,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.9095116138458252,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_02_att_1.png"
+          },
+          {
+            "scene_revision": 3,
+            "attempts_used": 1,
+            "final_seed": 200003,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9044588208198547,
+              "feature_score": 0.8797666728496552,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.894581961631775,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_03_att_1.png"
+          },
+          {
+            "scene_revision": 4,
+            "attempts_used": 1,
+            "final_seed": 200004,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9103960990905762,
+              "feature_score": 0.8064834326505661,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.868831032514572,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_04_att_1.png"
+          },
+          {
+            "scene_revision": 5,
+            "attempts_used": 1,
+            "final_seed": 200005,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9347656965255737,
+              "feature_score": 0.8411025553941727,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8973004400730134,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_05_att_1.png"
+          },
+          {
+            "scene_revision": 6,
+            "attempts_used": 1,
+            "final_seed": 200006,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9119566679000854,
+              "feature_score": 0.7963607758283615,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.865718311071396,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_06_att_1.png"
+          },
+          {
+            "scene_revision": 7,
+            "attempts_used": 1,
+            "final_seed": 200007,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9260867834091187,
+              "feature_score": 0.7373943477869034,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8506098091602325,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_07_att_1.png"
+          },
+          {
+            "scene_revision": 8,
+            "attempts_used": 1,
+            "final_seed": 200008,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9307664632797241,
+              "feature_score": 0.7599433809518814,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.862437230348587,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_02_elysia_turn_08_att_1.png"
+          }
+        ]
+      },
+      "character_03_valerius": {
+        "name": "Valerius",
+        "mean_face_similarity": 0.8194,
+        "mean_feature_score": 0.8135,
+        "action_margin": -0.0118,
+        "same_scene_continuity": 0.9068,
+        "transition_continuity": 0.8958,
+        "passed_frames": "8/8",
+        "contact_sheet": "character_03_valerius_mode_2_quality_guard_contact_sheet.png",
+        "turns": [
+          {
+            "scene_revision": 1,
+            "attempts_used": 1,
+            "final_seed": 300001,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.82918781042099,
+              "feature_score": 0.818148098886013,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8247719258069992,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_01_att_1.png"
+          },
+          {
+            "scene_revision": 2,
+            "attempts_used": 1,
+            "final_seed": 300002,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.9031631946563721,
+              "feature_score": 0.6840541139245033,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8155195623636247,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_02_att_1.png"
+          },
+          {
+            "scene_revision": 3,
+            "attempts_used": 1,
+            "final_seed": 300003,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8465282917022705,
+              "feature_score": 0.641599029302597,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7645565867424011,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_03_att_1.png"
+          },
+          {
+            "scene_revision": 4,
+            "attempts_used": 1,
+            "final_seed": 300004,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8323404788970947,
+              "feature_score": 0.9225711897015572,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8684327632188797,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_04_att_1.png"
+          },
+          {
+            "scene_revision": 5,
+            "attempts_used": 1,
+            "final_seed": 300005,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8256858587265015,
+              "feature_score": 0.7267153561115265,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7860976576805114,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_05_att_1.png"
+          },
+          {
+            "scene_revision": 6,
+            "attempts_used": 1,
+            "final_seed": 300006,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.8351446986198425,
+              "feature_score": 0.8608107566833496,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8454111218452454,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_06_att_1.png"
+          },
+          {
+            "scene_revision": 7,
+            "attempts_used": 1,
+            "final_seed": 300007,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.7575329542160034,
+              "feature_score": 1.0,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.8545197725296021,
+              "eval_target_passed": true
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_07_att_1.png"
+          },
+          {
+            "scene_revision": 8,
+            "attempts_used": 1,
+            "final_seed": 300008,
+            "evaluation": {
+              "status": "Passed",
+              "face_similarity": 0.7256390452384949,
+              "feature_score": 0.8537499532103539,
+              "feature_passed": true,
+              "invariant_violated": false,
+              "overall_score": 0.7768834084272385,
+              "eval_target_passed": false
+            },
+            "is_current": true,
+            "image_file": "character_03_valerius_turn_08_att_1.png"
+          }
+        ]
+      }
+    }
+  }
+]
