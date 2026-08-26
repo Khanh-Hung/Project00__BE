@@ -182,22 +182,24 @@ public sealed class IdentityInvariantSystemTests
     }
 
     [Theory]
-    [InlineData(true, false, 0.0, 0.0, false)]
-    [InlineData(false, false, 0.15, 0.30, true)]
-    [InlineData(false, true, 0.08, 0.20, true)]
+    [InlineData(true, false, 0.0, 0.0, false, Slot2ConditioningMode.Bypassed)]
+    [InlineData(false, false, 0.12, 0.25, true, Slot2ConditioningMode.SceneStyleContinuity)]
+    [InlineData(false, true, 0.06, 0.15, true, Slot2ConditioningMode.SceneStyleContinuity)]
     public void Slot2ConditioningPolicy_ResolvesExpectedParameters(
         bool isColdStart,
         bool isTransition,
         double expectedWeight,
         double expectedEndAt,
-        bool expectedActive)
+        bool expectedActive,
+        Slot2ConditioningMode expectedMode)
     {
         var policy = new Slot2ConditioningPolicy(
-            SameSceneWeight: 0.15,
-            SameSceneEndAt: 0.30,
-            TransitionWeight: 0.08,
-            TransitionEndAt: 0.20,
-            BypassOnColdStart: true
+            SameSceneWeight: 0.12,
+            SameSceneEndAt: 0.25,
+            TransitionWeight: 0.06,
+            TransitionEndAt: 0.15,
+            BypassOnColdStart: true,
+            Mode: Slot2ConditioningMode.SceneStyleContinuity
         );
 
         var decision = policy.Decide(isColdStart, isTransition);
@@ -205,6 +207,7 @@ public sealed class IdentityInvariantSystemTests
         Assert.Equal(expectedWeight, decision.Weight, precision: 4);
         Assert.Equal(expectedEndAt, decision.EndAt, precision: 4);
         Assert.Equal(expectedActive, decision.IsActive);
+        Assert.Equal(expectedMode, decision.Mode);
     }
 
     [Theory]
@@ -213,12 +216,146 @@ public sealed class IdentityInvariantSystemTests
     [InlineData("AiProviders:ImageGeneration:Slot2Policy:SameSceneWeight", "-0.1")]
     [InlineData("AiProviders:ImageGeneration:Slot2Policy:TransitionWeight", "NaN")]
     [InlineData("AiProviders:ImageGeneration:Slot2Policy:BypassOnColdStart", "not_a_bool")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "999")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "-1")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "0")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "UnknownMode")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "RandomString")]
     public void Slot2ConditioningPolicy_FromConfiguration_ThrowsOnInvalidConfiguration(string key, string invalidValue)
     {
         var config = new Microsoft.Extensions.Configuration.ConfigurationManager();
         config[key] = invalidValue;
 
         Assert.Throws<InvalidOperationException>(() => Slot2ConditioningPolicy.FromConfiguration(config));
+    }
+
+    [Theory]
+    [InlineData("SceneStyleContinuity", Slot2ConditioningMode.SceneStyleContinuity)]
+    [InlineData("style transfer", Slot2ConditioningMode.SceneStyleContinuity)]
+    [InlineData("style_transfer", Slot2ConditioningMode.SceneStyleContinuity)]
+    [InlineData("FullLinearContinuity", Slot2ConditioningMode.FullLinearContinuity)]
+    [InlineData("linear", Slot2ConditioningMode.FullLinearContinuity)]
+    [InlineData("Bypassed", Slot2ConditioningMode.Bypassed)]
+    [InlineData("disabled", Slot2ConditioningMode.Bypassed)]
+    [InlineData("none", Slot2ConditioningMode.Bypassed)]
+    public void Slot2ConditioningPolicy_FromConfiguration_ParsesValidAliases(string modeString, Slot2ConditioningMode expectedMode)
+    {
+        var config = new Microsoft.Extensions.Configuration.ConfigurationManager();
+        config["AiProviders:ImageGeneration:Slot2Policy:Mode"] = modeString;
+
+        var policy = Slot2ConditioningPolicy.FromConfiguration(config);
+
+        Assert.Equal(expectedMode, policy.Mode);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public void Slot2ConditioningPolicy_Decide_WithBypassedMode_AlwaysReturnsBypassedDecision(bool isColdStart, bool isTransition)
+    {
+        var policy = new Slot2ConditioningPolicy(
+            SameSceneWeight: 0.12,
+            SameSceneEndAt: 0.25,
+            TransitionWeight: 0.06,
+            TransitionEndAt: 0.15,
+            Mode: Slot2ConditioningMode.Bypassed
+        );
+
+        var decision = policy.Decide(isColdStart, isTransition);
+
+        Assert.False(decision.IsActive);
+        Assert.Equal(0.0f, decision.Weight);
+        Assert.Equal(0.0f, decision.EndAt);
+        Assert.Equal(Slot2ConditioningMode.Bypassed, decision.Mode);
+    }
+
+    [Theory]
+    [InlineData("unsupported_weight_type")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void VisualContinuityWorkflowV2Builder_ThrowsOnUnsupportedOrMalformedWeightType(string invalidWeightType)
+    {
+        var builder = new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1man, knight",
+            NegativePrompt: "1girl",
+            Seed: 12345,
+            ParametersJson: $"{{\"sceneContinuity\":{{\"weight\":0.12,\"endAt\":0.25,\"weightType\":\"{invalidWeightType}\"}}}}"
+        );
+
+        Assert.Throws<Application.Exceptions.GpuNonTransientException>(() =>
+            builder.BuildWorkflow(request, "avatar.png", "prev_scene.png"));
+    }
+
+    [Fact]
+    public void VisualContinuityWorkflowV2Builder_ThrowsWhenWeightTypeIsNotString()
+    {
+        var builder = new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1man, knight",
+            NegativePrompt: "1girl",
+            Seed: 12345,
+            ParametersJson: "{\"sceneContinuity\":{\"weight\":0.12,\"endAt\":0.25,\"weightType\":999}}"
+        );
+
+        Assert.Throws<Application.Exceptions.GpuNonTransientException>(() =>
+            builder.BuildWorkflow(request, "avatar.png", "prev_scene.png"));
+    }
+
+    [Theory]
+    [InlineData(0.0f)]
+    [InlineData(-0.1f)]
+    public void VisualContinuityWorkflowV2Builder_WhenSceneWeightIsZeroOrNegative_CompletelyExcludesNode14FromGraph(float zeroWeight)
+    {
+        var builder = new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1man, knight",
+            NegativePrompt: "1girl",
+            Seed: 12345,
+            ParametersJson: $"{{\"sceneContinuity\":{{\"weight\":{zeroWeight.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"endAt\":0.0,\"weightType\":\"style transfer\"}}}}"
+        );
+
+        // Even though a previous scene image name is passed, weight <= 0 must completely bypass Slot 2
+        var graph = builder.BuildWorkflow(request, "canonical_avatar.png", "previous_frame.png");
+
+        Assert.False(graph.ContainsKey("14"), "Node 14 (Slot 2 IPAdapter) must NOT exist in graph when weight is 0");
+        Assert.False(graph.ContainsKey("13"), "Node 13 (Previous Scene LoadImage) must NOT exist in graph when weight is 0");
+        Assert.True(graph.ContainsKey("10"), "Node 10 (Slot 1 Canonical Avatar) must exist");
+        Assert.True(graph.ContainsKey("3"), "Node 3 (KSampler) must exist");
+
+        var ksampler = graph["3"] as Dictionary<string, object>;
+        Assert.NotNull(ksampler);
+        var inputs = ksampler["inputs"] as Dictionary<string, object>;
+        Assert.NotNull(inputs);
+        var modelSource = inputs["model"] as object[];
+        Assert.NotNull(modelSource);
+        Assert.Equal("10", modelSource[0]); // Direct connection to Slot 1 (Node 10), completely bypassing Slot 2
+    }
+
+    [Fact]
+    public void VisualContinuityWorkflowV2Builder_WhenSceneWeightIsPositive_ChainsNode14IntoKSampler()
+    {
+        var builder = new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1man, knight",
+            NegativePrompt: "1girl",
+            Seed: 12345,
+            ParametersJson: "{\"sceneContinuity\":{\"weight\":0.12,\"endAt\":0.25,\"weightType\":\"style transfer\"}}"
+        );
+
+        var graph = builder.BuildWorkflow(request, "canonical_avatar.png", "previous_frame.png");
+
+        Assert.True(graph.ContainsKey("14"), "Node 14 (Slot 2 IPAdapter) must exist in graph when weight > 0");
+        Assert.True(graph.ContainsKey("13"), "Node 13 (Previous Scene LoadImage) must exist in graph when weight > 0");
+
+        var ksampler = graph["3"] as Dictionary<string, object>;
+        Assert.NotNull(ksampler);
+        var inputs = ksampler["inputs"] as Dictionary<string, object>;
+        Assert.NotNull(inputs);
+        var modelSource = inputs["model"] as object[];
+        Assert.NotNull(modelSource);
+        Assert.Equal("14", modelSource[0]); // Connected to Slot 2 (Node 14) chained output
     }
 
     [Fact]
@@ -290,12 +427,13 @@ public sealed class IdentityInvariantSystemTests
         Assert.Equal("https://cdn.project00.ai/scenes/valerius_turn_1.png", snap2.PreviousSceneImageUrl);
         Assert.Equal(2, snap2.SceneRevision);
 
-        // Verify Same-Scene parameters: weight = 0.15, endAt = 0.30
+        // Verify Same-Scene parameters: weight = 0.12, endAt = 0.25, weightType = style transfer
         using (var doc = JsonDocument.Parse(snap2.GenerationProfile.ParametersJson))
         {
             var sc = doc.RootElement.GetProperty("sceneContinuity");
-            Assert.Equal(0.15, sc.GetProperty("weight").GetDouble(), precision: 2);
-            Assert.Equal(0.30, sc.GetProperty("endAt").GetDouble(), precision: 2);
+            Assert.Equal(0.12, sc.GetProperty("weight").GetDouble(), precision: 2);
+            Assert.Equal(0.25, sc.GetProperty("endAt").GetDouble(), precision: 2);
+            Assert.Equal("style transfer", sc.GetProperty("weightType").GetString());
         }
 
         // Commit Turn 2 Image into DB
@@ -314,12 +452,13 @@ public sealed class IdentityInvariantSystemTests
         Assert.Equal("https://cdn.project00.ai/scenes/valerius_turn_2.png", snap3.PreviousSceneImageUrl);
         Assert.Equal(3, snap3.SceneRevision);
 
-        // Verify Scene Transition parameters: attenuated weight = 0.08, endAt = 0.20
+        // Verify Scene Transition parameters: attenuated weight = 0.06, endAt = 0.15, weightType = style transfer
         using (var doc = JsonDocument.Parse(snap3.GenerationProfile.ParametersJson))
         {
             var sc = doc.RootElement.GetProperty("sceneContinuity");
-            Assert.Equal(0.08, sc.GetProperty("weight").GetDouble(), precision: 2);
-            Assert.Equal(0.20, sc.GetProperty("endAt").GetDouble(), precision: 2);
+            Assert.Equal(0.06, sc.GetProperty("weight").GetDouble(), precision: 2);
+            Assert.Equal(0.15, sc.GetProperty("endAt").GetDouble(), precision: 2);
+            Assert.Equal("style transfer", sc.GetProperty("weightType").GetString());
         }
     }
 
@@ -430,8 +569,9 @@ public sealed class IdentityInvariantSystemTests
         Assert.NotNull(req.ParametersJson);
         using var doc = JsonDocument.Parse(req.ParametersJson);
         var sc = doc.RootElement.GetProperty("sceneContinuity");
-        Assert.Equal(0.15, sc.GetProperty("weight").GetDouble(), precision: 2);
-        Assert.Equal(0.30, sc.GetProperty("endAt").GetDouble(), precision: 2);
+        Assert.Equal(0.12, sc.GetProperty("weight").GetDouble(), precision: 2);
+        Assert.Equal(0.25, sc.GetProperty("endAt").GetDouble(), precision: 2);
+        Assert.Equal("style transfer", sc.GetProperty("weightType").GetString());
     }
 
     private sealed class CapturingImageGenerationService : IImageGenerationService

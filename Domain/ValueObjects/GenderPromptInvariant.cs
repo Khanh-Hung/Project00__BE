@@ -1,4 +1,4 @@
-﻿using Domain.Enums;
+using Domain.Enums;
 
 namespace Domain.ValueObjects;
 
@@ -18,8 +18,8 @@ public sealed record GenderPromptInvariant(
         {
             GenderPresentation.Male => new GenderPromptInvariant(
                 Gender: GenderPresentation.Male,
-                PositiveTokens: "1man, male, masculine face",
-                NegativeTokens: "1girl, anime girl, female, woman, breasts, feminine face"
+                PositiveTokens: "1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest",
+                NegativeTokens: "1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face"
             ),
             GenderPresentation.Female => new GenderPromptInvariant(
                 Gender: GenderPresentation.Female,

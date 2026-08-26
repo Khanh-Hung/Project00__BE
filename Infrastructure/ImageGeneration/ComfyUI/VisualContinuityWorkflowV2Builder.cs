@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Exceptions;
 using Application.Interfaces;
 
@@ -48,6 +48,7 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
         float ipAdapterEndAt = 0.85f;
         float sceneContinuityWeight = request.SceneScale ?? 0.20f;
         float sceneContinuityEndAt = 0.40f;
+        string sceneWeightType = "style transfer";
 
         if (!string.IsNullOrWhiteSpace(request.ParametersJson))
         {
@@ -63,7 +64,28 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
                 {
                     if (scProp.TryGetProperty("weight", out var swProp)) sceneContinuityWeight = (float)swProp.GetDouble();
                     if (scProp.TryGetProperty("endAt", out var seProp)) sceneContinuityEndAt = (float)seProp.GetDouble();
+                    if (scProp.TryGetProperty("weightType", out var wtProp))
+                    {
+                        if (wtProp.ValueKind != JsonValueKind.String)
+                            throw new GpuNonTransientException("Invalid 'weightType' in ParametersJson: expected a string.");
+
+                        var rawWt = wtProp.GetString();
+                        if (string.IsNullOrWhiteSpace(rawWt))
+                            throw new GpuNonTransientException("Invalid 'weightType' in ParametersJson: cannot be empty or whitespace.");
+
+                        var normalized = rawWt.Trim().ToLowerInvariant();
+                        if (normalized is not ("style transfer" or "linear" or "composition" or "style and composition" or "style transfer precise" or "composition precise"))
+                        {
+                            throw new GpuNonTransientException($"Unsupported 'weightType' in ParametersJson: '{rawWt}'. Supported values: 'style transfer', 'linear', 'composition'.");
+                        }
+
+                        sceneWeightType = normalized;
+                    }
                 }
+            }
+            catch (GpuNonTransientException)
+            {
+                throw;
             }
             catch (JsonException ex)
             {
@@ -71,7 +93,9 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
             }
         }
 
-        bool hasPreviousScene = !string.IsNullOrWhiteSpace(resolvedPreviousSceneImageName);
+        // Note on vocabulary: Infrastructure supports ComfyUI's broader weight_type vocabulary (style transfer, linear, composition, etc.),
+        // while Domain intentionally exposes only business-approved modes (SceneStyleContinuity, FullLinearContinuity, Bypassed).
+        bool hasPreviousScene = !string.IsNullOrWhiteSpace(resolvedPreviousSceneImageName) && sceneContinuityWeight > 0.0f;
 
         var graph = new Dictionary<string, object>
         {
@@ -184,7 +208,7 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
                 ["inputs"] = new Dictionary<string, object>
                 {
                     ["weight"] = Math.Round((double)sceneContinuityWeight, 4),
-                    ["weight_type"] = "linear",
+                    ["weight_type"] = sceneWeightType,
                     ["combine_embeds"] = "concat",
                     ["start_at"] = 0.0,
                     ["end_at"] = Math.Round((double)sceneContinuityEndAt, 4),

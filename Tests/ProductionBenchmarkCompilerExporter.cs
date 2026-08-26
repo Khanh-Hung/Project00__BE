@@ -34,6 +34,7 @@ public sealed class ProductionBenchmarkCompilerExporter
         public string? PreviousSceneImageUrl { get; set; }
         public double Slot2Weight { get; set; }
         public double Slot2EndAt { get; set; }
+        public string WeightType { get; set; } = "style transfer";
         public bool Slot2Active { get; set; }
         public string TargetActionPrompt { get; set; } = string.Empty;
         public List<string> NegativeActionPrompts { get; set; } = new();
@@ -212,6 +213,7 @@ public sealed class ProductionBenchmarkCompilerExporter
             Assert.Equal(fresh.PreviousSceneImageUrl, comm.PreviousSceneImageUrl);
             Assert.Equal(fresh.Slot2Weight, comm.Slot2Weight, precision: 4);
             Assert.Equal(fresh.Slot2EndAt, comm.Slot2EndAt, precision: 4);
+            Assert.Equal(fresh.WeightType, comm.WeightType);
             Assert.Equal(fresh.Slot2Active, comm.Slot2Active);
         }
     }
@@ -257,6 +259,7 @@ public sealed class ProductionBenchmarkCompilerExporter
             var sc = doc.RootElement.GetProperty("sceneContinuity");
             double weight = sc.GetProperty("weight").GetDouble();
             double endAt = sc.GetProperty("endAt").GetDouble();
+            string weightType = sc.TryGetProperty("weightType", out var wt) ? wt.GetString() ?? "style transfer" : "style transfer";
             bool isActive = weight > 0.0 && !string.IsNullOrWhiteSpace(snapshot.PreviousSceneImageUrl);
 
             exportedList.Add(new ExportableTurnRequest
@@ -275,6 +278,7 @@ public sealed class ProductionBenchmarkCompilerExporter
                 PreviousSceneImageUrl = snapshot.PreviousSceneImageUrl,
                 Slot2Weight = weight,
                 Slot2EndAt = endAt,
+                WeightType = weightType,
                 Slot2Active = isActive,
                 TargetActionPrompt = t.actionPrompt,
                 NegativeActionPrompts = t.negActions.ToList()

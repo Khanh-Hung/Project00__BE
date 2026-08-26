@@ -153,7 +153,7 @@ def load_v2_workflow_template():
     with open(workflow_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def build_workflow(template, avatar_filename, prev_scene_filename, prompt_text, negative_text, seed, weight=0.15, end_at=0.30, slot2_active=True):
+def build_workflow(template, avatar_filename, prev_scene_filename, prompt_text, negative_text, seed, weight=0.12, end_at=0.25, weight_type="style transfer", slot2_active=True):
     wf = json.loads(json.dumps(template))
     wf["6"]["inputs"]["text"] = prompt_text
     wf["7"]["inputs"]["text"] = negative_text
@@ -164,6 +164,7 @@ def build_workflow(template, avatar_filename, prev_scene_filename, prompt_text, 
         wf["13"]["inputs"]["image"] = prev_scene_filename
         wf["14"]["inputs"]["weight"] = float(weight)
         wf["14"]["inputs"]["end_at"] = float(end_at)
+        wf["14"]["inputs"]["weight_type"] = weight_type
         wf["3"]["inputs"]["model"] = ["14", 0]
     else:
         wf["3"]["inputs"]["model"] = ["10", 0]
@@ -277,6 +278,7 @@ def evaluate_character_from_requests(char_id, requests, template, evaluator):
             seed=seed,
             weight=weight,
             end_at=end_at,
+            weight_type=req.get("WeightType", "style transfer"),
             slot2_active=slot2_active
         )
         q = queue_prompt(wf)
