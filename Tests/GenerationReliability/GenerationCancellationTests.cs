@@ -1,9 +1,11 @@
+using Application.Interfaces;
 using Application.Services;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.ImageGeneration.ComfyUI;
 using Infrastructure.Persistence;
+using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,10 +17,19 @@ public sealed class GenerationCancellationTests
 {
     private sealed class TrackingComfyClient : IComfyUIClient
     {
+        public bool DeleteQueuedPromptCalled { get; private set; }
+        public string? DeletedPromptId { get; private set; }
         public bool InterruptCalled { get; private set; }
+
         public Task<string> QueuePromptAsync(Dictionary<string, object> promptGraph, CancellationToken ct = default) => Task.FromResult("prompt-1");
         public Task<ComfyUIHistoryResult?> GetHistoryAsync(string promptId, CancellationToken ct = default) => Task.FromResult<ComfyUIHistoryResult?>(null);
         public Task<byte[]> DownloadImageAsync(string filename, string? subfolder = null, string? type = "output", CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
+        public Task<bool> DeleteQueuedPromptAsync(string promptId, CancellationToken ct = default)
+        {
+            DeleteQueuedPromptCalled = true;
+            DeletedPromptId = promptId;
+            return Task.FromResult(true);
+        }
         public Task InterruptAsync(CancellationToken ct = default)
         {
             InterruptCalled = true;
@@ -179,6 +190,49 @@ public sealed class GenerationCancellationTests
         {
             var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Completed, verifiedJob.Status);
+        }
+    }
+
+    [Fact]
+    public async Task CancelProcessingJob_WithProviderJobId_DeletesTargetedPromptFirst()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job.SetProviderJobId("prompt-targeted-999");
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.ImageGenerationJobs.AddAsync(job);
+            await dbSeed.SaveChangesAsync();
+        }
+
+        var mockComfy = new TrackingComfyClient();
+
+        using (var dbCancel = new ProjectDbContext(options))
+        {
+            var cancellationService = new GenerationCancellationService(
+                dbContext: dbCancel,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                logger: NullLogger<GenerationCancellationService>.Instance,
+                comfyClient: mockComfy
+            );
+
+            var cancelled = await cancellationService.RequestCancellationAsync(job.Id, "User cancel");
+            Assert.True(cancelled);
+            Assert.True(mockComfy.DeleteQueuedPromptCalled);
+            Assert.Equal("prompt-targeted-999", mockComfy.DeletedPromptId);
         }
     }
 }

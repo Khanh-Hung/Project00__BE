@@ -4,8 +4,6 @@ using Application.Exceptions;
 using Application.Interfaces;
 using Application.Services;
 using Domain.Common.DateTimes;
-using Domain.Entities;
-using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Infrastructure.Services;
@@ -35,22 +33,37 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
         }
     }
 
+    private static GenerationWorkItem CreateTestWorkItem(Guid? requestId = null, Guid? userId = null)
+    {
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: new CharacterVisualIdentity(Face: "canonical_face", CanonicalReferenceUrl: "https://cdn.project00.ai/face.png"),
+            SceneState: new SessionSceneState("active scene", "neutral"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault()
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: snapshot.TurnId,
+            CharacterId: snapshot.CharacterId,
+            UserId: userId ?? Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId ?? Guid.NewGuid()
+        );
+
+        return new GenerationWorkItem(payload, Guid.NewGuid(), DateTime.UtcNow, Priority: 5);
+    }
+
     [Fact]
-    public async Task Scenario1_HappyPath_CompletesSuccessfully_WithAcceptedAttempt_AndCurrentArtifact()
+    public async Task Scenario1_HappyPath_CompletesSuccessfully()
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
         using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
-
-        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        job.MarkQueued(DateTime.UtcNow);
-
-        using (var dbSeed = new ProjectDbContext(options))
-        {
-            await dbSeed.ImageGenerationJobs.AddAsync(job);
-            await dbSeed.SaveChangesAsync();
-        }
 
         var services = new ServiceCollection();
         services.AddScoped(_ => new ProjectDbContext(options));
@@ -59,29 +72,21 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
         services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => Task.FromResult(new JobExecutionResult(JobExecutionStatus.Completed))));
 
         var sp = services.BuildServiceProvider();
-        var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
         var worker = new GenerationWorker(sp.GetRequiredService<IServiceScopeFactory>(), queue, NullLogger<GenerationWorker>.Instance, "worker-1");
 
-        var result = await worker.ProcessJobDirectAsync(job.Id);
+        var item = CreateTestWorkItem();
+        var result = await worker.ProcessWorkItemDirectAsync(item);
         Assert.Equal(JobExecutionStatus.Completed, result.Status);
     }
 
     [Fact]
-    public async Task Scenario2_ProviderTimeout_SchedulesRetry()
+    public async Task Scenario2_ProviderTimeout_ReturnsDeferred()
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
         using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
-
-        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        job.MarkQueued(DateTime.UtcNow);
-
-        using (var dbSeed = new ProjectDbContext(options))
-        {
-            await dbSeed.ImageGenerationJobs.AddAsync(job);
-            await dbSeed.SaveChangesAsync();
-        }
 
         var services = new ServiceCollection();
         services.AddScoped(_ => new ProjectDbContext(options));
@@ -90,18 +95,12 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
         services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => throw new GpuTransientException("Timeout", 408)));
 
         var sp = services.BuildServiceProvider();
-        var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
         var worker = new GenerationWorker(sp.GetRequiredService<IServiceScopeFactory>(), queue, NullLogger<GenerationWorker>.Instance, "worker-1");
 
-        var result = await worker.ProcessJobDirectAsync(job.Id);
+        var item = CreateTestWorkItem();
+        var result = await worker.ProcessWorkItemDirectAsync(item);
         Assert.Equal(JobExecutionStatus.Deferred, result.Status);
-
-        using (var dbVerify = new ProjectDbContext(options))
-        {
-            var verified = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
-            Assert.Equal(ImageJobStatus.Queued, verified.Status);
-            Assert.Equal(1, verified.RetryCount);
-        }
     }
 
     [Fact]
@@ -112,15 +111,6 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
         var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
         using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
 
-        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        job.MarkQueued(DateTime.UtcNow);
-
-        using (var dbSeed = new ProjectDbContext(options))
-        {
-            await dbSeed.ImageGenerationJobs.AddAsync(job);
-            await dbSeed.SaveChangesAsync();
-        }
-
         var services = new ServiceCollection();
         services.AddScoped(_ => new ProjectDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
@@ -128,92 +118,54 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
         services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => throw new GpuNonTransientException("Invalid syntax", 400)));
 
         var sp = services.BuildServiceProvider();
-        var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
         var worker = new GenerationWorker(sp.GetRequiredService<IServiceScopeFactory>(), queue, NullLogger<GenerationWorker>.Instance, "worker-1");
 
-        var result = await worker.ProcessJobDirectAsync(job.Id);
+        var item = CreateTestWorkItem();
+        var result = await worker.ProcessWorkItemDirectAsync(item);
         Assert.Equal(JobExecutionStatus.Failed, result.Status);
-
-        using (var dbVerify = new ProjectDbContext(options))
-        {
-            var verified = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
-            Assert.Equal(ImageJobStatus.Failed, verified.Status);
-            Assert.Equal(0, verified.RetryCount);
-            Assert.False(verified.IsRetryable);
-        }
     }
 
     [Fact]
-    public async Task Scenario8_DuplicateDelivery_AllowsOnlyOneWorkerToExecute()
+    public async Task Scenario8_DuplicateDelivery_IsSuppressedByQueue()
+    {
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
+
+        var reqId = Guid.NewGuid();
+        var item1 = CreateTestWorkItem(requestId: reqId);
+        var item2 = CreateTestWorkItem(requestId: reqId); // Duplicate
+
+        await queue.EnqueueAsync(item1);
+        await queue.EnqueueAsync(item2);
+
+        Assert.Equal(1, queue.CurrentDepth); // Exactly 1 item in queue
+
+        var deq = await queue.DequeueAsync();
+        Assert.NotNull(deq);
+        Assert.Equal(reqId, deq.Payload.GenerationRequestId);
+        Assert.Equal(0, queue.CurrentDepth);
+    }
+
+    [Fact]
+    public async Task Scenario9_Cancellation_HandlesCancellationGracefully()
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
         using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
 
-        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        job.MarkQueued(DateTime.UtcNow);
-
-        using (var dbSeed = new ProjectDbContext(options))
-        {
-            await dbSeed.ImageGenerationJobs.AddAsync(job);
-            await dbSeed.SaveChangesAsync();
-        }
-
-        int gpuExecutionCount = 0;
         var services = new ServiceCollection();
         services.AddScoped(_ => new ProjectDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Default);
-        services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p =>
-        {
-            Interlocked.Increment(ref gpuExecutionCount);
-            return Task.FromResult(new JobExecutionResult(JobExecutionStatus.Completed));
-        }));
+        services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => throw new OperationCanceledException()));
 
         var sp = services.BuildServiceProvider();
-        var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
-        var workerA = new GenerationWorker(sp.GetRequiredService<IServiceScopeFactory>(), queue, NullLogger<GenerationWorker>.Instance, "worker-A");
-        var workerB = new GenerationWorker(sp.GetRequiredService<IServiceScopeFactory>(), queue, NullLogger<GenerationWorker>.Instance, "worker-B");
-
-        // Worker A and Worker B both try to process the same job
-        var resA = await workerA.ProcessJobDirectAsync(job.Id);
-        var resB = await workerB.ProcessJobDirectAsync(job.Id);
-
-        Assert.Equal(JobExecutionStatus.Completed, resA.Status);
-        Assert.True(resB.Status == JobExecutionStatus.Deferred || resB.Status == JobExecutionStatus.Skipped); // Worker B gracefully avoids duplicate execution
-        Assert.Equal(1, gpuExecutionCount); // Exactly 1 GPU call executed!
-    }
-
-    [Fact]
-    public async Task Scenario9_Cancellation_PreventsExecution()
-    {
-        using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
-        using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
-
-        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        job.MarkQueued(DateTime.UtcNow);
-        job.RequestCancellation(DateTime.UtcNow);
-
-        using (var dbSeed = new ProjectDbContext(options))
-        {
-            await dbSeed.ImageGenerationJobs.AddAsync(job);
-            await dbSeed.SaveChangesAsync();
-        }
-
-        var services = new ServiceCollection();
-        services.AddScoped(_ => new ProjectDbContext(options));
-        services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
-        services.AddSingleton(GenerationRetryPolicy.Default);
-        services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => throw new Exception("Should not be called!")));
-
-        var sp = services.BuildServiceProvider();
-        var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
         var worker = new GenerationWorker(sp.GetRequiredService<IServiceScopeFactory>(), queue, NullLogger<GenerationWorker>.Instance, "worker-1");
 
-        var result = await worker.ProcessJobDirectAsync(job.Id);
+        var item = CreateTestWorkItem();
+        var result = await worker.ProcessWorkItemDirectAsync(item);
         Assert.Equal(JobExecutionStatus.Skipped, result.Status);
     }
 }

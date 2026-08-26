@@ -77,6 +77,7 @@ public sealed class VisualIdentityInvariantTests
             return Task.FromResult(new byte[] { 1, 2, 3, 4 });
         }
 
+        public Task<bool> DeleteQueuedPromptAsync(string promptId, CancellationToken ct = default) => Task.FromResult(true);
         public Task InterruptAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 

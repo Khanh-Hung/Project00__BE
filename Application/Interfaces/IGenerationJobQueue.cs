@@ -1,20 +1,23 @@
+using Application.DTOs;
+
 namespace Application.Interfaces;
 
 /// <summary>
 /// Queue boundary decoupling generation requests from discrete GPU worker execution.
-/// Supports bounded capacity, backpressure limits, prioritization, and duplicate suppression.
+/// Supports bounded capacity, atomic backpressure admission, true priority sorting, and duplicate suppression.
 /// </summary>
 public interface IGenerationJobQueue
 {
     /// <summary>
-    /// Enqueues a generation job ID with optional priority (higher value = higher priority).
+    /// Enqueues an authoritative generation work item.
+    /// Throws InvalidOperationException if queue capacity is exceeded (atomic backpressure rejection).
     /// </summary>
-    ValueTask EnqueueAsync(Guid jobId, int priority = 0, CancellationToken ct = default);
+    ValueTask EnqueueAsync(GenerationWorkItem item, CancellationToken ct = default);
 
     /// <summary>
-    /// Dequeues the next available generation job ID, or null if the queue is empty.
+    /// Dequeues the next highest-priority generation work item, or null if the queue is empty.
     /// </summary>
-    ValueTask<Guid?> DequeueAsync(CancellationToken ct = default);
+    ValueTask<GenerationWorkItem?> DequeueAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Current number of items waiting in the queue.

@@ -157,9 +157,9 @@ public static class DependencyInjection
         // PR #26: Generation Queue, Recovery, Cancellation & Reliability Services
         services.AddSingleton<IGenerationJobQueue, GenerationQueue>();
         services.AddSingleton(Application.Services.GenerationRetryPolicy.Default);
-        services.AddScoped<Application.Services.GenerationRecoveryService>();
-        services.AddScoped<Application.Services.GenerationCancellationService>();
-        services.AddScoped<Application.Services.ArtifactReconciliationService>();
+        services.AddScoped<IGenerationRecoveryService, Infrastructure.Services.GenerationRecoveryService>();
+        services.AddScoped<IGenerationCancellationService, Infrastructure.Services.GenerationCancellationService>();
+        services.AddScoped<IArtifactReconciliationService, Infrastructure.Services.ArtifactReconciliationService>();
         services.AddHostedService<GenerationWorker>();
         services.AddHostedService<GenerationRecoveryHostedService>();
         services.AddHostedService<ArtifactReconciliationHostedService>();

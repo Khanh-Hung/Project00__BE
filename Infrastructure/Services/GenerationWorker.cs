@@ -1,13 +1,10 @@
 using Application.Common;
 using Application.DTOs;
-using Application.Enums;
 using Application.Exceptions;
 using Application.Interfaces;
 using Application.Services;
 using Domain.Common.DateTimes;
-using Domain.Entities;
 using Domain.Enums;
-using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,9 +15,9 @@ using System.Diagnostics;
 namespace Infrastructure.Services;
 
 /// <summary>
-/// Bounded background worker executing generation jobs from the queue.
+/// Bounded background worker executing generation work items from the queue.
 /// Enforces GPU concurrency isolation (MaxConcurrentGenerations = 1 per worker),
-/// handles failure classification, exponential backoff scheduling, and cancellation checks.
+/// invokes the authoritative orchestrator with canonical payloads, and handles failure classification.
 /// </summary>
 public sealed class GenerationWorker : BackgroundService
 {
@@ -28,7 +25,6 @@ public sealed class GenerationWorker : BackgroundService
     private readonly IGenerationJobQueue _jobQueue;
     private readonly ILogger<GenerationWorker> _logger;
     private readonly string _workerId;
-    private readonly TimeSpan _leaseDuration = TimeSpan.FromMinutes(2);
     private readonly SemaphoreSlim _gpuConcurrencyThrottle;
 
     public GenerationWorker(
@@ -51,10 +47,10 @@ public sealed class GenerationWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            Guid? jobId = null;
+            GenerationWorkItem? item = null;
             try
             {
-                jobId = await _jobQueue.DequeueAsync(stoppingToken);
+                item = await _jobQueue.DequeueAsync(stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -62,26 +58,26 @@ public sealed class GenerationWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[GenerationWorkerDequeueError] Error dequeuing job.");
+                _logger.LogError(ex, "[GenerationWorkerDequeueError] Error dequeuing work item.");
                 await Task.Delay(1000, stoppingToken);
                 continue;
             }
 
-            if (jobId.HasValue && jobId.Value != Guid.Empty)
+            if (item != null)
             {
-                await ProcessJobWithThrottleAsync(jobId.Value, stoppingToken);
+                await ProcessItemWithThrottleAsync(item, stoppingToken);
             }
         }
 
         _logger.LogInformation("[GenerationWorkerStopped] WorkerId={WorkerId} stopped.", _workerId);
     }
 
-    public async Task<JobExecutionResult> ProcessJobDirectAsync(Guid jobId, CancellationToken ct = default)
+    public async Task<JobExecutionResult> ProcessWorkItemDirectAsync(GenerationWorkItem item, CancellationToken ct = default)
     {
         await _gpuConcurrencyThrottle.WaitAsync(ct);
         try
         {
-            return await ExecuteJobAsync(jobId, ct);
+            return await ExecuteWorkItemAsync(item, ct);
         }
         finally
         {
@@ -89,16 +85,16 @@ public sealed class GenerationWorker : BackgroundService
         }
     }
 
-    private async Task ProcessJobWithThrottleAsync(Guid jobId, CancellationToken ct)
+    private async Task ProcessItemWithThrottleAsync(GenerationWorkItem item, CancellationToken ct)
     {
         await _gpuConcurrencyThrottle.WaitAsync(ct);
         try
         {
-            await ExecuteJobAsync(jobId, ct);
+            await ExecuteWorkItemAsync(item, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "[GenerationWorkerUnhandledError] Unhandled error processing JobId={JobId}.", jobId);
+            _logger.LogError(ex, "[GenerationWorkerUnhandledError] Unhandled error processing GenerationRequestId={RequestId}.", item.Payload.GenerationRequestId);
         }
         finally
         {
@@ -106,7 +102,7 @@ public sealed class GenerationWorker : BackgroundService
         }
     }
 
-    private async Task<JobExecutionResult> ExecuteJobAsync(Guid jobId, CancellationToken ct)
+    private async Task<JobExecutionResult> ExecuteWorkItemAsync(GenerationWorkItem item, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
@@ -115,146 +111,52 @@ public sealed class GenerationWorker : BackgroundService
         var retryPolicy = scope.ServiceProvider.GetService<GenerationRetryPolicy>() ?? GenerationRetryPolicy.Default;
 
         var now = dateTimeProvider.UtcNow;
-        var job = await dbContext.ImageGenerationJobs.FirstOrDefaultAsync(j => j.Id == jobId, ct);
-        if (job == null)
-        {
-            _logger.LogWarning("[GenerationWorkerJobNotFound] JobId={JobId} not found in DB. Skipping.", jobId);
-            return new JobExecutionResult(JobExecutionStatus.Failed, "Job not found");
-        }
-
-        // 1. Check if job is already cancelled or terminal
-        if (job.CancellationRequested || job.Status is ImageJobStatus.Cancelled or ImageJobStatus.Completed or ImageJobStatus.Quarantined)
-        {
-            _logger.LogInformation("[GenerationWorkerSkipped] JobId={JobId} is already in terminal/cancelled state {Status}. Skipping.", jobId, job.Status);
-            return new JobExecutionResult(JobExecutionStatus.Skipped, "Job is already terminal or cancelled");
-        }
-
-        // 2. Claim Worker Lease
-        bool claimed = false;
-        if (dbContext.Database.IsRelational())
-        {
-            var rowsClaimed = await dbContext.ImageGenerationJobs
-                .Where(j => j.Id == jobId && (j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Queued || (j.LeaseUntil.HasValue && j.LeaseUntil.Value <= now)))
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(j => j.Status, ImageJobStatus.Processing)
-                    .SetProperty(j => j.ClaimedBy, _workerId)
-                    .SetProperty(j => j.LeaseUntil, now.Add(_leaseDuration))
-                    .SetProperty(j => j.StartedAt, now)
-                    .SetProperty(j => j.AttemptCount, j => j.AttemptCount + 1)
-                    .SetProperty(j => j.CurrentAttemptNumber, j => j.AttemptCount + 1)
-                    .SetProperty(j => j.Version, j => j.Version + 1)
-                    .SetProperty(j => j.UpdatedAt, now), ct);
-
-            claimed = rowsClaimed > 0;
-            if (claimed)
-            {
-                await dbContext.Entry(job).ReloadAsync(ct);
-            }
-        }
-        else
-        {
-            claimed = job.TryClaim(_workerId, _leaseDuration, now);
-            if (claimed)
-            {
-                await dbContext.SaveChangesAsync(ct);
-            }
-        }
-
-        if (!claimed)
-        {
-            _logger.LogInformation("[GenerationWorkerClaimFailed] Worker {WorkerId} lost claim race on JobId={JobId}. Skipping duplicate execution.", _workerId, jobId);
-            return new JobExecutionResult(JobExecutionStatus.Deferred, "Failed to acquire execution lease");
-        }
-
-        _logger.LogInformation("[GenerationWorkerClaimed] Worker {WorkerId} claimed JobId={JobId} (Attempt #{Attempt}).", _workerId, jobId, job.AttemptCount);
-
-        // 3. Construct Outbox Payload for Orchestration
-        var snapshot = new VisualSnapshot(
-            TurnId: job.TurnId,
-            SessionId: job.SessionId,
-            CharacterId: job.CharacterId,
-            SceneRevision: job.SceneRevision,
-            VisualIdentity: null,
-            SceneState: new SessionSceneState("active scene", "neutral"),
-            TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
-        );
-
-        var payload = new SceneImageGenerationOutboxPayload(
-            TurnId: job.TurnId,
-            CharacterId: job.CharacterId,
-            UserId: Guid.NewGuid(),
-            Snapshot: snapshot,
-            GenerationRequestId: job.GenerationRequestId
-        );
-
         var sw = Stopwatch.StartNew();
 
         try
         {
-            var result = await orchestrator.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), _workerId, now, ct);
+            var result = await orchestrator.OrchestrateSceneImageGenerationAsync(
+                payload: item.Payload,
+                outboxId: item.OutboxId,
+                workerId: _workerId,
+                now: now,
+                ct: ct
+            );
+
             sw.Stop();
             GenerationObservability.ExecutionDurationMs.Record(sw.ElapsedMilliseconds);
+
+            if (result.Status == JobExecutionStatus.Completed)
+            {
+                GenerationObservability.JobsCompletedTotal.Add(1);
+            }
+            else if (result.Status == JobExecutionStatus.Deferred)
+            {
+                GenerationObservability.RetriesTotal.Add(1);
+            }
+
             return result;
         }
         catch (Exception ex)
         {
             sw.Stop();
             var category = ClassifyException(ex);
-            _logger.LogError(ex, "[GenerationWorkerFailed] JobId={JobId} failed with category {Category}: {Message}", jobId, category, ex.Message);
+            _logger.LogError(ex, "[GenerationWorkerFailed] RequestId={RequestId} failed with category {Category}: {Message}",
+                item.Payload.GenerationRequestId, category, ex.Message);
 
-            if (retryPolicy.ShouldRetry(category, job.RetryCount, out var delay))
+            if (category == GenerationFailureCategory.Cancellation)
             {
-                var nextAttempt = dateTimeProvider.UtcNow.Add(delay);
-                _logger.LogWarning("[GenerationWorkerRetryScheduled] Scheduling retry for JobId={JobId} at {NextAttempt:O} (Delay={Delay}s).", jobId, nextAttempt, delay.TotalSeconds);
+                GenerationObservability.JobsCancelledTotal.Add(1);
+                return new JobExecutionResult(JobExecutionStatus.Skipped, "Job was cancelled");
+            }
 
-                if (dbContext.Database.IsRelational())
-                {
-                    await dbContext.ImageGenerationJobs
-                        .Where(j => j.Id == jobId && j.ClaimedBy == _workerId)
-                        .ExecuteUpdateAsync(s => s
-                            .SetProperty(j => j.Status, ImageJobStatus.Queued)
-                            .SetProperty(j => j.RetryCount, j => j.RetryCount + 1)
-                            .SetProperty(j => j.NextAttemptAt, nextAttempt)
-                            .SetProperty(j => j.FailureReason, ex.Message)
-                            .SetProperty(j => j.IsRetryable, true)
-                            .SetProperty(j => j.ClaimedBy, (string?)null)
-                            .SetProperty(j => j.LeaseUntil, (DateTime?)null)
-                            .SetProperty(j => j.Version, j => j.Version + 1)
-                            .SetProperty(j => j.UpdatedAt, dateTimeProvider.UtcNow), CancellationToken.None);
-                }
-                else
-                {
-                    job.ScheduleRetry(nextAttempt, ex.Message, dateTimeProvider.UtcNow, _workerId);
-                    await dbContext.SaveChangesAsync(CancellationToken.None);
-                }
-
+            if (GenerationRetryPolicy.IsRetryable(category))
+            {
                 GenerationObservability.RetriesTotal.Add(1);
-                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Retry scheduled: {ex.Message}");
+                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Retryable failure: {ex.Message}");
             }
             else
             {
-                // Terminal Failure
-                if (dbContext.Database.IsRelational())
-                {
-                    await dbContext.ImageGenerationJobs
-                        .Where(j => j.Id == jobId && j.ClaimedBy == _workerId)
-                        .ExecuteUpdateAsync(s => s
-                            .SetProperty(j => j.Status, ImageJobStatus.Failed)
-                            .SetProperty(j => j.FailureReason, ex.Message)
-                            .SetProperty(j => j.IsRetryable, false)
-                            .SetProperty(j => j.CompletedAt, dateTimeProvider.UtcNow)
-                            .SetProperty(j => j.ClaimedBy, (string?)null)
-                            .SetProperty(j => j.LeaseUntil, (DateTime?)null)
-                            .SetProperty(j => j.Version, j => j.Version + 1)
-                            .SetProperty(j => j.UpdatedAt, dateTimeProvider.UtcNow), CancellationToken.None);
-                }
-                else
-                {
-                    job.Fail(ex.Message, isRetryable: false, dateTimeProvider.UtcNow, _workerId);
-                    await dbContext.SaveChangesAsync(CancellationToken.None);
-                }
-
                 GenerationObservability.JobsFailedTotal.Add(1);
                 return new JobExecutionResult(JobExecutionStatus.Failed, ex.Message);
             }

@@ -88,4 +88,22 @@ public sealed class GenerationRetryPolicyTests
             Assert.InRange(delay.TotalSeconds, 8.0, 12.0);
         }
     }
+
+    [Fact]
+    public void DeterministicSeed_GeneratesReproducibleJitter()
+    {
+        var policy = new GenerationRetryPolicy(
+            maxRetries: 3,
+            baseDelay: TimeSpan.FromSeconds(10),
+            maxDelay: TimeSpan.FromSeconds(30),
+            jitterRatio: 0.2,
+            deterministicMode: false);
+
+        var delayA1 = policy.CalculateDelay(1, deterministicSeed: 12345);
+        var delayA2 = policy.CalculateDelay(1, deterministicSeed: 12345);
+        var delayB = policy.CalculateDelay(1, deterministicSeed: 99999);
+
+        Assert.Equal(delayA1, delayA2); // Exact same seed -> exact same jitter!
+        Assert.NotEqual(delayA1, delayB); // Different seed -> different jitter
+    }
 }

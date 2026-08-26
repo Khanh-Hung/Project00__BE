@@ -1,3 +1,5 @@
+using Application.Common;
+using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
@@ -5,14 +7,14 @@ using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services;
+namespace Infrastructure.Services;
 
 /// <summary>
 /// Reconciles orphan or unreferenced generation artifacts.
 /// Ensures unverified candidate artifacts generated before a worker crash are never promoted to IsCurrent,
 /// preserves historical audit lineages, and demotes illegal unaccepted current flags.
 /// </summary>
-public sealed class ArtifactReconciliationService
+public sealed class ArtifactReconciliationService : IArtifactReconciliationService
 {
     private readonly ProjectDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
@@ -30,7 +32,7 @@ public sealed class ArtifactReconciliationService
 
     /// <summary>
     /// Scans and reconciles artifact anomalies:
-    /// 1. Demotes any SceneImage where IsCurrent=true but the owning ImageGenerationJob was Failed or Cancelled.
+    /// 1. Demotes any SceneImage where IsCurrent=true but the owning ImageGenerationJob was Failed, Cancelled, or unaccepted.
     /// 2. Ensures unaccepted attempts never have current artifacts.
     /// </summary>
     public async Task<int> ReconcileOrphanArtifactsAsync(CancellationToken ct = default)
@@ -61,6 +63,7 @@ public sealed class ArtifactReconciliationService
         }
 
         await _dbContext.SaveChangesAsync(ct);
+        GenerationObservability.OrphanArtifactsTotal.Add(demotedCount);
         return demotedCount;
     }
 }

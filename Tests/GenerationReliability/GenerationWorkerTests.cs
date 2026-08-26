@@ -4,8 +4,6 @@ using Application.Exceptions;
 using Application.Interfaces;
 using Application.Services;
 using Domain.Common.DateTimes;
-using Domain.Entities;
-using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Infrastructure.Services;
@@ -19,10 +17,13 @@ namespace Tests.GenerationReliability;
 
 public sealed class GenerationWorkerTests
 {
-    private sealed class FailingOrchestrator : IImageGenerationOrchestrator
+    private sealed class TrackingOrchestrator : IImageGenerationOrchestrator
     {
-        private readonly Exception _exceptionToThrow;
-        public FailingOrchestrator(Exception exceptionToThrow) => _exceptionToThrow = exceptionToThrow;
+        public SceneImageGenerationOutboxPayload? LastPayload { get; private set; }
+        public Guid? LastOutboxId { get; private set; }
+        private readonly Exception? _exceptionToThrow;
+
+        public TrackingOrchestrator(Exception? exceptionToThrow = null) => _exceptionToThrow = exceptionToThrow;
 
         public Task<JobExecutionResult> OrchestrateSceneImageGenerationAsync(
             SceneImageGenerationOutboxPayload payload,
@@ -31,12 +32,42 @@ public sealed class GenerationWorkerTests
             DateTime now,
             CancellationToken ct = default)
         {
-            throw _exceptionToThrow;
+            LastPayload = payload;
+            LastOutboxId = outboxId;
+
+            if (_exceptionToThrow != null)
+                throw _exceptionToThrow;
+
+            return Task.FromResult(new JobExecutionResult(JobExecutionStatus.Completed));
         }
     }
 
+    private static GenerationWorkItem CreateTestWorkItem(Guid? userId = null, Guid? outboxId = null)
+    {
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: new CharacterVisualIdentity(Face: "canonical_face", CanonicalReferenceUrl: "https://cdn.project00.ai/face.png"),
+            SceneState: new SessionSceneState("active scene", "neutral"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault()
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: snapshot.TurnId,
+            CharacterId: snapshot.CharacterId,
+            UserId: userId ?? Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: Guid.NewGuid()
+        );
+
+        return new GenerationWorkItem(payload, outboxId ?? Guid.NewGuid(), DateTime.UtcNow, Priority: 5);
+    }
+
     [Fact]
-    public async Task Worker_TransientError_SchedulesRetryWithBackoff()
+    public async Task Worker_HappyPath_InvokesOrchestrator_WithAuthoritativeIdentityAndUserId()
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
@@ -50,23 +81,60 @@ public sealed class GenerationWorkerTests
             await dbInit.Database.EnsureCreatedAsync();
         }
 
-        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        job.MarkQueued(DateTime.UtcNow);
+        var trackingOrchestrator = new TrackingOrchestrator();
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
+        services.AddSingleton(GenerationRetryPolicy.Default);
+        services.AddScoped<IImageGenerationOrchestrator>(_ => trackingOrchestrator);
 
-        using (var dbSeed = new ProjectDbContext(options))
+        var sp = services.BuildServiceProvider();
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
+        var worker = new GenerationWorker(
+            scopeFactory: sp.GetRequiredService<IServiceScopeFactory>(),
+            jobQueue: queue,
+            logger: NullLogger<GenerationWorker>.Instance,
+            workerId: "worker-test"
+        );
+
+        var expectedUserId = Guid.NewGuid();
+        var expectedOutboxId = Guid.NewGuid();
+        var item = CreateTestWorkItem(userId: expectedUserId, outboxId: expectedOutboxId);
+
+        var result = await worker.ProcessWorkItemDirectAsync(item);
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+
+        // Verify authoritative payload was preserved without bogus regeneration
+        Assert.NotNull(trackingOrchestrator.LastPayload);
+        Assert.Equal(expectedUserId, trackingOrchestrator.LastPayload.UserId);
+        Assert.Equal(expectedOutboxId, trackingOrchestrator.LastOutboxId);
+        Assert.NotNull(trackingOrchestrator.LastPayload.Snapshot.VisualIdentity);
+        Assert.Equal("canonical_face", trackingOrchestrator.LastPayload.Snapshot.VisualIdentity.Face);
+    }
+
+    [Fact]
+    public async Task Worker_TransientError_ReturnsDeferred()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
         {
-            await dbSeed.ImageGenerationJobs.AddAsync(job);
-            await dbSeed.SaveChangesAsync();
+            await dbInit.Database.EnsureCreatedAsync();
         }
 
         var services = new ServiceCollection();
         services.AddScoped(_ => new ProjectDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Deterministic(maxRetries: 3, baseDelay: TimeSpan.FromSeconds(2)));
-        services.AddScoped<IImageGenerationOrchestrator>(_ => new FailingOrchestrator(new GpuTransientException("Timeout", 408)));
+        services.AddScoped<IImageGenerationOrchestrator>(_ => new TrackingOrchestrator(new GpuTransientException("Timeout", 408)));
 
         var sp = services.BuildServiceProvider();
-        var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
         var worker = new GenerationWorker(
             scopeFactory: sp.GetRequiredService<IServiceScopeFactory>(),
             jobQueue: queue,
@@ -74,21 +142,13 @@ public sealed class GenerationWorkerTests
             workerId: "worker-test"
         );
 
-        var result = await worker.ProcessJobDirectAsync(job.Id);
+        var item = CreateTestWorkItem();
+        var result = await worker.ProcessWorkItemDirectAsync(item);
         Assert.Equal(JobExecutionStatus.Deferred, result.Status);
-
-        using (var dbVerify = new ProjectDbContext(options))
-        {
-            var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
-            Assert.Equal(ImageJobStatus.Queued, verifiedJob.Status);
-            Assert.Equal(1, verifiedJob.RetryCount);
-            Assert.True(verifiedJob.IsRetryable);
-            Assert.NotNull(verifiedJob.NextAttemptAt);
-        }
     }
 
     [Fact]
-    public async Task Worker_PermanentError_FailsJobImmediately()
+    public async Task Worker_PermanentError_ReturnsFailed()
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
@@ -102,23 +162,14 @@ public sealed class GenerationWorkerTests
             await dbInit.Database.EnsureCreatedAsync();
         }
 
-        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        job.MarkQueued(DateTime.UtcNow);
-
-        using (var dbSeed = new ProjectDbContext(options))
-        {
-            await dbSeed.ImageGenerationJobs.AddAsync(job);
-            await dbSeed.SaveChangesAsync();
-        }
-
         var services = new ServiceCollection();
         services.AddScoped(_ => new ProjectDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Deterministic(maxRetries: 3));
-        services.AddScoped<IImageGenerationOrchestrator>(_ => new FailingOrchestrator(new GpuNonTransientException("Invalid node syntax", 400)));
+        services.AddScoped<IImageGenerationOrchestrator>(_ => new TrackingOrchestrator(new GpuNonTransientException("Invalid node syntax", 400)));
 
         var sp = services.BuildServiceProvider();
-        var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 10);
         var worker = new GenerationWorker(
             scopeFactory: sp.GetRequiredService<IServiceScopeFactory>(),
             jobQueue: queue,
@@ -126,15 +177,8 @@ public sealed class GenerationWorkerTests
             workerId: "worker-test"
         );
 
-        var result = await worker.ProcessJobDirectAsync(job.Id);
+        var item = CreateTestWorkItem();
+        var result = await worker.ProcessWorkItemDirectAsync(item);
         Assert.Equal(JobExecutionStatus.Failed, result.Status);
-
-        using (var dbVerify = new ProjectDbContext(options))
-        {
-            var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
-            Assert.Equal(ImageJobStatus.Failed, verifiedJob.Status);
-            Assert.Equal(0, verifiedJob.RetryCount);
-            Assert.False(verifiedJob.IsRetryable);
-        }
     }
 }

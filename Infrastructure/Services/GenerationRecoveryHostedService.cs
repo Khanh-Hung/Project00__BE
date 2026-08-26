@@ -1,4 +1,4 @@
-using Application.Services;
+using Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -31,7 +31,7 @@ public sealed class GenerationRecoveryHostedService : BackgroundService
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var recoveryService = scope.ServiceProvider.GetRequiredService<GenerationRecoveryService>();
+                var recoveryService = scope.ServiceProvider.GetRequiredService<IGenerationRecoveryService>();
                 await recoveryService.RecoverExpiredJobsAsync(null, stoppingToken);
             }
             catch (OperationCanceledException)

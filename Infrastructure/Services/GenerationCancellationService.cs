@@ -1,3 +1,4 @@
+using Application.Common;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
@@ -7,14 +8,14 @@ using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services;
+namespace Infrastructure.Services;
 
 /// <summary>
 /// First-class generation cancellation coordinator.
 /// Handles idempotent cancellation requests across Queued, Processing, and Evaluating phases,
-/// propagating interrupt signals to GPU providers and preventing late artifact promotion.
+/// targeting specific queued prompts on GPU providers and preventing late artifact promotion.
 /// </summary>
-public sealed class GenerationCancellationService
+public sealed class GenerationCancellationService : IGenerationCancellationService
 {
     private readonly ProjectDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
@@ -75,6 +76,7 @@ public sealed class GenerationCancellationService
                 if (rows > 0)
                 {
                     _logger.LogInformation("[GenerationCancelledQueued] Queued JobId={JobId} cancelled immediately.", jobId);
+                    GenerationObservability.JobsCancelledTotal.Add(1);
                     return true;
                 }
                 return false;
@@ -84,12 +86,13 @@ public sealed class GenerationCancellationService
                 job.RequestCancellation(now);
                 await _dbContext.SaveChangesAsync(ct);
                 _logger.LogInformation("[GenerationCancelledQueued] Queued JobId={JobId} cancelled immediately.", jobId);
+                GenerationObservability.JobsCancelledTotal.Add(1);
                 return true;
             }
         }
         else
         {
-            // Active Processing / Evaluating: flag CancellationRequested and trigger provider interrupt
+            // Active Processing / Evaluating: flag CancellationRequested and trigger targeted prompt cancellation
             if (_dbContext.Database.IsRelational())
             {
                 var rows = await _dbContext.ImageGenerationJobs
@@ -102,7 +105,8 @@ public sealed class GenerationCancellationService
                 if (rows > 0)
                 {
                     _logger.LogInformation("[GenerationCancellationFlagged] JobId={JobId} flagged for cancellation.", jobId);
-                    await TryInterruptProviderAsync(ct);
+                    await TryCancelProviderExecutionAsync(job.ProviderJobId, ct);
+                    GenerationObservability.JobsCancelledTotal.Add(1);
                     return true;
                 }
                 return false;
@@ -112,24 +116,37 @@ public sealed class GenerationCancellationService
                 job.RequestCancellation(now);
                 await _dbContext.SaveChangesAsync(ct);
                 _logger.LogInformation("[GenerationCancellationFlagged] JobId={JobId} flagged for cancellation.", jobId);
-                await TryInterruptProviderAsync(ct);
+                await TryCancelProviderExecutionAsync(job.ProviderJobId, ct);
+                GenerationObservability.JobsCancelledTotal.Add(1);
                 return true;
             }
         }
     }
 
-    private async Task TryInterruptProviderAsync(CancellationToken ct)
+    private async Task TryCancelProviderExecutionAsync(string? providerJobId, CancellationToken ct)
     {
         if (_comfyClient != null)
         {
             try
             {
+                if (!string.IsNullOrWhiteSpace(providerJobId))
+                {
+                    // Target specific queued prompt ID on ComfyUI provider first
+                    var deleted = await _comfyClient.DeleteQueuedPromptAsync(providerJobId, ct);
+                    if (deleted)
+                    {
+                        _logger.LogInformation("[GenerationProviderDeleted] Deleted targeted prompt {PromptId} from ComfyUI queue.", providerJobId);
+                        return;
+                    }
+                }
+
+                // If prompt is actively running on GPU, issue interrupt
                 await _comfyClient.InterruptAsync(ct);
                 _logger.LogInformation("[GenerationProviderInterrupted] Sent interrupt signal to ComfyUI provider.");
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[GenerationProviderInterruptFailed] Failed to signal interrupt to ComfyUI provider.");
+                _logger.LogWarning(ex, "[GenerationProviderCancelFailed] Failed to signal cancellation to ComfyUI provider.");
             }
         }
     }

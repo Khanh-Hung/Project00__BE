@@ -14,8 +14,10 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.Property(x => x.SessionId).IsRequired();
         builder.Property(x => x.TurnId).IsRequired();
         builder.Property(x => x.CharacterId).IsRequired();
+        builder.Property(x => x.UserId).IsRequired();
         builder.Property(x => x.SceneRevision).IsRequired();
         builder.Property(x => x.GenerationRequestId).IsRequired();
+        builder.Property(x => x.OutboxMessageId);
         builder.Property(x => x.Provider).IsRequired().HasMaxLength(64);
         builder.Property(x => x.ProviderJobId).HasMaxLength(256);
         builder.Property(x => x.Status).IsRequired();

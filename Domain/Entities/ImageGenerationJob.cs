@@ -14,8 +14,10 @@ public sealed class ImageGenerationJob : BaseEntity
     public Guid SessionId { get; private set; }
     public Guid TurnId { get; private set; }
     public Guid CharacterId { get; private set; }
+    public Guid UserId { get; private set; }
     public int SceneRevision { get; private set; }
     public Guid GenerationRequestId { get; private set; }
+    public Guid? OutboxMessageId { get; private set; }
     public string Provider { get; private set; } = "ComfyUI";
     public string? ProviderJobId { get; private set; }
     public ImageJobStatus Status { get; private set; } = ImageJobStatus.Pending;
@@ -47,6 +49,8 @@ public sealed class ImageGenerationJob : BaseEntity
         Guid characterId,
         int sceneRevision,
         Guid? generationRequestId = null,
+        Guid? userId = null,
+        Guid? outboxMessageId = null,
         string provider = "ComfyUI",
         string workflow = "VisualIdentity",
         int workflowVersion = 1,
@@ -57,6 +61,8 @@ public sealed class ImageGenerationJob : BaseEntity
         SessionId = sessionId;
         TurnId = turnId;
         CharacterId = characterId;
+        UserId = userId ?? Guid.Empty;
+        OutboxMessageId = outboxMessageId;
         SceneRevision = sceneRevision;
         Provider = provider;
         Workflow = workflow;

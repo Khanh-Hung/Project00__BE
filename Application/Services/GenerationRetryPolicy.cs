@@ -80,10 +80,13 @@ public sealed class GenerationRetryPolicy
 
     /// <summary>
     /// Computes exponential backoff with jitter: delay = min(MaxDelay, BaseDelay * 2^retryCount) +/- jitter.
+    /// Semantics:
+    /// 1. DeterministicMode == true: Returns exact nominal delay without jitter.
+    /// 2. DeterministicMode == false with deterministicSeed: Calculates reproducible jitter based on seed.
+    /// 3. DeterministicMode == false with no seed: Calculates pseudo-random jitter.
     /// </summary>
     public TimeSpan CalculateDelay(int retryCount, long? deterministicSeed = null)
     {
-        // 2^retryCount calculation with upper bound clamp
         double multiplier = Math.Pow(2.0, Math.Min(retryCount, 10));
         double rawSeconds = BaseDelay.TotalSeconds * multiplier;
         double cappedSeconds = Math.Min(rawSeconds, MaxDelay.TotalSeconds);
@@ -93,7 +96,6 @@ public sealed class GenerationRetryPolicy
             return TimeSpan.FromSeconds(cappedSeconds);
         }
 
-        // Apply pseudo-random jitter within [-JitterRatio, +JitterRatio]
         double jitterFactor;
         if (deterministicSeed.HasValue)
         {

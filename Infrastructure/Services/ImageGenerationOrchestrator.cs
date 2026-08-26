@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Application.Common;
 using Application.DTOs;
 using Application.Enums;
@@ -113,9 +114,12 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 characterId: snapshot.CharacterId,
                 sceneRevision: snapshot.SceneRevision,
                 generationRequestId: generationRequestId,
+                userId: payload.UserId,
+                outboxMessageId: outboxId,
                 provider: "ComfyUI",
                 workflow: workflow,
-                workflowVersion: workflowVersion
+                workflowVersion: workflowVersion,
+                generationMetadataJson: JsonSerializer.Serialize(payload)
             );
 
             job.TryClaim(workerId, leaseDuration, jobClaimTime);

@@ -1,4 +1,4 @@
-using Application.Services;
+using Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -31,7 +31,7 @@ public sealed class ArtifactReconciliationHostedService : BackgroundService
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var reconciliationService = scope.ServiceProvider.GetRequiredService<ArtifactReconciliationService>();
+                var reconciliationService = scope.ServiceProvider.GetRequiredService<IArtifactReconciliationService>();
                 await reconciliationService.ReconcileOrphanArtifactsAsync(stoppingToken);
             }
             catch (OperationCanceledException)
