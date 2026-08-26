@@ -212,6 +212,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
 
             while (attempt <= maxAttempts)
             {
+                genResult = null;
                 QualityMitigationAction mitigation = attempt == 1
                     ? QualityMitigationAction.Pass
                     : _qualityGuardPolicy.DecideMitigation(attempt - 1, lastEvaluation!);
@@ -239,60 +240,57 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 ImageGenerationAttempt attemptRecord;
                 var nowUtc = now;
 
-                if (existingAttempt != null && existingAttempt.Status == GenerationAttemptStatus.Succeeded && !string.IsNullOrWhiteSpace(existingAttempt.ImageUrl))
+                if (existingAttempt != null)
                 {
-                    _logger.LogInformation("[SceneGenerationAttemptReused] Reusing existing succeeded attempt {AttemptId} for JobId={JobId}, Attempt={Attempt}, Fingerprint={Fingerprint}",
-                        existingAttempt.Id, job.Id, attempt, attemptFingerprint);
-
-                    attemptRecord = existingAttempt;
-                    genResult = new ImageGenerationResult(
-                        ImageUrl: existingAttempt.ImageUrl,
-                        Provider: "ComfyUI",
-                        ProviderJobId: existingAttempt.ProviderJobId,
-                        DurationMs: 0,
-                        Seed: derivedSeed
-                    );
-                }
-                else if (existingAttempt != null && 
-                         existingAttempt.Status == GenerationAttemptStatus.Running && 
-                         existingAttempt.ClaimedBy != null && 
-                         existingAttempt.ClaimedBy != workerId && 
-                         existingAttempt.LeaseUntil.HasValue && 
-                         existingAttempt.LeaseUntil.Value > nowUtc)
-                {
-                    // Another active worker is currently executing this attempt under valid lease -> do NOT duplicate GPU call!
-                    _logger.LogInformation("[SceneGenerationAttemptActive] Attempt {AttemptId} is actively running by worker '{ClaimedBy}' (LeaseUntil={LeaseUntil}). Deferring execution.",
-                        existingAttempt.Id, existingAttempt.ClaimedBy, existingAttempt.LeaseUntil);
-                    return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
-                }
-                else
-                {
-                    if (existingAttempt == null)
+                    if (existingAttempt.Status == GenerationAttemptStatus.Succeeded && !string.IsNullOrWhiteSpace(existingAttempt.ImageUrl))
                     {
-                        attemptRecord = new ImageGenerationAttempt(
-                            generationJobId: job.Id,
-                            turnId: snapshot.TurnId,
-                            sceneRevision: snapshot.SceneRevision,
-                            attemptNumber: attempt,
-                            derivedSeed: derivedSeed,
-                            parametersJson: attemptProfile.ParametersJson ?? string.Empty,
-                            generationFingerprint: attemptFingerprint,
-                            status: GenerationAttemptStatus.Running,
-                            claimedBy: workerId,
-                            startedAt: nowUtc,
-                            leaseUntil: nowUtc.AddMinutes(2)
+                        _logger.LogInformation("[SceneGenerationAttemptReused] Reusing existing succeeded attempt {AttemptId} for JobId={JobId}, Attempt={Attempt}, Fingerprint={Fingerprint}",
+                            existingAttempt.Id, job.Id, attempt, attemptFingerprint);
+
+                        attemptRecord = existingAttempt;
+                        genResult = new ImageGenerationResult(
+                            ImageUrl: existingAttempt.ImageUrl,
+                            Provider: "ComfyUI",
+                            ProviderJobId: existingAttempt.ProviderJobId,
+                            DurationMs: 0,
+                            Seed: derivedSeed
                         );
-                        await _dbContext.ImageGenerationAttempts.AddAsync(attemptRecord, ct);
-                        await _dbContext.SaveChangesAsync(ct);
+                    }
+                    else if (!existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2)))
+                    {
+                        // Another active worker is currently executing this attempt under valid lease -> do NOT duplicate GPU call!
+                        _logger.LogInformation("[SceneGenerationAttemptActive] Attempt {AttemptId} is actively running by worker '{ClaimedBy}' (LeaseUntil={LeaseUntil}). Deferring execution.",
+                            existingAttempt.Id, existingAttempt.ClaimedBy, existingAttempt.LeaseUntil);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
                     }
                     else
                     {
-                        // Reclaim stale/crashed attempt
+                        // Successfully reclaimed stale/crashed attempt
                         attemptRecord = existingAttempt;
-                        attemptRecord.Claim(workerId, nowUtc, TimeSpan.FromMinutes(2));
                         await _dbContext.SaveChangesAsync(ct);
                     }
+                }
+                else
+                {
+                    attemptRecord = new ImageGenerationAttempt(
+                        generationJobId: job.Id,
+                        turnId: snapshot.TurnId,
+                        sceneRevision: snapshot.SceneRevision,
+                        attemptNumber: attempt,
+                        derivedSeed: derivedSeed,
+                        parametersJson: attemptProfile.ParametersJson ?? string.Empty,
+                        generationFingerprint: attemptFingerprint,
+                        status: GenerationAttemptStatus.Running,
+                        claimedBy: workerId,
+                        startedAt: nowUtc,
+                        leaseUntil: nowUtc.AddMinutes(2)
+                    );
+                    await _dbContext.ImageGenerationAttempts.AddAsync(attemptRecord, ct);
+                    await _dbContext.SaveChangesAsync(ct);
+                }
 
+                if (genResult == null)
+                {
                     var imageReq = ImageGenerationRequest.FromSnapshot(
                         snapshot: attemptSnapshot,
                         compiledPrompt: lastCompiledPrompt,

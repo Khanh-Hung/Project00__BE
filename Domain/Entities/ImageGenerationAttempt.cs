@@ -1,4 +1,4 @@
-﻿using Domain.Common;
+using Domain.Common;
 using Domain.Enums;
 
 namespace Domain.Entities;
@@ -63,13 +63,34 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void Claim(string workerId, DateTime now, TimeSpan leaseDuration)
+    public bool TryClaim(string workerId, DateTime now, TimeSpan leaseDuration)
     {
+        if (Status == GenerationAttemptStatus.Succeeded)
+            return false;
+
+        if (Status == GenerationAttemptStatus.Running &&
+            ClaimedBy != null &&
+            ClaimedBy != workerId &&
+            LeaseUntil.HasValue &&
+            LeaseUntil.Value > now)
+        {
+            return false;
+        }
+
         ClaimedBy = workerId;
         StartedAt = now;
         LeaseUntil = now.Add(leaseDuration);
         Status = GenerationAttemptStatus.Running;
         Touch();
+        return true;
+    }
+
+    public void Claim(string workerId, DateTime now, TimeSpan leaseDuration)
+    {
+        if (!TryClaim(workerId, now, leaseDuration))
+        {
+            throw new InvalidOperationException($"Cannot claim attempt {Id}: attempt is currently {Status} or under active lease by {ClaimedBy}.");
+        }
     }
 
     public void MarkSucceeded(string imageUrl, string? providerJobId, float? faceSim, float? featScore, DateTime completedAt)
