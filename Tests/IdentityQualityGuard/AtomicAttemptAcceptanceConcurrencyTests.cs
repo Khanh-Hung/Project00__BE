@@ -327,6 +327,18 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var acceptedJob = await verifyDb.ImageGenerationJobs.FirstAsync();
         Assert.Single(outboxEvents);
         Assert.Contains(acceptedJob.Id.ToString(), outboxEvents[0].PayloadJson);
+
+        var startedEvents = await verifyDb.OutboxMessages
+            .Where(m => m.EventType == OutboxEventTypes.GenerationAttemptStarted)
+            .ToListAsync();
+        Assert.Single(startedEvents);
+        Assert.Contains(acceptedJob.Id.ToString(), startedEvents[0].PayloadJson);
+
+        var evaluatedEvents = await verifyDb.OutboxMessages
+            .Where(m => m.EventType == OutboxEventTypes.GenerationAttemptEvaluated)
+            .ToListAsync();
+        Assert.Single(evaluatedEvents);
+        Assert.Contains(acceptedJob.Id.ToString(), evaluatedEvents[0].PayloadJson);
     }
 
     [Fact]

@@ -342,6 +342,20 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                 winningAttemptRecord = attemptRecord;
 
+                // Emit GenerationAttemptStarted Outbox lifecycle event (PR25 Observability)
+                var startedOutbox = new OutboxMessage(
+                    eventType: OutboxEventTypes.GenerationAttemptStarted,
+                    payloadJson: System.Text.Json.JsonSerializer.Serialize(new Domain.Events.GenerationAttemptStartedEvent(
+                        JobId: job.Id,
+                        AttemptId: attemptRecord.Id,
+                        AttemptNumber: attempt,
+                        DerivedSeed: derivedSeed,
+                        WorkerId: workerId
+                    ))
+                );
+                await _dbContext.OutboxMessages.AddAsync(startedOutbox, ct);
+                await _dbContext.SaveChangesAsync(ct);
+
                 if (genResult == null)
                 {
                     var imageReq = ImageGenerationRequest.FromSnapshot(
@@ -364,14 +378,14 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
                     catch (Exception ex)
                     {
-                        attemptRecord.MarkFailed(ex.Message, _dateTimeProvider.UtcNow, workerId: workerId);
+                        attemptRecord.MarkFailed(ex.Message, _dateTimeProvider.UtcNow, workerId, nowUtc);
                         await _dbContext.SaveChangesAsync(ct);
                         throw;
                     }
 
                     if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
                     {
-                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", _dateTimeProvider.UtcNow, workerId: workerId);
+                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", _dateTimeProvider.UtcNow, workerId, nowUtc);
                         await _dbContext.SaveChangesAsync(ct);
                         _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
                         throw new GpuNonTransientException("Image generation completed without producing an image URL.");
@@ -380,23 +394,23 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                 if (_qualityGuardPolicy.IsActive)
                 {
-                    attemptRecord.StartEvaluating(_dateTimeProvider.UtcNow, workerId: workerId);
+                    attemptRecord.StartEvaluating(workerId, nowUtc);
                     lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
                     
                     if (lastEvaluation.Status == IdentityStatus.Passed)
                     {
-                        attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow, workerId: workerId);
+                        attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow, workerId, nowUtc);
                     }
                     else if (lastEvaluation.Status == IdentityStatus.Degraded)
                     {
-                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow, workerId: workerId);
+                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow, workerId, nowUtc);
                     }
                     else
                     {
                         var violationMsg = lastEvaluation.Violations.Count > 0
                             ? string.Join("; ", lastEvaluation.Violations.Select(v => v.Code))
                             : "Hard invariant violation";
-                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", _dateTimeProvider.UtcNow, workerId: workerId);
+                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", _dateTimeProvider.UtcNow, workerId, nowUtc);
                     }
 
                     var evalOutbox = new OutboxMessage(
@@ -437,7 +451,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 }
                 else
                 {
-                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow, workerId: workerId);
+                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow, workerId, nowUtc);
                     await _dbContext.SaveChangesAsync(ct);
                     isIdentityPassed = true;
                     break;

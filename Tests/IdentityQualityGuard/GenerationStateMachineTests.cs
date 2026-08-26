@@ -169,16 +169,17 @@ public sealed class GenerationStateMachineTests
     {
         var jobId = Guid.NewGuid();
         var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
+        attempt.TryClaim("worker-1", Clock.Now, TimeSpan.FromMinutes(2));
         Assert.Equal(GenerationAttemptStatus.Running, attempt.Status);
 
-        attempt.StartEvaluating(Clock.Now);
+        attempt.StartEvaluating("worker-1", Clock.Now);
         Assert.Equal(GenerationAttemptStatus.Evaluating, attempt.Status);
 
-        attempt.MarkSucceeded("https://cdn.project00.ai/image.png", "comfy_123", 0.88f, 0.92f, Clock.Now);
+        attempt.MarkSucceeded("https://cdn.project00.ai/image.png", "comfy_123", 0.88f, 0.92f, Clock.Now, "worker-1", Clock.Now);
         Assert.Equal(GenerationAttemptStatus.Succeeded, attempt.Status);
 
         // Terminal attempt cannot start evaluating again
-        Assert.Throws<InvalidOperationException>(() => attempt.StartEvaluating(Clock.Now));
+        Assert.Throws<InvalidOperationException>(() => attempt.StartEvaluating("worker-1", Clock.Now));
     }
 
     [Fact]
@@ -188,7 +189,7 @@ public sealed class GenerationStateMachineTests
         var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
         attempt.TryClaim("worker-A", Clock.Now, TimeSpan.FromMinutes(2));
 
-        Assert.Throws<InvalidOperationException>(() => attempt.StartEvaluating(Clock.Now, workerId: "worker-B"));
+        Assert.Throws<InvalidOperationException>(() => attempt.StartEvaluating("worker-B", Clock.Now));
     }
 
     [Fact]
@@ -198,7 +199,75 @@ public sealed class GenerationStateMachineTests
         var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
         attempt.TryClaim("worker-A", Clock.Now, TimeSpan.FromMinutes(2));
 
-        Assert.Throws<InvalidOperationException>(() => attempt.MarkSucceeded("https://cdn.project00.ai/image.png", null, 0.9f, 0.9f, Clock.Now, workerId: "worker-B"));
+        Assert.Throws<InvalidOperationException>(() => attempt.MarkSucceeded("https://cdn.project00.ai/image.png", null, 0.9f, 0.9f, Clock.Now, "worker-B", Clock.Now));
+    }
+
+    [Fact]
+    public void Attempt_Pending_CannotStartEvaluating_MustThrow()
+    {
+        var jobId = Guid.NewGuid();
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1", status: GenerationAttemptStatus.Pending);
+        Assert.Equal(GenerationAttemptStatus.Pending, attempt.Status);
+
+        Assert.Throws<InvalidOperationException>(() => attempt.StartEvaluating("worker-A", Clock.Now));
+    }
+
+    [Fact]
+    public void Attempt_ExpiredLease_CannotStartEvaluating()
+    {
+        var jobId = Guid.NewGuid();
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
+        attempt.TryClaim("worker-A", Clock.Now.AddMinutes(-5), TimeSpan.FromMinutes(2)); // expired 3 min ago
+
+        Assert.Throws<InvalidOperationException>(() => attempt.StartEvaluating("worker-A", Clock.Now));
+    }
+
+    [Fact]
+    public void Attempt_ExpiredLease_CannotMarkSucceeded()
+    {
+        var jobId = Guid.NewGuid();
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
+        attempt.TryClaim("worker-A", Clock.Now, TimeSpan.FromMinutes(2));
+        attempt.StartEvaluating("worker-A", Clock.Now);
+
+        // Advance time past lease expiration
+        var expiredTime = Clock.Now.AddMinutes(5);
+        Assert.Throws<InvalidOperationException>(() => attempt.MarkSucceeded("https://cdn.project00.ai/image.png", "job_1", 0.9f, 0.9f, expiredTime, "worker-A", expiredTime));
+    }
+
+    [Fact]
+    public void Attempt_ExpiredLease_CannotMarkDegraded()
+    {
+        var jobId = Guid.NewGuid();
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
+        attempt.TryClaim("worker-A", Clock.Now, TimeSpan.FromMinutes(2));
+        attempt.StartEvaluating("worker-A", Clock.Now);
+
+        var expiredTime = Clock.Now.AddMinutes(5);
+        Assert.Throws<InvalidOperationException>(() => attempt.MarkDegraded("https://cdn.project00.ai/image.png", "job_1", 0.6f, 0.6f, expiredTime, "worker-A", expiredTime));
+    }
+
+    [Fact]
+    public void Attempt_ExpiredLease_CannotMarkFailed()
+    {
+        var jobId = Guid.NewGuid();
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
+        attempt.TryClaim("worker-A", Clock.Now, TimeSpan.FromMinutes(2));
+
+        var expiredTime = Clock.Now.AddMinutes(5);
+        Assert.Throws<InvalidOperationException>(() => attempt.MarkFailed("GPU crash", expiredTime, "worker-A", expiredTime));
+    }
+
+    [Fact]
+    public void Attempt_ExpiredLease_CannotMarkQuarantined()
+    {
+        var jobId = Guid.NewGuid();
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
+        attempt.TryClaim("worker-A", Clock.Now, TimeSpan.FromMinutes(2));
+        attempt.StartEvaluating("worker-A", Clock.Now);
+
+        var expiredTime = Clock.Now.AddMinutes(5);
+        Assert.Throws<InvalidOperationException>(() => attempt.MarkQuarantined("https://cdn.project00.ai/image.png", "job_1", 0.5f, 0.5f, expiredTime, "worker-A", expiredTime));
     }
 
     #endregion

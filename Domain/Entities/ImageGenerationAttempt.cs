@@ -98,27 +98,33 @@ public sealed class ImageGenerationAttempt : BaseEntity
         }
     }
 
-    public void StartEvaluating(DateTime now, string? workerId = null)
+    public void StartEvaluating(string workerId, DateTime now)
     {
-        if (Status == GenerationAttemptStatus.Succeeded || Status == GenerationAttemptStatus.Failed || Status == GenerationAttemptStatus.Quarantined)
-            throw new InvalidOperationException($"Cannot evaluate attempt {Id} in terminal status {Status}.");
+        if (Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot transition attempt {Id} to Evaluating: transition is only allowed from Running, but current status is {Status}.");
 
-        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
-        {
-            throw new InvalidOperationException($"Cannot evaluate attempt {Id}: attempt is claimed by worker '{ClaimedBy}', not '{workerId}'.");
-        }
+        EnsureActiveLease(workerId, now);
 
         Status = GenerationAttemptStatus.Evaluating;
         Touch();
     }
 
-    public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string? workerId = null)
+    [Obsolete("Use StartEvaluating(workerId, now) to enforce lease validity.", error: false)]
+    public void StartEvaluating(DateTime now)
     {
-        if (Status == GenerationAttemptStatus.Succeeded)
-            throw new InvalidOperationException($"Attempt {Id} is already marked Succeeded.");
+        if (Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot transition attempt {Id} to Evaluating: transition is only allowed from Running, but current status is {Status}.");
 
-        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
-            throw new InvalidOperationException($"Cannot mark attempt {Id} succeeded: worker '{workerId}' is not the owner ('{ClaimedBy}').");
+        Status = GenerationAttemptStatus.Evaluating;
+        Touch();
+    }
+
+    public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string workerId, DateTime now)
+    {
+        if (Status != GenerationAttemptStatus.Evaluating && Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} succeeded: attempt is in invalid status {Status}.");
+
+        EnsureActiveLease(workerId, now);
 
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
@@ -129,13 +135,27 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void MarkDegraded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string? workerId = null)
+    [Obsolete("Use MarkSucceeded with workerId and now to enforce lease validity.", error: false)]
+    public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
     {
         if (Status == GenerationAttemptStatus.Succeeded)
-            throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
+            throw new InvalidOperationException($"Attempt {Id} is already marked Succeeded.");
 
-        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
-            throw new InvalidOperationException($"Cannot mark attempt {Id} degraded: worker '{workerId}' is not the owner ('{ClaimedBy}').");
+        ImageUrl = imageUrl;
+        ProviderJobId = providerJobId ?? ProviderJobId;
+        IdentitySimilarity = identitySimilarity;
+        FeatureScore = featScore;
+        Status = GenerationAttemptStatus.Succeeded;
+        CompletedAt = completedAt;
+        Touch();
+    }
+
+    public void MarkDegraded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string workerId, DateTime now)
+    {
+        if (Status != GenerationAttemptStatus.Evaluating && Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} degraded: attempt is in invalid status {Status}.");
+
+        EnsureActiveLease(workerId, now);
 
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
@@ -146,13 +166,27 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void MarkQuarantined(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string? workerId = null)
+    [Obsolete("Use MarkDegraded with workerId and now to enforce lease validity.", error: false)]
+    public void MarkDegraded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
     {
         if (Status == GenerationAttemptStatus.Succeeded)
             throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
 
-        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
-            throw new InvalidOperationException($"Cannot mark attempt {Id} quarantined: worker '{workerId}' is not the owner ('{ClaimedBy}').");
+        ImageUrl = imageUrl;
+        ProviderJobId = providerJobId ?? ProviderJobId;
+        IdentitySimilarity = identitySimilarity;
+        FeatureScore = featScore;
+        Status = GenerationAttemptStatus.Degraded;
+        CompletedAt = completedAt;
+        Touch();
+    }
+
+    public void MarkQuarantined(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string workerId, DateTime now)
+    {
+        if (Status != GenerationAttemptStatus.Evaluating && Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} quarantined: attempt is in invalid status {Status}.");
+
+        EnsureActiveLease(workerId, now);
 
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
@@ -163,17 +197,54 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void MarkFailed(string errorMessage, DateTime completedAt, string? workerId = null)
+    [Obsolete("Use MarkQuarantined with workerId and now to enforce lease validity.", error: false)]
+    public void MarkQuarantined(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
     {
         if (Status == GenerationAttemptStatus.Succeeded)
             throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
 
-        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
-            throw new InvalidOperationException($"Cannot mark attempt {Id} failed: worker '{workerId}' is not the owner ('{ClaimedBy}').");
+        ImageUrl = imageUrl;
+        ProviderJobId = providerJobId ?? ProviderJobId;
+        IdentitySimilarity = identitySimilarity;
+        FeatureScore = featScore;
+        Status = GenerationAttemptStatus.Quarantined;
+        CompletedAt = completedAt;
+        Touch();
+    }
+
+    public void MarkFailed(string errorMessage, DateTime completedAt, string workerId, DateTime now)
+    {
+        if (Status == GenerationAttemptStatus.Succeeded)
+            throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
+
+        EnsureActiveLease(workerId, now);
 
         ErrorMessage = errorMessage;
         Status = GenerationAttemptStatus.Failed;
         CompletedAt = completedAt;
         Touch();
+    }
+
+    [Obsolete("Use MarkFailed with workerId and now to enforce lease validity.", error: false)]
+    public void MarkFailed(string errorMessage, DateTime completedAt)
+    {
+        if (Status == GenerationAttemptStatus.Succeeded)
+            throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
+
+        ErrorMessage = errorMessage;
+        Status = GenerationAttemptStatus.Failed;
+        CompletedAt = completedAt;
+        Touch();
+    }
+
+    private void EnsureActiveLease(string workerId, DateTime now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workerId, nameof(workerId));
+
+        if (ClaimedBy == null || !string.Equals(ClaimedBy, workerId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Cannot mutate attempt {Id}: worker '{workerId}' is not the active owner ('{ClaimedBy ?? "null"}').");
+
+        if (!LeaseUntil.HasValue || LeaseUntil.Value <= now)
+            throw new InvalidOperationException($"Cannot mutate attempt {Id}: worker lease expired at {LeaseUntil?.ToString("O") ?? "null"} (now: {now:O}).");
     }
 }
