@@ -26,7 +26,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "b42b8c8fa21c43978bb534010b226e5bb819ab0453b95334ed1b74bec064359e"
+        "Fingerprint": "0c32f231ef2d08431dabda6a965bab0f0931332bf9b3e1d791643e6c63955a06"
       },
       {
         "AttemptNumber": 2,
@@ -37,7 +37,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "693503b32384ccf5952988bfb853460dc35b777372d8ad3714aefb630dc15517"
+        "Fingerprint": "bacefafc24959c575dc639bf5a83907142cf9e8bb4cbfaa644fd12813c2891b2"
       },
       {
         "AttemptNumber": 3,
@@ -48,7 +48,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "07489b33d5950ea2ea0e3d1e3c0b86fcc1d501ced3943a8814719cd2c90d7ba2"
+        "Fingerprint": "8f6f413ed07010b451f5cc758ca3aba8cba5f980832c4f077fb70e940ef683a1"
       }
     ]
   },
@@ -79,7 +79,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "d8ed28533d6af888ba65c72a76a22a9caff8b18c5749c02056aac6fd3b4cc3ef"
+        "Fingerprint": "18fa59e7d1fa3cf84fba8cd0f8fd6599303dec8f77fe135eaa3899cd8f8ace38"
       },
       {
         "AttemptNumber": 2,
@@ -90,7 +90,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "612945b86a9a7eb5e0c596a8b32d59392e455ac119820f825430ed7b59ed1935"
+        "Fingerprint": "42f1b3ccaddd8a7e3c5427ad5b7b287d6fb05f1de50cff15ec4756e6f5bc524b"
       },
       {
         "AttemptNumber": 3,
@@ -101,7 +101,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "83555f3436071aeb93cea72674c30ac2d53c808da71ac018dafdec875500b958"
+        "Fingerprint": "78507b365db7fac91675421c492d02cbba0e71aac525f7e97a807016ce74ac3c"
       }
     ]
   },
@@ -132,7 +132,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "147b9d91b73437438ab151b12543d03dfd0b25c16f424a1631ea2352be3d1eb3"
+        "Fingerprint": "2a648b9110ca5e307c2ea4cb395f3b1108a57c52e45d93ea3ad6a9d30d64e8c3"
       },
       {
         "AttemptNumber": 2,
@@ -143,7 +143,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "ff8d7bd303ca550f504dd820814b964b7ebe64e8dc471c9ba88519c394b6e0f1"
+        "Fingerprint": "bc9d8f7c5d4b2f2f238b17bc3340c19fa1744180b4c363e8eb0a9b5fb6df09ba"
       },
       {
         "AttemptNumber": 3,
@@ -154,7 +154,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "7fc49447ebb99fb70bae7f653c9626ca96baf2dfc3d924c591e5051a578ab13b"
+        "Fingerprint": "9c9e90696ad24e7b66282b32da453def7dfe3f9924cac70eddb0379ab8debddd"
       }
     ]
   },
@@ -185,7 +185,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "dd8fbd0b6981a74557cb8dd5262d88bd978b93ed7f62b63ffc223eea560f623d"
+        "Fingerprint": "eb99a6949847324f3f0546829b0c19342453e6befcca63d1a614ab184ecf5aa3"
       },
       {
         "AttemptNumber": 2,
@@ -196,7 +196,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "342293085d337154cb50963c8e10302333e296c2f61ccce8e26220b0c5a85847"
+        "Fingerprint": "59ab5fa0df7acc534a9a80b7e47e533859ad480d3205944b216ce5fec5ee4c91"
       },
       {
         "AttemptNumber": 3,
@@ -207,7 +207,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "e7cd017a9e9f48af819d7df2328a1624e0af281c088a6aac54871d4236b9c635"
+        "Fingerprint": "b701c5a4a1a1f4d535894bb806e8f051ec2922368b734fbfdbbbf14989c2ace8"
       }
     ]
   },
@@ -238,7 +238,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "3d5a9d6c6cd6bcfc2d48a3544eba67b2bf4e737595a77eb841a40f0a14a75343"
+        "Fingerprint": "7279ba7d049d29aea664823f3afce5a6673f877e59706ee7d8c4128cd55a4302"
       },
       {
         "AttemptNumber": 2,
@@ -249,7 +249,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "8222f3de17ad6984c91c8548a2427c1022f76734352263a3a5a9d27e64c1292c"
+        "Fingerprint": "aee0ea5d36328dc2a79269e2305056929b191aee179040140c88d697702c09af"
       },
       {
         "AttemptNumber": 3,
@@ -260,7 +260,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "7e181a293ab83fa942dc3aa68663d0ff0fc6bfa809e4686dbb9cdbb610cd4aae"
+        "Fingerprint": "032ec7bed0afaf972f2419823d7b6ca717ecf39ff4b742d7f1919c7ef3b423a6"
       }
     ]
   },
@@ -291,7 +291,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "67e6f25401928665a9894bd3731117e0593317d929cbe748b9fe790462130922"
+        "Fingerprint": "59da148f6af7382698e24ebd1eded49a7cc7e53a842793c45496dfe59331aaae"
       },
       {
         "AttemptNumber": 2,
@@ -302,7 +302,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "c53fe95fe3abb2268c2c4a2fa019208ce283a277f165062b91f9b752023043b0"
+        "Fingerprint": "ddf74ff711ef5531bed1c06c566122a56a02be0a5ee2d9c450e1b71261424d39"
       },
       {
         "AttemptNumber": 3,
@@ -313,7 +313,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "7f3f8e9e39cdbe72f3caa32b0897b5f6184f693f49cb673b7cbcb92cf8876e1a"
+        "Fingerprint": "31730258dd6d14f1dd4508cf5c61bed89c529c0efe70b09067b4dcaa69e3e52c"
       }
     ]
   },
@@ -343,7 +343,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "f8b1c497c72ba443c9ee1911a14d173ca581c754737cf0ff8b176131141ab684"
+        "Fingerprint": "dc82bbe74386d3d3e756c19e33664aa846c8c3f16e9a1c2c7ba0d6a6c4160287"
       },
       {
         "AttemptNumber": 2,
@@ -354,7 +354,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "1ff4a5436563dbc0b5768a3955f209e4cce75ff95e26d8cfeda9a5025e51984e"
+        "Fingerprint": "900d753612d693c1551027b2bc9e8c398b5bcab70b03ce64fae868a558fa57b7"
       },
       {
         "AttemptNumber": 3,
@@ -365,7 +365,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "6b20d638e4762387920e82ef3bf9b7b73cea557d53df7a01557733846a42ccdd"
+        "Fingerprint": "ba78d3fd4492cb1ba2b865166176e2e21b39c26cffac2df2e2ded6d9bf5d9085"
       }
     ]
   },
@@ -395,7 +395,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "60ef578110a969dc3435778424f872be2dfc83f11b36ce15dd5feeebeedf3523"
+        "Fingerprint": "3718adb065815198f0cfa91806b165807bafbf9bcc52962e704dba211a7a2b17"
       },
       {
         "AttemptNumber": 2,
@@ -406,7 +406,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "93832c28e64e2633c45d126d2f3d61e19d5c141d06f1a67a34c90067ef265c5f"
+        "Fingerprint": "aa0245a193af955f333acd64ac62273f0befa902258bd831aa46169becd233c9"
       },
       {
         "AttemptNumber": 3,
@@ -417,7 +417,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "6634406f6ed38ca17e1e8e8edbb0909e6dac1b97fcf7428d995b763c70c6dfec"
+        "Fingerprint": "886740c13a80cbf147555020a9a9a0147a1ba6a56b45398e713db26adca7d1ee"
       }
     ]
   },
@@ -448,7 +448,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "a4102a988e22af44a27f4f04690f7730d5aa32bcaef64962a59852b709f79a6c"
+        "Fingerprint": "772e7492741021acb436b059f8fc5baca4b124597dd34291d47a1bc7bc364b9d"
       },
       {
         "AttemptNumber": 2,
@@ -459,7 +459,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "1d9ce2eb7c40b1388b9dec1cf2dcbfce1ec622269e9541564f3b347ac892e0a5"
+        "Fingerprint": "7e88c2d2f033fcaa70f97df431f8d80d1fba6b062eb1bc85e98e642b287139d7"
       },
       {
         "AttemptNumber": 3,
@@ -470,7 +470,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "a0b9d9d1b188c4918a137aea82bb9e2bdba881e29f00f7d416c2f058d20b1690"
+        "Fingerprint": "605545b755e030a5f47102ffe9ca8a39cd65b272a4a51ffe48fb0ba7bfe41565"
       }
     ]
   },
@@ -501,7 +501,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "5c8770b816fe975765b10d42ccd8aa445a00b0f2f939e320ca96f9816cec702c"
+        "Fingerprint": "51f1935d9bd17aa9f227261ff28bde91c185e15edd66f490408e2a6362e04d67"
       },
       {
         "AttemptNumber": 2,
@@ -512,7 +512,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "950966db2da59e2d49e4d7962558e0ff8b99a584968aa3ca6b3c680b080790b1"
+        "Fingerprint": "95bd99ac0342426513773c3337a74624d8313a17c3890970525d65b3272adb9a"
       },
       {
         "AttemptNumber": 3,
@@ -523,7 +523,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "13086f28c1f9953355b9be04d519abc999901d8652d70bd236d6cefca2f518d1"
+        "Fingerprint": "7811f0c36d74f3890c8278aa142bc38508a43a90472ff8f8605d6e9fa4b8cc56"
       }
     ]
   },
@@ -554,7 +554,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "09ba91592c6cbfc83ecbe6ac01c49a90893d66120ee80c1d420fd0bed332aca9"
+        "Fingerprint": "f1b91731a16f62f56637fde8a9059820a2ff377ad62b7d4e8c326f257e5ed00e"
       },
       {
         "AttemptNumber": 2,
@@ -565,7 +565,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "bfaea0f57838b23b6bfe3eeb0d715bfb00d7c33fa622dfbd3981ffec5485e1ce"
+        "Fingerprint": "4580e86d92a1ebefd8bc5c3db4bd8ae30a8f6db6d255377f4710b18d93ffe445"
       },
       {
         "AttemptNumber": 3,
@@ -576,7 +576,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "248abaec0f82589942bdadd46d4844f65e4c0eecea873bab92ed2373962f974b"
+        "Fingerprint": "7a3845b43cf82bc04d639ac13471241bd35cd1c39561ffe6ce9ce75697c6aa5d"
       }
     ]
   },
@@ -607,7 +607,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "037bd99a827345d5fb2fb38df2b5b656fe99b6da2701c7fd54bc925c5be2e245"
+        "Fingerprint": "a6d27463da6b5da06eeb13abc2431410354385ef7a1e86318e6a7759ac58f95b"
       },
       {
         "AttemptNumber": 2,
@@ -618,7 +618,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "8cb3765c08fb136423a4ba026d7e77f6790f8078b06fea76f6739e7103143cf3"
+        "Fingerprint": "59712ee0510a94dfb43b10867c4d6d55bd4f299eb0cab02bdff73d89681b32d2"
       },
       {
         "AttemptNumber": 3,
@@ -629,7 +629,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "e086a521353ff7f3cc312b1066d6b41128d04a3118ee7763727b434ba8436abf"
+        "Fingerprint": "318dc2c810088727ceacc854fc530456e1e800251b007a2d6d3f8e3b5ca6a215"
       }
     ]
   },
@@ -660,7 +660,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "a6a69fc57630e03112e605241319f71c19ffb8063d8b9d2d7231e369588f22d2"
+        "Fingerprint": "ee9976b25c2e01ea162727c494dbd1906548f3e32bf08e767530ed2b6735ba4b"
       },
       {
         "AttemptNumber": 2,
@@ -671,7 +671,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "1b4c016bb845dd7cb0f0bf43ae2b90f7f401d1c91ccae61a5af7e59155df85fb"
+        "Fingerprint": "8eb3a11d816550d3e0a22c8696c25021db8d09c6b8b3bb24f0ef027c019c13a8"
       },
       {
         "AttemptNumber": 3,
@@ -682,7 +682,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "93e98f6e1d9951a17a3f7374e44aebbb56d37e32fe397349dd16a2b545c7d5b9"
+        "Fingerprint": "a95c0dce61f3ee0c9f1c0e4d2da0a553ab42c2a9f46d433eb83195e90e9e61ee"
       }
     ]
   },
@@ -713,7 +713,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "5036fe95c72b4337fce78c97c4316fec56c2700119816373bd123075a2bdb982"
+        "Fingerprint": "a3dd3589030cb30e2a197dd2feeab5b7a397345bfa9028c558d453cbd2f5cca7"
       },
       {
         "AttemptNumber": 2,
@@ -724,7 +724,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "878a67ecf16d43de7ed57c15c6c7b352c590325101046c2b92e587f6287dabd7"
+        "Fingerprint": "30acf4d7d1b0250ad6d719e6ed97a9df378e40d0a45659cc0f23f4d4e41f07eb"
       },
       {
         "AttemptNumber": 3,
@@ -735,7 +735,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "209f0be9534a575be2d7e82a0c7e13cf0e294eb4a30450ac9dbb26b8a8142fe0"
+        "Fingerprint": "ae80cf00e00a830ae35b35e742573231b6ee1df624b634b2de148c2112b68c56"
       }
     ]
   },
@@ -765,7 +765,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "47025bce8c8a4beb4acd8a701bb62df5332fa3cc4b3019a3ac4d5291b58957f5"
+        "Fingerprint": "8b5d4da8ab4db840f8199db49823c22875b24c04989007767e60ec8ea79ac505"
       },
       {
         "AttemptNumber": 2,
@@ -776,7 +776,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "f685c77a1160e4ca8d83295b8845be152f326e34e84e76573f16f2701653929d"
+        "Fingerprint": "7f8e60d98bc453a3e68462a2dafb5775d98ed1dd9df6f4b5a604f9775feaa4d5"
       },
       {
         "AttemptNumber": 3,
@@ -787,7 +787,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "9a2c6ef26a17800bd45d65d18d7437851197f16c2ff2fe152422406e844784c3"
+        "Fingerprint": "4a669e840a8bbe47c6cbe759bf338cc67ae40fc301c331ff7c835aa94cea9e09"
       }
     ]
   },
@@ -817,7 +817,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "ba4fea39f7046d4a517a885ac35c18042073a4b04ec10511b2ca161eac32190f"
+        "Fingerprint": "9154a52dc54a1582adc46bef7495b813733b1cc0d6f9eb50201f872d271af61c"
       },
       {
         "AttemptNumber": 2,
@@ -828,7 +828,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "570afc12295984e7c3b1924c9a6b1aab49081fd4e2c07f2ffc859c393ee970eb"
+        "Fingerprint": "1872a68ae51300f1c36f4e138ecdebbddbab3e7279ab405bacb1a1806e8428f9"
       },
       {
         "AttemptNumber": 3,
@@ -839,7 +839,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "6ee739013fa68512249e169fda4eb5ada722ccdff3e7aa5211ab59899bc8b164"
+        "Fingerprint": "eb85609e471528647db11017a754cd3e8ab7b7be7b43fddfc46a19569722d7dd"
       }
     ]
   },
@@ -870,7 +870,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "f91a689d4bd5d87c9400807b6a172516f55e9faf0ee8bdb0dce010e73db6f4f3"
+        "Fingerprint": "638c420141d5173dbcfe03a27c1f980d29e7e210a39deeff283400f01caf3c6a"
       },
       {
         "AttemptNumber": 2,
@@ -881,7 +881,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "dda5deb52a628f89d068be540fe46ad35dad38578d5f3bd977be300d9d5319ba"
+        "Fingerprint": "31473ee5c882435cd49c4a95994a3aba883709127b2147cc15807e8c71eb0551"
       },
       {
         "AttemptNumber": 3,
@@ -892,7 +892,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "edc5f3cb1d06cc4c24c540b88b7cc9d5dcfdd25ebe9ea43b8464f68c1a238228"
+        "Fingerprint": "12a052566b4b7a23aa4ada977f11035feec15e2251f3a0bc436ea689dd659c4d"
       }
     ]
   },
@@ -923,7 +923,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "b782721e639de8df462e332e76d55b461684cc0f705d4cab5dbeb44b15583bcf"
+        "Fingerprint": "8d93ccd07b21188b01f37d5804a0a64c9d53e47c07dfec738b52b39de5b6e851"
       },
       {
         "AttemptNumber": 2,
@@ -934,7 +934,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "022c632bbc3f6c07b3d6b6fee0a0b0cecb844514f4b54ddcc4821447a2d1d319"
+        "Fingerprint": "8f35af3a0fe089bb3ffc9ee463310b9e2c02683ec81d0b81f840aed879f533dd"
       },
       {
         "AttemptNumber": 3,
@@ -945,7 +945,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "230e8fa39f1a2f31d748f282f04414c01ee96dab473be0b290c4b29a7ae50564"
+        "Fingerprint": "c441f8f6e6d2432c39e349aa5c279f56908395d9f08d30bb09363d80c4907802"
       }
     ]
   },
@@ -976,7 +976,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "973027fadf327bd92d8be67b3e39253755aa207ccc255e302f13e18feb23e354"
+        "Fingerprint": "d5a8d4f65aee13249a4d52cd0056624e94f19bd2484f5ff6f1f572439389f6ac"
       },
       {
         "AttemptNumber": 2,
@@ -987,7 +987,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "f8fe13a995bb6c443d779596e691feec17b73c7918df1d7ddb1b7a471e22a0c2"
+        "Fingerprint": "b5a26490455235059d86bc9213ecdfd41244b65a8e348af3df3ce6fc6b9a21e5"
       },
       {
         "AttemptNumber": 3,
@@ -998,7 +998,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "82a49a27664f284ddf07fc061249396b27f1e2f99ff7b94da5fb3e28beb0d112"
+        "Fingerprint": "527b89fbcba9aee9e93dda8a00173640629b96491edadec07b67e5517ce9e8e1"
       }
     ]
   },
@@ -1029,7 +1029,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "c0d684a086cee24b24bbf3ec9b58c739eadce6e0f542a9c69803189b84a23997"
+        "Fingerprint": "0a726b421b27cdb1106d09477e71dd523acd789e999ca869bad379e8dc579ecd"
       },
       {
         "AttemptNumber": 2,
@@ -1040,7 +1040,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "f2caee4c4219823ab2a4b5592febb07731024cb641518899d5c88e90635dd046"
+        "Fingerprint": "43a9ace597ea8440993fcd6c137028d70906f298a3adfb1d295293ce7d1d2c9a"
       },
       {
         "AttemptNumber": 3,
@@ -1051,7 +1051,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "391326eed9d6c06d53777c63807d45d1096fb7ee4cb6d03ceff53ecaa56c57a6"
+        "Fingerprint": "73b74f0d98bf39c043074f5a45efd13d74b4111072b378cce355a33103e2478b"
       }
     ]
   },
@@ -1082,7 +1082,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "7513c4d677546db06d038b85d1c3f9472f41fdff1b8ca0a944b6439739efcc9f"
+        "Fingerprint": "2a2c98a966016e8ccefa5d37156abb0984fbbb93f690160f62213392c6664405"
       },
       {
         "AttemptNumber": 2,
@@ -1093,7 +1093,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "4aec92269d09450c0fa0f4ed4ca429bf6c6f44fb6678fa50c13c6db74d8205c8"
+        "Fingerprint": "4edd1993edb5c757df0205cefc38127b09b72649375bfa8d494eb1f9a8b58a58"
       },
       {
         "AttemptNumber": 3,
@@ -1104,7 +1104,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "ecf5e924cfefe63ac845d86834b1312bf97f353a9b7e46f675ead4eae8106065"
+        "Fingerprint": "0cf007bc8f0bb585e4ee6806ec63193d46b810f7e05f77d23c17bf9bacd1e003"
       }
     ]
   },
@@ -1134,7 +1134,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "b79f77bc6b0900bbff7dc1fdc5cad84869b909829fb073cd46221aadcb85935b"
+        "Fingerprint": "04dd287dcbf5152e3e6a075bb55beaa6584c11b6111b2ed8a765ef3f5a131c6e"
       },
       {
         "AttemptNumber": 2,
@@ -1145,7 +1145,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "dd6bc1265a3e226ed1b6f54a4c9ddf26091500f4e916614871f88a05d253753d"
+        "Fingerprint": "1cd765d3bb9294a2c10ae70c161c9cca9f1a96c84006027347ee70e8bb29e615"
       },
       {
         "AttemptNumber": 3,
@@ -1156,7 +1156,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "d6d20b207ed9481a7bb4f78e2de81036fd9e74a4c1d09c74b782255a6f7f317b"
+        "Fingerprint": "122afdf817f1e1eed63dbc2a08e66a1afea09bed882d470f3325649be8f1bebe"
       }
     ]
   },
@@ -1187,7 +1187,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "c50aa0d7a0cae3bee4408bddc06f08adb4cf63a2598e66af278961b7d3855f8f"
+        "Fingerprint": "685f8099bf17cd8b3565d93c150b2bed00dcc1f2f3f2f1718fcdf18fc224bafb"
       },
       {
         "AttemptNumber": 2,
@@ -1198,7 +1198,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "395170d27df7b87ffcd5c8c6dac1666549a0324b14a38dd15b0517a0bdb2a124"
+        "Fingerprint": "66e306d06dd79619f5d5ce49835714cefb39802c845a4eb0f23c1cc1a3030f05"
       },
       {
         "AttemptNumber": 3,
@@ -1209,7 +1209,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "7e1098822ce4f6e41a666321b769a89f1abf8f9a8a751cca0dfa15508df00406"
+        "Fingerprint": "c4ac0189c5e7bbd0f43153059306e44587933d88e153d36f4673ab5f815c20ac"
       }
     ]
   },
@@ -1240,7 +1240,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "51956712d0d10cda9a83519ff65c6de26880b36c373bf2e981aaadf84c6d3997"
+        "Fingerprint": "a315bf09782c3a3baef8e7ed6cd1f5dd75b2c574e287726e47542e01856097b2"
       },
       {
         "AttemptNumber": 2,
@@ -1251,7 +1251,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "758467dcec0f40a8afe11c3d712887e42057726e0bc203e0e6077e65a84b5fc7"
+        "Fingerprint": "36caaed57d2a9d68943b60274e147cb6b7154d9acaa45bb26e42ee717a3fa362"
       },
       {
         "AttemptNumber": 3,
@@ -1262,7 +1262,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "b79478a55914199c4eef879f6b1e788a0e87d471aea4041fe23cf65155ee1e7d"
+        "Fingerprint": "a4171b9a10b6581a7ec61ebb08ad155abfcd7f31a6814c1521b7f7203381b691"
       }
     ]
   }

@@ -220,10 +220,6 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 var (attemptProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
                     snapshot, mitigation, attempt, baseSeed);
 
-                var attemptFingerprint = DeterministicSeedDerivation.ComputeFingerprint(
-                    job.Id, snapshot.TurnId, snapshot.SceneRevision, attempt, derivedSeed, attemptProfile.ParametersJson ?? string.Empty);
-                lastAttemptFingerprint = attemptFingerprint;
-
                 // Derive attempt snapshot with adjusted profile and deterministic seed
                 var attemptSnapshot = snapshot with
                 {
@@ -232,6 +228,20 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
 
                 lastCompiledPrompt = _visualCompiler.CompileScenePrompt(attemptSnapshot);
                 var compiledNegative = _visualCompiler.CompileNegativePrompt(attemptSnapshot);
+
+                var attemptFingerprint = DeterministicSeedDerivation.ComputeFingerprint(
+                    jobId: job.Id,
+                    snapshotTurnId: snapshot.TurnId,
+                    sceneRevision: snapshot.SceneRevision,
+                    attemptNumber: attempt,
+                    derivedSeed: derivedSeed,
+                    parametersJson: attemptProfile.ParametersJson ?? string.Empty,
+                    workflow: "VisualIdentity",
+                    workflowVersion: 1,
+                    compiledPrompt: lastCompiledPrompt,
+                    compiledNegativePrompt: compiledNegative,
+                    previousReferenceUrl: resolvedPreviousSceneImageUrl);
+                lastAttemptFingerprint = attemptFingerprint;
 
                 // Database-enforced Idempotency & Crash-Safety: Check durable attempt ledger or existing artifact
                 var existingAttempt = await _dbContext.ImageGenerationAttempts
@@ -305,7 +315,16 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         }
                     );
 
-                    genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+                    try
+                    {
+                        genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        attemptRecord.MarkFailed(ex.Message, _dateTimeProvider.UtcNow);
+                        await _dbContext.SaveChangesAsync(ct);
+                        throw;
+                    }
 
                     if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
                     {
@@ -314,23 +333,35 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
                         throw new GpuNonTransientException("Image generation completed without producing an image URL.");
                     }
-
-                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow);
-                    await _dbContext.SaveChangesAsync(ct);
                 }
 
                 if (_qualityGuardPolicy.IsActive)
                 {
                     lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
-                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.FaceSimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow);
+                    
+                    if (lastEvaluation.Status == IdentityStatus.Passed)
+                    {
+                        attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow);
+                    }
+                    else if (lastEvaluation.Status == IdentityStatus.Degraded)
+                    {
+                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow);
+                    }
+                    else
+                    {
+                        var violationMsg = lastEvaluation.Violations.Count > 0
+                            ? string.Join("; ", lastEvaluation.Violations.Select(v => v.Code))
+                            : "Hard invariant violation";
+                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", _dateTimeProvider.UtcNow);
+                    }
                     await _dbContext.SaveChangesAsync(ct);
 
                     var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
 
                     if (nextAction == QualityMitigationAction.Pass)
                     {
-                        _logger.LogInformation("[IdentityGuardPassed] JobId={JobId}, Attempt={Attempt}/{MaxAttempts}, FaceSim={FaceSim:F4}, Status={Status}",
-                            job.Id, attempt, maxAttempts, lastEvaluation.FaceSimilarity, lastEvaluation.Status);
+                        _logger.LogInformation("[IdentityGuardPassed] JobId={JobId}, Attempt={Attempt}/{MaxAttempts}, IdentitySim={IdentitySim:F4}, Status={Status}",
+                            job.Id, attempt, maxAttempts, lastEvaluation.IdentitySimilarity, lastEvaluation.Status);
                         isIdentityPassed = true;
                         break;
                     }
@@ -343,13 +374,15 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     }
                     else
                     {
-                        _logger.LogWarning("[IdentityGuardDegraded] JobId={JobId}, Attempt={Attempt}/{MaxAttempts} degraded (FaceSim={FaceSim:F4}, Status={Status}). Triggering {NextAction}.",
-                            job.Id, attempt, maxAttempts, lastEvaluation.FaceSimilarity, lastEvaluation.Status, nextAction);
+                        _logger.LogWarning("[IdentityGuardDegraded] JobId={JobId}, Attempt={Attempt}/{MaxAttempts} degraded (IdentitySim={IdentitySim:F4}, Status={Status}). Triggering {NextAction}.",
+                            job.Id, attempt, maxAttempts, lastEvaluation.IdentitySimilarity, lastEvaluation.Status, nextAction);
                         attempt++;
                     }
                 }
                 else
                 {
+                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow);
+                    await _dbContext.SaveChangesAsync(ct);
                     isIdentityPassed = true;
                     break;
                 }

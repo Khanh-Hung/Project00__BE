@@ -23,7 +23,9 @@ public sealed class ImageGenerationAttempt : BaseEntity
     public string? ClaimedBy { get; private set; }
     public DateTime? StartedAt { get; private set; }
     public DateTime? LeaseUntil { get; private set; }
-    public float? FaceSimilarity { get; private set; }
+    public float? IdentitySimilarity { get; private set; }
+    /// <summary>Backwards-compatible alias for IdentitySimilarity.</summary>
+    public float? FaceSimilarity => IdentitySimilarity;
     public float? FeatureScore { get; private set; }
     public DateTime? CompletedAt { get; private set; }
     public string? ErrorMessage { get; private set; }
@@ -93,22 +95,22 @@ public sealed class ImageGenerationAttempt : BaseEntity
         }
     }
 
-    public void MarkSucceeded(string imageUrl, string? providerJobId, float? faceSim, float? featScore, DateTime completedAt)
+    public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
     {
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
-        FaceSimilarity = faceSim;
+        IdentitySimilarity = identitySimilarity;
         FeatureScore = featScore;
         Status = GenerationAttemptStatus.Succeeded;
         CompletedAt = completedAt;
         Touch();
     }
 
-    public void MarkDegraded(string imageUrl, string? providerJobId, float? faceSim, float? featScore, DateTime completedAt)
+    public void MarkDegraded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
     {
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
-        FaceSimilarity = faceSim;
+        IdentitySimilarity = identitySimilarity;
         FeatureScore = featScore;
         Status = GenerationAttemptStatus.Degraded;
         CompletedAt = completedAt;

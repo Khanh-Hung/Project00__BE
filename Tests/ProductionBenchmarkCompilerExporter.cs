@@ -333,7 +333,9 @@ public sealed class ProductionBenchmarkCompilerExporter
 
             // Attempt 1 (Standard)
             var (p1, s1) = IdentityMitigationProfileResolver.ResolveMitigation(dummySnapshot, QualityMitigationAction.Pass, 1, req.Seed);
-            var fp1 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, dummySnapshot.TurnId, req.Turn, 1, s1, p1.ParametersJson ?? string.Empty);
+            var fp1 = DeterministicSeedDerivation.ComputeFingerprint(
+                Guid.Empty, dummySnapshot.TurnId, req.Turn, 1, s1, p1.ParametersJson ?? string.Empty,
+                "VisualIdentity", 1, req.CompiledPrompt, req.CompiledNegative, null);
             turnPlan.Attempts.Add(new PR24AttemptPlan
             {
                 AttemptNumber = 1,
@@ -349,7 +351,9 @@ public sealed class ProductionBenchmarkCompilerExporter
 
             // Attempt 2 (Attenuated)
             var (p2, s2) = IdentityMitigationProfileResolver.ResolveMitigation(dummySnapshot, QualityMitigationAction.RetryAttenuated, 2, req.Seed);
-            var fp2 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, dummySnapshot.TurnId, req.Turn, 2, s2, p2.ParametersJson ?? string.Empty);
+            var fp2 = DeterministicSeedDerivation.ComputeFingerprint(
+                Guid.Empty, dummySnapshot.TurnId, req.Turn, 2, s2, p2.ParametersJson ?? string.Empty,
+                "VisualIdentity", 1, req.CompiledPrompt, req.CompiledNegative, null);
             turnPlan.Attempts.Add(new PR24AttemptPlan
             {
                 AttemptNumber = 2,
@@ -365,7 +369,9 @@ public sealed class ProductionBenchmarkCompilerExporter
 
             // Attempt 3 (Isolated)
             var (p3, s3) = IdentityMitigationProfileResolver.ResolveMitigation(dummySnapshot, QualityMitigationAction.RetryIsolated, 3, req.Seed);
-            var fp3 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, dummySnapshot.TurnId, req.Turn, 3, s3, p3.ParametersJson ?? string.Empty);
+            var fp3 = DeterministicSeedDerivation.ComputeFingerprint(
+                Guid.Empty, dummySnapshot.TurnId, req.Turn, 3, s3, p3.ParametersJson ?? string.Empty,
+                "VisualIdentity", 1, req.CompiledPrompt, req.CompiledNegative, null);
             turnPlan.Attempts.Add(new PR24AttemptPlan
             {
                 AttemptNumber = 3,

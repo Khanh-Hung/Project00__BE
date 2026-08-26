@@ -1,4 +1,4 @@
-﻿using Application.DTOs;
+using Application.DTOs;
 using Application.Interfaces;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -24,7 +24,7 @@ public sealed class DevelopmentPassThroughIdentityQualityEvaluator : IIdentityQu
         if (string.IsNullOrWhiteSpace(imageLocation))
         {
             return Task.FromResult(IdentityEvaluationResult.Fail(
-                faceSimilarity: 0.0f,
+                identitySimilarity: 0.0f,
                 featureScore: 0.0f,
                 overallScore: 0.0f,
                 violations: new[]
@@ -40,7 +40,7 @@ public sealed class DevelopmentPassThroughIdentityQualityEvaluator : IIdentityQu
 
         // Development baseline pass-through
         return Task.FromResult(IdentityEvaluationResult.Pass(
-            faceSimilarity: 0.85f,
+            identitySimilarity: 0.85f,
             featureScore: 0.90f,
             overallScore: 0.87f
         ));

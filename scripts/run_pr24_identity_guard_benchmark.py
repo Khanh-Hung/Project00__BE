@@ -208,7 +208,8 @@ def evaluate_frame_quality(img_path, avatar_path, char_name, turn_data):
 
     return {
         "status": status,
-        "face_similarity": float(face_sim),
+        "identity_similarity": float(face_sim),
+        "face_similarity": float(face_sim), # Backwards-compatible alias
         "feature_score": float(feat_score),
         "feature_passed": bool(feat_pass),
         "invariant_violated": bool(inv_violated),
@@ -517,10 +518,10 @@ def run_benchmark(max_turns=4, mode_filter=None):
     action_m1 = np.mean([c["action_margin"] for c in m1["characters"].values()])
     action_m2 = np.mean([c["action_margin"] for c in m2["characters"].values()])
 
-    print(f"{'Mean Face Similarity':<32} | {avg_face_m1:<22.4f} | {avg_face_m2:<18.4f}", flush=True)
-    print(f"{'Median Face Similarity':<32} | {median_m1:<22.4f} | {median_m2:<18.4f}", flush=True)
-    print(f"{'P10 Face Similarity':<32} | {p10_m1:<22.4f} | {p10_m2:<18.4f}", flush=True)
-    print(f"{'Worst Face Score (Floor)':<32} | {worst_id_m1:<22.4f} | {worst_id_m2:<18.4f}", flush=True)
+    print(f"{'Mean Identity Similarity (CLIP)':<32} | {avg_face_m1:<22.4f} | {avg_face_m2:<18.4f}", flush=True)
+    print(f"{'Median Identity Similarity':<32} | {median_m1:<22.4f} | {median_m2:<18.4f}", flush=True)
+    print(f"{'P10 Identity Floor':<32} | {p10_m1:<22.4f} | {p10_m2:<18.4f}", flush=True)
+    print(f"{'Worst Identity Floor':<32} | {worst_id_m1:<22.4f} | {worst_id_m2:<18.4f}", flush=True)
     print(f"{'Mean Feature Retention':<32} | {avg_feat_m1:<22.4f} | {avg_feat_m2:<18.4f}", flush=True)
     print(f"{'Guard Gate Passed (>=0.72)':<32} | {f'{passed_guard_m1}/{len(all_turns_m1)}':<22} | {f'{passed_guard_m2}/{len(all_turns_m2)}':<18}", flush=True)
     print(f"{'Eval Target Passed (>=0.75)':<32} | {f'{passed_eval_m1}/{len(all_turns_m1)}':<22} | {f'{passed_eval_m2}/{len(all_turns_m2)}':<18}", flush=True)

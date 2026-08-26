@@ -8,7 +8,7 @@ using Microsoft.Extensions.Configuration;
 namespace Application.Services;
 
 /// <summary>
-/// Policy governing identity quality thresholds and bounded mitigation escalation.
+/// Policy governing visual identity quality thresholds and bounded mitigation escalation.
 /// Decides high-level mitigation action (Pass, RetryAttenuated, RetryIsolated, RejectDegraded)
 /// without constructing workflow profiles or knowing about low-level model nodes.
 /// </summary>
@@ -16,34 +16,58 @@ public sealed record IdentityQualityGuardPolicy
 {
     public const int MaxAllowedAttempts = 3;
 
-    public float MinAcceptableFaceSimilarity { get; init; } = 0.75f;
+    /// <summary>
+    /// Minimum acceptable whole-image CLIP identity similarity proxy score between generated frame and canonical avatar.
+    /// </summary>
+    public float MinAcceptableIdentitySimilarity { get; init; } = 0.75f;
+
+    /// <summary>Backwards-compatible alias for MinAcceptableIdentitySimilarity.</summary>
+    public float MinAcceptableFaceSimilarity => MinAcceptableIdentitySimilarity;
+
     public float MinAcceptableFeatureScore { get; init; } = 0.50f;
     public int MaxAttempts { get; init; } = 3;
     public bool IsActive { get; init; } = true;
 
+    /// <summary>
+    /// Configured evaluator type (e.g. "DevelopmentStub", "Http", "None").
+    /// </summary>
+    public string EvaluatorType { get; init; } = "DevelopmentStub";
+
+    /// <summary>
+    /// Explicit opt-in allowing development passthrough stub in Production environments.
+    /// Default is false, ensuring fail-fast startup if QualityGuard is active without real evaluator.
+    /// </summary>
+    public bool AllowStubEvaluatorInProduction { get; init; } = false;
+
     public IdentityQualityGuardPolicy(
-        float MinAcceptableFaceSimilarity = 0.75f,
+        float MinAcceptableIdentitySimilarity = 0.75f,
         float MinAcceptableFeatureScore = 0.50f,
         int MaxAttempts = 3,
-        bool IsActive = true)
+        bool IsActive = true,
+        string EvaluatorType = "DevelopmentStub",
+        bool AllowStubEvaluatorInProduction = false,
+        float? MinAcceptableFaceSimilarity = null)
     {
+        float minIdentity = MinAcceptableFaceSimilarity ?? MinAcceptableIdentitySimilarity;
         if (MaxAttempts < 1 || MaxAttempts > MaxAllowedAttempts)
         {
             throw new ArgumentOutOfRangeException(nameof(MaxAttempts), $"MaxAttempts must be between 1 and {MaxAllowedAttempts}, but got {MaxAttempts}.");
         }
-        if (MinAcceptableFaceSimilarity < 0.0f || MinAcceptableFaceSimilarity > 1.0f)
+        if (minIdentity < 0.0f || minIdentity > 1.0f)
         {
-            throw new ArgumentOutOfRangeException(nameof(MinAcceptableFaceSimilarity), "MinAcceptableFaceSimilarity must be between 0.0 and 1.0.");
+            throw new ArgumentOutOfRangeException(nameof(MinAcceptableIdentitySimilarity), "MinAcceptableIdentitySimilarity must be between 0.0 and 1.0.");
         }
         if (MinAcceptableFeatureScore < 0.0f || MinAcceptableFeatureScore > 1.0f)
         {
             throw new ArgumentOutOfRangeException(nameof(MinAcceptableFeatureScore), "MinAcceptableFeatureScore must be between 0.0 and 1.0.");
         }
 
-        this.MinAcceptableFaceSimilarity = MinAcceptableFaceSimilarity;
+        this.MinAcceptableIdentitySimilarity = minIdentity;
         this.MinAcceptableFeatureScore = MinAcceptableFeatureScore;
         this.MaxAttempts = MaxAttempts;
         this.IsActive = IsActive;
+        this.EvaluatorType = string.IsNullOrWhiteSpace(EvaluatorType) ? "DevelopmentStub" : EvaluatorType;
+        this.AllowStubEvaluatorInProduction = AllowStubEvaluatorInProduction;
     }
 
     public static readonly IdentityQualityGuardPolicy Default = new();
@@ -52,8 +76,9 @@ public sealed record IdentityQualityGuardPolicy
     {
         if (configuration == null) return Default;
 
-        var minFaceStr = configuration["AiProviders:ImageGeneration:QualityGuard:MinFaceSimilarity"];
-        float minFace = ParseValidatedFloat("QualityGuard:MinFaceSimilarity", minFaceStr, Default.MinAcceptableFaceSimilarity);
+        var minIdentityStr = configuration["AiProviders:ImageGeneration:QualityGuard:MinIdentitySimilarity"]
+            ?? configuration["AiProviders:ImageGeneration:QualityGuard:MinFaceSimilarity"];
+        float minIdentity = ParseValidatedFloat("QualityGuard:MinIdentitySimilarity", minIdentityStr, Default.MinAcceptableIdentitySimilarity);
 
         var minFeatStr = configuration["AiProviders:ImageGeneration:QualityGuard:MinFeatureScore"];
         float minFeat = ParseValidatedFloat("QualityGuard:MinFeatureScore", minFeatStr, Default.MinAcceptableFeatureScore);
@@ -65,11 +90,18 @@ public sealed record IdentityQualityGuardPolicy
             ?? configuration["AiProviders:ImageGeneration:QualityGuard:IsActive"];
         bool active = ParseValidatedBool("QualityGuard:Enabled", activeStr, Default.IsActive);
 
+        var evaluatorTypeStr = configuration["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] ?? Default.EvaluatorType;
+
+        var allowStubProdStr = configuration["AiProviders:ImageGeneration:QualityGuard:AllowStubEvaluatorInProduction"];
+        bool allowStubProd = ParseValidatedBool("QualityGuard:AllowStubEvaluatorInProduction", allowStubProdStr, Default.AllowStubEvaluatorInProduction);
+
         return new IdentityQualityGuardPolicy(
-            MinAcceptableFaceSimilarity: minFace,
+            MinAcceptableIdentitySimilarity: minIdentity,
             MinAcceptableFeatureScore: minFeat,
             MaxAttempts: maxAttempts,
-            IsActive: active
+            IsActive: active,
+            EvaluatorType: evaluatorTypeStr,
+            AllowStubEvaluatorInProduction: allowStubProd
         );
     }
 
@@ -124,7 +156,7 @@ public sealed record IdentityQualityGuardPolicy
                 return QualityMitigationAction.RetryIsolated;
             }
 
-            // Minor face/feature degradation on attempt 1 -> attenuate Slot 2
+            // Minor identity/feature degradation on attempt 1 -> attenuate Slot 2
             return QualityMitigationAction.RetryAttenuated;
         }
 
@@ -132,7 +164,7 @@ public sealed record IdentityQualityGuardPolicy
         return QualityMitigationAction.RetryIsolated;
     }
 
-    public IdentityStatus EvaluateStatus(float faceSimilarity, float featureScore, bool invariantViolated, out List<IdentityViolation> violations)
+    public IdentityStatus EvaluateStatus(float identitySimilarity, float featureScore, bool invariantViolated, out List<IdentityViolation> violations)
     {
         violations = new List<IdentityViolation>();
 
@@ -146,12 +178,12 @@ public sealed record IdentityQualityGuardPolicy
             return IdentityStatus.Failed;
         }
 
-        if (faceSimilarity < MinAcceptableFaceSimilarity)
+        if (identitySimilarity < MinAcceptableIdentitySimilarity)
         {
             violations.Add(new IdentityViolation(
                 ReferenceAuthorityScope.CanonicalIdentity,
-                "FACE_SIMILARITY_DEGRADED",
-                $"Face similarity ({faceSimilarity:F4}) fell below threshold ({MinAcceptableFaceSimilarity:F4}).",
+                "IDENTITY_SIMILARITY_DEGRADED",
+                $"Canonical identity similarity ({identitySimilarity:F4}) fell below threshold ({MinAcceptableIdentitySimilarity:F4}).",
                 IsCritical: false));
         }
 

@@ -524,7 +524,10 @@ public sealed class IdentityQualityGuardTests
         );
 
         // Compute expected attempt 1 fingerprint using the job's actual Id
-        var fp = DeterministicSeedDerivation.ComputeFingerprint(job.Id, turnId, 1, 1, 100000L, snapshot.GenerationProfile.ParametersJson ?? string.Empty);
+        var fp = DeterministicSeedDerivation.ComputeFingerprint(
+            job.Id, turnId, 1, 1, 100000L, snapshot.GenerationProfile.ParametersJson ?? string.Empty,
+            "VisualIdentity", 1,
+            compiler.CompileScenePrompt(snapshot), compiler.CompileNegativePrompt(snapshot), null);
 
         // Seed an active running attempt owned by worker-A with a valid lease
         var activeAttempt = new ImageGenerationAttempt(
@@ -560,6 +563,224 @@ public sealed class IdentityQualityGuardTests
     }
 
     [Fact]
+    public void DeterministicSeedDerivation_Fingerprint_SensitiveToPrompt_Negative_Workflow_And_Reference()
+    {
+        var jobId = Guid.NewGuid();
+        var snapshotId = Guid.NewGuid();
+
+        var fpBase = DeterministicSeedDerivation.ComputeFingerprint(
+            jobId, snapshotId, 1, 1, 12345L, "{\"weight\":0.12}",
+            "VisualIdentity", 1, "prompt A", "neg A", "https://cdn/ref.png");
+
+        var fpSame = DeterministicSeedDerivation.ComputeFingerprint(
+            jobId, snapshotId, 1, 1, 12345L, "{\"weight\":0.12}",
+            "VisualIdentity", 1, "prompt A", "neg A", "https://cdn/ref.png");
+
+        var fpDiffPrompt = DeterministicSeedDerivation.ComputeFingerprint(
+            jobId, snapshotId, 1, 1, 12345L, "{\"weight\":0.12}",
+            "VisualIdentity", 1, "prompt B", "neg A", "https://cdn/ref.png");
+
+        var fpDiffNegative = DeterministicSeedDerivation.ComputeFingerprint(
+            jobId, snapshotId, 1, 1, 12345L, "{\"weight\":0.12}",
+            "VisualIdentity", 1, "prompt A", "neg B", "https://cdn/ref.png");
+
+        var fpDiffRef = DeterministicSeedDerivation.ComputeFingerprint(
+            jobId, snapshotId, 1, 1, 12345L, "{\"weight\":0.12}",
+            "VisualIdentity", 1, "prompt A", "neg A", "https://cdn/ref_diff.png");
+
+        var fpDiffWorkflow = DeterministicSeedDerivation.ComputeFingerprint(
+            jobId, snapshotId, 1, 1, 12345L, "{\"weight\":0.12}",
+            "VisualContinuity", 2, "prompt A", "neg A", "https://cdn/ref.png");
+
+        Assert.Equal(fpBase, fpSame);
+        Assert.NotEqual(fpBase, fpDiffPrompt);
+        Assert.NotEqual(fpBase, fpDiffNegative);
+        Assert.NotEqual(fpBase, fpDiffRef);
+        Assert.NotEqual(fpBase, fpDiffWorkflow);
+    }
+
+    [Fact]
+    public void DependencyInjection_WhenQualityGuardEnabledInProduction_WithStubEvaluator_ThrowsInvalidOperationException()
+    {
+        var inMemorySettings = new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
+            ["AiProviders:ImageGeneration:QualityGuard:AllowStubEvaluatorInProduction"] = "false",
+            ["AiProviders:ImageProvider"] = "ComfyUI"
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemorySettings).Build();
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            Infrastructure.DependencyInjection.AddInfrastructure(services, configuration));
+
+        Assert.Contains("CRITICAL STARTUP CONFIGURATION ERROR", ex.Message);
+        Assert.Contains("Production requires a genuine evaluator implementation", ex.Message);
+    }
+
+    [Fact]
+    public void DependencyInjection_WhenQualityGuardEnabledInProduction_WithExplicitAllowStubOptIn_Succeeds()
+    {
+        var inMemorySettings = new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
+            ["AiProviders:ImageGeneration:QualityGuard:AllowStubEvaluatorInProduction"] = "true",
+            ["AiProviders:ImageProvider"] = "ComfyUI"
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemorySettings).Build();
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+
+        var result = Infrastructure.DependencyInjection.AddInfrastructure(services, configuration);
+        Assert.NotNull(result);
+    }
+
+    [Fact]
+    public async Task ImageGenerationJobHandler_WhenAttempt1DegradedAndAttempt2Passes_RecordsDegradedForAttempt1AndSucceededForAttempt2()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var compiler = new FakePromptCompiler("1man knight", "1girl");
+        var imageService = new FakeImageService();
+        var evaluator = new SequenceEvaluator(new[]
+        {
+            IdentityEvaluationResult.Degrade(0.65f, 0.80f, 0.72f, new[] {
+                new IdentityViolation(ReferenceAuthorityScope.CanonicalIdentity, "IDENTITY_SIMILARITY_DEGRADED", "Degraded face", false)
+            }),
+            IdentityEvaluationResult.Pass(0.85f, 0.90f, 0.87f)
+        });
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
+
+        var handler = new ImageGenerationJobHandler(
+            dbContext: db,
+            visualCompiler: compiler,
+            imageService: imageService,
+            logger: NullLogger<ImageGenerationJobHandler>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: evaluator,
+            qualityGuardPolicy: policy
+        );
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var result = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.Equal(2, imageService.CallCount);
+
+        var attempts = await db.ImageGenerationAttempts.OrderBy(a => a.AttemptNumber).ToListAsync();
+        Assert.Equal(2, attempts.Count);
+
+        // Attempt 1 must be Degraded!
+        Assert.Equal(1, attempts[0].AttemptNumber);
+        Assert.Equal(GenerationAttemptStatus.Degraded, attempts[0].Status);
+        Assert.Equal(0.65f, attempts[0].IdentitySimilarity);
+
+        // Attempt 2 must be Succeeded!
+        Assert.Equal(2, attempts[1].AttemptNumber);
+        Assert.Equal(GenerationAttemptStatus.Succeeded, attempts[1].Status);
+        Assert.Equal(0.85f, attempts[1].IdentitySimilarity);
+
+        var sceneImage = await db.SceneImages.FirstOrDefaultAsync();
+        Assert.NotNull(sceneImage);
+        Assert.True(sceneImage.IsCurrent);
+    }
+
+    [Fact]
+    public async Task ImageGenerationJobHandler_WhenAllAttemptsExhausted_RecordsDegradedForEachAttemptAndQuarantinesSceneImage()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var compiler = new FakePromptCompiler("1man knight", "1girl");
+        var imageService = new FakeImageService();
+        var evaluator = new SequenceEvaluator(new[]
+        {
+            IdentityEvaluationResult.Degrade(0.60f, 0.40f, 0.50f, new[] {
+                new IdentityViolation(ReferenceAuthorityScope.CanonicalIdentity, "IDENTITY_SIMILARITY_DEGRADED", "Bad sim", false)
+            })
+        });
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
+
+        var handler = new ImageGenerationJobHandler(
+            dbContext: db,
+            visualCompiler: compiler,
+            imageService: imageService,
+            logger: NullLogger<ImageGenerationJobHandler>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: evaluator,
+            qualityGuardPolicy: policy
+        );
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var result = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.Equal(3, imageService.CallCount);
+
+        var attempts = await db.ImageGenerationAttempts.OrderBy(a => a.AttemptNumber).ToListAsync();
+        Assert.Equal(3, attempts.Count);
+
+        foreach (var att in attempts)
+        {
+            Assert.Equal(GenerationAttemptStatus.Degraded, att.Status);
+        }
+
+        var sceneImage = await db.SceneImages.FirstOrDefaultAsync();
+        Assert.NotNull(sceneImage);
+        Assert.False(sceneImage.IsCurrent); // Quarantined from continuity lineage!
+    }
+
+    [Fact]
     public async Task ImageGenerationJobHandler_CrashRecovery_ReusesDurableAttemptLedgerWithoutCallingGpu()
     {
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
@@ -573,7 +794,7 @@ public sealed class IdentityQualityGuardTests
         {
             IdentityEvaluationResult.Pass(0.85f, 0.90f, 0.87f)
         });
-        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MaxAttempts: 3);
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
         var handler = new ImageGenerationJobHandler(
             dbContext: db,
