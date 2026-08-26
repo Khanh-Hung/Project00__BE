@@ -243,7 +243,38 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     previousReferenceUrl: resolvedPreviousSceneImageUrl);
                 lastAttemptFingerprint = attemptFingerprint;
 
-                // Database-enforced Idempotency & Crash-Safety: Check durable attempt ledger or existing artifact
+                // Database-enforced Idempotency & Crash-Safety: Check existing artifact or durable attempt ledger
+                var existingFingerprintArtifact = await _dbContext.SceneImages
+                    .FirstOrDefaultAsync(img => img.GenerationFingerprint == attemptFingerprint, ct);
+
+                if (existingFingerprintArtifact != null)
+                {
+                    _logger.LogInformation("[SceneGenerationArtifactReused] Existing artifact {ArtifactId} already committed for fingerprint {Fingerprint}. Skipping generation & duplicate insertion.",
+                        existingFingerprintArtifact.Id, attemptFingerprint);
+
+                    if (job.Status != ImageJobStatus.Completed)
+                    {
+                        var liveTime = _dateTimeProvider.UtcNow;
+                        if (_dbContext.Database.IsRelational())
+                        {
+                            await _dbContext.ImageGenerationJobs
+                                .Where(j => j.Id == job.Id && j.Status != ImageJobStatus.Completed)
+                                .ExecuteUpdateAsync(s => s
+                                    .SetProperty(j => j.Status, ImageJobStatus.Completed)
+                                    .SetProperty(j => j.CompletedAt, liveTime)
+                                    .SetProperty(j => j.UpdatedAt, liveTime), ct);
+                        }
+                        else
+                        {
+                            job.MarkCompleted(liveTime, null);
+                            await _dbContext.SaveChangesAsync(ct);
+                        }
+                    }
+
+                    stopwatch.Stop();
+                    return new JobExecutionResult(JobExecutionStatus.Completed);
+                }
+
                 var existingAttempt = await _dbContext.ImageGenerationAttempts
                     .FirstOrDefaultAsync(a => a.GenerationFingerprint == attemptFingerprint, ct);
 
@@ -266,18 +297,52 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                             Seed: derivedSeed
                         );
                     }
-                    else if (!existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2)))
-                    {
-                        // Another active worker is currently executing this attempt under valid lease -> do NOT duplicate GPU call!
-                        _logger.LogInformation("[SceneGenerationAttemptActive] Attempt {AttemptId} is actively running by worker '{ClaimedBy}' (LeaseUntil={LeaseUntil}). Deferring execution.",
-                            existingAttempt.Id, existingAttempt.ClaimedBy, existingAttempt.LeaseUntil);
-                        return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
-                    }
                     else
                     {
-                        // Successfully reclaimed stale/crashed attempt
-                        attemptRecord = existingAttempt;
-                        await _dbContext.SaveChangesAsync(ct);
+                        // Database-atomic claim of existing/stale attempt row
+                        if (_dbContext.Database.IsRelational())
+                        {
+                            var rowsAffected = await _dbContext.ImageGenerationAttempts
+                                .Where(a => a.Id == existingAttempt.Id
+                                            && a.Status != GenerationAttemptStatus.Succeeded
+                                            && (a.Status != GenerationAttemptStatus.Running
+                                                || a.LeaseUntil == null
+                                                || a.LeaseUntil.Value <= nowUtc
+                                                || a.ClaimedBy == workerId))
+                                .ExecuteUpdateAsync(s => s
+                                    .SetProperty(a => a.ClaimedBy, workerId)
+                                    .SetProperty(a => a.StartedAt, nowUtc)
+                                    .SetProperty(a => a.LeaseUntil, nowUtc.AddMinutes(2))
+                                    .SetProperty(a => a.Status, GenerationAttemptStatus.Running), ct);
+
+                            if (rowsAffected != 1)
+                            {
+                                _logger.LogInformation("[SceneGenerationAttemptClaimFailed] Attempt {AttemptId} is actively claimed by another worker. Deferring execution.", existingAttempt.Id);
+                                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by another worker");
+                            }
+
+                            existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2));
+                            attemptRecord = existingAttempt;
+                        }
+                        else
+                        {
+                            if (!existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2)))
+                            {
+                                _logger.LogInformation("[SceneGenerationAttemptActive] Attempt {AttemptId} is actively running by worker '{ClaimedBy}' (LeaseUntil={LeaseUntil}). Deferring execution.",
+                                    existingAttempt.Id, existingAttempt.ClaimedBy, existingAttempt.LeaseUntil);
+                                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
+                            }
+
+                            attemptRecord = existingAttempt;
+                            try
+                            {
+                                await _dbContext.SaveChangesAsync(ct);
+                            }
+                            catch (DbUpdateConcurrencyException)
+                            {
+                                return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt lease claimed by concurrent worker");
+                            }
+                        }
                     }
                 }
                 else
@@ -295,8 +360,17 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         startedAt: nowUtc,
                         leaseUntil: nowUtc.AddMinutes(2)
                     );
-                    await _dbContext.ImageGenerationAttempts.AddAsync(attemptRecord, ct);
-                    await _dbContext.SaveChangesAsync(ct);
+
+                    try
+                    {
+                        await _dbContext.ImageGenerationAttempts.AddAsync(attemptRecord, ct);
+                        await _dbContext.SaveChangesAsync(ct);
+                    }
+                    catch (DbUpdateException ex)
+                    {
+                        _logger.LogInformation(ex, "[SceneGenerationAttemptRacePrevented] Concurrent worker inserted attempt for Fingerprint={Fingerprint}", attemptFingerprint);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt claimed by concurrent worker");
+                    }
                 }
 
                 if (genResult == null)
@@ -452,6 +526,15 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 }
                 catch (DbUpdateException ex)
                 {
+                    bool isUnique = ex.InnerException?.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) == true
+                                 || ex.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase);
+                    if (isUnique)
+                    {
+                        _logger.LogInformation("[SceneGenerationDuplicateArtifactPrevented] Concurrent worker already committed artifact for JobId={JobId}, Fingerprint={Fingerprint}. Returning Completed.",
+                            job.Id, lastAttemptFingerprint);
+                        return new JobExecutionResult(JobExecutionStatus.Completed, "Artifact committed by concurrent worker");
+                    }
+
                     bool isTransient = DbExceptionClassifier.IsTransient(ex);
                     if (isTransient)
                     {
