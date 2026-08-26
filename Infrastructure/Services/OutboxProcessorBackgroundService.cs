@@ -331,6 +331,18 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         msg.MarkCompleted(Clock.Now);
                         break;
 
+                    case OutboxEventTypes.GenerationJobAccepted:
+                    case OutboxEventTypes.GenerationJobQuarantined:
+                    case OutboxEventTypes.GenerationAttemptStarted:
+                    case OutboxEventTypes.GenerationAttemptEvaluated:
+                        var lifecycleDispatcher = scope.ServiceProvider.GetService<IOutboxLifecycleEventDispatcher>();
+                        if (lifecycleDispatcher != null)
+                        {
+                            await lifecycleDispatcher.DispatchAsync(msg.EventType, msg.PayloadJson, ct);
+                        }
+                        msg.MarkCompleted(Clock.Now);
+                        break;
+
                     default:
                         _logger.LogWarning("Unknown outbox event type '{EventType}' on message {Id}", msg.EventType, msg.Id);
                         msg.MarkCompleted(Clock.Now);

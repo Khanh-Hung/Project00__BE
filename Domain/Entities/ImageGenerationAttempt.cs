@@ -98,8 +98,24 @@ public sealed class ImageGenerationAttempt : BaseEntity
         }
     }
 
-    public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
+    public void StartEvaluating(string workerId, DateTime now)
     {
+        if (Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot transition attempt {Id} to Evaluating: transition is only allowed from Running, but current status is {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
+        Status = GenerationAttemptStatus.Evaluating;
+        Touch();
+    }
+
+    public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string workerId, DateTime now)
+    {
+        if (Status != GenerationAttemptStatus.Evaluating && Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} succeeded: attempt is in invalid status {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
         IdentitySimilarity = identitySimilarity;
@@ -109,8 +125,13 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void MarkDegraded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
+    public void MarkDegraded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string workerId, DateTime now)
     {
+        if (Status != GenerationAttemptStatus.Evaluating && Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} degraded: attempt is in invalid status {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
         IdentitySimilarity = identitySimilarity;
@@ -120,11 +141,43 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void MarkFailed(string errorMessage, DateTime completedAt)
+    public void MarkQuarantined(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string workerId, DateTime now)
     {
+        if (Status != GenerationAttemptStatus.Evaluating && Status != GenerationAttemptStatus.Running)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} quarantined: attempt is in invalid status {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
+        ImageUrl = imageUrl;
+        ProviderJobId = providerJobId ?? ProviderJobId;
+        IdentitySimilarity = identitySimilarity;
+        FeatureScore = featScore;
+        Status = GenerationAttemptStatus.Quarantined;
+        CompletedAt = completedAt;
+        Touch();
+    }
+
+    public void MarkFailed(string errorMessage, DateTime completedAt, string workerId, DateTime now)
+    {
+        if (Status == GenerationAttemptStatus.Succeeded)
+            throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
+
+        EnsureActiveLease(workerId, now);
+
         ErrorMessage = errorMessage;
         Status = GenerationAttemptStatus.Failed;
         CompletedAt = completedAt;
         Touch();
+    }
+
+    private void EnsureActiveLease(string workerId, DateTime now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workerId, nameof(workerId));
+
+        if (ClaimedBy == null || !string.Equals(ClaimedBy, workerId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Cannot mutate attempt {Id}: worker '{workerId}' is not the active owner ('{ClaimedBy ?? "null"}').");
+
+        if (!LeaseUntil.HasValue || LeaseUntil.Value <= now)
+            throw new InvalidOperationException($"Cannot mutate attempt {Id}: worker lease expired at {LeaseUntil?.ToString("O") ?? "null"} (now: {now:O}).");
     }
 }

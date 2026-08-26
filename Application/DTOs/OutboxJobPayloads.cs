@@ -8,6 +8,10 @@ public static class OutboxEventTypes
     public const string VoiceGeneration = "VoiceGeneration";
     public const string SceneImageGeneration = "SceneImageGeneration";
     public const string MemoryExtraction = "MemoryExtraction";
+    public const string GenerationJobAccepted = "GenerationJobAccepted";
+    public const string GenerationJobQuarantined = "GenerationJobQuarantined";
+    public const string GenerationAttemptStarted = "GenerationAttemptStarted";
+    public const string GenerationAttemptEvaluated = "GenerationAttemptEvaluated";
 }
 
 public sealed record VoiceGenerationOutboxPayload(

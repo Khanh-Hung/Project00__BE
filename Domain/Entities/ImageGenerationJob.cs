@@ -20,6 +20,9 @@ public sealed class ImageGenerationJob : BaseEntity
     public string? ProviderJobId { get; private set; }
     public ImageJobStatus Status { get; private set; } = ImageJobStatus.Pending;
     public int AttemptCount { get; private set; } = 0;
+    public Guid? AcceptedAttemptId { get; private set; }
+    public Guid? QuarantinedAttemptId { get; private set; }
+    public int CurrentAttemptNumber { get; private set; } = 0;
     public string? ClaimedBy { get; private set; }
     public DateTime? LeaseUntil { get; private set; }
     public DateTime? StartedAt { get; private set; }
@@ -57,6 +60,7 @@ public sealed class ImageGenerationJob : BaseEntity
         GenerationMetadataJson = generationMetadataJson;
         Status = ImageJobStatus.Pending;
         AttemptCount = 0;
+        CurrentAttemptNumber = 0;
         Version = 1;
     }
 
@@ -68,16 +72,26 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
+    public void MarkQueued(DateTime now)
+    {
+        if (Status != ImageJobStatus.Pending)
+            throw new InvalidOperationException($"Cannot queue job {Id}: transition to Queued is only allowed from Pending, but current status is {Status}.");
+
+        Status = ImageJobStatus.Queued;
+        Touch();
+    }
+
     public bool TryClaim(string workerId, TimeSpan leaseDuration, DateTime now)
     {
-        if (Status == ImageJobStatus.Completed || (Status == ImageJobStatus.Failed && !IsRetryable))
+        if (Status == ImageJobStatus.Completed || Status == ImageJobStatus.Quarantined || (Status == ImageJobStatus.Failed && !IsRetryable))
         {
             return false;
         }
 
-        // Allow claim if Pending, or if Processing but lease has expired, or retryable failure
+        // Allow claim if Pending/Queued, or if Processing/Evaluating but lease has expired, or retryable failure
         if (Status == ImageJobStatus.Pending || 
-            (Status == ImageJobStatus.Processing && LeaseUntil.HasValue && LeaseUntil.Value <= now) || 
+            Status == ImageJobStatus.Queued ||
+            ((Status == ImageJobStatus.Processing || Status == ImageJobStatus.Evaluating) && LeaseUntil.HasValue && LeaseUntil.Value <= now) || 
             (Status == ImageJobStatus.Failed && IsRetryable))
         {
             Status = ImageJobStatus.Processing;
@@ -88,6 +102,7 @@ public sealed class ImageGenerationJob : BaseEntity
             IsRetryable = false;
             CompletedAt = null;
             AttemptCount++;
+            CurrentAttemptNumber = AttemptCount;
             Version++;
             Touch();
             return true;
@@ -96,32 +111,40 @@ public sealed class ImageGenerationJob : BaseEntity
         return false;
     }
 
-    public void ExpireLease(DateTime? expiredAt = null)
+    public void StartRunning(string workerId, TimeSpan leaseDuration, DateTime now)
     {
-        LeaseUntil = expiredAt ?? DateTime.UtcNow.AddMinutes(-1);
-        Touch();
+        if (!TryClaim(workerId, leaseDuration, now))
+        {
+            throw new InvalidOperationException($"Cannot transition job {Id} to Running: job is in status {Status} or under active lease by {ClaimedBy}.");
+        }
     }
 
-    public void MarkProcessing(string? providerJobId = null, string? workerId = null, TimeSpan? leaseDuration = null, DateTime? startedAt = null)
+    public void MarkEvaluating(DateTime now, string workerId)
     {
-        var now = startedAt ?? Clock.Now;
-        Status = ImageJobStatus.Processing;
-        ProviderJobId = providerJobId ?? ProviderJobId;
-        ClaimedBy = workerId ?? ClaimedBy;
-        LeaseUntil = leaseDuration.HasValue ? now.Add(leaseDuration.Value) : (LeaseUntil ?? now.AddMinutes(2));
-        StartedAt = now;
-        FailureReason = null;
-        IsRetryable = false;
-        CompletedAt = null;
-        AttemptCount++;
+        if (Status != ImageJobStatus.Processing)
+            throw new InvalidOperationException($"Cannot evaluate job {Id}: transition to Evaluating is only allowed from Processing, but current status is {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
+        Status = ImageJobStatus.Evaluating;
         Version++;
         Touch();
     }
 
-    public void MarkCompleted(DateTime? completedAt = null, string? metadataJson = null)
+    public void AcceptAttempt(Guid attemptId, DateTime now, string workerId, string? metadataJson = null)
     {
+        if (attemptId == Guid.Empty)
+            throw new ArgumentException("AcceptedAttemptId cannot be empty.", nameof(attemptId));
+
+        if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
+            throw new InvalidOperationException($"Cannot accept attempt for job {Id}: acceptance is only allowed from Processing or Evaluating, but current status is {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
+        AcceptedAttemptId = attemptId;
+        QuarantinedAttemptId = null;
         Status = ImageJobStatus.Completed;
-        CompletedAt = completedAt ?? Clock.Now;
+        CompletedAt = now;
         LeaseUntil = null;
         FailureReason = null;
         if (!string.IsNullOrWhiteSpace(metadataJson))
@@ -132,23 +155,65 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
-    public void MarkFailed(string reason, bool isRetryable, DateTime? failedAt = null)
+    public void Quarantine(Guid? lastAttemptId, string reason, DateTime now, string workerId)
     {
-        Status = ImageJobStatus.Failed;
+        if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
+            throw new InvalidOperationException($"Cannot quarantine job {Id}: quarantine is only allowed from Processing or Evaluating, but current status is {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
+        AcceptedAttemptId = null;
+        QuarantinedAttemptId = lastAttemptId;
+        Status = ImageJobStatus.Quarantined;
         FailureReason = reason;
-        IsRetryable = isRetryable;
-        CompletedAt = failedAt ?? Clock.Now;
+        CompletedAt = now;
         LeaseUntil = null;
         Version++;
         Touch();
     }
 
-    public void MarkCancelled(DateTime? cancelledAt = null)
+    public void Fail(string reason, bool isRetryable, DateTime now, string workerId)
     {
-        Status = ImageJobStatus.Cancelled;
-        CompletedAt = cancelledAt ?? Clock.Now;
+        if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
+            throw new InvalidOperationException($"Cannot fail job {Id}: fail transition is only allowed from Processing or Evaluating, but current status is {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
+        Status = ImageJobStatus.Failed;
+        FailureReason = reason;
+        IsRetryable = isRetryable;
+        CompletedAt = now;
         LeaseUntil = null;
         Version++;
+        Touch();
+    }
+
+    private void EnsureActiveLease(string workerId, DateTime now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workerId, nameof(workerId));
+
+        if (ClaimedBy == null || !string.Equals(ClaimedBy, workerId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Cannot mutate job {Id}: worker '{workerId}' is not the active owner ('{ClaimedBy ?? "null"}').");
+
+        if (!LeaseUntil.HasValue || LeaseUntil.Value <= now)
+            throw new InvalidOperationException($"Cannot mutate job {Id}: worker lease expired at {LeaseUntil?.ToString("O") ?? "null"} (now: {now:O}).");
+    }
+
+    public void Cancel(DateTime now)
+    {
+        if (IsTerminal())
+            throw new InvalidOperationException($"Cannot cancel job {Id} because it is already in terminal state {Status}.");
+
+        Status = ImageJobStatus.Cancelled;
+        CompletedAt = now;
+        LeaseUntil = null;
+        Version++;
+        Touch();
+    }
+
+    public void ExpireLease(DateTime? expiredAt = null)
+    {
+        LeaseUntil = expiredAt ?? DateTime.UtcNow.AddMinutes(-1);
         Touch();
     }
 
@@ -161,4 +226,7 @@ public sealed class ImageGenerationJob : BaseEntity
         Version++;
         Touch();
     }
+
+    private bool IsTerminal() =>
+        Status is ImageJobStatus.Completed or ImageJobStatus.Quarantined or ImageJobStatus.Cancelled or (ImageJobStatus.Failed and not ImageJobStatus.Pending);
 }
