@@ -93,7 +93,9 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
             }
         }
 
-        bool hasPreviousScene = !string.IsNullOrWhiteSpace(resolvedPreviousSceneImageName);
+        // Note on vocabulary: Infrastructure supports ComfyUI's broader weight_type vocabulary (style transfer, linear, composition, etc.),
+        // while Domain intentionally exposes only business-approved modes (SceneStyleContinuity, FullLinearContinuity, Bypassed).
+        bool hasPreviousScene = !string.IsNullOrWhiteSpace(resolvedPreviousSceneImageName) && sceneContinuityWeight > 0.0f;
 
         var graph = new Dictionary<string, object>
         {

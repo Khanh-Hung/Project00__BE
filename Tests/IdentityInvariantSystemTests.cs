@@ -303,6 +303,61 @@ public sealed class IdentityInvariantSystemTests
             builder.BuildWorkflow(request, "avatar.png", "prev_scene.png"));
     }
 
+    [Theory]
+    [InlineData(0.0f)]
+    [InlineData(-0.1f)]
+    public void VisualContinuityWorkflowV2Builder_WhenSceneWeightIsZeroOrNegative_CompletelyExcludesNode14FromGraph(float zeroWeight)
+    {
+        var builder = new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1man, knight",
+            NegativePrompt: "1girl",
+            Seed: 12345,
+            ParametersJson: $"{{\"sceneContinuity\":{{\"weight\":{zeroWeight.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"endAt\":0.0,\"weightType\":\"style transfer\"}}}}"
+        );
+
+        // Even though a previous scene image name is passed, weight <= 0 must completely bypass Slot 2
+        var graph = builder.BuildWorkflow(request, "canonical_avatar.png", "previous_frame.png");
+
+        Assert.False(graph.ContainsKey("14"), "Node 14 (Slot 2 IPAdapter) must NOT exist in graph when weight is 0");
+        Assert.False(graph.ContainsKey("13"), "Node 13 (Previous Scene LoadImage) must NOT exist in graph when weight is 0");
+        Assert.True(graph.ContainsKey("10"), "Node 10 (Slot 1 Canonical Avatar) must exist");
+        Assert.True(graph.ContainsKey("3"), "Node 3 (KSampler) must exist");
+
+        var ksampler = graph["3"] as Dictionary<string, object>;
+        Assert.NotNull(ksampler);
+        var inputs = ksampler["inputs"] as Dictionary<string, object>;
+        Assert.NotNull(inputs);
+        var modelSource = inputs["model"] as object[];
+        Assert.NotNull(modelSource);
+        Assert.Equal("10", modelSource[0]); // Direct connection to Slot 1 (Node 10), completely bypassing Slot 2
+    }
+
+    [Fact]
+    public void VisualContinuityWorkflowV2Builder_WhenSceneWeightIsPositive_ChainsNode14IntoKSampler()
+    {
+        var builder = new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1man, knight",
+            NegativePrompt: "1girl",
+            Seed: 12345,
+            ParametersJson: "{\"sceneContinuity\":{\"weight\":0.12,\"endAt\":0.25,\"weightType\":\"style transfer\"}}"
+        );
+
+        var graph = builder.BuildWorkflow(request, "canonical_avatar.png", "previous_frame.png");
+
+        Assert.True(graph.ContainsKey("14"), "Node 14 (Slot 2 IPAdapter) must exist in graph when weight > 0");
+        Assert.True(graph.ContainsKey("13"), "Node 13 (Previous Scene LoadImage) must exist in graph when weight > 0");
+
+        var ksampler = graph["3"] as Dictionary<string, object>;
+        Assert.NotNull(ksampler);
+        var inputs = ksampler["inputs"] as Dictionary<string, object>;
+        Assert.NotNull(inputs);
+        var modelSource = inputs["model"] as object[];
+        Assert.NotNull(modelSource);
+        Assert.Equal("14", modelSource[0]); // Connected to Slot 2 (Node 14) chained output
+    }
+
     [Fact]
     public async Task VisualStateResolver_MultiTurnPipeline_GuaranteesCanonicalReferenceImmutability_And_DynamicSlot2Resolution()
     {
