@@ -148,6 +148,7 @@ public static class DependencyInjection
             }
         }
 
+        services.AddScoped<IImageGenerationOrchestrator, Infrastructure.Services.ImageGenerationOrchestrator>();
         services.AddScoped<IImageGenerationJobHandler, Infrastructure.Services.ImageGenerationJobHandler>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)

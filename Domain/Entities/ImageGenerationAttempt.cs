@@ -98,6 +98,15 @@ public sealed class ImageGenerationAttempt : BaseEntity
         }
     }
 
+    public void StartEvaluating(DateTime now)
+    {
+        if (Status == GenerationAttemptStatus.Succeeded || Status == GenerationAttemptStatus.Failed || Status == GenerationAttemptStatus.Quarantined)
+            throw new InvalidOperationException($"Cannot evaluate attempt {Id} in terminal status {Status}.");
+
+        Status = GenerationAttemptStatus.Evaluating;
+        Touch();
+    }
+
     public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
     {
         ImageUrl = imageUrl;
@@ -116,6 +125,17 @@ public sealed class ImageGenerationAttempt : BaseEntity
         IdentitySimilarity = identitySimilarity;
         FeatureScore = featScore;
         Status = GenerationAttemptStatus.Degraded;
+        CompletedAt = completedAt;
+        Touch();
+    }
+
+    public void MarkQuarantined(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
+    {
+        ImageUrl = imageUrl;
+        ProviderJobId = providerJobId ?? ProviderJobId;
+        IdentitySimilarity = identitySimilarity;
+        FeatureScore = featScore;
+        Status = GenerationAttemptStatus.Quarantined;
         CompletedAt = completedAt;
         Touch();
     }

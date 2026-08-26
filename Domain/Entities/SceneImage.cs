@@ -62,4 +62,10 @@ public sealed class SceneImage : BaseEntity
         IsCurrent = isCurrent;
         Touch();
     }
+
+    public void DemoteCurrent()
+    {
+        IsCurrent = false;
+        Touch();
+    }
 }
