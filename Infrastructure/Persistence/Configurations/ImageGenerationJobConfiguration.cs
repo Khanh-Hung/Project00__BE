@@ -33,5 +33,10 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision });
         builder.HasIndex(x => new { x.Status, x.LeaseUntil });
         builder.HasIndex(x => x.AcceptedAttemptId);
+
+        builder.HasOne<ImageGenerationAttempt>()
+            .WithMany()
+            .HasForeignKey(x => x.AcceptedAttemptId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

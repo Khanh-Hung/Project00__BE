@@ -148,6 +148,8 @@ public static class DependencyInjection
             }
         }
 
+        services.AddScoped<IPredecessorLineageResolver, Infrastructure.Services.PredecessorLineageResolver>();
+        services.AddScoped<IArtifactAcceptanceService, Infrastructure.Services.ArtifactAcceptanceService>();
         services.AddScoped<IImageGenerationOrchestrator, Infrastructure.Services.ImageGenerationOrchestrator>();
         services.AddScoped<IImageGenerationJobHandler, Infrastructure.Services.ImageGenerationJobHandler>();
 

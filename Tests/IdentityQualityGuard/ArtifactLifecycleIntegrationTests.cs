@@ -580,4 +580,47 @@ public sealed class ArtifactLifecycleIntegrationTests
             qualityEvaluator: null!
         ));
     }
+
+    [Fact]
+    public async Task PredecessorLineageResolver_OnlyResolvesFromAcceptedCurrentArtifacts()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var resolver = new PredecessorLineageResolver(db, NullLogger<PredecessorLineageResolver>.Instance);
+
+        var sessionId = Guid.NewGuid();
+
+        // 1. Revision 1: Resolves fallback or null without predecessor check
+        var (ready1, url1, reason1) = await resolver.ResolvePredecessorReferenceAsync(sessionId, 1, null, "https://cdn.project00.ai/avatar.png");
+        Assert.True(ready1);
+        Assert.Equal("https://cdn.project00.ai/avatar.png", url1);
+        Assert.Null(reason1);
+
+        // 2. Revision 2 without Revision 1 artifact in DB -> returns IsReady = false (Deferred)
+        var (ready2, url2, reason2) = await resolver.ResolvePredecessorReferenceAsync(sessionId, 2, null, null);
+        Assert.False(ready2);
+        Assert.Null(url2);
+        Assert.Contains("not yet completed", reason2);
+
+        // 3. Add non-current (quarantined) Revision 1 image -> Still not ready!
+        var nonCurrentImage = new SceneImage(sessionId, Guid.NewGuid(), Guid.NewGuid(), 1, "https://cdn.project00.ai/rev1_quarantined.png", "prompt", isCurrent: false);
+        await db.SceneImages.AddAsync(nonCurrentImage);
+        await db.SaveChangesAsync();
+
+        var (ready3, url3, reason3) = await resolver.ResolvePredecessorReferenceAsync(sessionId, 2, null, null);
+        Assert.False(ready3, "Non-current / quarantined artifact cannot serve as predecessor reference");
+
+        // 4. Promote/Add current accepted Revision 1 image -> IsReady = true with authoritative URL!
+        var currentImage = new SceneImage(sessionId, Guid.NewGuid(), Guid.NewGuid(), 1, "https://cdn.project00.ai/rev1_accepted.png", "prompt", isCurrent: true);
+        await db.SceneImages.AddAsync(currentImage);
+        await db.SaveChangesAsync();
+
+        var (ready4, url4, reason4) = await resolver.ResolvePredecessorReferenceAsync(sessionId, 2, null, null);
+        Assert.True(ready4);
+        Assert.Equal("https://cdn.project00.ai/rev1_accepted.png", url4);
+        Assert.Null(reason4);
+    }
 }

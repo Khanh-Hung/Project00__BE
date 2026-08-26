@@ -73,8 +73,8 @@ public sealed class ImageGenerationJob : BaseEntity
 
     public void MarkQueued(DateTime now)
     {
-        if (IsTerminal())
-            throw new InvalidOperationException($"Cannot queue job {Id} because it is in terminal state {Status}.");
+        if (Status != ImageJobStatus.Pending)
+            throw new InvalidOperationException($"Cannot queue job {Id}: transition to Queued is only allowed from Pending, but current status is {Status}.");
 
         Status = ImageJobStatus.Queued;
         Touch();
@@ -110,10 +110,18 @@ public sealed class ImageGenerationJob : BaseEntity
         return false;
     }
 
+    public void StartRunning(string workerId, TimeSpan leaseDuration, DateTime now)
+    {
+        if (!TryClaim(workerId, leaseDuration, now))
+        {
+            throw new InvalidOperationException($"Cannot transition job {Id} to Running: job is in status {Status} or under active lease by {ClaimedBy}.");
+        }
+    }
+
     public void MarkEvaluating(DateTime now)
     {
-        if (IsTerminal())
-            throw new InvalidOperationException($"Cannot evaluate job {Id} because it is in terminal state {Status}.");
+        if (Status != ImageJobStatus.Processing)
+            throw new InvalidOperationException($"Cannot transition job {Id} to Evaluating: evaluation is only allowed from Processing/Running, but current status is {Status}.");
 
         Status = ImageJobStatus.Evaluating;
         Touch();
@@ -124,8 +132,8 @@ public sealed class ImageGenerationJob : BaseEntity
         if (attemptId == Guid.Empty)
             throw new ArgumentException("AcceptedAttemptId cannot be empty.", nameof(attemptId));
 
-        if (IsTerminal())
-            throw new InvalidOperationException($"Cannot accept attempt for job {Id} because it is already in terminal state {Status}.");
+        if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
+            throw new InvalidOperationException($"Cannot accept attempt for job {Id}: acceptance is only allowed from Processing or Evaluating, but current status is {Status}.");
 
         AcceptedAttemptId = attemptId;
         Status = ImageJobStatus.Completed;
@@ -142,8 +150,8 @@ public sealed class ImageGenerationJob : BaseEntity
 
     public void Quarantine(Guid? lastAttemptId, string reason, DateTime now)
     {
-        if (IsTerminal())
-            throw new InvalidOperationException($"Cannot quarantine job {Id} because it is in terminal state {Status}.");
+        if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
+            throw new InvalidOperationException($"Cannot quarantine job {Id}: quarantine is only allowed from Processing or Evaluating, but current status is {Status}.");
 
         AcceptedAttemptId = lastAttemptId;
         Status = ImageJobStatus.Quarantined;
@@ -163,6 +171,9 @@ public sealed class ImageGenerationJob : BaseEntity
     public void MarkProcessing(string? providerJobId = null, string? workerId = null, TimeSpan? leaseDuration = null, DateTime? startedAt = null)
     {
         var now = startedAt ?? Clock.Now;
+        if (IsTerminal())
+            throw new InvalidOperationException($"Cannot mark processing for job {Id} because it is in terminal state {Status}.");
+
         Status = ImageJobStatus.Processing;
         ProviderJobId = providerJobId ?? ProviderJobId;
         ClaimedBy = workerId ?? ClaimedBy;
@@ -179,6 +190,9 @@ public sealed class ImageGenerationJob : BaseEntity
 
     public void MarkCompleted(DateTime? completedAt = null, string? metadataJson = null)
     {
+        if (IsTerminal())
+            throw new InvalidOperationException($"Cannot mark completed for job {Id} because it is already in terminal state {Status}.");
+
         Status = ImageJobStatus.Completed;
         CompletedAt = completedAt ?? Clock.Now;
         LeaseUntil = null;
@@ -193,6 +207,9 @@ public sealed class ImageGenerationJob : BaseEntity
 
     public void MarkFailed(string reason, bool isRetryable, DateTime? failedAt = null)
     {
+        if (Status == ImageJobStatus.Completed || Status == ImageJobStatus.Quarantined || Status == ImageJobStatus.Cancelled)
+            throw new InvalidOperationException($"Cannot fail job {Id} because it is already in terminal state {Status}.");
+
         Status = ImageJobStatus.Failed;
         FailureReason = reason;
         IsRetryable = isRetryable;
@@ -204,6 +221,9 @@ public sealed class ImageGenerationJob : BaseEntity
 
     public void MarkCancelled(DateTime? cancelledAt = null)
     {
+        if (IsTerminal())
+            throw new InvalidOperationException($"Cannot cancel job {Id} because it is already in terminal state {Status}.");
+
         Status = ImageJobStatus.Cancelled;
         CompletedAt = cancelledAt ?? Clock.Now;
         LeaseUntil = null;

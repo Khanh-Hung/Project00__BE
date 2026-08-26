@@ -1,3 +1,4 @@
+using Application.Common;
 using Application.DTOs;
 using Application.Enums;
 using Application.Interfaces;
@@ -111,5 +112,109 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var acceptedAttempt = await verifyDb.ImageGenerationAttempts.FirstOrDefaultAsync(a => a.Id == job.AcceptedAttemptId.Value);
         Assert.NotNull(acceptedAttempt);
         Assert.Equal(GenerationAttemptStatus.Succeeded, acceptedAttempt.Status);
+    }
+
+    [Fact]
+    public async Task CrashConsistency_WhenWorkerCrashesAfterQualityPassBeforeAcceptance_RecoversWithoutDuplicateGpuInvocation()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var compiler = new FakePromptCompiler("1man knight", "1girl");
+
+        // 1. Simulate Worker 1 crashing after recording attempt Succeeded in DB, but before CAS Acceptance!
+        using (var dbCrash = new ProjectDbContext(options))
+        {
+            var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, requestId);
+            job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow.AddMinutes(-5)); // lease expired
+            await dbCrash.ImageGenerationJobs.AddAsync(job);
+
+            var fp = DeterministicSeedDerivation.ComputeFingerprint(
+                job.Id, turnId, 1, 1, 100000L, snapshot.GenerationProfile.ParametersJson ?? string.Empty,
+                "VisualIdentity", 1,
+                compiler.CompileScenePrompt(snapshot), compiler.CompileNegativePrompt(snapshot), null);
+
+            var attempt = new ImageGenerationAttempt(
+                generationJobId: job.Id,
+                turnId: turnId,
+                sceneRevision: 1,
+                attemptNumber: 1,
+                derivedSeed: 100000L,
+                parametersJson: snapshot.GenerationProfile.ParametersJson ?? string.Empty,
+                generationFingerprint: fp,
+                status: GenerationAttemptStatus.Running,
+                claimedBy: "worker-1",
+                startedAt: DateTime.UtcNow.AddMinutes(-5),
+                leaseUntil: DateTime.UtcNow.AddMinutes(-3)
+            );
+            attempt.MarkSucceeded("https://cdn.project00.ai/images/attempt1_recovered.png", "comfy_job_1", 0.88f, 0.90f, DateTime.UtcNow.AddMinutes(-4));
+            await dbCrash.ImageGenerationAttempts.AddAsync(attempt);
+            await dbCrash.SaveChangesAsync();
+        }
+
+        // 2. Worker 2 restarts and executes generation
+        var countingImageService = new ConcurrentTrackingImageService();
+        var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
+
+        using var dbWorker2 = new ProjectDbContext(options);
+        var orchestrator2 = new ImageGenerationOrchestrator(
+            dbContext: dbWorker2,
+            visualCompiler: compiler,
+            imageService: countingImageService,
+            logger: NullLogger<ImageGenerationOrchestrator>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: evaluator,
+            qualityGuardPolicy: policy
+        );
+
+        var result = await orchestrator2.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-2", DateTime.UtcNow);
+
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.Equal(0, countingImageService.CallCount); // ZERO duplicate GPU calls! Reused attempt ledger!
+
+        // Assert exactly 1 SceneImage was promoted and isCurrent=true
+        using var verifyDb = new ProjectDbContext(options);
+        var images = await verifyDb.SceneImages.ToListAsync();
+        Assert.Single(images);
+        Assert.True(images[0].IsCurrent);
+        Assert.Equal("https://cdn.project00.ai/images/attempt1_recovered.png", images[0].ImageUrl);
+
+        var finalJob = await verifyDb.ImageGenerationJobs.FirstAsync();
+        Assert.Equal(ImageJobStatus.Completed, finalJob.Status);
+        Assert.NotNull(finalJob.AcceptedAttemptId);
     }
 }

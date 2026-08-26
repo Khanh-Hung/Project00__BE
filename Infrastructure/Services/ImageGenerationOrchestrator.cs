@@ -11,13 +11,13 @@ using Domain.Enums;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Infrastructure.Services;
 
 /// <summary>
-/// Authoritative orchestrator for the visual generation pipeline.
-/// Manages the discrete multi-stage lifecycle: Predecessor Gating -> Job Claiming ->
-/// Deterministic Attempt Generation -> Quality Evaluation -> Atomic Attempt Acceptance -> Lineage Artifact Persistence.
+/// Authoritative orchestrator coordinating the visual generation pipeline.
+/// Single Responsibility: Orchestrating discrete lifecycle stages across collaborators (P1-1).
 /// </summary>
 public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 {
@@ -28,6 +28,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
     private readonly ILogger<ImageGenerationOrchestrator> _logger;
     private readonly IIdentityQualityEvaluator _qualityEvaluator;
     private readonly IdentityQualityGuardPolicy _qualityGuardPolicy;
+    private readonly IPredecessorLineageResolver _lineageResolver;
+    private readonly IArtifactAcceptanceService _acceptanceService;
 
     public ImageGenerationOrchestrator(
         ProjectDbContext dbContext,
@@ -36,7 +38,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         ILogger<ImageGenerationOrchestrator> logger,
         IDateTimeProvider dateTimeProvider,
         IIdentityQualityEvaluator qualityEvaluator,
-        IdentityQualityGuardPolicy? qualityGuardPolicy = null)
+        IdentityQualityGuardPolicy? qualityGuardPolicy = null,
+        IPredecessorLineageResolver? lineageResolver = null,
+        IArtifactAcceptanceService? acceptanceService = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
@@ -45,6 +49,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         _dateTimeProvider = dateTimeProvider ?? throw new ArgumentNullException(nameof(dateTimeProvider));
         _qualityEvaluator = qualityEvaluator ?? throw new ArgumentNullException(nameof(qualityEvaluator));
         _qualityGuardPolicy = qualityGuardPolicy ?? IdentityQualityGuardPolicy.Default;
+
+        _lineageResolver = lineageResolver ?? new PredecessorLineageResolver(dbContext, NullLogger<PredecessorLineageResolver>.Instance);
+        _acceptanceService = acceptanceService ?? new ArtifactAcceptanceService(dbContext, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
     }
 
     public async Task<JobExecutionResult> OrchestrateSceneImageGenerationAsync(
@@ -81,64 +88,19 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
             return new JobExecutionResult(JobExecutionStatus.Skipped, "Artifact already exists");
         }
 
-        // 2. Predecessor Gating & Late Predecessor Image URL Resolution
-        string? resolvedPreviousSceneImageUrl = snapshot.PreviousSceneImageUrl;
-        if (snapshot.SceneRevision > 1)
+        // 2. Predecessor Lineage Resolution & Gating (P0-2)
+        var (isReady, resolvedPreviousSceneImageUrl, deferReason) = await _lineageResolver.ResolvePredecessorReferenceAsync(
+            snapshot.SessionId, snapshot.SceneRevision, snapshot.PredecessorSceneRevision, snapshot.PreviousSceneImageUrl, ct);
+
+        if (!isReady)
         {
-            var predRev = snapshot.PredecessorSceneRevision ?? (snapshot.SceneRevision - 1);
-            var predecessorArtifact = await _dbContext.SceneImages
-                .FirstOrDefaultAsync(img => img.SessionId == snapshot.SessionId && img.SceneRevision == predRev && img.IsCurrent, ct);
-
-            if (predecessorArtifact != null)
-            {
-                resolvedPreviousSceneImageUrl = predecessorArtifact.ImageUrl;
-            }
-            else
-            {
-                var predJob = await _dbContext.ImageGenerationJobs
-                    .Where(j => j.SessionId == snapshot.SessionId && j.SceneRevision == predRev)
-                    .OrderByDescending(j => j.CreatedAt)
-                    .FirstOrDefaultAsync(ct);
-
-                if (predJob != null && predJob.Status == ImageJobStatus.Failed && !predJob.IsRetryable)
-                {
-                    _logger.LogWarning("[SceneGenerationFailed] Blocking Revision {Revision} because predecessor Revision {PredRev} failed permanently.",
-                        snapshot.SceneRevision, predRev);
-                    throw new GpuNonTransientException($"Predecessor Revision {predRev} failed permanently.");
-                }
-
-                // Check predecessor outbox message if job hasn't been created yet or failed at outbox level
-                var predecessorMsg = await _dbContext.OutboxMessages
-                    .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration)
-                    .ToListAsync(ct);
-
-                var predMatchingMsg = predecessorMsg.FirstOrDefault(m =>
-                {
-                    try
-                    {
-                        var p = System.Text.Json.JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson);
-                        return p?.Snapshot?.SessionId == snapshot.SessionId && p?.Snapshot?.SceneRevision == predRev;
-                    }
-                    catch { return false; }
-                });
-
-                if (predMatchingMsg != null && predMatchingMsg.Status == OutboxStatus.Failed)
-                {
-                    _logger.LogWarning("[SceneGenerationFailed] Blocking Revision {Revision} because predecessor Revision {PredRev} failed permanently in Outbox.",
-                        snapshot.SceneRevision, predRev);
-                    throw new GpuNonTransientException($"Predecessor Revision {predRev} failed permanently.");
-                }
-
-                _logger.LogInformation("[SceneGenerationDeferred] Deferring Revision {Revision} because predecessor Revision {PredRev} has no active current artifact yet.",
-                    snapshot.SceneRevision, predRev);
-                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Predecessor Revision {predRev} not yet completed");
-            }
+            return new JobExecutionResult(JobExecutionStatus.Deferred, deferReason);
         }
 
         // 3. Lease-based Atomic Job Claim Before GPU Invocation
         var workflow = snapshot.GenerationProfile?.Workflow ?? "VisualIdentity";
         var workflowVersion = snapshot.GenerationProfile?.WorkflowVersion ?? 1;
-        var leaseDuration = TimeSpan.FromMinutes(4); // 240s: provides 120s safety margin over max 120s ComfyUI timeout
+        var leaseDuration = TimeSpan.FromMinutes(4); // 240s safety lease
 
         var job = await _dbContext.ImageGenerationJobs
             .FirstOrDefaultAsync(j => j.SessionId == snapshot.SessionId && j.GenerationRequestId == generationRequestId, ct);
@@ -226,7 +188,6 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 var (attemptProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
                     snapshot, mitigation, attempt, baseSeed);
 
-                // Derive attempt snapshot with adjusted profile and deterministic seed
                 var attemptSnapshot = snapshot with
                 {
                     GenerationProfile = attemptProfile with { Seed = derivedSeed }
@@ -249,13 +210,13 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     previousReferenceUrl: resolvedPreviousSceneImageUrl);
                 lastAttemptFingerprint = attemptFingerprint;
 
-                // Database-enforced Idempotency & Crash-Safety: Check existing artifact or durable attempt ledger
+                // Check committed artifact by fingerprint
                 var existingFingerprintArtifact = await _dbContext.SceneImages
                     .FirstOrDefaultAsync(img => img.GenerationFingerprint == attemptFingerprint, ct);
 
                 if (existingFingerprintArtifact != null)
                 {
-                    _logger.LogInformation("[SceneGenerationArtifactReused] Existing artifact {ArtifactId} already committed for fingerprint {Fingerprint}. Skipping generation & duplicate insertion.",
+                    _logger.LogInformation("[SceneGenerationArtifactReused] Existing artifact {ArtifactId} already committed for fingerprint {Fingerprint}. Returning Completed.",
                         existingFingerprintArtifact.Id, attemptFingerprint);
 
                     if (job.Status != ImageJobStatus.Completed)
@@ -308,7 +269,6 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
                     else
                     {
-                        // Database-atomic claim of existing/stale attempt row
                         if (_dbContext.Database.IsRelational())
                         {
                             var rowsAffected = await _dbContext.ImageGenerationAttempts
@@ -326,7 +286,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                             if (rowsAffected != 1)
                             {
-                                _logger.LogInformation("[SceneGenerationAttemptClaimFailed] Attempt {AttemptId} is actively claimed by another worker. Deferring execution.", existingAttempt.Id);
+                                _logger.LogInformation("[SceneGenerationAttemptClaimFailed] Attempt {AttemptId} is actively claimed by another worker. Deferring.", existingAttempt.Id);
                                 return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by another worker");
                             }
 
@@ -336,8 +296,6 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         {
                             if (!existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2)))
                             {
-                                _logger.LogInformation("[SceneGenerationAttemptActive] Attempt {AttemptId} is actively running by worker '{ClaimedBy}' (LeaseUntil={LeaseUntil}). Deferring execution.",
-                                    existingAttempt.Id, existingAttempt.ClaimedBy, existingAttempt.LeaseUntil);
                                 return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
                             }
 
@@ -452,15 +410,14 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
                     else if (nextAction == QualityMitigationAction.RejectDegraded)
                     {
-                        _logger.LogWarning("[IdentityGuardExhausted] JobId={JobId}, Max attempts {MaxAttempts} reached without passing. Quarantining frame from continuity.",
-                            job.Id, maxAttempts);
+                        _logger.LogWarning("[IdentityGuardExhausted] JobId={JobId}, Max attempts {MaxAttempts} reached. Quarantining frame.", job.Id, maxAttempts);
                         isIdentityPassed = false;
                         break;
                     }
                     else
                     {
-                        _logger.LogWarning("[IdentityGuardDegraded] JobId={JobId}, Attempt={Attempt}/{MaxAttempts} degraded (IdentitySim={IdentitySim:F4}, Status={Status}). Triggering {NextAction}.",
-                            job.Id, attempt, maxAttempts, lastEvaluation.IdentitySimilarity, lastEvaluation.Status, nextAction);
+                        _logger.LogWarning("[IdentityGuardDegraded] JobId={JobId}, Attempt={Attempt}/{MaxAttempts} degraded (IdentitySim={IdentitySim:F4}). Escalating to {NextAction}.",
+                            job.Id, attempt, maxAttempts, lastEvaluation.IdentitySimilarity, nextAction);
                         attempt++;
                     }
                 }
@@ -473,178 +430,28 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 }
             }
 
-            // 5. Strict Atomic Attempt Acceptance & Artifact Persistence in ONE Unit of Work
-            var liveUtc = _dateTimeProvider.UtcNow;
-            var acceptedAttemptId = winningAttemptRecord?.Id ?? Guid.NewGuid();
+            // 5. Atomic Acceptance Fencing & Artifact Persistence (P0-1)
+            var acceptanceRequest = new ArtifactAcceptanceRequest(
+                Job: job,
+                WinningAttempt: winningAttemptRecord!,
+                Snapshot: snapshot,
+                ImageUrl: genResult!.ImageUrl,
+                CompiledPrompt: lastCompiledPrompt,
+                ResolvedPreviousSceneImageUrl: resolvedPreviousSceneImageUrl,
+                GenerationFingerprint: lastAttemptFingerprint,
+                MetadataJson: genResult.MetadataJson,
+                IsIdentityPassed: isIdentityPassed,
+                WorkerId: workerId,
+                OutboxId: outboxId
+            );
 
-            if (_dbContext.Database.IsRelational())
-            {
-                try
-                {
-                    await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
-
-                    var targetJobStatus = isIdentityPassed ? ImageJobStatus.Completed : ImageJobStatus.Quarantined;
-
-                    var rowsAffected = await _dbContext.ImageGenerationJobs
-                        .Where(j => j.Id == job.Id 
-                                    && j.ClaimedBy == workerId 
-                                    && j.Version == job.Version 
-                                    && (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
-                                    && j.AcceptedAttemptId == null
-                                    && j.LeaseUntil.HasValue 
-                                    && j.LeaseUntil.Value > liveUtc)
-                        .ExecuteUpdateAsync(s => s
-                            .SetProperty(j => j.AcceptedAttemptId, acceptedAttemptId)
-                            .SetProperty(j => j.Status, targetJobStatus)
-                            .SetProperty(j => j.CompletedAt, liveUtc)
-                            .SetProperty(j => j.GenerationMetadataJson, genResult!.MetadataJson)
-                            .SetProperty(j => j.Version, j => j.Version + 1)
-                            .SetProperty(j => j.UpdatedAt, liveUtc), ct);
-
-                    if (rowsAffected != 1)
-                    {
-                        _logger.LogWarning("[SceneGenerationStaleDiscarded] Atomic conditional acceptance fencing failed for JobId={JobId}, WorkerId={WorkerId}. Rows affected: {Rows}. Discarding artifact.",
-                            job.Id, workerId, rowsAffected);
-                        await transaction.RollbackAsync(ct);
-                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or attempt already accepted by concurrent worker");
-                    }
-
-                    // P0 Hard Gate: If identity passed, promote to isCurrent=true and demote previous currents.
-                    // If degraded/quarantined, save with isCurrent=false, keeping the last-known-good reference intact!
-                    if (isIdentityPassed)
-                    {
-                        await _dbContext.SceneImages
-                            .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                            .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
-                    }
-
-                    var artifact = new SceneImage(
-                        sessionId: snapshot.SessionId,
-                        characterId: snapshot.CharacterId,
-                        turnId: snapshot.TurnId,
-                        sceneRevision: snapshot.SceneRevision,
-                        imageUrl: genResult!.ImageUrl,
-                        prompt: lastCompiledPrompt,
-                        generationRequestId: generationRequestId,
-                        generationJobId: job.Id,
-                        identityReferenceUrl: snapshot.IdentityReferenceUrl,
-                        previousSceneImageUrl: resolvedPreviousSceneImageUrl,
-                        workflow: workflow,
-                        workflowVersion: workflowVersion,
-                        isCurrent: isIdentityPassed,
-                        generationFingerprint: lastAttemptFingerprint
-                    );
-
-                    await _dbContext.SceneImages.AddAsync(artifact, ct);
-                    await _dbContext.SaveChangesAsync(ct);
-
-                    await transaction.CommitAsync(ct);
-                }
-                catch (DbUpdateException ex)
-                {
-                    bool isUnique = ex.InnerException?.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) == true
-                                 || ex.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase);
-                    if (isUnique)
-                    {
-                        _logger.LogInformation("[SceneGenerationDuplicateArtifactPrevented] Concurrent worker already committed artifact for JobId={JobId}, Fingerprint={Fingerprint}. Returning Completed.",
-                            job.Id, lastAttemptFingerprint);
-                        return new JobExecutionResult(JobExecutionStatus.Completed, "Artifact committed by concurrent worker");
-                    }
-
-                    bool isTransient = DbExceptionClassifier.IsTransient(ex);
-                    if (isTransient)
-                    {
-                        _logger.LogWarning(ex, "[SceneGenerationConcurrencyConflict] Relational transaction conflict during artifact commit for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
-                            job.Id, workerId);
-                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Relational transaction conflict during artifact commit");
-                    }
-                    _logger.LogError(ex, "[SceneGenerationPermanentDbError] Permanent database update failure during artifact commit for JobId={JobId}, WorkerId={WorkerId}.", job.Id, workerId);
-                    throw new GpuNonTransientException($"Permanent database error: {ex.Message}", statusCode: null, innerException: ex);
-                }
-                catch (System.Data.Common.DbException ex)
-                {
-                    bool isTransient = DbExceptionClassifier.IsTransient(ex);
-                    if (isTransient)
-                    {
-                        _logger.LogWarning(ex, "[SceneGenerationTransactionBusy] Database connection/transaction conflict for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
-                            job.Id, workerId);
-                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Database transaction conflict during artifact commit");
-                    }
-                    _logger.LogError(ex, "[SceneGenerationPermanentDbError] Permanent database connection failure for JobId={JobId}, WorkerId={WorkerId}.", job.Id, workerId);
-                    throw new GpuNonTransientException($"Permanent database error: {ex.Message}", statusCode: null, innerException: ex);
-                }
-            }
-            else
-            {
-                var currentJob = await _dbContext.ImageGenerationJobs
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(j => j.Id == job.Id, ct);
-
-                if (currentJob == null || 
-                    currentJob.ClaimedBy != workerId || 
-                    !currentJob.LeaseUntil.HasValue || 
-                    currentJob.LeaseUntil.Value <= liveUtc || 
-                    currentJob.Version != job.Version ||
-                    (currentJob.Status != ImageJobStatus.Processing && currentJob.Status != ImageJobStatus.Evaluating))
-                {
-                    _logger.LogWarning("[SceneGenerationStaleDiscarded] In-memory job validation failed for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
-                        job.Id, workerId);
-                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease expired or stolen during generation");
-                }
-
-                if (isIdentityPassed)
-                {
-                    job.AcceptAttempt(acceptedAttemptId, liveUtc, genResult!.MetadataJson);
-
-                    var existingCurrentImages = await _dbContext.SceneImages
-                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                        .ToListAsync(ct);
-
-                    foreach (var img in existingCurrentImages)
-                    {
-                        img.DemoteCurrent();
-                    }
-                }
-                else
-                {
-                    job.Quarantine(acceptedAttemptId, "Identity invariant threshold not met across maximum retry attempts", liveUtc);
-                }
-
-                var artifact = new SceneImage(
-                    sessionId: snapshot.SessionId,
-                    characterId: snapshot.CharacterId,
-                    turnId: snapshot.TurnId,
-                    sceneRevision: snapshot.SceneRevision,
-                    imageUrl: genResult!.ImageUrl,
-                    prompt: lastCompiledPrompt,
-                    generationRequestId: generationRequestId,
-                    generationJobId: job.Id,
-                    identityReferenceUrl: snapshot.IdentityReferenceUrl,
-                    previousSceneImageUrl: resolvedPreviousSceneImageUrl,
-                    workflow: workflow,
-                    workflowVersion: workflowVersion,
-                    isCurrent: isIdentityPassed,
-                    generationFingerprint: lastAttemptFingerprint
-                );
-
-                await _dbContext.SceneImages.AddAsync(artifact, ct);
-                try
-                {
-                    await _dbContext.SaveChangesAsync(ct);
-                }
-                catch (DbUpdateConcurrencyException ex)
-                {
-                    _logger.LogWarning(ex, "[SceneGenerationConcurrencyConflict] In-memory concurrency conflict during artifact commit for JobId={JobId}. Discarding artifact.",
-                        job.Id);
-                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Job updated concurrently during commit");
-                }
-            }
+            var acceptanceResult = await _acceptanceService.AcceptAttemptAtomicallyAsync(acceptanceRequest, ct);
 
             stopwatch.Stop();
-            _logger.LogInformation("[SceneGenerationJobCompleted] OutboxId={OutboxId}, JobId={JobId}, Revision={Revision}, Attempts={Attempts}/{MaxAttempts}, DurationMs={DurationMs}, Status={Status}, AcceptedAttemptId={AcceptedAttemptId}",
-                outboxId, job.Id, snapshot.SceneRevision, attempt, maxAttempts, stopwatch.ElapsedMilliseconds, isIdentityPassed ? "Accepted" : "Quarantined", acceptedAttemptId);
+            _logger.LogInformation("[SceneGenerationJobFinished] OutboxId={OutboxId}, JobId={JobId}, Revision={Revision}, Attempts={Attempts}/{MaxAttempts}, DurationMs={DurationMs}, Status={Status}",
+                outboxId, job.Id, snapshot.SceneRevision, attempt, maxAttempts, stopwatch.ElapsedMilliseconds, acceptanceResult.Status);
 
-            return new JobExecutionResult(JobExecutionStatus.Completed);
+            return acceptanceResult;
         }
         catch (OperationCanceledException)
         {
