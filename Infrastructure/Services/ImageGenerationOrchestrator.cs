@@ -537,7 +537,12 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 if (_dbContext.Database.IsRelational())
                 {
                     await _dbContext.ImageGenerationJobs
-                        .Where(j => j.Id == job.Id && j.ClaimedBy == workerId && j.LeaseUntil.HasValue && j.LeaseUntil.Value > failTime)
+                        .Where(j => j.Id == job.Id
+                                    && j.ClaimedBy == workerId
+                                    && j.Version == job.Version
+                                    && (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
+                                    && j.LeaseUntil.HasValue
+                                    && j.LeaseUntil.Value > failTime)
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(j => j.Status, ImageJobStatus.Failed)
                             .SetProperty(j => j.FailureReason, ex.Message)
@@ -568,7 +573,12 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 if (_dbContext.Database.IsRelational())
                 {
                     await _dbContext.ImageGenerationJobs
-                        .Where(j => j.Id == job.Id && j.ClaimedBy == workerId && j.LeaseUntil.HasValue && j.LeaseUntil.Value > failTime)
+                        .Where(j => j.Id == job.Id
+                                    && j.ClaimedBy == workerId
+                                    && j.Version == job.Version
+                                    && (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
+                                    && j.LeaseUntil.HasValue
+                                    && j.LeaseUntil.Value > failTime)
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(j => j.Status, ImageJobStatus.Failed)
                             .SetProperty(j => j.FailureReason, ex.Message)

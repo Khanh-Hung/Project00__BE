@@ -604,4 +604,115 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             await Assert.ThrowsAsync<DbUpdateException>(() => db1.SaveChangesAsync());
         }
     }
+
+    [Fact]
+    public async Task ConcurrentFail_OnSameJob_WithActiveLease_ResultsInExactlyOneAuthoritativeTransition()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var reqId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, reqId);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), now);
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.ImageGenerationJobs.AddAsync(job);
+            await dbSeed.SaveChangesAsync();
+        }
+
+        // Part 1: Optimistic Concurrency Token via EF ChangeTracker
+        using (var dbA = new ProjectDbContext(options))
+        using (var dbB = new ProjectDbContext(options))
+        {
+            var jobA = await dbA.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
+            var jobB = await dbB.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
+
+            // Both see Version = 2 and Status = Processing
+            Assert.Equal(2u, jobA.Version);
+            Assert.Equal(2u, jobB.Version);
+            Assert.Equal(ImageJobStatus.Processing, jobA.Status);
+            Assert.Equal(ImageJobStatus.Processing, jobB.Status);
+
+            // Worker A fails the job first
+            jobA.Fail("GPU Timeout", isRetryable: true, now, "worker-1");
+            await dbA.SaveChangesAsync(); // Succeeds, increments version to 3
+
+            // Worker B attempts to fail the same job concurrently
+            jobB.Fail("Memory Out", isRetryable: false, now, "worker-1");
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => dbB.SaveChangesAsync());
+        }
+
+        // Part 2: Relational CAS ExecuteUpdateAsync Fencing
+        using (var dbSeed2 = new ProjectDbContext(options))
+        {
+            var job2 = new ImageGenerationJob(sessionId, turnId, characterId, 2, Guid.NewGuid());
+            job2.TryClaim("worker-1", TimeSpan.FromMinutes(2), now);
+            await dbSeed2.ImageGenerationJobs.AddAsync(job2);
+            await dbSeed2.SaveChangesAsync();
+
+            var failTime = DateTime.UtcNow;
+            var currentVersion = job2.Version;
+
+            // Worker A CAS update
+            var rowsA = await dbSeed2.ImageGenerationJobs
+                .Where(j => j.Id == job2.Id
+                            && j.ClaimedBy == "worker-1"
+                            && j.Version == currentVersion
+                            && (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
+                            && j.LeaseUntil.HasValue
+                            && j.LeaseUntil.Value > failTime)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(j => j.Status, ImageJobStatus.Failed)
+                    .SetProperty(j => j.FailureReason, "Worker A Error")
+                    .SetProperty(j => j.IsRetryable, false)
+                    .SetProperty(j => j.CompletedAt, failTime)
+                    .SetProperty(j => j.LeaseUntil, (DateTime?)null)
+                    .SetProperty(j => j.Version, j => j.Version + 1)
+                    .SetProperty(j => j.UpdatedAt, failTime));
+
+            // Worker B CAS update with same snapshot version
+            var rowsB = await dbSeed2.ImageGenerationJobs
+                .Where(j => j.Id == job2.Id
+                            && j.ClaimedBy == "worker-1"
+                            && j.Version == currentVersion
+                            && (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
+                            && j.LeaseUntil.HasValue
+                            && j.LeaseUntil.Value > failTime)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(j => j.Status, ImageJobStatus.Failed)
+                    .SetProperty(j => j.FailureReason, "Worker B Error")
+                    .SetProperty(j => j.IsRetryable, false)
+                    .SetProperty(j => j.CompletedAt, failTime)
+                    .SetProperty(j => j.LeaseUntil, (DateTime?)null)
+                    .SetProperty(j => j.Version, j => j.Version + 1)
+                    .SetProperty(j => j.UpdatedAt, failTime));
+
+            Assert.Equal(1, rowsA); // Worker A wins CAS
+            Assert.Equal(0, rowsB); // Worker B loses CAS (version / status mismatch)
+        }
+
+        // Final Verification
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
+            Assert.Equal(ImageJobStatus.Failed, verifiedJob.Status);
+            Assert.Equal("GPU Timeout", verifiedJob.FailureReason);
+            Assert.Equal(3u, verifiedJob.Version);
+        }
+    }
 }
