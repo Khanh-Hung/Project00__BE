@@ -47,6 +47,34 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
         }
 
         var liveUtc = _dateTimeProvider.UtcNow;
+
+        // Defense-in-depth: Validate Attempt status, worker ownership, and active lease
+        if (winningAttempt.Status != GenerationAttemptStatus.Succeeded
+            && winningAttempt.Status != GenerationAttemptStatus.Degraded
+            && winningAttempt.Status != GenerationAttemptStatus.Quarantined
+            && winningAttempt.Status != GenerationAttemptStatus.Evaluating
+            && winningAttempt.Status != GenerationAttemptStatus.Running)
+        {
+            throw new InvalidOperationException($"Attempt {winningAttempt.Id} is in invalid status {winningAttempt.Status} for acceptance.");
+        }
+
+        if (winningAttempt.Status == GenerationAttemptStatus.Running || winningAttempt.Status == GenerationAttemptStatus.Evaluating)
+        {
+            if (winningAttempt.ClaimedBy != null && !string.Equals(winningAttempt.ClaimedBy, workerId, StringComparison.Ordinal))
+            {
+                _logger.LogWarning("[ArtifactAcceptanceService] Active attempt {AttemptId} is owned by '{ClaimedBy}', not worker '{WorkerId}'. Rejecting acceptance.",
+                    winningAttempt.Id, winningAttempt.ClaimedBy, workerId);
+                return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt is owned by another worker");
+            }
+
+            if (winningAttempt.LeaseUntil.HasValue && winningAttempt.LeaseUntil.Value <= liveUtc)
+            {
+                _logger.LogWarning("[ArtifactAcceptanceService] Active attempt {AttemptId} lease expired at {LeaseUntil:O} (now: {Now:O}). Rejecting acceptance.",
+                    winningAttempt.Id, winningAttempt.LeaseUntil.Value, liveUtc);
+                return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt worker lease expired before acceptance");
+            }
+        }
+
         var attemptId = winningAttempt.Id;
         var workflow = snapshot.GenerationProfile?.Workflow ?? "VisualIdentity";
         var workflowVersion = snapshot.GenerationProfile?.WorkflowVersion ?? 1;
@@ -217,7 +245,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
 
             if (isIdentityPassed)
             {
-                job.AcceptAttempt(attemptId, liveUtc, metadataJson);
+                job.AcceptAttempt(attemptId, liveUtc, metadataJson, workerId);
 
                 var existingCurrentImages = await _dbContext.SceneImages
                     .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
@@ -230,7 +258,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
             }
             else
             {
-                job.Quarantine(attemptId, "Identity invariant threshold not met across maximum retry attempts", liveUtc);
+                job.Quarantine(attemptId, "Identity invariant threshold not met across maximum retry attempts", liveUtc, workerId);
             }
 
             var artifact = new SceneImage(

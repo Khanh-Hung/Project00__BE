@@ -378,14 +378,16 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
                     catch (Exception ex)
                     {
-                        attemptRecord.MarkFailed(ex.Message, _dateTimeProvider.UtcNow, workerId, nowUtc);
+                        var failTime = _dateTimeProvider.UtcNow;
+                        attemptRecord.MarkFailed(ex.Message, failTime, workerId, failTime);
                         await _dbContext.SaveChangesAsync(ct);
                         throw;
                     }
 
                     if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
                     {
-                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", _dateTimeProvider.UtcNow, workerId, nowUtc);
+                        var emptyFailTime = _dateTimeProvider.UtcNow;
+                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", emptyFailTime, workerId, emptyFailTime);
                         await _dbContext.SaveChangesAsync(ct);
                         _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
                         throw new GpuNonTransientException("Image generation completed without producing an image URL.");
@@ -394,23 +396,39 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                 if (_qualityGuardPolicy.IsActive)
                 {
-                    attemptRecord.StartEvaluating(workerId, nowUtc);
+                    var evalStartTime = _dateTimeProvider.UtcNow;
+                    if (attemptRecord.LeaseUntil.HasValue && attemptRecord.LeaseUntil.Value <= evalStartTime)
+                    {
+                        _logger.LogWarning("[SceneGenerationLeaseExpired] Worker {WorkerId} lease expired at {LeaseUntil:O} (now: {Now:O}) before evaluation. Deferring.",
+                            workerId, attemptRecord.LeaseUntil.Value, evalStartTime);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease expired during generation");
+                    }
+
+                    attemptRecord.StartEvaluating(workerId, evalStartTime);
                     lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
                     
+                    var evalCompletionTime = _dateTimeProvider.UtcNow;
+                    if (attemptRecord.LeaseUntil.HasValue && attemptRecord.LeaseUntil.Value <= evalCompletionTime)
+                    {
+                        _logger.LogWarning("[SceneGenerationLeaseExpired] Worker {WorkerId} lease expired at {LeaseUntil:O} (now: {Now:O}) during evaluation. Deferring.",
+                            workerId, attemptRecord.LeaseUntil.Value, evalCompletionTime);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease expired during evaluation");
+                    }
+
                     if (lastEvaluation.Status == IdentityStatus.Passed)
                     {
-                        attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow, workerId, nowUtc);
+                        attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, evalCompletionTime, workerId, evalCompletionTime);
                     }
                     else if (lastEvaluation.Status == IdentityStatus.Degraded)
                     {
-                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow, workerId, nowUtc);
+                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, evalCompletionTime, workerId, evalCompletionTime);
                     }
                     else
                     {
                         var violationMsg = lastEvaluation.Violations.Count > 0
                             ? string.Join("; ", lastEvaluation.Violations.Select(v => v.Code))
                             : "Hard invariant violation";
-                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", _dateTimeProvider.UtcNow, workerId, nowUtc);
+                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", evalCompletionTime, workerId, evalCompletionTime);
                     }
 
                     var evalOutbox = new OutboxMessage(
@@ -451,7 +469,15 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 }
                 else
                 {
-                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow, workerId, nowUtc);
+                    var compTime = _dateTimeProvider.UtcNow;
+                    if (attemptRecord.LeaseUntil.HasValue && attemptRecord.LeaseUntil.Value <= compTime)
+                    {
+                        _logger.LogWarning("[SceneGenerationLeaseExpired] Worker {WorkerId} lease expired at {LeaseUntil:O} (now: {Now:O}) before completion. Deferring.",
+                            workerId, attemptRecord.LeaseUntil.Value, compTime);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease expired during generation");
+                    }
+
+                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, compTime, workerId, compTime);
                     await _dbContext.SaveChangesAsync(ct);
                     isIdentityPassed = true;
                     break;
@@ -489,15 +515,63 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         catch (GpuNonTransientException ex)
         {
             _logger.LogError(ex, "[SceneGenerationFatalError] Non-transient failure for JobId={JobId}, OutboxId={OutboxId}: {Message}", job.Id, outboxId, ex.Message);
-            job.Fail(ex.Message, isRetryable: false, now: _dateTimeProvider.UtcNow);
-            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            var failTime = _dateTimeProvider.UtcNow;
+            try
+            {
+                if (_dbContext.Database.IsRelational())
+                {
+                    await _dbContext.ImageGenerationJobs
+                        .Where(j => j.Id == job.Id && j.ClaimedBy == workerId && j.LeaseUntil.HasValue && j.LeaseUntil.Value > failTime)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(j => j.Status, ImageJobStatus.Failed)
+                            .SetProperty(j => j.FailureReason, ex.Message)
+                            .SetProperty(j => j.IsRetryable, false)
+                            .SetProperty(j => j.CompletedAt, failTime)
+                            .SetProperty(j => j.LeaseUntil, (DateTime?)null)
+                            .SetProperty(j => j.Version, j => j.Version + 1)
+                            .SetProperty(j => j.UpdatedAt, failTime), CancellationToken.None);
+                }
+                else
+                {
+                    job.Fail(ex.Message, isRetryable: false, now: failTime, workerId: workerId);
+                    await _dbContext.SaveChangesAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception failEx)
+            {
+                _logger.LogWarning(failEx, "[SceneGenerationFailIgnored] Stale worker {WorkerId} cannot mark JobId={JobId} failed because lease expired or was lost.", workerId, job.Id);
+            }
             throw;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[SceneGenerationTransientError] Transient failure for JobId={JobId}, OutboxId={OutboxId}: {Message}. Releasing lease for retry.", job.Id, outboxId, ex.Message);
-            job.Fail(ex.Message, isRetryable: true, now: _dateTimeProvider.UtcNow);
-            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            var failTime = _dateTimeProvider.UtcNow;
+            try
+            {
+                if (_dbContext.Database.IsRelational())
+                {
+                    await _dbContext.ImageGenerationJobs
+                        .Where(j => j.Id == job.Id && j.ClaimedBy == workerId && j.LeaseUntil.HasValue && j.LeaseUntil.Value > failTime)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(j => j.Status, ImageJobStatus.Failed)
+                            .SetProperty(j => j.FailureReason, ex.Message)
+                            .SetProperty(j => j.IsRetryable, true)
+                            .SetProperty(j => j.CompletedAt, failTime)
+                            .SetProperty(j => j.LeaseUntil, (DateTime?)null)
+                            .SetProperty(j => j.Version, j => j.Version + 1)
+                            .SetProperty(j => j.UpdatedAt, failTime), CancellationToken.None);
+                }
+                else
+                {
+                    job.Fail(ex.Message, isRetryable: true, now: failTime, workerId: workerId);
+                    await _dbContext.SaveChangesAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception failEx)
+            {
+                _logger.LogWarning(failEx, "[SceneGenerationFailIgnored] Stale worker {WorkerId} cannot mark JobId={JobId} failed because lease expired or was lost.", workerId, job.Id);
+            }
             throw;
         }
     }

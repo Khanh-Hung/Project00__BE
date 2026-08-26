@@ -119,22 +119,40 @@ public sealed class ImageGenerationJob : BaseEntity
         }
     }
 
-    public void MarkEvaluating(DateTime now)
+    public void MarkEvaluating(DateTime now, string? workerId = null)
     {
         if (Status != ImageJobStatus.Processing)
             throw new InvalidOperationException($"Cannot transition job {Id} to Evaluating: evaluation is only allowed from Processing/Running, but current status is {Status}.");
+
+        if (workerId != null)
+        {
+            if (ClaimedBy != null && !string.Equals(ClaimedBy, workerId, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Cannot evaluate job {Id}: worker '{workerId}' is not the active owner ('{ClaimedBy}').");
+
+            if (LeaseUntil.HasValue && LeaseUntil.Value <= now)
+                throw new InvalidOperationException($"Cannot evaluate job {Id}: worker lease expired at {LeaseUntil.Value:O} (now: {now:O}).");
+        }
 
         Status = ImageJobStatus.Evaluating;
         Touch();
     }
 
-    public void AcceptAttempt(Guid attemptId, DateTime now, string? metadataJson = null)
+    public void AcceptAttempt(Guid attemptId, DateTime now, string? metadataJson = null, string? workerId = null)
     {
         if (attemptId == Guid.Empty)
             throw new ArgumentException("AcceptedAttemptId cannot be empty.", nameof(attemptId));
 
         if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
             throw new InvalidOperationException($"Cannot accept attempt for job {Id}: acceptance is only allowed from Processing or Evaluating, but current status is {Status}.");
+
+        if (workerId != null)
+        {
+            if (ClaimedBy != null && !string.Equals(ClaimedBy, workerId, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Cannot accept attempt for job {Id}: worker '{workerId}' is not the active owner ('{ClaimedBy}').");
+
+            if (LeaseUntil.HasValue && LeaseUntil.Value <= now)
+                throw new InvalidOperationException($"Cannot accept attempt for job {Id}: worker lease expired at {LeaseUntil.Value:O} (now: {now:O}).");
+        }
 
         AcceptedAttemptId = attemptId;
         QuarantinedAttemptId = null;
@@ -150,10 +168,19 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
-    public void Quarantine(Guid? lastAttemptId, string reason, DateTime now)
+    public void Quarantine(Guid? lastAttemptId, string reason, DateTime now, string? workerId = null)
     {
         if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
             throw new InvalidOperationException($"Cannot quarantine job {Id}: quarantine is only allowed from Processing or Evaluating, but current status is {Status}.");
+
+        if (workerId != null)
+        {
+            if (ClaimedBy != null && !string.Equals(ClaimedBy, workerId, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Cannot quarantine job {Id}: worker '{workerId}' is not the active owner ('{ClaimedBy}').");
+
+            if (LeaseUntil.HasValue && LeaseUntil.Value <= now)
+                throw new InvalidOperationException($"Cannot quarantine job {Id}: worker lease expired at {LeaseUntil.Value:O} (now: {now:O}).");
+        }
 
         AcceptedAttemptId = null;
         QuarantinedAttemptId = lastAttemptId;
@@ -165,10 +192,19 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
-    public void Fail(string reason, bool isRetryable, DateTime now)
+    public void Fail(string reason, bool isRetryable, DateTime now, string? workerId = null)
     {
         if (Status == ImageJobStatus.Completed || Status == ImageJobStatus.Quarantined || Status == ImageJobStatus.Cancelled)
             throw new InvalidOperationException($"Cannot fail job {Id} because it is already in terminal state {Status}.");
+
+        if (workerId != null)
+        {
+            if (ClaimedBy != null && !string.Equals(ClaimedBy, workerId, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Cannot fail job {Id}: worker '{workerId}' is not the active owner ('{ClaimedBy}').");
+
+            if (LeaseUntil.HasValue && LeaseUntil.Value <= now)
+                throw new InvalidOperationException($"Cannot fail job {Id}: worker lease expired at {LeaseUntil.Value:O} (now: {now:O}).");
+        }
 
         Status = ImageJobStatus.Failed;
         FailureReason = reason;

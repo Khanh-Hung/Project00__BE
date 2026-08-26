@@ -262,6 +262,118 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
     }
 
     [Fact]
+    public async Task ArtifactAcceptance_WhenAttemptLeaseExpired_ReturnsDeferred()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        using var db = new ProjectDbContext(options);
+        var service = new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
+
+        var jobId = Guid.NewGuid();
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1) { Id = jobId };
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
+        await db.ImageGenerationJobs.AddAsync(job);
+
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1", status: GenerationAttemptStatus.Running, claimedBy: "worker-1", startedAt: Clock.Now.AddMinutes(-5), leaseUntil: Clock.Now.AddMinutes(-3));
+        await db.ImageGenerationAttempts.AddAsync(attempt);
+        await db.SaveChangesAsync();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        var request = new ArtifactAcceptanceRequest(
+            Job: job,
+            WinningAttempt: attempt,
+            Snapshot: snapshot,
+            ImageUrl: "https://cdn.project00.ai/image.png",
+            CompiledPrompt: "prompt",
+            ResolvedPreviousSceneImageUrl: null,
+            GenerationFingerprint: "fp_1",
+            MetadataJson: null,
+            IsIdentityPassed: true,
+            WorkerId: "worker-1",
+            OutboxId: Guid.NewGuid()
+        );
+
+        var result = await service.AcceptAttemptAtomicallyAsync(request);
+        Assert.Equal(JobExecutionStatus.Deferred, result.Status);
+    }
+
+    [Fact]
+    public async Task ArtifactAcceptance_WhenAttemptOwnedByDifferentWorker_ReturnsDeferred()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        using var db = new ProjectDbContext(options);
+        var service = new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
+
+        var jobId = Guid.NewGuid();
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1) { Id = jobId };
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
+        await db.ImageGenerationJobs.AddAsync(job);
+
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1", status: GenerationAttemptStatus.Running, claimedBy: "worker-2", startedAt: Clock.Now, leaseUntil: Clock.Now.AddMinutes(2));
+        await db.ImageGenerationAttempts.AddAsync(attempt);
+        await db.SaveChangesAsync();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        var request = new ArtifactAcceptanceRequest(
+            Job: job,
+            WinningAttempt: attempt,
+            Snapshot: snapshot,
+            ImageUrl: "https://cdn.project00.ai/image.png",
+            CompiledPrompt: "prompt",
+            ResolvedPreviousSceneImageUrl: null,
+            GenerationFingerprint: "fp_1",
+            MetadataJson: null,
+            IsIdentityPassed: true,
+            WorkerId: "worker-1",
+            OutboxId: Guid.NewGuid()
+        );
+
+        var result = await service.AcceptAttemptAtomicallyAsync(request);
+        Assert.Equal(JobExecutionStatus.Deferred, result.Status);
+    }
+
+    [Fact]
     public async Task ArtifactAcceptance_TransactionalOutboxEvent_PersistedInSameTransaction()
     {
         using var connection = new SqliteConnection("DataSource=:memory:");

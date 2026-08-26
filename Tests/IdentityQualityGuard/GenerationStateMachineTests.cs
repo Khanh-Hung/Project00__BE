@@ -160,6 +160,51 @@ public sealed class GenerationStateMachineTests
         Assert.Throws<InvalidOperationException>(() => job.AcceptAttempt(Guid.NewGuid(), Clock.Now));
     }
 
+    [Fact]
+    public void Job_ExpiredLease_CannotFail_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-A", TimeSpan.FromMinutes(2), Clock.Now.AddMinutes(-5)); // expired 3 min ago
+
+        Assert.Throws<InvalidOperationException>(() => job.Fail("crash", isRetryable: false, now: Clock.Now, workerId: "worker-A"));
+    }
+
+    [Fact]
+    public void Job_WorkerMismatch_CannotFail_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-A", TimeSpan.FromMinutes(2), Clock.Now);
+
+        Assert.Throws<InvalidOperationException>(() => job.Fail("crash", isRetryable: false, now: Clock.Now, workerId: "worker-B"));
+    }
+
+    [Fact]
+    public void Job_ExpiredLease_CannotAcceptAttempt_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-A", TimeSpan.FromMinutes(2), Clock.Now.AddMinutes(-5));
+
+        Assert.Throws<InvalidOperationException>(() => job.AcceptAttempt(Guid.NewGuid(), Clock.Now, workerId: "worker-A"));
+    }
+
+    [Fact]
+    public void Job_ExpiredLease_CannotQuarantine_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-A", TimeSpan.FromMinutes(2), Clock.Now.AddMinutes(-5));
+
+        Assert.Throws<InvalidOperationException>(() => job.Quarantine(Guid.NewGuid(), "degraded", Clock.Now, workerId: "worker-A"));
+    }
+
+    [Fact]
+    public void Job_ExpiredLease_CannotMarkEvaluating_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-A", TimeSpan.FromMinutes(2), Clock.Now.AddMinutes(-5));
+
+        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now, workerId: "worker-A"));
+    }
+
     #endregion
 
     #region ImageGenerationAttempt State Machine Invariants
