@@ -1,4 +1,5 @@
 using System.Globalization;
+using Domain.Enums;
 using Domain.ValueObjects;
 using Microsoft.Extensions.Configuration;
 
@@ -9,11 +10,12 @@ namespace Application.Services;
 /// Allows fine-tuned control over continuity versus action compliance without hardcoded magic numbers.
 /// </summary>
 public sealed record Slot2ConditioningPolicy(
-    double SameSceneWeight = 0.15,
-    double SameSceneEndAt = 0.30,
-    double TransitionWeight = 0.08,
-    double TransitionEndAt = 0.20,
-    bool BypassOnColdStart = true
+    double SameSceneWeight = 0.12,
+    double SameSceneEndAt = 0.25,
+    double TransitionWeight = 0.06,
+    double TransitionEndAt = 0.15,
+    bool BypassOnColdStart = true,
+    Slot2ConditioningMode Mode = Slot2ConditioningMode.SceneStyleContinuity
 )
 {
     public static readonly Slot2ConditioningPolicy Default = new();
@@ -58,13 +60,37 @@ public sealed record Slot2ConditioningPolicy(
             bypassStr,
             Default.BypassOnColdStart);
 
+        var modeStr = configuration["AiProviders:ImageGeneration:Slot2Policy:Mode"]
+            ?? configuration["AiProviders:ImageGeneration:Slot2Policy:WeightType"];
+        var mode = ParseValidatedMode(modeStr, Default.Mode);
+
         return new Slot2ConditioningPolicy(
             SameSceneWeight: sameWeight,
             SameSceneEndAt: sameEndAt,
             TransitionWeight: transWeight,
             TransitionEndAt: transEndAt,
-            BypassOnColdStart: bypassColdStart
+            BypassOnColdStart: bypassColdStart,
+            Mode: mode
         );
+    }
+
+    private static Slot2ConditioningMode ParseValidatedMode(string? modeStr, Slot2ConditioningMode defaultMode)
+    {
+        if (string.IsNullOrWhiteSpace(modeStr))
+            return defaultMode;
+
+        if (Enum.TryParse<Slot2ConditioningMode>(modeStr, ignoreCase: true, out var parsed))
+            return parsed;
+
+        if (string.Equals(modeStr, "style transfer", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(modeStr, "style_transfer", StringComparison.OrdinalIgnoreCase))
+            return Slot2ConditioningMode.SceneStyleContinuity;
+
+        if (string.Equals(modeStr, "linear", StringComparison.OrdinalIgnoreCase))
+            return Slot2ConditioningMode.FullLinearContinuity;
+
+        throw new InvalidOperationException(
+            $"Invalid configuration for 'AiProviders:ImageGeneration:Slot2Policy:Mode': '{modeStr}'. Valid values: 'SceneStyleContinuity', 'FullLinearContinuity', 'Bypassed'.");
     }
 
     private static double ParseValidatedUnitInterval(string keyName, string? valueStr, double defaultValue)
@@ -107,7 +133,8 @@ public sealed record Slot2ConditioningPolicy(
                 IsActive: false,
                 Weight: 0.0f,
                 EndAt: 0.0f,
-                Context: Domain.Enums.Slot2Context.ColdStart
+                Context: Slot2Context.ColdStart,
+                Mode: Slot2ConditioningMode.Bypassed
             );
         }
 
@@ -117,7 +144,8 @@ public sealed record Slot2ConditioningPolicy(
                 IsActive: true,
                 Weight: (float)Math.Clamp(TransitionWeight, 0.0, 1.0),
                 EndAt: (float)Math.Clamp(TransitionEndAt, 0.0, 1.0),
-                Context: Domain.Enums.Slot2Context.SceneTransition
+                Context: Slot2Context.SceneTransition,
+                Mode: Mode
             );
         }
 
@@ -125,7 +153,8 @@ public sealed record Slot2ConditioningPolicy(
             IsActive: true,
             Weight: (float)Math.Clamp(SameSceneWeight, 0.0, 1.0),
             EndAt: (float)Math.Clamp(SameSceneEndAt, 0.0, 1.0),
-            Context: Domain.Enums.Slot2Context.SameScene
+            Context: Slot2Context.SameScene,
+            Mode: Mode
         );
     }
 

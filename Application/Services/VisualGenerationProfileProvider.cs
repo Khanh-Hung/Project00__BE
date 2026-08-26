@@ -98,10 +98,16 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
 
         // 4. Resolve Context-Aware Scene Continuity Parameters from Policy
         var effectivePolicy = Slot2ConditioningPolicy.FromConfiguration(_configuration);
-        var (resolvedWeight, resolvedEndAt, _) = effectivePolicy.Resolve(isColdStart, isTransition);
+        var decision = effectivePolicy.Decide(isColdStart, isTransition);
 
-        float sceneWeight = (float)resolvedWeight;
-        float sceneEndAt = (float)resolvedEndAt;
+        float sceneWeight = decision.Weight;
+        float sceneEndAt = decision.EndAt;
+        string weightType = decision.Mode switch
+        {
+            Domain.Enums.Slot2ConditioningMode.SceneStyleContinuity => "style transfer",
+            Domain.Enums.Slot2ConditioningMode.FullLinearContinuity => "linear",
+            _ => "style transfer"
+        };
 
         // 5. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
         var parametersJson = JsonSerializer.Serialize(new
@@ -114,7 +120,8 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             sceneContinuity = new
             {
                 weight = sceneWeight,
-                endAt = sceneEndAt
+                endAt = sceneEndAt,
+                weightType = weightType
             }
         });
 

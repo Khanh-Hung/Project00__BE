@@ -1,4 +1,4 @@
-﻿using Domain.Enums;
+using Domain.Enums;
 
 namespace Domain.ValueObjects;
 
@@ -10,5 +10,6 @@ public sealed record Slot2ConditioningDecision(
     bool IsActive,
     float Weight,
     float EndAt,
-    Slot2Context Context
+    Slot2Context Context,
+    Slot2ConditioningMode Mode = Slot2ConditioningMode.SceneStyleContinuity
 );

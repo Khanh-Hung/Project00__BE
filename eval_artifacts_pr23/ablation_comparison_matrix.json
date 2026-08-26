@@ -1,0 +1,236 @@
+[
+  {
+    "config_id": "A",
+    "config_name": "Config A: Baseline V2 (Linear Slot2: 0.15/0.30 same, 0.08/0.20 trans)",
+    "characters": {
+      "character_03_valerius": {
+        "name": "Valerius",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8113,
+        "mean_action_margin": -0.0201,
+        "same_scene_continuity": 0.927,
+        "transition_continuity": 0.8796
+      },
+      "character_02_elysia": {
+        "name": "Elysia",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.9286,
+        "mean_action_margin": -0.0345,
+        "same_scene_continuity": 0.9494,
+        "transition_continuity": 0.9612
+      },
+      "character_01_lyra": {
+        "name": "Lyra",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8501,
+        "mean_action_margin": -0.0202,
+        "same_scene_continuity": 0.9036,
+        "transition_continuity": 0.9325
+      }
+    }
+  },
+  {
+    "config_id": "B",
+    "config_name": "Config B: Slot 2 Disabled (Cold Start / Slot 1 Only)",
+    "characters": {
+      "character_03_valerius": {
+        "name": "Valerius",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.7802,
+        "mean_action_margin": -0.0237,
+        "same_scene_continuity": 0.904,
+        "transition_continuity": 0.9223
+      },
+      "character_02_elysia": {
+        "name": "Elysia",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.9228,
+        "mean_action_margin": -0.0348,
+        "same_scene_continuity": 0.9559,
+        "transition_continuity": 0.9612
+      },
+      "character_01_lyra": {
+        "name": "Lyra",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8554,
+        "mean_action_margin": -0.016,
+        "same_scene_continuity": 0.8943,
+        "transition_continuity": 0.9116
+      }
+    }
+  },
+  {
+    "config_id": "C",
+    "config_name": "Config C: Deep Attenuation (Linear 0.04/0.15)",
+    "characters": {
+      "character_03_valerius": {
+        "name": "Valerius",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8018,
+        "mean_action_margin": -0.0218,
+        "same_scene_continuity": 0.8888,
+        "transition_continuity": 0.886
+      },
+      "character_02_elysia": {
+        "name": "Elysia",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.9213,
+        "mean_action_margin": -0.0356,
+        "same_scene_continuity": 0.9498,
+        "transition_continuity": 0.9623
+      },
+      "character_01_lyra": {
+        "name": "Lyra",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8627,
+        "mean_action_margin": -0.0128,
+        "same_scene_continuity": 0.8991,
+        "transition_continuity": 0.9382
+      }
+    }
+  },
+  {
+    "config_id": "D",
+    "config_name": "Config D: Layer-Gated Style Transfer (Slot2 weight_type='style transfer', Down/Mid blocks only)",
+    "characters": {
+      "character_03_valerius": {
+        "name": "Valerius",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.7826,
+        "mean_action_margin": -0.0198,
+        "same_scene_continuity": 0.9198,
+        "transition_continuity": 0.9368
+      },
+      "character_02_elysia": {
+        "name": "Elysia",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.9273,
+        "mean_action_margin": -0.0363,
+        "same_scene_continuity": 0.9495,
+        "transition_continuity": 0.9563
+      },
+      "character_01_lyra": {
+        "name": "Lyra",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8579,
+        "mean_action_margin": -0.0125,
+        "same_scene_continuity": 0.8971,
+        "transition_continuity": 0.9288
+      }
+    }
+  },
+  {
+    "config_id": "E",
+    "config_name": "Config E: Anatomical Invariant Anchors (Linear Slot2 + Anti-Breasts/Flat Chest)",
+    "characters": {
+      "character_03_valerius": {
+        "name": "Valerius",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.7976,
+        "mean_action_margin": -0.0192,
+        "same_scene_continuity": 0.859,
+        "transition_continuity": 0.8683
+      },
+      "character_02_elysia": {
+        "name": "Elysia",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.9286,
+        "mean_action_margin": -0.0345,
+        "same_scene_continuity": 0.9494,
+        "transition_continuity": 0.9612
+      },
+      "character_01_lyra": {
+        "name": "Lyra",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8501,
+        "mean_action_margin": -0.0202,
+        "same_scene_continuity": 0.9036,
+        "transition_continuity": 0.9325
+      }
+    }
+  },
+  {
+    "config_id": "F",
+    "config_name": "Config F: Candidate (Layer-Gated 'style transfer' 0.10/0.25 + Anatomical Gate)",
+    "characters": {
+      "character_03_valerius": {
+        "name": "Valerius",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8153,
+        "mean_action_margin": -0.0081,
+        "same_scene_continuity": 0.8818,
+        "transition_continuity": 0.8877
+      },
+      "character_02_elysia": {
+        "name": "Elysia",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.9262,
+        "mean_action_margin": -0.034,
+        "same_scene_continuity": 0.9532,
+        "transition_continuity": 0.9641
+      },
+      "character_01_lyra": {
+        "name": "Lyra",
+        "gender_retention": "8/8 (100.0%)",
+        "gender_passes": 8,
+        "feature_retention": "8/8 (100.0%)",
+        "feature_passes": 8,
+        "mean_face_identity": 0.8555,
+        "mean_action_margin": -0.007,
+        "same_scene_continuity": 0.9078,
+        "transition_continuity": 0.9209
+      }
+    }
+  }
+]

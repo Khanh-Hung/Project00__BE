@@ -182,22 +182,24 @@ public sealed class IdentityInvariantSystemTests
     }
 
     [Theory]
-    [InlineData(true, false, 0.0, 0.0, false)]
-    [InlineData(false, false, 0.15, 0.30, true)]
-    [InlineData(false, true, 0.08, 0.20, true)]
+    [InlineData(true, false, 0.0, 0.0, false, Slot2ConditioningMode.Bypassed)]
+    [InlineData(false, false, 0.12, 0.25, true, Slot2ConditioningMode.SceneStyleContinuity)]
+    [InlineData(false, true, 0.06, 0.15, true, Slot2ConditioningMode.SceneStyleContinuity)]
     public void Slot2ConditioningPolicy_ResolvesExpectedParameters(
         bool isColdStart,
         bool isTransition,
         double expectedWeight,
         double expectedEndAt,
-        bool expectedActive)
+        bool expectedActive,
+        Slot2ConditioningMode expectedMode)
     {
         var policy = new Slot2ConditioningPolicy(
-            SameSceneWeight: 0.15,
-            SameSceneEndAt: 0.30,
-            TransitionWeight: 0.08,
-            TransitionEndAt: 0.20,
-            BypassOnColdStart: true
+            SameSceneWeight: 0.12,
+            SameSceneEndAt: 0.25,
+            TransitionWeight: 0.06,
+            TransitionEndAt: 0.15,
+            BypassOnColdStart: true,
+            Mode: Slot2ConditioningMode.SceneStyleContinuity
         );
 
         var decision = policy.Decide(isColdStart, isTransition);
@@ -205,6 +207,7 @@ public sealed class IdentityInvariantSystemTests
         Assert.Equal(expectedWeight, decision.Weight, precision: 4);
         Assert.Equal(expectedEndAt, decision.EndAt, precision: 4);
         Assert.Equal(expectedActive, decision.IsActive);
+        Assert.Equal(expectedMode, decision.Mode);
     }
 
     [Theory]
@@ -290,12 +293,13 @@ public sealed class IdentityInvariantSystemTests
         Assert.Equal("https://cdn.project00.ai/scenes/valerius_turn_1.png", snap2.PreviousSceneImageUrl);
         Assert.Equal(2, snap2.SceneRevision);
 
-        // Verify Same-Scene parameters: weight = 0.15, endAt = 0.30
+        // Verify Same-Scene parameters: weight = 0.12, endAt = 0.25, weightType = style transfer
         using (var doc = JsonDocument.Parse(snap2.GenerationProfile.ParametersJson))
         {
             var sc = doc.RootElement.GetProperty("sceneContinuity");
-            Assert.Equal(0.15, sc.GetProperty("weight").GetDouble(), precision: 2);
-            Assert.Equal(0.30, sc.GetProperty("endAt").GetDouble(), precision: 2);
+            Assert.Equal(0.12, sc.GetProperty("weight").GetDouble(), precision: 2);
+            Assert.Equal(0.25, sc.GetProperty("endAt").GetDouble(), precision: 2);
+            Assert.Equal("style transfer", sc.GetProperty("weightType").GetString());
         }
 
         // Commit Turn 2 Image into DB
@@ -314,12 +318,13 @@ public sealed class IdentityInvariantSystemTests
         Assert.Equal("https://cdn.project00.ai/scenes/valerius_turn_2.png", snap3.PreviousSceneImageUrl);
         Assert.Equal(3, snap3.SceneRevision);
 
-        // Verify Scene Transition parameters: attenuated weight = 0.08, endAt = 0.20
+        // Verify Scene Transition parameters: attenuated weight = 0.06, endAt = 0.15, weightType = style transfer
         using (var doc = JsonDocument.Parse(snap3.GenerationProfile.ParametersJson))
         {
             var sc = doc.RootElement.GetProperty("sceneContinuity");
-            Assert.Equal(0.08, sc.GetProperty("weight").GetDouble(), precision: 2);
-            Assert.Equal(0.20, sc.GetProperty("endAt").GetDouble(), precision: 2);
+            Assert.Equal(0.06, sc.GetProperty("weight").GetDouble(), precision: 2);
+            Assert.Equal(0.15, sc.GetProperty("endAt").GetDouble(), precision: 2);
+            Assert.Equal("style transfer", sc.GetProperty("weightType").GetString());
         }
     }
 
@@ -430,8 +435,9 @@ public sealed class IdentityInvariantSystemTests
         Assert.NotNull(req.ParametersJson);
         using var doc = JsonDocument.Parse(req.ParametersJson);
         var sc = doc.RootElement.GetProperty("sceneContinuity");
-        Assert.Equal(0.15, sc.GetProperty("weight").GetDouble(), precision: 2);
-        Assert.Equal(0.30, sc.GetProperty("endAt").GetDouble(), precision: 2);
+        Assert.Equal(0.12, sc.GetProperty("weight").GetDouble(), precision: 2);
+        Assert.Equal(0.25, sc.GetProperty("endAt").GetDouble(), precision: 2);
+        Assert.Equal("style transfer", sc.GetProperty("weightType").GetString());
     }
 
     private sealed class CapturingImageGenerationService : IImageGenerationService

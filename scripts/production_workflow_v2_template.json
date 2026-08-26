@@ -88,7 +88,7 @@
     "class_type": "IPAdapterAdvanced",
     "inputs": {
       "weight": 0.2,
-      "weight_type": "linear",
+      "weight_type": "style transfer",
       "combine_embeds": "concat",
       "start_at": 0,
       "end_at": 0.4,

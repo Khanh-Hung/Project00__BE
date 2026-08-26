@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Exceptions;
 using Application.Interfaces;
 
@@ -48,6 +48,7 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
         float ipAdapterEndAt = 0.85f;
         float sceneContinuityWeight = request.SceneScale ?? 0.20f;
         float sceneContinuityEndAt = 0.40f;
+        string sceneWeightType = "style transfer";
 
         if (!string.IsNullOrWhiteSpace(request.ParametersJson))
         {
@@ -63,6 +64,8 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
                 {
                     if (scProp.TryGetProperty("weight", out var swProp)) sceneContinuityWeight = (float)swProp.GetDouble();
                     if (scProp.TryGetProperty("endAt", out var seProp)) sceneContinuityEndAt = (float)seProp.GetDouble();
+                    if (scProp.TryGetProperty("weightType", out var wtProp) && wtProp.ValueKind == JsonValueKind.String)
+                        sceneWeightType = wtProp.GetString() ?? "style transfer";
                 }
             }
             catch (JsonException ex)
@@ -184,7 +187,7 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
                 ["inputs"] = new Dictionary<string, object>
                 {
                     ["weight"] = Math.Round((double)sceneContinuityWeight, 4),
-                    ["weight_type"] = "linear",
+                    ["weight_type"] = sceneWeightType,
                     ["combine_embeds"] = "concat",
                     ["start_at"] = 0.0,
                     ["end_at"] = Math.Round((double)sceneContinuityEndAt, 4),
