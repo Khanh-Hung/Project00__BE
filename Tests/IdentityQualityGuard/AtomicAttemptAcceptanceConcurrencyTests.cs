@@ -65,14 +65,17 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var db1 = new ProjectDbContext(options);
         using var db2 = new ProjectDbContext(options);
 
+        var timeProvider = new SystemDateTimeProvider();
         var orchestrator1 = new ImageGenerationOrchestrator(
             dbContext: db1,
             visualCompiler: compiler,
             imageService: trackingImageService,
             logger: NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider: new SystemDateTimeProvider(),
+            dateTimeProvider: timeProvider,
             qualityEvaluator: evaluator,
-            qualityGuardPolicy: policy
+            qualityGuardPolicy: policy,
+            lineageResolver: new PredecessorLineageResolver(db1, NullLogger<PredecessorLineageResolver>.Instance),
+            acceptanceService: new ArtifactAcceptanceService(db1, timeProvider, NullLogger<ArtifactAcceptanceService>.Instance)
         );
 
         var orchestrator2 = new ImageGenerationOrchestrator(
@@ -80,9 +83,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             visualCompiler: compiler,
             imageService: trackingImageService,
             logger: NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider: new SystemDateTimeProvider(),
+            dateTimeProvider: timeProvider,
             qualityEvaluator: evaluator,
-            qualityGuardPolicy: policy
+            qualityGuardPolicy: policy,
+            lineageResolver: new PredecessorLineageResolver(db2, NullLogger<PredecessorLineageResolver>.Instance),
+            acceptanceService: new ArtifactAcceptanceService(db2, timeProvider, NullLogger<ArtifactAcceptanceService>.Instance)
         );
 
         var raceTime = DateTime.UtcNow;
@@ -191,14 +196,17 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
         using var dbWorker2 = new ProjectDbContext(options);
+        var timeProvider = new SystemDateTimeProvider();
         var orchestrator2 = new ImageGenerationOrchestrator(
             dbContext: dbWorker2,
             visualCompiler: compiler,
             imageService: countingImageService,
             logger: NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider: new SystemDateTimeProvider(),
+            dateTimeProvider: timeProvider,
             qualityEvaluator: evaluator,
-            qualityGuardPolicy: policy
+            qualityGuardPolicy: policy,
+            lineageResolver: new PredecessorLineageResolver(dbWorker2, NullLogger<PredecessorLineageResolver>.Instance),
+            acceptanceService: new ArtifactAcceptanceService(dbWorker2, timeProvider, NullLogger<ArtifactAcceptanceService>.Instance)
         );
 
         var result = await orchestrator2.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-2", DateTime.UtcNow);
@@ -417,15 +425,18 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
+        var timeProvider = new SystemDateTimeProvider();
         using var db = new ProjectDbContext(options);
         var orchestrator = new ImageGenerationOrchestrator(
             dbContext: db,
             visualCompiler: compiler,
             imageService: imageService,
             logger: NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider: new SystemDateTimeProvider(),
+            dateTimeProvider: timeProvider,
             qualityEvaluator: evaluator,
-            qualityGuardPolicy: policy
+            qualityGuardPolicy: policy,
+            lineageResolver: new PredecessorLineageResolver(db, NullLogger<PredecessorLineageResolver>.Instance),
+            acceptanceService: new ArtifactAcceptanceService(db, timeProvider, NullLogger<ArtifactAcceptanceService>.Instance)
         );
 
         var result = await orchestrator.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
@@ -497,6 +508,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
+        var timeProvider = new SystemDateTimeProvider();
         // 1. Worker 1 runs and fully commits the transaction
         using (var dbWorker1 = new ProjectDbContext(options))
         {
@@ -505,9 +517,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
                 visualCompiler: compiler,
                 imageService: trackingImageService,
                 logger: NullLogger<ImageGenerationOrchestrator>.Instance,
-                dateTimeProvider: new SystemDateTimeProvider(),
+                dateTimeProvider: timeProvider,
                 qualityEvaluator: evaluator,
-                qualityGuardPolicy: policy
+                qualityGuardPolicy: policy,
+                lineageResolver: new PredecessorLineageResolver(dbWorker1, NullLogger<PredecessorLineageResolver>.Instance),
+                acceptanceService: new ArtifactAcceptanceService(dbWorker1, timeProvider, NullLogger<ArtifactAcceptanceService>.Instance)
             );
 
             var res1 = await orchestrator1.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
@@ -524,9 +538,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
                 visualCompiler: compiler,
                 imageService: trackingImageService,
                 logger: NullLogger<ImageGenerationOrchestrator>.Instance,
-                dateTimeProvider: new SystemDateTimeProvider(),
+                dateTimeProvider: timeProvider,
                 qualityEvaluator: evaluator,
-                qualityGuardPolicy: policy
+                qualityGuardPolicy: policy,
+                lineageResolver: new PredecessorLineageResolver(dbWorker2, NullLogger<PredecessorLineageResolver>.Instance),
+                acceptanceService: new ArtifactAcceptanceService(dbWorker2, timeProvider, NullLogger<ArtifactAcceptanceService>.Instance)
             );
 
             var res2 = await orchestrator2.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-2", DateTime.UtcNow);

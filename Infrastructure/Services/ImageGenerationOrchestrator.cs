@@ -38,9 +38,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         ILogger<ImageGenerationOrchestrator> logger,
         IDateTimeProvider dateTimeProvider,
         IIdentityQualityEvaluator qualityEvaluator,
-        IdentityQualityGuardPolicy? qualityGuardPolicy = null,
-        IPredecessorLineageResolver? lineageResolver = null,
-        IArtifactAcceptanceService? acceptanceService = null)
+        IdentityQualityGuardPolicy qualityGuardPolicy,
+        IPredecessorLineageResolver lineageResolver,
+        IArtifactAcceptanceService acceptanceService)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
@@ -48,10 +48,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _dateTimeProvider = dateTimeProvider ?? throw new ArgumentNullException(nameof(dateTimeProvider));
         _qualityEvaluator = qualityEvaluator ?? throw new ArgumentNullException(nameof(qualityEvaluator));
-        _qualityGuardPolicy = qualityGuardPolicy ?? IdentityQualityGuardPolicy.Default;
-
-        _lineageResolver = lineageResolver ?? new PredecessorLineageResolver(dbContext, NullLogger<PredecessorLineageResolver>.Instance);
-        _acceptanceService = acceptanceService ?? new ArtifactAcceptanceService(dbContext, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
+        _qualityGuardPolicy = qualityGuardPolicy ?? throw new ArgumentNullException(nameof(qualityGuardPolicy));
+        _lineageResolver = lineageResolver ?? throw new ArgumentNullException(nameof(lineageResolver));
+        _acceptanceService = acceptanceService ?? throw new ArgumentNullException(nameof(acceptanceService));
     }
 
     public async Task<JobExecutionResult> OrchestrateSceneImageGenerationAsync(
@@ -105,6 +104,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         var job = await _dbContext.ImageGenerationJobs
             .FirstOrDefaultAsync(j => j.SessionId == snapshot.SessionId && j.GenerationRequestId == generationRequestId, ct);
 
+        var jobClaimTime = now != default ? now : _dateTimeProvider.UtcNow;
         if (job == null)
         {
             job = new ImageGenerationJob(
@@ -117,7 +117,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 workflow: workflow,
                 workflowVersion: workflowVersion
             );
-            job.TryClaim(workerId, leaseDuration, now);
+
+            job.TryClaim(workerId, leaseDuration, jobClaimTime);
 
             try
             {
@@ -142,7 +143,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 throw new GpuNonTransientException(job.FailureReason ?? "Job permanently failed.");
             }
 
-            var claimed = job.TryClaim(workerId, leaseDuration, now);
+            var claimed = job.TryClaim(workerId, leaseDuration, jobClaimTime);
             if (!claimed)
             {
                 _logger.LogInformation("[SceneGenerationLeaseActive] Job is actively leased by worker '{ClaimedBy}' until {LeaseUntil}",
@@ -269,6 +270,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
                     else
                     {
+                        var attemptClaimTime = now != default ? now : _dateTimeProvider.UtcNow;
                         if (_dbContext.Database.IsRelational())
                         {
                             var rowsAffected = await _dbContext.ImageGenerationAttempts
@@ -276,12 +278,12 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                                             && a.Status != GenerationAttemptStatus.Succeeded
                                             && (a.Status != GenerationAttemptStatus.Running
                                                 || a.LeaseUntil == null
-                                                || a.LeaseUntil.Value <= nowUtc
+                                                || a.LeaseUntil.Value <= attemptClaimTime
                                                 || a.ClaimedBy == workerId))
                                 .ExecuteUpdateAsync(s => s
                                     .SetProperty(a => a.ClaimedBy, workerId)
-                                    .SetProperty(a => a.StartedAt, nowUtc)
-                                    .SetProperty(a => a.LeaseUntil, nowUtc.AddMinutes(2))
+                                    .SetProperty(a => a.StartedAt, attemptClaimTime)
+                                    .SetProperty(a => a.LeaseUntil, attemptClaimTime.AddMinutes(2))
                                     .SetProperty(a => a.Status, GenerationAttemptStatus.Running), ct);
 
                             if (rowsAffected != 1)
@@ -290,12 +292,12 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                                 return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by another worker");
                             }
 
-                            existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2));
+                            existingAttempt.TryClaim(workerId, attemptClaimTime, TimeSpan.FromMinutes(2));
                             attemptRecord = existingAttempt;
                         }
                         else
                         {
-                            if (!existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2)))
+                            if (!existingAttempt.TryClaim(workerId, attemptClaimTime, TimeSpan.FromMinutes(2)))
                             {
                                 return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
                             }
@@ -314,6 +316,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 }
                 else
                 {
+                    var attemptCreateTime = now != default ? now : _dateTimeProvider.UtcNow;
                     attemptRecord = new ImageGenerationAttempt(
                         generationJobId: job.Id,
                         turnId: snapshot.TurnId,
@@ -324,8 +327,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         generationFingerprint: attemptFingerprint,
                         status: GenerationAttemptStatus.Running,
                         claimedBy: workerId,
-                        startedAt: nowUtc,
-                        leaseUntil: nowUtc.AddMinutes(2)
+                        startedAt: attemptCreateTime,
+                        leaseUntil: attemptCreateTime.AddMinutes(2)
                     );
 
                     try
@@ -419,16 +422,11 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     {
                         attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, evalCompletionTime, workerId, evalCompletionTime);
                     }
-                    else if (lastEvaluation.Status == IdentityStatus.Degraded)
-                    {
-                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, evalCompletionTime, workerId, evalCompletionTime);
-                    }
                     else
                     {
-                        var violationMsg = lastEvaluation.Violations.Count > 0
-                            ? string.Join("; ", lastEvaluation.Violations.Select(v => v.Code))
-                            : "Hard invariant violation";
-                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", evalCompletionTime, workerId, evalCompletionTime);
+                        // IdentityStatus.Degraded or IdentityStatus.Failed is an evaluation quality outcome on a successfully generated image.
+                        // The attempt is marked Degraded (not GenerationAttemptStatus.Failed, which is reserved for GPU/execution crashes).
+                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, evalCompletionTime, workerId, evalCompletionTime);
                     }
 
                     var evalOutbox = new OutboxMessage(

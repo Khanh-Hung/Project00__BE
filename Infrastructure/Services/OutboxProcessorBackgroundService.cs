@@ -335,7 +335,11 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                     case OutboxEventTypes.GenerationJobQuarantined:
                     case OutboxEventTypes.GenerationAttemptStarted:
                     case OutboxEventTypes.GenerationAttemptEvaluated:
-                        // Lifecycle domain events are emitted to external broker/subscribers and marked completed
+                        var lifecycleDispatcher = scope.ServiceProvider.GetService<IOutboxLifecycleEventDispatcher>();
+                        if (lifecycleDispatcher != null)
+                        {
+                            await lifecycleDispatcher.DispatchAsync(msg.EventType, msg.PayloadJson, ct);
+                        }
                         msg.MarkCompleted(Clock.Now);
                         break;
 

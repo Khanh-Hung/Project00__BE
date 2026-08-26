@@ -11,6 +11,7 @@ using Infrastructure.Persistence;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -624,5 +625,178 @@ public sealed class ArtifactLifecycleIntegrationTests
         Assert.True(ready4);
         Assert.Equal("https://cdn.project00.ai/rev1_accepted.png", url4);
         Assert.Null(reason4);
+    }
+
+    [Fact]
+    public async Task IdentityStatus_Failed_AcrossMaxAttempts_QuarantinesJob_PreservesPredecessor_EmitsGenerationJobQuarantined()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var compiler = new FakePromptCompiler("1man knight", "1girl");
+        var imageService = new FakeImageService();
+        // Evaluator returns IdentityStatus.Failed (hard invariant violation) on all 3 attempts
+        var evaluator = new SequenceEvaluator(new[]
+        {
+            IdentityEvaluationResult.Fail(0.40f, 0.50f, 0.45f, new[] { new IdentityViolation(ReferenceAuthorityScope.CanonicalIdentity, "INV_FACE_MISMATCH", "Face mismatch", true) }),
+            IdentityEvaluationResult.Fail(0.42f, 0.51f, 0.46f, new[] { new IdentityViolation(ReferenceAuthorityScope.CanonicalIdentity, "INV_FACE_MISMATCH", "Face mismatch", true) }),
+            IdentityEvaluationResult.Fail(0.41f, 0.49f, 0.45f, new[] { new IdentityViolation(ReferenceAuthorityScope.CanonicalIdentity, "INV_FACE_MISMATCH", "Face mismatch", true) }),
+        });
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
+
+        var handler = new ImageGenerationJobHandler(
+            dbContext: db,
+            visualCompiler: compiler,
+            imageService: imageService,
+            logger: NullLogger<ImageGenerationJobHandler>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: evaluator,
+            qualityGuardPolicy: policy
+        );
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 2,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L),
+            PreviousSceneImageUrl: "https://cdn.project00.ai/turn1_good.png"
+        );
+
+        var prevImage = new SceneImage(
+            sessionId: sessionId,
+            characterId: characterId,
+            turnId: Guid.NewGuid(),
+            sceneRevision: 1,
+            imageUrl: "https://cdn.project00.ai/turn1_good.png",
+            prompt: "1man knight",
+            isCurrent: true
+        );
+        await db.SceneImages.AddAsync(prevImage);
+        await db.SaveChangesAsync();
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var result = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.Equal(3, imageService.CallCount); // Exhausted all 3 attempts
+
+        // P0 Verification: Attempts are marked Degraded (not Failed), allowing clean quarantine!
+        var attempts = await db.ImageGenerationAttempts.OrderBy(a => a.AttemptNumber).ToListAsync();
+        Assert.Equal(3, attempts.Count);
+        Assert.All(attempts, a => Assert.Equal(GenerationAttemptStatus.Degraded, a.Status));
+
+        var images = await db.SceneImages.OrderBy(i => i.SceneRevision).ToListAsync();
+        Assert.Equal(2, images.Count);
+        Assert.True(images[0].IsCurrent, "Predecessor revision 1 anchor must remain IsCurrent = true");
+        Assert.False(images[1].IsCurrent, "Quarantined revision 2 frame must have IsCurrent = false");
+
+        var job = await db.ImageGenerationJobs.FirstAsync();
+        Assert.Equal(ImageJobStatus.Quarantined, job.Status);
+        Assert.Null(job.AcceptedAttemptId);
+        Assert.Equal(attempts[2].Id, job.QuarantinedAttemptId);
+
+        // Verification of Outbox Event
+        var quarantinedOutbox = await db.OutboxMessages
+            .Where(m => m.EventType == OutboxEventTypes.GenerationJobQuarantined)
+            .ToListAsync();
+        Assert.Single(quarantinedOutbox);
+        Assert.Contains(job.Id.ToString(), quarantinedOutbox[0].PayloadJson);
+    }
+
+    [Fact]
+    public async Task OutboxProcessor_DispatchesLifecycleEvents_ToDispatcherBeforeMarkingCompleted()
+    {
+        var services = new ServiceCollection();
+        var dbName = Guid.NewGuid().ToString();
+        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddLogging();
+        services.AddSingleton<IVoicePromptCompiler>(new MockVoiceCompiler());
+        services.AddSingleton<IVisualPromptCompiler>(new FakePromptCompiler("1man knight", "1girl"));
+        services.AddSingleton<IVoiceGenerationService>(new MockVoiceService());
+        services.AddSingleton<IImageGenerationService>(new FakeImageService());
+        services.AddSingleton<IMemoryExtractionTrigger>(new MockMemoryTrigger());
+
+        var testDispatcher = new TestLifecycleEventDispatcher();
+        services.AddSingleton<IOutboxLifecycleEventDispatcher>(testDispatcher);
+
+        var sp = services.BuildServiceProvider();
+        var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var acceptedOutbox = new OutboxMessage(
+                eventType: OutboxEventTypes.GenerationJobAccepted,
+                payloadJson: "{\"JobId\":\"" + Guid.NewGuid() + "\"}"
+            );
+            var startedOutbox = new OutboxMessage(
+                eventType: OutboxEventTypes.GenerationAttemptStarted,
+                payloadJson: "{\"JobId\":\"" + Guid.NewGuid() + "\"}"
+            );
+            await db.OutboxMessages.AddRangeAsync(acceptedOutbox, startedOutbox);
+            await db.SaveChangesAsync();
+        }
+
+        var processor = new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance);
+        var processedCount = await processor.ProcessPendingOutboxMessagesAsync();
+        Assert.Equal(2, processedCount);
+
+        // Verify dispatcher was invoked for both lifecycle events
+        Assert.Equal(2, testDispatcher.DispatchedEvents.Count);
+        Assert.Contains(testDispatcher.DispatchedEvents, e => e.EventType == OutboxEventTypes.GenerationJobAccepted);
+        Assert.Contains(testDispatcher.DispatchedEvents, e => e.EventType == OutboxEventTypes.GenerationAttemptStarted);
+
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var messages = await db.OutboxMessages.ToListAsync();
+            Assert.All(messages, m => Assert.Equal(OutboxStatus.Completed, m.Status));
+        }
+    }
+
+    private sealed class TestLifecycleEventDispatcher : IOutboxLifecycleEventDispatcher
+    {
+        public List<(string EventType, string Payload)> DispatchedEvents { get; } = new();
+
+        public Task DispatchAsync(string eventType, string payloadJson, CancellationToken ct = default)
+        {
+            DispatchedEvents.Add((eventType, payloadJson));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class MockVoiceCompiler : IVoicePromptCompiler
+    {
+        public string ExtractCleanDialogueText(string rawReply) => rawReply;
+        public VoiceProviderRequest CompileVoiceRequest(VoiceContext context) => new VoiceProviderRequest("sample text", "alloy");
+    }
+
+    private sealed class MockVoiceService : IVoiceGenerationService
+    {
+        public Task<VoiceGenerationResult> GenerateVoiceAsync(VoiceGenerationRequest request, CancellationToken ct = default)
+            => Task.FromResult(new VoiceGenerationResult("https://cdn.project00.ai/audio.mp3", "audio/mpeg", TimeSpan.FromSeconds(3)));
+    }
+
+    private sealed class MockMemoryTrigger : IMemoryExtractionTrigger
+    {
+        public bool NotifyMessageSent(MemoryExtractionJob job) => true;
     }
 }

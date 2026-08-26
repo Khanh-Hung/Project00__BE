@@ -39,7 +39,9 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageGenerationOrchestrator>.Instance,
             dateTimeProvider: dateTimeProvider,
             qualityEvaluator: qualityEvaluator,
-            qualityGuardPolicy: qualityGuardPolicy
+            qualityGuardPolicy: qualityGuardPolicy ?? IdentityQualityGuardPolicy.Default,
+            lineageResolver: new PredecessorLineageResolver(dbContext, Microsoft.Extensions.Logging.Abstractions.NullLogger<PredecessorLineageResolver>.Instance),
+            acceptanceService: new ArtifactAcceptanceService(dbContext, dateTimeProvider, Microsoft.Extensions.Logging.Abstractions.NullLogger<ArtifactAcceptanceService>.Instance)
         );
     }
 
