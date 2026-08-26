@@ -76,6 +76,8 @@ public sealed class VisualIdentityInvariantTests
         {
             return Task.FromResult(new byte[] { 1, 2, 3, 4 });
         }
+
+        public Task InterruptAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class MockInputImageService : IComfyUIInputImageService

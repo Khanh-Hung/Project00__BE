@@ -154,6 +154,16 @@ public static class DependencyInjection
         services.AddScoped<IImageGenerationOrchestrator, Infrastructure.Services.ImageGenerationOrchestrator>();
         services.AddScoped<IImageGenerationJobHandler, Infrastructure.Services.ImageGenerationJobHandler>();
 
+        // PR #26: Generation Queue, Recovery, Cancellation & Reliability Services
+        services.AddSingleton<IGenerationJobQueue, GenerationQueue>();
+        services.AddSingleton(Application.Services.GenerationRetryPolicy.Default);
+        services.AddScoped<Application.Services.GenerationRecoveryService>();
+        services.AddScoped<Application.Services.GenerationCancellationService>();
+        services.AddScoped<Application.Services.ArtifactReconciliationService>();
+        services.AddHostedService<GenerationWorker>();
+        services.AddHostedService<GenerationRecoveryHostedService>();
+        services.AddHostedService<ArtifactReconciliationHostedService>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();

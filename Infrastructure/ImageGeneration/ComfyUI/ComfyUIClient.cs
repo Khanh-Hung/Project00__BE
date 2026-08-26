@@ -161,4 +161,25 @@ public sealed class ComfyUIClient : IComfyUIClient
             throw new GpuTransientException($"Failed to download rendered image from ComfyUI /view: {ex.Message}", statusCode: null, innerException: ex);
         }
     }
+
+    public async Task InterruptAsync(CancellationToken ct = default)
+    {
+        var serverUrl = GetServerUrl();
+        try
+        {
+            var res = await _httpClient.PostAsync($"{serverUrl}/interrupt", null, ct);
+            if (res.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Successfully sent interrupt signal to ComfyUI server at {ServerUrl}", serverUrl);
+            }
+            else
+            {
+                _logger.LogWarning("ComfyUI /interrupt returned HTTP {StatusCode}", (int)res.StatusCode);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to send interrupt request to ComfyUI at {ServerUrl}", serverUrl);
+        }
+    }
 }

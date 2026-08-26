@@ -1,0 +1,184 @@
+using Application.Services;
+using Domain.Common.DateTimes;
+using Domain.Entities;
+using Domain.Enums;
+using Infrastructure.ImageGeneration.ComfyUI;
+using Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+
+namespace Tests.GenerationReliability;
+
+public sealed class GenerationCancellationTests
+{
+    private sealed class TrackingComfyClient : IComfyUIClient
+    {
+        public bool InterruptCalled { get; private set; }
+        public Task<string> QueuePromptAsync(Dictionary<string, object> promptGraph, CancellationToken ct = default) => Task.FromResult("prompt-1");
+        public Task<ComfyUIHistoryResult?> GetHistoryAsync(string promptId, CancellationToken ct = default) => Task.FromResult<ComfyUIHistoryResult?>(null);
+        public Task<byte[]> DownloadImageAsync(string filename, string? subfolder = null, string? type = "output", CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
+        public Task InterruptAsync(CancellationToken ct = default)
+        {
+            InterruptCalled = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task CancelQueuedJob_TransitionsToCancelledImmediately()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.MarkQueued(DateTime.UtcNow);
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.ImageGenerationJobs.AddAsync(job);
+            await dbSeed.SaveChangesAsync();
+        }
+
+        var mockComfy = new TrackingComfyClient();
+
+        using (var dbCancel = new ProjectDbContext(options))
+        {
+            var cancellationService = new GenerationCancellationService(
+                dbContext: dbCancel,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                logger: NullLogger<GenerationCancellationService>.Instance,
+                comfyClient: mockComfy
+            );
+
+            var cancelled = await cancellationService.RequestCancellationAsync(job.Id, "User cancel");
+            Assert.True(cancelled);
+        }
+
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
+            Assert.Equal(ImageJobStatus.Cancelled, verifiedJob.Status);
+            Assert.True(verifiedJob.CancellationRequested);
+        }
+    }
+
+    [Fact]
+    public async Task CancelProcessingJob_SetsCancellationRequested_AndCallsProviderInterrupt()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.ImageGenerationJobs.AddAsync(job);
+            await dbSeed.SaveChangesAsync();
+        }
+
+        var mockComfy = new TrackingComfyClient();
+
+        using (var dbCancel = new ProjectDbContext(options))
+        {
+            var cancellationService = new GenerationCancellationService(
+                dbContext: dbCancel,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                logger: NullLogger<GenerationCancellationService>.Instance,
+                comfyClient: mockComfy
+            );
+
+            var cancelled = await cancellationService.RequestCancellationAsync(job.Id, "User cancel");
+            Assert.True(cancelled);
+            Assert.True(mockComfy.InterruptCalled);
+        }
+
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
+            Assert.True(verifiedJob.CancellationRequested);
+        }
+    }
+
+    [Fact]
+    public async Task CancelCompletedJob_ReturnsFalse_AndDoesNotMutateState()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+
+        var attempt = new ImageGenerationAttempt(
+            generationJobId: job.Id,
+            turnId: job.TurnId,
+            sceneRevision: 1,
+            attemptNumber: 1,
+            derivedSeed: 12345,
+            parametersJson: "{}",
+            generationFingerprint: "fp_cancel_test",
+            status: GenerationAttemptStatus.Succeeded
+        );
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.ImageGenerationJobs.AddAsync(job);
+            await dbSeed.ImageGenerationAttempts.AddAsync(attempt);
+            await dbSeed.SaveChangesAsync();
+
+            job.AcceptAttempt(attempt.Id, DateTime.UtcNow, "worker-1");
+            await dbSeed.SaveChangesAsync();
+        }
+
+        var mockComfy = new TrackingComfyClient();
+
+        using (var dbCancel = new ProjectDbContext(options))
+        {
+            var cancellationService = new GenerationCancellationService(
+                dbContext: dbCancel,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                logger: NullLogger<GenerationCancellationService>.Instance,
+                comfyClient: mockComfy
+            );
+
+            var cancelled = await cancellationService.RequestCancellationAsync(job.Id, "User cancel");
+            Assert.False(cancelled);
+            Assert.False(mockComfy.InterruptCalled);
+        }
+
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
+            Assert.Equal(ImageJobStatus.Completed, verifiedJob.Status);
+        }
+    }
+}

@@ -28,11 +28,16 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.Property(x => x.QuarantinedAttemptId);
         builder.Property(x => x.CurrentAttemptNumber).IsRequired().HasDefaultValue(0);
         builder.Property(x => x.FailureReason).HasMaxLength(2048);
+        builder.Property(x => x.RetryCount).IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.NextAttemptAt);
+        builder.Property(x => x.CancellationRequested).IsRequired().HasDefaultValue(false);
+        builder.Property(x => x.LastHeartbeatAt);
         builder.Property(x => x.Version).IsConcurrencyToken();
 
         builder.HasIndex(x => new { x.SessionId, x.GenerationRequestId }).IsUnique();
         builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision });
         builder.HasIndex(x => new { x.Status, x.LeaseUntil });
+        builder.HasIndex(x => new { x.Status, x.NextAttemptAt });
         builder.HasIndex(x => x.AcceptedAttemptId);
         builder.HasIndex(x => x.QuarantinedAttemptId);
 

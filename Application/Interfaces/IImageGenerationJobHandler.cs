@@ -6,7 +6,8 @@ public enum JobExecutionStatus
 {
     Completed,
     Deferred,
-    Skipped
+    Skipped,
+    Failed
 }
 
 public sealed record JobExecutionResult(JobExecutionStatus Status, string? Reason = null);

@@ -29,6 +29,10 @@ public sealed class ImageGenerationJob : BaseEntity
     public DateTime? CompletedAt { get; private set; }
     public string? FailureReason { get; private set; }
     public bool IsRetryable { get; private set; }
+    public int RetryCount { get; private set; } = 0;
+    public DateTime? NextAttemptAt { get; private set; }
+    public bool CancellationRequested { get; private set; } = false;
+    public DateTime? LastHeartbeatAt { get; private set; }
     public string Workflow { get; private set; } = "VisualIdentity";
     public int WorkflowVersion { get; private set; } = 1;
     public string? GenerationMetadataJson { get; private set; }
@@ -197,6 +201,49 @@ public sealed class ImageGenerationJob : BaseEntity
 
         if (!LeaseUntil.HasValue || LeaseUntil.Value <= now)
             throw new InvalidOperationException($"Cannot mutate job {Id}: worker lease expired at {LeaseUntil?.ToString("O") ?? "null"} (now: {now:O}).");
+    }
+
+    public void RequestCancellation(DateTime now)
+    {
+        if (IsTerminal())
+            return; // Idempotent no-op on already terminal jobs
+
+        CancellationRequested = true;
+
+        if (Status == ImageJobStatus.Pending || Status == ImageJobStatus.Queued)
+        {
+            Status = ImageJobStatus.Cancelled;
+            CompletedAt = now;
+            LeaseUntil = null;
+        }
+
+        Version++;
+        Touch();
+    }
+
+    public void ScheduleRetry(DateTime nextAttemptAt, string reason, DateTime now, string workerId)
+    {
+        if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
+            throw new InvalidOperationException($"Cannot schedule retry for job {Id}: retry transition is only allowed from Processing or Evaluating, but current status is {Status}.");
+
+        EnsureActiveLease(workerId, now);
+
+        Status = ImageJobStatus.Queued;
+        RetryCount++;
+        NextAttemptAt = nextAttemptAt;
+        FailureReason = reason;
+        IsRetryable = true;
+        ClaimedBy = null;
+        LeaseUntil = null;
+        Version++;
+        Touch();
+    }
+
+    public void RecordHeartbeat(DateTime now, string workerId)
+    {
+        EnsureActiveLease(workerId, now);
+        LastHeartbeatAt = now;
+        Touch();
     }
 
     public void Cancel(DateTime now)
