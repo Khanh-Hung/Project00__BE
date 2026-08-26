@@ -169,7 +169,8 @@ def create_contact_sheet(frame_paths, frame_labels, out_path, avatar_path):
 def evaluate_frame_quality(img_path, avatar_path, char_name, turn_data):
     img_emb = get_image_embedding(img_path)
     avatar_emb = get_image_embedding(avatar_path)
-    face_sim = float(cosine_similarity(img_emb, avatar_emb))
+    # Whole-image CLIP visual identity similarity proxy (measures overall canonical visual identity)
+    identity_sim = float(cosine_similarity(img_emb, avatar_emb))
 
     inv_violated = False
     if "Valerius" in char_name:
@@ -196,20 +197,20 @@ def evaluate_frame_quality(img_path, avatar_path, char_name, turn_data):
         feat_pass = (f_pos > f_neg)
         feat_score = float(max(0.0, min(1.0, (f_pos - f_neg + 0.1) * 5.0)))
 
-    overall = 0.6 * face_sim + 0.4 * feat_score
+    overall = 0.6 * identity_sim + 0.4 * feat_score
     if inv_violated:
         status = "Failed"
-    elif face_sim < 0.72 or feat_score < 0.50 or not feat_pass:
+    elif identity_sim < 0.72 or feat_score < 0.50 or not feat_pass:
         status = "Degraded"
     else:
         status = "Passed"
 
-    eval_target_passed = (face_sim >= 0.75 and feat_score >= 0.50 and feat_pass and not inv_violated)
+    eval_target_passed = (identity_sim >= 0.75 and feat_score >= 0.50 and feat_pass and not inv_violated)
 
     return {
         "status": status,
-        "identity_similarity": float(face_sim),
-        "face_similarity": float(face_sim), # Backwards-compatible alias
+        "identity_similarity": float(identity_sim),
+        "face_similarity": float(identity_sim), # Deprecated alias for backwards compatibility
         "feature_score": float(feat_score),
         "feature_passed": bool(feat_pass),
         "invariant_violated": bool(inv_violated),

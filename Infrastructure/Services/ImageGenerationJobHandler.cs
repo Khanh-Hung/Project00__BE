@@ -321,7 +321,6 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                                 return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by another worker");
                             }
 
-                            existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2));
                             attemptRecord = existingAttempt;
                         }
                         else
