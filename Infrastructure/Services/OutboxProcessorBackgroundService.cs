@@ -278,9 +278,26 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         var scenePayload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(msg.PayloadJson);
                         if (scenePayload?.Snapshot != null)
                         {
-                            var dateTimeProvider = scope.ServiceProvider.GetService<IDateTimeProvider>() ?? new SystemDateTimeProvider();
-                            var jobHandler = scope.ServiceProvider.GetService<IImageGenerationJobHandler>()
-                                ?? new ImageGenerationJobHandler(dbContext, visualCompiler, imageService, Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageGenerationJobHandler>.Instance, dateTimeProvider);
+                            var jobHandler = scope.ServiceProvider.GetService<IImageGenerationJobHandler>();
+                            if (jobHandler == null)
+                            {
+                                var evaluator = scope.ServiceProvider.GetService<IIdentityQualityEvaluator>()
+                                    ?? new DevelopmentPassThroughIdentityQualityEvaluator();
+                                var guardPolicy = scope.ServiceProvider.GetService<Application.Services.IdentityQualityGuardPolicy>()
+                                    ?? Application.Services.IdentityQualityGuardPolicy.Default;
+                                var dateTimeProvider = scope.ServiceProvider.GetService<IDateTimeProvider>()
+                                    ?? new SystemDateTimeProvider();
+
+                                jobHandler = new ImageGenerationJobHandler(
+                                    dbContext: dbContext,
+                                    visualCompiler: visualCompiler,
+                                    imageService: imageService,
+                                    logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageGenerationJobHandler>.Instance,
+                                    dateTimeProvider: dateTimeProvider,
+                                    qualityEvaluator: evaluator,
+                                    qualityGuardPolicy: guardPolicy
+                                );
+                            }
 
                             var result = await jobHandler.HandleSceneImageGenerationAsync(scenePayload, msg.Id, _workerId, now, ct);
                             if (result.Status == JobExecutionStatus.Deferred)

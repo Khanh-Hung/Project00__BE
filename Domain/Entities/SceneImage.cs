@@ -21,6 +21,7 @@ public sealed class SceneImage : BaseEntity
     public string Workflow { get; private set; } = "VisualIdentity";
     public int WorkflowVersion { get; private set; } = 1;
     public bool IsCurrent { get; private set; } = true;
+    public string? GenerationFingerprint { get; private set; }
 
     private SceneImage() { } // EF Core
 
@@ -37,7 +38,8 @@ public sealed class SceneImage : BaseEntity
         string? previousSceneImageUrl = null,
         string workflow = "VisualIdentity",
         int workflowVersion = 1,
-        bool isCurrent = true)
+        bool isCurrent = true,
+        string? generationFingerprint = null)
     {
         SessionId = sessionId;
         CharacterId = characterId;
@@ -52,6 +54,7 @@ public sealed class SceneImage : BaseEntity
         Workflow = workflow;
         WorkflowVersion = workflowVersion;
         IsCurrent = isCurrent;
+        GenerationFingerprint = generationFingerprint;
     }
 
     public void SetCurrent(bool isCurrent)

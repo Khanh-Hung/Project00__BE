@@ -23,6 +23,7 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
         builder.Property(x => x.IsCurrent).IsRequired().HasDefaultValue(true);
         builder.Property(x => x.Workflow).IsRequired().HasMaxLength(128);
         builder.Property(x => x.WorkflowVersion).IsRequired();
+        builder.Property(x => x.GenerationFingerprint).HasMaxLength(128);
 
         // Invariant: Unique per generation request attempt; non-unique per revision to support multiple regenerations
         builder.HasIndex(x => new { x.SessionId, x.GenerationRequestId }).IsUnique();
@@ -33,6 +34,10 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
             .IsUnique();
 
         builder.HasIndex(x => x.TurnId);
+
+        builder.HasIndex(x => x.GenerationFingerprint)
+            .HasFilter("\"GenerationFingerprint\" IS NOT NULL")
+            .IsUnique();
 
         // Referential integrity to ImageGenerationJob: RESTRICT to preserve immutable historical audit trail
         builder.HasOne<ImageGenerationJob>()

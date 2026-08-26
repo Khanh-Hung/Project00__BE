@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using Application.Common;
 using Application.DTOs;
+using Application.Enums;
 using Application.Exceptions;
 using Application.Interfaces;
+using Application.Services;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
@@ -18,19 +21,25 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
     private readonly IImageGenerationService _imageService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<ImageGenerationJobHandler> _logger;
+    private readonly IIdentityQualityEvaluator _qualityEvaluator;
+    private readonly IdentityQualityGuardPolicy _qualityGuardPolicy;
 
     public ImageGenerationJobHandler(
         ProjectDbContext dbContext,
         IVisualPromptCompiler visualCompiler,
         IImageGenerationService imageService,
         ILogger<ImageGenerationJobHandler> logger,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        IIdentityQualityEvaluator qualityEvaluator,
+        IdentityQualityGuardPolicy? qualityGuardPolicy = null)
     {
-        _dbContext = dbContext;
-        _visualCompiler = visualCompiler;
-        _imageService = imageService;
-        _logger = logger;
-        _dateTimeProvider = dateTimeProvider;
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
+        _imageService = imageService ?? throw new ArgumentNullException(nameof(imageService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dateTimeProvider = dateTimeProvider ?? throw new ArgumentNullException(nameof(dateTimeProvider));
+        _qualityEvaluator = qualityEvaluator ?? throw new ArgumentNullException(nameof(qualityEvaluator));
+        _qualityGuardPolicy = qualityGuardPolicy ?? IdentityQualityGuardPolicy.Default;
     }
 
     public async Task<JobExecutionResult> HandleSceneImageGenerationAsync(
@@ -188,33 +197,271 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
 
         try
         {
-            // 4. Deterministic prompt compilation purely from frozen VisualSnapshot
-            var compiledPrompt = _visualCompiler.CompileScenePrompt(snapshot);
-            var compiledNegative = _visualCompiler.CompileNegativePrompt(snapshot);
-            var imageReq = ImageGenerationRequest.FromSnapshot(
-                snapshot: snapshot,
-                compiledPrompt: compiledPrompt,
-                compiledNegative: compiledNegative,
-                previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
-                providerJobId: job.ProviderJobId,
-                onPromptQueuedAsync: async (promptId, token) =>
-                {
-                    job.SetProviderJobId(promptId);
-                    await _dbContext.SaveChangesAsync(token);
-                }
-            );
+            // 4. Bounded Deterministic Generation & Identity Quality Mitigation Loop
+            int maxAttempts = _qualityGuardPolicy.IsActive
+                ? _qualityGuardPolicy.MaxAttempts
+                : 1;
 
-            // 5. Generate Image via configured Provider
-            var genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+            int attempt = 1;
+            ImageGenerationResult? genResult = null;
+            IdentityEvaluationResult? lastEvaluation = null;
+            string lastCompiledPrompt = string.Empty;
+            string lastAttemptFingerprint = string.Empty;
+            bool isIdentityPassed = true;
+            long baseSeed = snapshot.GenerationProfile.Seed;
 
-            // Strict Validation: ImageUrl must be non-empty; never mark Job Completed without an artifact!
-            if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
+            while (attempt <= maxAttempts)
             {
-                _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}.", job.Id);
-                throw new GpuNonTransientException("Image generation completed without producing an image URL.");
+                genResult = null;
+                QualityMitigationAction mitigation = attempt == 1
+                    ? QualityMitigationAction.Pass
+                    : _qualityGuardPolicy.DecideMitigation(attempt - 1, lastEvaluation!);
+
+                var (attemptProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
+                    snapshot, mitigation, attempt, baseSeed);
+
+                // Derive attempt snapshot with adjusted profile and deterministic seed
+                var attemptSnapshot = snapshot with
+                {
+                    GenerationProfile = attemptProfile with { Seed = derivedSeed }
+                };
+
+                lastCompiledPrompt = _visualCompiler.CompileScenePrompt(attemptSnapshot);
+                var compiledNegative = _visualCompiler.CompileNegativePrompt(attemptSnapshot);
+
+                var attemptFingerprint = DeterministicSeedDerivation.ComputeFingerprint(
+                    jobId: job.Id,
+                    snapshotTurnId: snapshot.TurnId,
+                    sceneRevision: snapshot.SceneRevision,
+                    attemptNumber: attempt,
+                    derivedSeed: derivedSeed,
+                    parametersJson: attemptProfile.ParametersJson ?? string.Empty,
+                    workflow: "VisualIdentity",
+                    workflowVersion: 1,
+                    compiledPrompt: lastCompiledPrompt,
+                    compiledNegativePrompt: compiledNegative,
+                    previousReferenceUrl: resolvedPreviousSceneImageUrl);
+                lastAttemptFingerprint = attemptFingerprint;
+
+                // Database-enforced Idempotency & Crash-Safety: Check existing artifact or durable attempt ledger
+                var existingFingerprintArtifact = await _dbContext.SceneImages
+                    .FirstOrDefaultAsync(img => img.GenerationFingerprint == attemptFingerprint, ct);
+
+                if (existingFingerprintArtifact != null)
+                {
+                    _logger.LogInformation("[SceneGenerationArtifactReused] Existing artifact {ArtifactId} already committed for fingerprint {Fingerprint}. Skipping generation & duplicate insertion.",
+                        existingFingerprintArtifact.Id, attemptFingerprint);
+
+                    if (job.Status != ImageJobStatus.Completed)
+                    {
+                        var liveTime = _dateTimeProvider.UtcNow;
+                        if (_dbContext.Database.IsRelational())
+                        {
+                            await _dbContext.ImageGenerationJobs
+                                .Where(j => j.Id == job.Id && j.Status != ImageJobStatus.Completed)
+                                .ExecuteUpdateAsync(s => s
+                                    .SetProperty(j => j.Status, ImageJobStatus.Completed)
+                                    .SetProperty(j => j.CompletedAt, liveTime)
+                                    .SetProperty(j => j.UpdatedAt, liveTime), ct);
+                        }
+                        else
+                        {
+                            job.MarkCompleted(liveTime, null);
+                            await _dbContext.SaveChangesAsync(ct);
+                        }
+                    }
+
+                    stopwatch.Stop();
+                    return new JobExecutionResult(JobExecutionStatus.Completed);
+                }
+
+                var existingAttempt = await _dbContext.ImageGenerationAttempts
+                    .FirstOrDefaultAsync(a => a.GenerationFingerprint == attemptFingerprint, ct);
+
+                ImageGenerationAttempt attemptRecord;
+                var nowUtc = now;
+
+                if (existingAttempt != null)
+                {
+                    if (existingAttempt.Status == GenerationAttemptStatus.Succeeded && !string.IsNullOrWhiteSpace(existingAttempt.ImageUrl))
+                    {
+                        _logger.LogInformation("[SceneGenerationAttemptReused] Reusing existing succeeded attempt {AttemptId} for JobId={JobId}, Attempt={Attempt}, Fingerprint={Fingerprint}",
+                            existingAttempt.Id, job.Id, attempt, attemptFingerprint);
+
+                        attemptRecord = existingAttempt;
+                        genResult = new ImageGenerationResult(
+                            ImageUrl: existingAttempt.ImageUrl,
+                            Provider: "ComfyUI",
+                            ProviderJobId: existingAttempt.ProviderJobId,
+                            DurationMs: 0,
+                            Seed: derivedSeed
+                        );
+                    }
+                    else
+                    {
+                        // Database-atomic claim of existing/stale attempt row
+                        if (_dbContext.Database.IsRelational())
+                        {
+                            var rowsAffected = await _dbContext.ImageGenerationAttempts
+                                .Where(a => a.Id == existingAttempt.Id
+                                            && a.Status != GenerationAttemptStatus.Succeeded
+                                            && (a.Status != GenerationAttemptStatus.Running
+                                                || a.LeaseUntil == null
+                                                || a.LeaseUntil.Value <= nowUtc
+                                                || a.ClaimedBy == workerId))
+                                .ExecuteUpdateAsync(s => s
+                                    .SetProperty(a => a.ClaimedBy, workerId)
+                                    .SetProperty(a => a.StartedAt, nowUtc)
+                                    .SetProperty(a => a.LeaseUntil, nowUtc.AddMinutes(2))
+                                    .SetProperty(a => a.Status, GenerationAttemptStatus.Running), ct);
+
+                            if (rowsAffected != 1)
+                            {
+                                _logger.LogInformation("[SceneGenerationAttemptClaimFailed] Attempt {AttemptId} is actively claimed by another worker. Deferring execution.", existingAttempt.Id);
+                                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by another worker");
+                            }
+
+                            attemptRecord = existingAttempt;
+                        }
+                        else
+                        {
+                            if (!existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2)))
+                            {
+                                _logger.LogInformation("[SceneGenerationAttemptActive] Attempt {AttemptId} is actively running by worker '{ClaimedBy}' (LeaseUntil={LeaseUntil}). Deferring execution.",
+                                    existingAttempt.Id, existingAttempt.ClaimedBy, existingAttempt.LeaseUntil);
+                                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
+                            }
+
+                            attemptRecord = existingAttempt;
+                            try
+                            {
+                                await _dbContext.SaveChangesAsync(ct);
+                            }
+                            catch (DbUpdateConcurrencyException)
+                            {
+                                return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt lease claimed by concurrent worker");
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    attemptRecord = new ImageGenerationAttempt(
+                        generationJobId: job.Id,
+                        turnId: snapshot.TurnId,
+                        sceneRevision: snapshot.SceneRevision,
+                        attemptNumber: attempt,
+                        derivedSeed: derivedSeed,
+                        parametersJson: attemptProfile.ParametersJson ?? string.Empty,
+                        generationFingerprint: attemptFingerprint,
+                        status: GenerationAttemptStatus.Running,
+                        claimedBy: workerId,
+                        startedAt: nowUtc,
+                        leaseUntil: nowUtc.AddMinutes(2)
+                    );
+
+                    try
+                    {
+                        await _dbContext.ImageGenerationAttempts.AddAsync(attemptRecord, ct);
+                        await _dbContext.SaveChangesAsync(ct);
+                    }
+                    catch (DbUpdateException ex)
+                    {
+                        _logger.LogInformation(ex, "[SceneGenerationAttemptRacePrevented] Concurrent worker inserted attempt for Fingerprint={Fingerprint}", attemptFingerprint);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt claimed by concurrent worker");
+                    }
+                }
+
+                if (genResult == null)
+                {
+                    var imageReq = ImageGenerationRequest.FromSnapshot(
+                        snapshot: attemptSnapshot,
+                        compiledPrompt: lastCompiledPrompt,
+                        compiledNegative: compiledNegative,
+                        previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
+                        providerJobId: attemptRecord.ProviderJobId ?? job.ProviderJobId,
+                        onPromptQueuedAsync: async (promptId, token) =>
+                        {
+                            job.SetProviderJobId(promptId);
+                            attemptRecord.SetProviderJobId(promptId);
+                            await _dbContext.SaveChangesAsync(token);
+                        }
+                    );
+
+                    try
+                    {
+                        genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        attemptRecord.MarkFailed(ex.Message, _dateTimeProvider.UtcNow);
+                        await _dbContext.SaveChangesAsync(ct);
+                        throw;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
+                    {
+                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", _dateTimeProvider.UtcNow);
+                        await _dbContext.SaveChangesAsync(ct);
+                        _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
+                        throw new GpuNonTransientException("Image generation completed without producing an image URL.");
+                    }
+                }
+
+                if (_qualityGuardPolicy.IsActive)
+                {
+                    lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
+                    
+                    if (lastEvaluation.Status == IdentityStatus.Passed)
+                    {
+                        attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow);
+                    }
+                    else if (lastEvaluation.Status == IdentityStatus.Degraded)
+                    {
+                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow);
+                    }
+                    else
+                    {
+                        var violationMsg = lastEvaluation.Violations.Count > 0
+                            ? string.Join("; ", lastEvaluation.Violations.Select(v => v.Code))
+                            : "Hard invariant violation";
+                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", _dateTimeProvider.UtcNow);
+                    }
+                    await _dbContext.SaveChangesAsync(ct);
+
+                    var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
+
+                    if (nextAction == QualityMitigationAction.Pass)
+                    {
+                        _logger.LogInformation("[IdentityGuardPassed] JobId={JobId}, Attempt={Attempt}/{MaxAttempts}, IdentitySim={IdentitySim:F4}, Status={Status}",
+                            job.Id, attempt, maxAttempts, lastEvaluation.IdentitySimilarity, lastEvaluation.Status);
+                        isIdentityPassed = true;
+                        break;
+                    }
+                    else if (nextAction == QualityMitigationAction.RejectDegraded)
+                    {
+                        _logger.LogWarning("[IdentityGuardExhausted] JobId={JobId}, Max attempts {MaxAttempts} reached without passing. Quarantining frame from continuity.",
+                            job.Id, maxAttempts);
+                        isIdentityPassed = false;
+                        break;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("[IdentityGuardDegraded] JobId={JobId}, Attempt={Attempt}/{MaxAttempts} degraded (IdentitySim={IdentitySim:F4}, Status={Status}). Triggering {NextAction}.",
+                            job.Id, attempt, maxAttempts, lastEvaluation.IdentitySimilarity, lastEvaluation.Status, nextAction);
+                        attempt++;
+                    }
+                }
+                else
+                {
+                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow);
+                    await _dbContext.SaveChangesAsync(ct);
+                    isIdentityPassed = true;
+                    break;
+                }
             }
 
-            // 6. Strict Atomic DB Conditional Fencing & Artifact Persistence in ONE Unit of Work
+            // 5. Strict Atomic DB Conditional Fencing & Artifact Persistence in ONE Unit of Work
             var liveUtc = _dateTimeProvider.UtcNow;
 
             if (_dbContext.Database.IsRelational())
@@ -223,7 +470,6 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 {
                     await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
 
-                    // Step 6a: Conditional update as atomic fencing gate
                     var rowsAffected = await _dbContext.ImageGenerationJobs
                         .Where(j => j.Id == job.Id 
                                     && j.ClaimedBy == workerId 
@@ -234,7 +480,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(j => j.Status, ImageJobStatus.Completed)
                             .SetProperty(j => j.CompletedAt, liveUtc)
-                            .SetProperty(j => j.GenerationMetadataJson, genResult.MetadataJson)
+                            .SetProperty(j => j.GenerationMetadataJson, genResult!.MetadataJson)
                             .SetProperty(j => j.Version, j => j.Version + 1)
                             .SetProperty(j => j.UpdatedAt, liveUtc), ct);
 
@@ -246,26 +492,30 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before conditional update");
                     }
 
-                    // Step 6b: Deactivate previous currents for this revision within the SAME transaction
-                    await _dbContext.SceneImages
-                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                        .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+                    // P0 Hard Gate: If identity passed, promote to isCurrent=true and demote previous currents.
+                    // If degraded/quarantined, save with isCurrent=false, keeping the last-known-good reference intact!
+                    if (isIdentityPassed)
+                    {
+                        await _dbContext.SceneImages
+                            .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                            .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+                    }
 
-                    // Step 6c: Insert new SceneImage artifact within the SAME transaction
                     var artifact = new SceneImage(
                         sessionId: snapshot.SessionId,
                         characterId: snapshot.CharacterId,
                         turnId: snapshot.TurnId,
                         sceneRevision: snapshot.SceneRevision,
-                        imageUrl: genResult.ImageUrl,
-                        prompt: compiledPrompt,
+                        imageUrl: genResult!.ImageUrl,
+                        prompt: lastCompiledPrompt,
                         generationRequestId: generationRequestId,
                         generationJobId: job.Id,
                         identityReferenceUrl: snapshot.IdentityReferenceUrl,
                         previousSceneImageUrl: resolvedPreviousSceneImageUrl,
                         workflow: workflow,
                         workflowVersion: workflowVersion,
-                        isCurrent: true
+                        isCurrent: isIdentityPassed,
+                        generationFingerprint: lastAttemptFingerprint
                     );
 
                     await _dbContext.SceneImages.AddAsync(artifact, ct);
@@ -275,6 +525,15 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 }
                 catch (DbUpdateException ex)
                 {
+                    bool isUnique = ex.InnerException?.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) == true
+                                 || ex.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase);
+                    if (isUnique)
+                    {
+                        _logger.LogInformation("[SceneGenerationDuplicateArtifactPrevented] Concurrent worker already committed artifact for JobId={JobId}, Fingerprint={Fingerprint}. Returning Completed.",
+                            job.Id, lastAttemptFingerprint);
+                        return new JobExecutionResult(JobExecutionStatus.Completed, "Artifact committed by concurrent worker");
+                    }
+
                     bool isTransient = DbExceptionClassifier.IsTransient(ex);
                     if (isTransient)
                     {
@@ -316,13 +575,16 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before commit");
                 }
 
-                var previousCurrents = await _dbContext.SceneImages
-                    .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                    .ToListAsync(ct);
-
-                foreach (var prev in previousCurrents)
+                if (isIdentityPassed)
                 {
-                    prev.SetCurrent(false);
+                    var previousCurrents = await _dbContext.SceneImages
+                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                        .ToListAsync(ct);
+
+                    foreach (var prev in previousCurrents)
+                    {
+                        prev.SetCurrent(false);
+                    }
                 }
 
                 var artifact = new SceneImage(
@@ -330,15 +592,16 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     characterId: snapshot.CharacterId,
                     turnId: snapshot.TurnId,
                     sceneRevision: snapshot.SceneRevision,
-                    imageUrl: genResult.ImageUrl,
-                    prompt: compiledPrompt,
+                    imageUrl: genResult!.ImageUrl,
+                    prompt: lastCompiledPrompt,
                     generationRequestId: generationRequestId,
                     generationJobId: job.Id,
                     identityReferenceUrl: snapshot.IdentityReferenceUrl,
                     previousSceneImageUrl: resolvedPreviousSceneImageUrl,
                     workflow: workflow,
                     workflowVersion: workflowVersion,
-                    isCurrent: true
+                    isCurrent: isIdentityPassed,
+                    generationFingerprint: lastAttemptFingerprint
                 );
 
                 try
@@ -356,8 +619,8 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             }
 
             stopwatch.Stop();
-            _logger.LogInformation("[SceneGenerationCompleted] OutboxId={OutboxId}, JobId={JobId}, SessionId={SessionId}, Revision={Revision}, RequestId={RequestId}, LatencyMs={LatencyMs}",
-                outboxId, job.Id, snapshot.SessionId, snapshot.SceneRevision, generationRequestId, stopwatch.ElapsedMilliseconds);
+            _logger.LogInformation("[SceneGenerationCompleted] OutboxId={OutboxId}, JobId={JobId}, SessionId={SessionId}, Revision={Revision}, RequestId={RequestId}, LatencyMs={LatencyMs}, IdentityPassed={Passed}",
+                outboxId, job.Id, snapshot.SessionId, snapshot.SceneRevision, generationRequestId, stopwatch.ElapsedMilliseconds, isIdentityPassed);
 
             return new JobExecutionResult(JobExecutionStatus.Completed);
         }

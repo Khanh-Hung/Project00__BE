@@ -93,6 +93,61 @@ public static class DependencyInjection
         {
             services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
         }
+
+        // Identity Quality Guard & Reference Authority Policy (PR #24)
+        var guardPolicy = Application.Services.IdentityQualityGuardPolicy.FromConfiguration(configuration);
+        services.AddSingleton(guardPolicy);
+
+        var environment = configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["Environment"] ?? "Development";
+        bool isProduction = string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase);
+
+        var evaluatorType = configuration["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"]
+            ?? guardPolicy.EvaluatorType;
+
+        // Check if an IIdentityQualityEvaluator has already been registered in the service collection (e.g. by composition root)
+        bool hasCustomEvaluator = services.Any(sd => sd.ServiceType == typeof(IIdentityQualityEvaluator));
+
+        if (!hasCustomEvaluator)
+        {
+            if (guardPolicy.IsActive)
+            {
+                if (string.Equals(evaluatorType, "DevelopmentStub", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(evaluatorType, "DevelopmentPassThrough", StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrWhiteSpace(evaluatorType))
+                {
+                    if (isProduction && !guardPolicy.AllowStubEvaluatorInProduction)
+                    {
+                        throw new InvalidOperationException(
+                            "CRITICAL STARTUP CONFIGURATION ERROR: Quality Guard is enabled (QualityGuard:Enabled=true) in Production environment, but no real IIdentityQualityEvaluator is configured. " +
+                            "Production requires a genuine evaluator implementation (e.g. CLIP/ML microservice) registered via services.AddScoped<IIdentityQualityEvaluator, TImplementation>() " +
+                            "or explicit opt-in via QualityGuard:AllowStubEvaluatorInProduction=true. " +
+                            "To run in development or test mode, set ASPNETCORE_ENVIRONMENT=Development or disable QualityGuard.");
+                    }
+                    services.AddScoped<IIdentityQualityEvaluator, Infrastructure.Services.DevelopmentPassThroughIdentityQualityEvaluator>();
+                }
+                else if (string.Equals(evaluatorType, "None", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(evaluatorType, "Disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (isProduction && !guardPolicy.AllowStubEvaluatorInProduction)
+                    {
+                        throw new InvalidOperationException(
+                            "CRITICAL STARTUP CONFIGURATION ERROR: Quality Guard is enabled (QualityGuard:Enabled=true) but EvaluatorType is set to 'None'/'Disabled'.");
+                    }
+                    services.AddScoped<IIdentityQualityEvaluator, Infrastructure.Services.DevelopmentPassThroughIdentityQualityEvaluator>();
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"QualityGuard is configured with EvaluatorType '{evaluatorType}', but no matching IIdentityQualityEvaluator was registered in the service container. " +
+                        "Register your production evaluator implementation via services.AddScoped<IIdentityQualityEvaluator, TImplementation>() in the composition root.");
+                }
+            }
+            else
+            {
+                services.AddScoped<IIdentityQualityEvaluator, Infrastructure.Services.DevelopmentPassThroughIdentityQualityEvaluator>();
+            }
+        }
+
         services.AddScoped<IImageGenerationJobHandler, Infrastructure.Services.ImageGenerationJobHandler>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
