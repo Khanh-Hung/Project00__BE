@@ -21,7 +21,10 @@ public sealed record IdentityEvaluationResult(
     IReadOnlyList<IdentityViolation> Violations
 )
 {
-    /// <summary>Backwards-compatible alias for IdentitySimilarity.</summary>
+    /// <summary>
+    /// Obsolete backwards-compatibility alias for IdentitySimilarity.
+    /// </summary>
+    [Obsolete("Use IdentitySimilarity instead. Whole-image CLIP similarity proxy measures overall canonical visual identity (hair, attire, palette, traits), not isolated face mesh.", error: false)]
     public float FaceSimilarity => IdentitySimilarity;
 
     public static IdentityEvaluationResult Pass(float identitySimilarity, float featureScore, float overallScore) =>

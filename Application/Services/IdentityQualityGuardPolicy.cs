@@ -21,7 +21,10 @@ public sealed record IdentityQualityGuardPolicy
     /// </summary>
     public float MinAcceptableIdentitySimilarity { get; init; } = 0.75f;
 
-    /// <summary>Backwards-compatible alias for MinAcceptableIdentitySimilarity.</summary>
+    /// <summary>
+    /// Obsolete backwards-compatibility alias for MinAcceptableIdentitySimilarity.
+    /// </summary>
+    [Obsolete("Use MinAcceptableIdentitySimilarity instead. Whole-image CLIP similarity proxy measures overall canonical visual identity, not isolated face mesh.", error: false)]
     public float MinAcceptableFaceSimilarity => MinAcceptableIdentitySimilarity;
 
     public float MinAcceptableFeatureScore { get; init; } = 0.50f;

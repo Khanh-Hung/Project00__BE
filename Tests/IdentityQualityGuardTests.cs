@@ -68,14 +68,14 @@ public sealed class IdentityQualityGuardTests
 
     [Theory]
     [InlineData(0.80f, 0.85f, false, IdentityStatus.Passed)]
-    [InlineData(0.65f, 0.85f, false, IdentityStatus.Degraded)] // Face below 0.75
+    [InlineData(0.65f, 0.85f, false, IdentityStatus.Degraded)] // Identity below 0.75
     [InlineData(0.80f, 0.40f, false, IdentityStatus.Degraded)] // Feature below 0.50
     [InlineData(0.80f, 0.85f, true, IdentityStatus.Failed)]    // Hard Invariant violation
     public void IdentityQualityGuardPolicy_EvaluateStatus_CategorizesStatusAccurately(
-        float faceSim, float featScore, bool invariantViolated, IdentityStatus expectedStatus)
+        float identitySim, float featScore, bool invariantViolated, IdentityStatus expectedStatus)
     {
-        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MinAcceptableFeatureScore: 0.50f);
-        var status = policy.EvaluateStatus(faceSim, featScore, invariantViolated, out var violations);
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MinAcceptableFeatureScore: 0.50f);
+        var status = policy.EvaluateStatus(identitySim, featScore, invariantViolated, out var violations);
 
         Assert.Equal(expectedStatus, status);
         if (expectedStatus == IdentityStatus.Passed)
@@ -179,7 +179,7 @@ public sealed class IdentityQualityGuardTests
             IdentityEvaluationResult.Pass(0.85f, 0.90f, 0.88f)
         });
 
-        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MaxAttempts: 3);
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
         var handler = new ImageGenerationJobHandler(
             dbContext: db,
             visualCompiler: compiler,
@@ -253,7 +253,7 @@ public sealed class IdentityQualityGuardTests
             })
         });
 
-        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MaxAttempts: 3);
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
         var handler = new ImageGenerationJobHandler(
             dbContext: db,
             visualCompiler: compiler,
@@ -322,7 +322,7 @@ public sealed class IdentityQualityGuardTests
         var compiler = new FakePromptCompiler("1man knight in armor", "1girl");
         var imageService = new FakeImageService();
         var evaluator = new SequenceEvaluator(new[] { IdentityEvaluationResult.Pass(0.85f, 0.90f, 0.88f) });
-        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MaxAttempts: 3);
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
         var handler = new ImageGenerationJobHandler(
             dbContext: db,
@@ -491,7 +491,7 @@ public sealed class IdentityQualityGuardTests
         {
             IdentityEvaluationResult.Pass(0.85f, 0.90f, 0.87f)
         });
-        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MaxAttempts: 3);
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
         var handler = new ImageGenerationJobHandler(
             dbContext: db,
@@ -845,6 +845,181 @@ public sealed class IdentityQualityGuardTests
         
         // Reuses existing succeeded attempt or marks skipped: Zero additional GPU calls!
         Assert.Equal(1, imageService.CallCount);
+    }
+
+    [Fact]
+    public void ImageGenerationJobHandler_Constructor_WhenEvaluatorNull_ThrowsArgumentNullException()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var db = new ProjectDbContext(options);
+
+        var compiler = new FakePromptCompiler("pos", "neg");
+        var imageService = new FakeImageService();
+
+        Assert.Throws<ArgumentNullException>(() => new ImageGenerationJobHandler(
+            dbContext: db,
+            visualCompiler: compiler,
+            imageService: imageService,
+            logger: NullLogger<ImageGenerationJobHandler>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: null!
+        ));
+    }
+
+    [Fact]
+    public void IdentityMitigationProfileResolver_Attempt1_Pass_KeepsOriginalProfileAndBaseSeed()
+    {
+        long baseSeed = 424242L;
+        var initialParametersJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ipAdapter = new { weight = 0.60, endAt = 0.85 },
+            sceneContinuity = new { weight = 0.12, endAt = 0.25, weightType = "style transfer" }
+        });
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: baseSeed, parametersJson: initialParametersJson)
+        );
+
+        var (profile1, seed1) = IdentityMitigationProfileResolver.ResolveMitigation(
+            snapshot, QualityMitigationAction.Pass, 1, baseSeed);
+
+        Assert.Equal(baseSeed, seed1);
+        Assert.Equal(initialParametersJson, profile1.ParametersJson);
+    }
+
+    [Fact]
+    public void IdentityMitigationProfileResolver_Attempt2_RetryAttenuated_AppliesAttenuationAndDerivedSeed()
+    {
+        long baseSeed = 424242L;
+        var initialParametersJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ipAdapter = new { weight = 0.60, endAt = 0.85 },
+            sceneContinuity = new { weight = 0.12, endAt = 0.25, weightType = "style transfer" }
+        });
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: baseSeed, parametersJson: initialParametersJson)
+        );
+
+        var (profile2, seed2) = IdentityMitigationProfileResolver.ResolveMitigation(
+            snapshot, QualityMitigationAction.RetryAttenuated, 2, baseSeed);
+
+        long expectedSeed2 = DeterministicSeedDerivation.Derive(baseSeed, 2);
+        Assert.Equal(expectedSeed2, seed2);
+        Assert.NotEqual(baseSeed, seed2);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(profile2.ParametersJson!);
+        var ip = doc.RootElement.GetProperty("ipAdapter");
+        var cont = doc.RootElement.GetProperty("sceneContinuity");
+
+        Assert.Equal(0.65f, (float)ip.GetProperty("weight").GetDouble(), 2);
+        Assert.Equal(0.85f, (float)ip.GetProperty("endAt").GetDouble(), 2);
+        Assert.Equal(0.06f, (float)cont.GetProperty("weight").GetDouble(), 2);
+        Assert.Equal(0.15f, (float)cont.GetProperty("endAt").GetDouble(), 2);
+        Assert.Equal("style transfer", cont.GetProperty("weightType").GetString());
+    }
+
+    [Fact]
+    public void IdentityMitigationProfileResolver_Attempt3_RetryIsolated_AppliesIsolationAndDerivedSeed()
+    {
+        long baseSeed = 424242L;
+        var initialParametersJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ipAdapter = new { weight = 0.60, endAt = 0.85 },
+            sceneContinuity = new { weight = 0.12, endAt = 0.25, weightType = "style transfer" }
+        });
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: baseSeed, parametersJson: initialParametersJson)
+        );
+
+        var (profile3, seed3) = IdentityMitigationProfileResolver.ResolveMitigation(
+            snapshot, QualityMitigationAction.RetryIsolated, 3, baseSeed);
+
+        long expectedSeed3 = DeterministicSeedDerivation.Derive(baseSeed, 3);
+        Assert.Equal(expectedSeed3, seed3);
+        Assert.NotEqual(baseSeed, seed3);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(profile3.ParametersJson!);
+        var ip = doc.RootElement.GetProperty("ipAdapter");
+        var cont = doc.RootElement.GetProperty("sceneContinuity");
+
+        Assert.Equal(0.70f, (float)ip.GetProperty("weight").GetDouble(), 2);
+        Assert.Equal(0.85f, (float)ip.GetProperty("endAt").GetDouble(), 2);
+        Assert.Equal(0.0f, (float)cont.GetProperty("weight").GetDouble(), 2);
+        Assert.Equal(0.0f, (float)cont.GetProperty("endAt").GetDouble(), 2);
+        Assert.Equal("style transfer", cont.GetProperty("weightType").GetString());
+    }
+
+    [Fact]
+    public void IdentityMitigationProfileResolver_AttemptsAreDeterministicAndDistinct()
+    {
+        long baseSeed = 999999L;
+        var initialParametersJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ipAdapter = new { weight = 0.60, endAt = 0.85 },
+            sceneContinuity = new { weight = 0.12, endAt = 0.25, weightType = "style transfer" }
+        });
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: baseSeed, parametersJson: initialParametersJson)
+        );
+
+        var (p1, s1) = IdentityMitigationProfileResolver.ResolveMitigation(snapshot, QualityMitigationAction.Pass, 1, baseSeed);
+        var (p2, s2) = IdentityMitigationProfileResolver.ResolveMitigation(snapshot, QualityMitigationAction.RetryAttenuated, 2, baseSeed);
+        var (p3, s3) = IdentityMitigationProfileResolver.ResolveMitigation(snapshot, QualityMitigationAction.RetryIsolated, 3, baseSeed);
+
+        // Attempt 2 and Attempt 3 are distinct in seeds and parameters
+        Assert.NotEqual(s2, s3);
+        Assert.NotEqual(p2.ParametersJson, p3.ParametersJson);
+
+        // Determinism: calling again produces identical results
+        var (p2b, s2b) = IdentityMitigationProfileResolver.ResolveMitigation(snapshot, QualityMitigationAction.RetryAttenuated, 2, baseSeed);
+        var (p3b, s3b) = IdentityMitigationProfileResolver.ResolveMitigation(snapshot, QualityMitigationAction.RetryIsolated, 3, baseSeed);
+
+        Assert.Equal(s2, s2b);
+        Assert.Equal(p2.ParametersJson, p2b.ParametersJson);
+        Assert.Equal(s3, s3b);
+        Assert.Equal(p3.ParametersJson, p3b.ParametersJson);
+
+        // Fingerprints for attempts are distinct
+        var fp1 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, snapshot.TurnId, 1, 1, s1, p1.ParametersJson!, "VisualIdentity", 1, "prompt", "neg", null);
+        var fp2 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, snapshot.TurnId, 1, 2, s2, p2.ParametersJson!, "VisualIdentity", 1, "prompt", "neg", null);
+        var fp3 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, snapshot.TurnId, 1, 3, s3, p3.ParametersJson!, "VisualIdentity", 1, "prompt", "neg", null);
+
+        Assert.NotEqual(fp1, fp2);
+        Assert.NotEqual(fp2, fp3);
+        Assert.NotEqual(fp1, fp3);
+
+        // Fingerprint determinism
+        var fp2_repeat = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, snapshot.TurnId, 1, 2, s2b, p2b.ParametersJson!, "VisualIdentity", 1, "prompt", "neg", null);
+        Assert.Equal(fp2, fp2_repeat);
     }
 
     private sealed class FakePromptCompiler : IVisualPromptCompiler

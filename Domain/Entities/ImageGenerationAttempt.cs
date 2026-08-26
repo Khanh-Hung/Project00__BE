@@ -24,7 +24,10 @@ public sealed class ImageGenerationAttempt : BaseEntity
     public DateTime? StartedAt { get; private set; }
     public DateTime? LeaseUntil { get; private set; }
     public float? IdentitySimilarity { get; private set; }
-    /// <summary>Backwards-compatible alias for IdentitySimilarity.</summary>
+    /// <summary>
+    /// Obsolete backwards-compatibility alias for IdentitySimilarity.
+    /// </summary>
+    [Obsolete("Use IdentitySimilarity instead. Whole-image CLIP similarity proxy measures overall canonical visual identity, not isolated face mesh.", error: false)]
     public float? FaceSimilarity => IdentitySimilarity;
     public float? FeatureScore { get; private set; }
     public DateTime? CompletedAt { get; private set; }

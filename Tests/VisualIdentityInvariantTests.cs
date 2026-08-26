@@ -92,7 +92,7 @@ public sealed class VisualIdentityInvariantTests
         var db = new ProjectDbContext(options);
         var imageService = new CountingImageService();
         var visualCompiler = new VisualPromptCompiler();
-        var handler = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
         return (db, handler, imageService);
     }
 
@@ -359,7 +359,7 @@ public sealed class VisualIdentityInvariantTests
         var dbName = Guid.NewGuid().ToString();
         var (db, handlerA, imageService) = CreateHarness(dbName);
         var visualCompiler = new VisualPromptCompiler();
-        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -425,8 +425,8 @@ public sealed class VisualIdentityInvariantTests
 
         var barrierService = new BarrierImageService();
         var visualCompiler = new VisualPromptCompiler();
-        var handlerA = new ImageGenerationJobHandler(dbA, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
-        var handlerB = new ImageGenerationJobHandler(dbB, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handlerA = new ImageGenerationJobHandler(dbA, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
+        var handlerB = new ImageGenerationJobHandler(dbB, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -555,7 +555,7 @@ public sealed class VisualIdentityInvariantTests
         });
 
         var visualCompiler = new VisualPromptCompiler();
-        var handler = new ImageGenerationJobHandler(db, visualCompiler, timeAdvancingService, NullLogger<ImageGenerationJobHandler>.Instance, timeProvider);
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, timeAdvancingService, NullLogger<ImageGenerationJobHandler>.Instance, timeProvider, new DevelopmentPassThroughIdentityQualityEvaluator());
 
         var snapshot = CreateTestSnapshot(sessionId, turnId, revision: 1);
         var payload = new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, requestId);
@@ -590,7 +590,7 @@ public sealed class VisualIdentityInvariantTests
         using var cts = new CancellationTokenSource();
         var cancellingService = new CancellingImageService(cts);
         var visualCompiler = new VisualPromptCompiler();
-        var handlerA = new ImageGenerationJobHandler(db, visualCompiler, cancellingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handlerA = new ImageGenerationJobHandler(db, visualCompiler, cancellingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
 
         // 1. Worker A interrupted by host shutdown / cancellation during GPU execution
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
@@ -603,7 +603,7 @@ public sealed class VisualIdentityInvariantTests
 
         // 2. Restart: Worker B arrives after lease expired -> Successfully reclaims and completes!
         var countingService = new CountingImageService();
-        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, countingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handlerB = new ImageGenerationJobHandler(db, visualCompiler, countingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
         var resRestart = await handlerB.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-B", Clock.Now.AddMinutes(5));
         Assert.Equal(JobExecutionStatus.Completed, resRestart.Status);
         Assert.Equal(1, countingService.CallCount);
@@ -662,8 +662,8 @@ public sealed class VisualIdentityInvariantTests
 
         var barrierService = new TwoWorkerBarrierImageService();
         var visualCompiler = new VisualPromptCompiler();
-        var handler1 = new ImageGenerationJobHandler(db1, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
-        var handler2 = new ImageGenerationJobHandler(db2, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handler1 = new ImageGenerationJobHandler(db1, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
+        var handler2 = new ImageGenerationJobHandler(db2, visualCompiler, barrierService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -713,7 +713,7 @@ public sealed class VisualIdentityInvariantTests
 
         var countingService = new CountingImageService();
         var visualCompiler = new VisualPromptCompiler();
-        var handler = new ImageGenerationJobHandler(db, visualCompiler, countingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, countingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
 
         // Worker executes relational path: ExecuteUpdateAsync + BeginTransactionAsync
         var res = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "relational-worker", Clock.Now);
@@ -758,7 +758,7 @@ public sealed class VisualIdentityInvariantTests
         });
 
         var visualCompiler = new VisualPromptCompiler();
-        var handler = new ImageGenerationJobHandler(db, visualCompiler, timeAdvancingService, NullLogger<ImageGenerationJobHandler>.Instance, timeProvider);
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, timeAdvancingService, NullLogger<ImageGenerationJobHandler>.Instance, timeProvider, new DevelopmentPassThroughIdentityQualityEvaluator());
 
         // Worker A attempts commit after lease expired -> relational ExecuteUpdateAsync rowsAffected == 0 -> Rollback
         var res = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "relational-worker-A", startTime);
@@ -792,7 +792,7 @@ public sealed class VisualIdentityInvariantTests
         var comfyService = new ComfyUIImageGenerationService(mockComfyClient, storage, inputService, workflowBuilders, config, NullLogger<ComfyUIImageGenerationService>.Instance);
 
         var visualCompiler = new VisualPromptCompiler();
-        var handler = new ImageGenerationJobHandler(db, visualCompiler, comfyService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider());
+        var handler = new ImageGenerationJobHandler(db, visualCompiler, comfyService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
 
         // 1. First execution: ComfyUI receives /prompt, but worker crashes before ProviderJobId is saved to DB
         var requestCrash = ImageGenerationRequest.FromSnapshot(

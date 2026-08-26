@@ -527,10 +527,7 @@ public sealed class IdentityInvariantSystemTests
 
         var capturingService = new CapturingImageGenerationService();
         var compiler = new VisualPromptCompiler();
-        var dateTimeProvider = new SystemDateTimeProvider();
-        var logger = NullLogger<ImageGenerationJobHandler>.Instance;
-
-        var handler = new ImageGenerationJobHandler(db, compiler, capturingService, logger, dateTimeProvider);
+        var handler = new ImageGenerationJobHandler(db, compiler, capturingService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
 
         var payload = new SceneImageGenerationOutboxPayload(snapshot.TurnId, character.Id, userId, snapshot, generationRequestId);
 

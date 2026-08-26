@@ -864,7 +864,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             new VisualPromptCompiler(),
             new MockImageService(),
             NullLogger<ImageGenerationJobHandler>.Instance,
-            new SystemDateTimeProvider()
+            new SystemDateTimeProvider(),
+            new DevelopmentPassThroughIdentityQualityEvaluator()
         );
 
         await jobHandler.HandleSceneImageGenerationAsync(scenePayload, outboxMessage.Id, "test-worker-1", DateTime.UtcNow);

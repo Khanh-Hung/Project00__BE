@@ -30,7 +30,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         IImageGenerationService imageService,
         ILogger<ImageGenerationJobHandler> logger,
         IDateTimeProvider dateTimeProvider,
-        IIdentityQualityEvaluator? qualityEvaluator = null,
+        IIdentityQualityEvaluator qualityEvaluator,
         IdentityQualityGuardPolicy? qualityGuardPolicy = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -38,7 +38,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         _imageService = imageService ?? throw new ArgumentNullException(nameof(imageService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _dateTimeProvider = dateTimeProvider ?? throw new ArgumentNullException(nameof(dateTimeProvider));
-        _qualityEvaluator = qualityEvaluator ?? new DefaultIdentityQualityEvaluator();
+        _qualityEvaluator = qualityEvaluator ?? throw new ArgumentNullException(nameof(qualityEvaluator));
         _qualityGuardPolicy = qualityGuardPolicy ?? IdentityQualityGuardPolicy.Default;
     }
 
