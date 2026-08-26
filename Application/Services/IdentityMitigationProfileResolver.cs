@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Common;
 using Application.Enums;
 using Domain.Entities;
@@ -43,9 +43,11 @@ public static class IdentityMitigationProfileResolver
                     if (ipProp.TryGetProperty("endAt", out var e)) slot1EndAt = (float)e.GetDouble();
                 }
             }
-            catch
+            catch (JsonException ex)
             {
-                // Fallback to defaults
+                throw new InvalidOperationException(
+                    "GenerationProfile.ParametersJson is malformed or invalid JSON.",
+                    ex);
             }
         }
 

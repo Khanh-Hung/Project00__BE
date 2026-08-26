@@ -290,6 +290,98 @@ public sealed class IdentityQualityGuardTests
         Assert.Equal("https://cdn.project00.ai/images/prior_success.png", currentImage.ImageUrl);
     }
 
+    [Fact]
+    public void IdentityMitigationProfileResolver_WhenJsonMalformed_ThrowsInvalidOperationException()
+    {
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100L, parametersJson: "{malformed_json: true, missing_quotes}")
+        );
+
+        Assert.Throws<InvalidOperationException>(() =>
+            IdentityMitigationProfileResolver.ResolveMitigation(snapshot, QualityMitigationAction.RetryAttenuated, 2, 100L));
+    }
+
+    [Fact]
+    public async Task ImageGenerationJobHandler_WhenAttemptAlreadyGenerated_ReusesArtifactIdempotently()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var compiler = new FakePromptCompiler("1man knight in armor", "1girl");
+        var imageService = new FakeImageService();
+        var evaluator = new SequenceEvaluator(new[] { IdentityEvaluationResult.Pass(0.85f, 0.90f, 0.88f) });
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MaxAttempts: 3);
+
+        var handler = new ImageGenerationJobHandler(
+            dbContext: db,
+            visualCompiler: compiler,
+            imageService: imageService,
+            logger: NullLogger<ImageGenerationJobHandler>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: evaluator,
+            qualityGuardPolicy: policy
+        );
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        // Pre-seed an existing artifact in DB representing a previous run of this attempt
+        var preExisting = new SceneImage(
+            sessionId: sessionId,
+            characterId: characterId,
+            turnId: turnId,
+            sceneRevision: 1,
+            imageUrl: "https://cdn.project00.ai/images/reused_attempt.png",
+            prompt: "1man knight in armor",
+            generationRequestId: requestId,
+            generationJobId: Guid.NewGuid(),
+            isCurrent: true
+        );
+        await db.SceneImages.AddAsync(preExisting);
+        await db.SaveChangesAsync();
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var result = await handler.HandleSceneImageGenerationAsync(
+            payload: payload,
+            outboxId: Guid.NewGuid(),
+            workerId: "worker-1",
+            now: DateTime.UtcNow
+        );
+
+        // Execution is skipped or reuses artifact without calling external GPU generator!
+        Assert.Equal(JobExecutionStatus.Skipped, result.Status);
+        Assert.Equal(0, imageService.CallCount);
+    }
+
     private sealed class FakePromptCompiler : IVisualPromptCompiler
     {
         private readonly string _pos;

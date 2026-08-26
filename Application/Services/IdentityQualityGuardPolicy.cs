@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Application.DTOs;
 using Application.Enums;
 using Domain.Enums;
@@ -12,13 +12,40 @@ namespace Application.Services;
 /// Decides high-level mitigation action (Pass, RetryAttenuated, RetryIsolated, RejectDegraded)
 /// without constructing workflow profiles or knowing about low-level model nodes.
 /// </summary>
-public sealed record IdentityQualityGuardPolicy(
-    float MinAcceptableFaceSimilarity = 0.75f,
-    float MinAcceptableFeatureScore = 0.50f,
-    int MaxAttempts = 3,
-    bool IsActive = true
-)
+public sealed record IdentityQualityGuardPolicy
 {
+    public const int MaxAllowedAttempts = 3;
+
+    public float MinAcceptableFaceSimilarity { get; init; } = 0.75f;
+    public float MinAcceptableFeatureScore { get; init; } = 0.50f;
+    public int MaxAttempts { get; init; } = 3;
+    public bool IsActive { get; init; } = true;
+
+    public IdentityQualityGuardPolicy(
+        float MinAcceptableFaceSimilarity = 0.75f,
+        float MinAcceptableFeatureScore = 0.50f,
+        int MaxAttempts = 3,
+        bool IsActive = true)
+    {
+        if (MaxAttempts < 1 || MaxAttempts > MaxAllowedAttempts)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaxAttempts), $"MaxAttempts must be between 1 and {MaxAllowedAttempts}, but got {MaxAttempts}.");
+        }
+        if (MinAcceptableFaceSimilarity < 0.0f || MinAcceptableFaceSimilarity > 1.0f)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MinAcceptableFaceSimilarity), "MinAcceptableFaceSimilarity must be between 0.0 and 1.0.");
+        }
+        if (MinAcceptableFeatureScore < 0.0f || MinAcceptableFeatureScore > 1.0f)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MinAcceptableFeatureScore), "MinAcceptableFeatureScore must be between 0.0 and 1.0.");
+        }
+
+        this.MinAcceptableFaceSimilarity = MinAcceptableFaceSimilarity;
+        this.MinAcceptableFeatureScore = MinAcceptableFeatureScore;
+        this.MaxAttempts = MaxAttempts;
+        this.IsActive = IsActive;
+    }
+
     public static readonly IdentityQualityGuardPolicy Default = new();
 
     public static IdentityQualityGuardPolicy FromConfiguration(IConfiguration? configuration)
@@ -60,9 +87,9 @@ public sealed record IdentityQualityGuardPolicy(
     private static int ParseValidatedInt(string keyName, string? valueStr, int defaultValue)
     {
         if (string.IsNullOrWhiteSpace(valueStr)) return defaultValue;
-        if (!int.TryParse(valueStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed < 1 || parsed > 10)
+        if (!int.TryParse(valueStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed < 1 || parsed > MaxAllowedAttempts)
         {
-            throw new InvalidOperationException($"Invalid configuration for '{keyName}': '{valueStr}'. Must be an integer between 1 and 10.");
+            throw new InvalidOperationException($"Invalid configuration for '{keyName}': '{valueStr}'. Must be an integer between 1 and {MaxAllowedAttempts}.");
         }
         return parsed;
     }

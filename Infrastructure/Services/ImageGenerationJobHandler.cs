@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Application.Common;
 using Application.DTOs;
 using Application.Enums;
 using Application.Exceptions;
@@ -20,7 +21,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
     private readonly IImageGenerationService _imageService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<ImageGenerationJobHandler> _logger;
-    private readonly IIdentityQualityEvaluator? _qualityEvaluator;
+    private readonly IIdentityQualityEvaluator _qualityEvaluator;
     private readonly IdentityQualityGuardPolicy _qualityGuardPolicy;
 
     public ImageGenerationJobHandler(
@@ -32,12 +33,12 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         IIdentityQualityEvaluator? qualityEvaluator = null,
         IdentityQualityGuardPolicy? qualityGuardPolicy = null)
     {
-        _dbContext = dbContext;
-        _visualCompiler = visualCompiler;
-        _imageService = imageService;
-        _logger = logger;
-        _dateTimeProvider = dateTimeProvider;
-        _qualityEvaluator = qualityEvaluator;
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
+        _imageService = imageService ?? throw new ArgumentNullException(nameof(imageService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dateTimeProvider = dateTimeProvider ?? throw new ArgumentNullException(nameof(dateTimeProvider));
+        _qualityEvaluator = qualityEvaluator ?? new DefaultIdentityQualityEvaluator();
         _qualityGuardPolicy = qualityGuardPolicy ?? IdentityQualityGuardPolicy.Default;
     }
 
@@ -197,7 +198,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         try
         {
             // 4. Bounded Deterministic Generation & Identity Quality Mitigation Loop
-            int maxAttempts = (_qualityEvaluator != null && _qualityGuardPolicy.IsActive)
+            int maxAttempts = _qualityGuardPolicy.IsActive
                 ? _qualityGuardPolicy.MaxAttempts
                 : 1;
 
@@ -217,6 +218,9 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 var (attemptProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
                     snapshot, mitigation, attempt, baseSeed);
 
+                var attemptFingerprint = DeterministicSeedDerivation.ComputeFingerprint(
+                    job.Id, snapshot.TurnId, snapshot.SceneRevision, attempt, derivedSeed, attemptProfile.ParametersJson);
+
                 // Derive attempt snapshot with adjusted profile and deterministic seed
                 var attemptSnapshot = snapshot with
                 {
@@ -226,20 +230,45 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 lastCompiledPrompt = _visualCompiler.CompileScenePrompt(attemptSnapshot);
                 var compiledNegative = _visualCompiler.CompileNegativePrompt(attemptSnapshot);
 
-                var imageReq = ImageGenerationRequest.FromSnapshot(
-                    snapshot: attemptSnapshot,
-                    compiledPrompt: lastCompiledPrompt,
-                    compiledNegative: compiledNegative,
-                    previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
-                    providerJobId: job.ProviderJobId,
-                    onPromptQueuedAsync: async (promptId, token) =>
-                    {
-                        job.SetProviderJobId(promptId);
-                        await _dbContext.SaveChangesAsync(token);
-                    }
-                );
+                // Attempt-level Idempotency Check: lookup existing attempt artifact before invoking GPU
+                var existingAttemptArtifact = await _dbContext.SceneImages
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(img =>
+                        img.SessionId == snapshot.SessionId &&
+                        img.SceneRevision == snapshot.SceneRevision &&
+                        (img.GenerationJobId == job.Id || img.GenerationRequestId == generationRequestId) &&
+                        img.Prompt == lastCompiledPrompt, ct);
 
-                genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+                if (existingAttemptArtifact != null && !string.IsNullOrWhiteSpace(existingAttemptArtifact.ImageUrl))
+                {
+                    _logger.LogInformation("[SceneGenerationAttemptReused] Reusing existing artifact {ImageId} for JobId={JobId}, Attempt={Attempt}, Fingerprint={Fingerprint}",
+                        existingAttemptArtifact.Id, job.Id, attempt, attemptFingerprint);
+
+                    genResult = new ImageGenerationResult(
+                        ImageUrl: existingAttemptArtifact.ImageUrl,
+                        Provider: existingAttemptArtifact.Workflow,
+                        ProviderJobId: existingAttemptArtifact.Id.ToString(),
+                        DurationMs: 0,
+                        Seed: derivedSeed
+                    );
+                }
+                else
+                {
+                    var imageReq = ImageGenerationRequest.FromSnapshot(
+                        snapshot: attemptSnapshot,
+                        compiledPrompt: lastCompiledPrompt,
+                        compiledNegative: compiledNegative,
+                        previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
+                        providerJobId: job.ProviderJobId,
+                        onPromptQueuedAsync: async (promptId, token) =>
+                        {
+                            job.SetProviderJobId(promptId);
+                            await _dbContext.SaveChangesAsync(token);
+                        }
+                    );
+
+                    genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+                }
 
                 if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
                 {
@@ -247,7 +276,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     throw new GpuNonTransientException("Image generation completed without producing an image URL.");
                 }
 
-                if (_qualityEvaluator != null && _qualityGuardPolicy.IsActive)
+                if (_qualityGuardPolicy.IsActive)
                 {
                     lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
                     var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);

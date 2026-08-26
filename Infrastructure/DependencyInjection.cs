@@ -93,6 +93,10 @@ public static class DependencyInjection
         {
             services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
         }
+
+        // Identity Quality Guard & Reference Authority Policy (PR #24)
+        services.AddSingleton(sp => Application.Services.IdentityQualityGuardPolicy.FromConfiguration(configuration));
+        services.AddScoped<IIdentityQualityEvaluator, Infrastructure.Services.DefaultIdentityQualityEvaluator>();
         services.AddScoped<IImageGenerationJobHandler, Infrastructure.Services.ImageGenerationJobHandler>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)

@@ -195,7 +195,7 @@ def evaluate_frame_quality(img_path, avatar_path, char_name, turn_data):
     overall = 0.6 * face_sim + 0.4 * feat_score
     if inv_violated:
         status = "Failed"
-    elif face_sim < 0.70 or not feat_pass:
+    elif face_sim < 0.75 or not feat_pass:
         status = "Degraded"
     else:
         status = "Passed"
@@ -420,6 +420,55 @@ def run_benchmark(max_turns=4, mode_filter=None):
     print(f"\n==========================================================================", flush=True)
     print(f"✅ BENCHMARK COMPLETED! Summary saved to {out_json}", flush=True)
     print(f"==========================================================================", flush=True)
+
+    # Print Comparative Matrix Table
+    print("\n" + "="*80, flush=True)
+    print("📊 PR23 BASELINE vs PR24 IDENTITY QUALITY GUARD COMPARATIVE MATRIX", flush=True)
+    print("="*80, flush=True)
+    print(f"{'Metric':<32} | {'PR23 Baseline (Unguarded)':<22} | {'PR24 Guarded':<18}", flush=True)
+    print("-"*80, flush=True)
+
+    m1 = results[0]
+    m2 = results[1]
+
+    # Compute aggregate metrics across characters
+    all_turns_m1 = [t for c in m1["characters"].values() for t in c["turns"]]
+    all_turns_m2 = [t for c in m2["characters"].values() for t in c["turns"]]
+
+    worst_id_m1 = min([t["evaluation"]["face_similarity"] for t in all_turns_m1])
+    worst_id_m2 = min([t["evaluation"]["face_similarity"] for t in all_turns_m2])
+
+    avg_face_m1 = np.mean([t["evaluation"]["face_similarity"] for t in all_turns_m1])
+    avg_face_m2 = np.mean([t["evaluation"]["face_similarity"] for t in all_turns_m2])
+
+    avg_attempts_m1 = 1.0
+    avg_attempts_m2 = float(np.mean([t["attempts_used"] for t in all_turns_m2]))
+
+    passed_count_m1 = sum(1 for t in all_turns_m1 if t["evaluation"]["status"] == "Passed")
+    passed_count_m2 = sum(1 for t in all_turns_m2 if t["evaluation"]["status"] == "Passed")
+
+    quarantine_count_m1 = 0
+    quarantine_count_m2 = sum(1 for t in all_turns_m2 if not t["is_current"])
+    quarantine_rate_m2 = (quarantine_count_m2 / len(all_turns_m2)) * 100.0
+
+    same_m1 = np.mean([c["same_scene_continuity"] for c in m1["characters"].values()])
+    same_m2 = np.mean([c["same_scene_continuity"] for c in m2["characters"].values()])
+
+    trans_m1 = np.mean([c["transition_continuity"] for c in m1["characters"].values() if c["transition_continuity"] > 0]) if any(c["transition_continuity"] > 0 for c in m1["characters"].values()) else 0.0
+    trans_m2 = np.mean([c["transition_continuity"] for c in m2["characters"].values() if c["transition_continuity"] > 0]) if any(c["transition_continuity"] > 0 for c in m2["characters"].values()) else 0.0
+
+    action_m1 = np.mean([c["action_margin"] for c in m1["characters"].values()])
+    action_m2 = np.mean([c["action_margin"] for c in m2["characters"].values()])
+
+    print(f"{'Mean Face Similarity':<32} | {avg_face_m1:<22.4f} | {avg_face_m2:<18.4f}", flush=True)
+    print(f"{'Worst Identity Score':<32} | {worst_id_m1:<22.4f} | {worst_id_m2:<18.4f}", flush=True)
+    print(f"{'Passed Frames (>=0.75 + feats)':<32} | {f'{passed_count_m1}/{len(all_turns_m1)}':<22} | {f'{passed_count_m2}/{len(all_turns_m2)}':<18}", flush=True)
+    print(f"{'Average Attempts per Turn':<32} | {avg_attempts_m1:<22.2f} | {avg_attempts_m2:<18.2f}", flush=True)
+    print(f"{'Quarantine Rate (Corrupt Bypassed)':<32} | {'0.0% (Unguarded)':<22} | {f'{quarantine_rate_m2:.1f}%':<18}", flush=True)
+    print(f"{'Same-Scene Continuity':<32} | {same_m1:<22.4f} | {same_m2:<18.4f}", flush=True)
+    print(f"{'Transition Continuity':<32} | {trans_m1:<22.4f} | {trans_m2:<18.4f}", flush=True)
+    print(f"{'Action Margin (CLIP)':<32} | {action_m1:<22.4f} | {action_m2:<18.4f}", flush=True)
+    print("="*80 + "\n", flush=True)
 
 if __name__ == "__main__":
     stage = 1
