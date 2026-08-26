@@ -33,6 +33,8 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
             .HasFilter("\"IsCurrent\" = true")
             .IsUnique();
 
+        builder.HasIndex(x => x.TurnId);
+
         builder.HasIndex(x => x.GenerationFingerprint)
             .HasFilter("\"GenerationFingerprint\" IS NOT NULL")
             .IsUnique();

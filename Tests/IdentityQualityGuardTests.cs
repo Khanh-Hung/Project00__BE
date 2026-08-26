@@ -7,11 +7,13 @@ using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
+using Infrastructure;
 using Infrastructure.Persistence;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -1407,6 +1409,88 @@ public sealed class IdentityQualityGuardTests
         var attempts = await verifyDb.ImageGenerationAttempts.ToListAsync();
         Assert.Single(attempts);
         Assert.Equal(GenerationAttemptStatus.Succeeded, attempts[0].Status);
+    }
+
+    [Fact]
+    public void DependencyInjection_WhenCustomEvaluatorRegistered_AllowsProductionStartupWithoutStubError()
+    {
+        var inMemorySettings = new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
+            ["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] = "Clip",
+            ["ConnectionStrings:DefaultConnection"] = "DataSource=:memory:",
+            ["AiProviders:ImageProvider"] = "ComfyUI"
+        };
+
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(inMemorySettings)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Custom ML Evaluator registered by Composition Root
+        services.AddScoped<IIdentityQualityEvaluator, TestClipEvaluator>();
+
+        // Act: AddInfrastructure should NOT throw Unknown EvaluatorType and must preserve the registered evaluator
+        services.AddInfrastructure(config);
+
+        var sp = services.BuildServiceProvider();
+        var evaluator = sp.GetRequiredService<IIdentityQualityEvaluator>();
+        Assert.IsType<TestClipEvaluator>(evaluator);
+    }
+
+    [Fact]
+    public void DependencyInjection_WhenProductionAndNoRealEvaluator_ThrowsStartupException()
+    {
+        var inMemorySettings = new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
+            ["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] = "DevelopmentStub",
+            ["AiProviders:ImageGeneration:QualityGuard:AllowStubEvaluatorInProduction"] = "false",
+            ["ConnectionStrings:DefaultConnection"] = "DataSource=:memory:"
+        };
+
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(inMemorySettings)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => { services.AddInfrastructure(config); });
+        Assert.Contains("CRITICAL STARTUP CONFIGURATION ERROR", ex.Message);
+    }
+
+    [Fact]
+    public void SceneImage_ModelConfiguration_ContainsBothTurnIdIndexAndFingerprintUniqueIndex()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new ProjectDbContext(options);
+        var entityType = db.Model.FindEntityType(typeof(SceneImage));
+        Assert.NotNull(entityType);
+
+        var indexes = entityType.GetIndexes().ToList();
+
+        // Assert TurnId index exists
+        var turnIdIndex = indexes.FirstOrDefault(idx => idx.Properties.Count == 1 && idx.Properties[0].Name == nameof(SceneImage.TurnId));
+        Assert.NotNull(turnIdIndex);
+
+        // Assert GenerationFingerprint unique index exists
+        var fpIndex = indexes.FirstOrDefault(idx => idx.Properties.Count == 1 && idx.Properties[0].Name == nameof(SceneImage.GenerationFingerprint));
+        Assert.NotNull(fpIndex);
+        Assert.True(fpIndex.IsUnique);
+    }
+
+    private sealed class TestClipEvaluator : IIdentityQualityEvaluator
+    {
+        public Task<IdentityEvaluationResult> EvaluateAsync(string imageLocation, VisualSnapshot snapshot, CancellationToken ct = default) =>
+            Task.FromResult(IdentityEvaluationResult.Pass(0.88f, 0.92f, 0.90f));
     }
 
     private sealed class ConcurrentTrackingImageService : IImageGenerationService
