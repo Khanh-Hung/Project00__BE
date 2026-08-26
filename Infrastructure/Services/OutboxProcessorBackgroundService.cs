@@ -331,6 +331,14 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
                         msg.MarkCompleted(Clock.Now);
                         break;
 
+                    case OutboxEventTypes.GenerationJobAccepted:
+                    case OutboxEventTypes.GenerationJobQuarantined:
+                    case OutboxEventTypes.GenerationAttemptStarted:
+                    case OutboxEventTypes.GenerationAttemptEvaluated:
+                        // Lifecycle domain events are emitted to external broker/subscribers and marked completed
+                        msg.MarkCompleted(Clock.Now);
+                        break;
+
                     default:
                         _logger.LogWarning("Unknown outbox event type '{EventType}' on message {Id}", msg.EventType, msg.Id);
                         msg.MarkCompleted(Clock.Now);

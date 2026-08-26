@@ -25,6 +25,7 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.Property(x => x.Workflow).IsRequired().HasMaxLength(128);
         builder.Property(x => x.WorkflowVersion).IsRequired();
         builder.Property(x => x.AcceptedAttemptId);
+        builder.Property(x => x.QuarantinedAttemptId);
         builder.Property(x => x.CurrentAttemptNumber).IsRequired().HasDefaultValue(0);
         builder.Property(x => x.FailureReason).HasMaxLength(2048);
         builder.Property(x => x.Version).IsConcurrencyToken();
@@ -33,10 +34,16 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision });
         builder.HasIndex(x => new { x.Status, x.LeaseUntil });
         builder.HasIndex(x => x.AcceptedAttemptId);
+        builder.HasIndex(x => x.QuarantinedAttemptId);
 
         builder.HasOne<ImageGenerationAttempt>()
             .WithMany()
             .HasForeignKey(x => x.AcceptedAttemptId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<ImageGenerationAttempt>()
+            .WithMany()
+            .HasForeignKey(x => x.QuarantinedAttemptId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

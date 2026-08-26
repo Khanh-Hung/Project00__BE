@@ -290,6 +290,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                                 return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by another worker");
                             }
 
+                            existingAttempt.TryClaim(workerId, nowUtc, TimeSpan.FromMinutes(2));
                             attemptRecord = existingAttempt;
                         }
                         else
@@ -363,14 +364,14 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
                     catch (Exception ex)
                     {
-                        attemptRecord.MarkFailed(ex.Message, _dateTimeProvider.UtcNow);
+                        attemptRecord.MarkFailed(ex.Message, _dateTimeProvider.UtcNow, workerId: workerId);
                         await _dbContext.SaveChangesAsync(ct);
                         throw;
                     }
 
                     if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
                     {
-                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", _dateTimeProvider.UtcNow);
+                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", _dateTimeProvider.UtcNow, workerId: workerId);
                         await _dbContext.SaveChangesAsync(ct);
                         _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
                         throw new GpuNonTransientException("Image generation completed without producing an image URL.");
@@ -379,24 +380,37 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                 if (_qualityGuardPolicy.IsActive)
                 {
-                    attemptRecord.StartEvaluating(_dateTimeProvider.UtcNow);
+                    attemptRecord.StartEvaluating(_dateTimeProvider.UtcNow, workerId: workerId);
                     lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
                     
                     if (lastEvaluation.Status == IdentityStatus.Passed)
                     {
-                        attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow);
+                        attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow, workerId: workerId);
                     }
                     else if (lastEvaluation.Status == IdentityStatus.Degraded)
                     {
-                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow);
+                        attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow, workerId: workerId);
                     }
                     else
                     {
                         var violationMsg = lastEvaluation.Violations.Count > 0
                             ? string.Join("; ", lastEvaluation.Violations.Select(v => v.Code))
                             : "Hard invariant violation";
-                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", _dateTimeProvider.UtcNow);
+                        attemptRecord.MarkFailed($"Identity invariant violated: {violationMsg}", _dateTimeProvider.UtcNow, workerId: workerId);
                     }
+
+                    var evalOutbox = new OutboxMessage(
+                        eventType: OutboxEventTypes.GenerationAttemptEvaluated,
+                        payloadJson: System.Text.Json.JsonSerializer.Serialize(new Domain.Events.GenerationAttemptEvaluatedEvent(
+                            JobId: job.Id,
+                            AttemptId: attemptRecord.Id,
+                            AttemptNumber: attempt,
+                            IdentitySimilarity: lastEvaluation.IdentitySimilarity,
+                            FeatureScore: lastEvaluation.FeatureScore,
+                            Status: lastEvaluation.Status
+                        ))
+                    );
+                    await _dbContext.OutboxMessages.AddAsync(evalOutbox, ct);
                     await _dbContext.SaveChangesAsync(ct);
 
                     var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
@@ -423,7 +437,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 }
                 else
                 {
-                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow);
+                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow, workerId: workerId);
                     await _dbContext.SaveChangesAsync(ct);
                     isIdentityPassed = true;
                     break;
@@ -461,14 +475,14 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         catch (GpuNonTransientException ex)
         {
             _logger.LogError(ex, "[SceneGenerationFatalError] Non-transient failure for JobId={JobId}, OutboxId={OutboxId}: {Message}", job.Id, outboxId, ex.Message);
-            job.MarkFailed(ex.Message, isRetryable: false, failedAt: _dateTimeProvider.UtcNow);
+            job.Fail(ex.Message, isRetryable: false, now: _dateTimeProvider.UtcNow);
             await _dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[SceneGenerationTransientError] Transient failure for JobId={JobId}, OutboxId={OutboxId}: {Message}. Releasing lease for retry.", job.Id, outboxId, ex.Message);
-            job.MarkFailed(ex.Message, isRetryable: true, failedAt: _dateTimeProvider.UtcNow);
+            job.Fail(ex.Message, isRetryable: true, now: _dateTimeProvider.UtcNow);
             await _dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
         }

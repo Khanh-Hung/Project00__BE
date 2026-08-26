@@ -98,17 +98,28 @@ public sealed class ImageGenerationAttempt : BaseEntity
         }
     }
 
-    public void StartEvaluating(DateTime now)
+    public void StartEvaluating(DateTime now, string? workerId = null)
     {
         if (Status == GenerationAttemptStatus.Succeeded || Status == GenerationAttemptStatus.Failed || Status == GenerationAttemptStatus.Quarantined)
             throw new InvalidOperationException($"Cannot evaluate attempt {Id} in terminal status {Status}.");
+
+        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
+        {
+            throw new InvalidOperationException($"Cannot evaluate attempt {Id}: attempt is claimed by worker '{ClaimedBy}', not '{workerId}'.");
+        }
 
         Status = GenerationAttemptStatus.Evaluating;
         Touch();
     }
 
-    public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
+    public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string? workerId = null)
     {
+        if (Status == GenerationAttemptStatus.Succeeded)
+            throw new InvalidOperationException($"Attempt {Id} is already marked Succeeded.");
+
+        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} succeeded: worker '{workerId}' is not the owner ('{ClaimedBy}').");
+
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
         IdentitySimilarity = identitySimilarity;
@@ -118,8 +129,14 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void MarkDegraded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
+    public void MarkDegraded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string? workerId = null)
     {
+        if (Status == GenerationAttemptStatus.Succeeded)
+            throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
+
+        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} degraded: worker '{workerId}' is not the owner ('{ClaimedBy}').");
+
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
         IdentitySimilarity = identitySimilarity;
@@ -129,8 +146,14 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void MarkQuarantined(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt)
+    public void MarkQuarantined(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string? workerId = null)
     {
+        if (Status == GenerationAttemptStatus.Succeeded)
+            throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
+
+        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} quarantined: worker '{workerId}' is not the owner ('{ClaimedBy}').");
+
         ImageUrl = imageUrl;
         ProviderJobId = providerJobId ?? ProviderJobId;
         IdentitySimilarity = identitySimilarity;
@@ -140,8 +163,14 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    public void MarkFailed(string errorMessage, DateTime completedAt)
+    public void MarkFailed(string errorMessage, DateTime completedAt, string? workerId = null)
     {
+        if (Status == GenerationAttemptStatus.Succeeded)
+            throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
+
+        if (workerId != null && ClaimedBy != null && ClaimedBy != workerId)
+            throw new InvalidOperationException($"Cannot mark attempt {Id} failed: worker '{workerId}' is not the owner ('{ClaimedBy}').");
+
         ErrorMessage = errorMessage;
         Status = GenerationAttemptStatus.Failed;
         CompletedAt = completedAt;

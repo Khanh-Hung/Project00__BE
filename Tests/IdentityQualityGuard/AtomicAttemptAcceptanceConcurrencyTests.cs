@@ -217,4 +217,207 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         Assert.Equal(ImageJobStatus.Completed, finalJob.Status);
         Assert.NotNull(finalJob.AcceptedAttemptId);
     }
+
+    [Fact]
+    public async Task ArtifactAcceptance_WhenAttemptBelongsToDifferentJob_ThrowsInvalidOperationException()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var service = new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
+
+        var jobA = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        var jobB = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        var attemptOfJobB = new ImageGenerationAttempt(jobB.Id, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_job_b");
+
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: jobA.SessionId,
+            CharacterId: jobA.CharacterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L)
+        );
+
+        var request = new ArtifactAcceptanceRequest(
+            Job: jobA,
+            WinningAttempt: attemptOfJobB, // Attempt belongs to Job B, but passed with Job A!
+            Snapshot: snapshot,
+            ImageUrl: "https://cdn.project00.ai/image.png",
+            CompiledPrompt: "prompt",
+            ResolvedPreviousSceneImageUrl: null,
+            GenerationFingerprint: "fp_job_b",
+            MetadataJson: null,
+            IsIdentityPassed: true,
+            WorkerId: "worker-1",
+            OutboxId: Guid.NewGuid()
+        );
+
+        // P1-2 Invariant: MUST reject attempt belonging to another Job!
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AcceptAttemptAtomicallyAsync(request));
+    }
+
+    [Fact]
+    public async Task ArtifactAcceptance_TransactionalOutboxEvent_PersistedInSameTransaction()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var compiler = new FakePromptCompiler("1man knight", "1girl");
+        var imageService = new ConcurrentTrackingImageService();
+        var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
+
+        using var db = new ProjectDbContext(options);
+        var orchestrator = new ImageGenerationOrchestrator(
+            dbContext: db,
+            visualCompiler: compiler,
+            imageService: imageService,
+            logger: NullLogger<ImageGenerationOrchestrator>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: evaluator,
+            qualityGuardPolicy: policy
+        );
+
+        var result = await orchestrator.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+
+        // Assert outbox message for GenerationJobAccepted was persisted atomically with the artifact!
+        using var verifyDb = new ProjectDbContext(options);
+        var outboxEvents = await verifyDb.OutboxMessages
+            .Where(m => m.EventType == OutboxEventTypes.GenerationJobAccepted)
+            .ToListAsync();
+        var acceptedJob = await verifyDb.ImageGenerationJobs.FirstAsync();
+        Assert.Single(outboxEvents);
+        Assert.Contains(acceptedJob.Id.ToString(), outboxEvents[0].PayloadJson);
+    }
+
+    [Fact]
+    public async Task CrashConsistency_WorkerCrashesAfterCommitBeforeResponse_ReplayOutboxReusesArtifactWithoutDuplicateGpu()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        var compiler = new FakePromptCompiler("1man knight", "1girl");
+        var trackingImageService = new ConcurrentTrackingImageService();
+        var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
+
+        // 1. Worker 1 runs and fully commits the transaction
+        using (var dbWorker1 = new ProjectDbContext(options))
+        {
+            var orchestrator1 = new ImageGenerationOrchestrator(
+                dbContext: dbWorker1,
+                visualCompiler: compiler,
+                imageService: trackingImageService,
+                logger: NullLogger<ImageGenerationOrchestrator>.Instance,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                qualityEvaluator: evaluator,
+                qualityGuardPolicy: policy
+            );
+
+            var res1 = await orchestrator1.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+            Assert.Equal(JobExecutionStatus.Completed, res1.Status);
+        }
+
+        Assert.Equal(1, trackingImageService.CallCount);
+
+        // 2. Outbox replays same message to Worker 2 (simulating crash right after commit before acking message)
+        using (var dbWorker2 = new ProjectDbContext(options))
+        {
+            var orchestrator2 = new ImageGenerationOrchestrator(
+                dbContext: dbWorker2,
+                visualCompiler: compiler,
+                imageService: trackingImageService,
+                logger: NullLogger<ImageGenerationOrchestrator>.Instance,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                qualityEvaluator: evaluator,
+                qualityGuardPolicy: policy
+            );
+
+            var res2 = await orchestrator2.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-2", DateTime.UtcNow);
+            Assert.Equal(JobExecutionStatus.Skipped, res2.Status);
+        }
+
+        // Assert ZERO additional GPU calls!
+        Assert.Equal(1, trackingImageService.CallCount);
+
+        // Assert exactly 1 artifact in DB
+        using (var verifyDb = new ProjectDbContext(options))
+        {
+            var images = await verifyDb.SceneImages.ToListAsync();
+            Assert.Single(images);
+            Assert.True(images[0].IsCurrent);
+        }
+    }
 }

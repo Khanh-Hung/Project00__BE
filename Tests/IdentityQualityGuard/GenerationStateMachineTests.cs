@@ -50,7 +50,8 @@ public sealed class GenerationStateMachineTests
         job.Quarantine(lastAttemptId, "Invariant degraded across 3 attempts", Clock.Now);
 
         Assert.Equal(ImageJobStatus.Quarantined, job.Status);
-        Assert.Equal(lastAttemptId, job.AcceptedAttemptId);
+        Assert.Null(job.AcceptedAttemptId); // P0-2: AcceptedAttemptId is strictly NULL for Quarantined jobs!
+        Assert.Equal(lastAttemptId, job.QuarantinedAttemptId);
         Assert.Equal("Invariant degraded across 3 attempts", job.FailureReason);
         Assert.NotNull(job.CompletedAt);
     }
@@ -178,6 +179,26 @@ public sealed class GenerationStateMachineTests
 
         // Terminal attempt cannot start evaluating again
         Assert.Throws<InvalidOperationException>(() => attempt.StartEvaluating(Clock.Now));
+    }
+
+    [Fact]
+    public void ImageGenerationAttempt_StartEvaluating_WhenWorkerMismatch_ThrowsInvalidOperationException()
+    {
+        var jobId = Guid.NewGuid();
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
+        attempt.TryClaim("worker-A", Clock.Now, TimeSpan.FromMinutes(2));
+
+        Assert.Throws<InvalidOperationException>(() => attempt.StartEvaluating(Clock.Now, workerId: "worker-B"));
+    }
+
+    [Fact]
+    public void ImageGenerationAttempt_MarkSucceeded_WhenWorkerMismatch_ThrowsInvalidOperationException()
+    {
+        var jobId = Guid.NewGuid();
+        var attempt = new ImageGenerationAttempt(jobId, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_1");
+        attempt.TryClaim("worker-A", Clock.Now, TimeSpan.FromMinutes(2));
+
+        Assert.Throws<InvalidOperationException>(() => attempt.MarkSucceeded("https://cdn.project00.ai/image.png", null, 0.9f, 0.9f, Clock.Now, workerId: "worker-B"));
     }
 
     #endregion

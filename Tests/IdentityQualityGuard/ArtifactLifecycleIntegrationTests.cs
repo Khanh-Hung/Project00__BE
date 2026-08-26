@@ -178,6 +178,8 @@ public sealed class ArtifactLifecycleIntegrationTests
 
         var job = await db.ImageGenerationJobs.FirstAsync();
         Assert.Equal(ImageJobStatus.Quarantined, job.Status);
+        Assert.Null(job.AcceptedAttemptId); // P0-2: Quarantined jobs have no accepted attempt
+        Assert.Equal(attempts[2].Id, job.QuarantinedAttemptId);
     }
 
     [Fact]

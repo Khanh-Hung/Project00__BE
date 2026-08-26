@@ -21,6 +21,7 @@ public sealed class ImageGenerationJob : BaseEntity
     public ImageJobStatus Status { get; private set; } = ImageJobStatus.Pending;
     public int AttemptCount { get; private set; } = 0;
     public Guid? AcceptedAttemptId { get; private set; }
+    public Guid? QuarantinedAttemptId { get; private set; }
     public int CurrentAttemptNumber { get; private set; } = 0;
     public string? ClaimedBy { get; private set; }
     public DateTime? LeaseUntil { get; private set; }
@@ -136,6 +137,7 @@ public sealed class ImageGenerationJob : BaseEntity
             throw new InvalidOperationException($"Cannot accept attempt for job {Id}: acceptance is only allowed from Processing or Evaluating, but current status is {Status}.");
 
         AcceptedAttemptId = attemptId;
+        QuarantinedAttemptId = null;
         Status = ImageJobStatus.Completed;
         CompletedAt = now;
         LeaseUntil = null;
@@ -153,9 +155,36 @@ public sealed class ImageGenerationJob : BaseEntity
         if (Status != ImageJobStatus.Processing && Status != ImageJobStatus.Evaluating)
             throw new InvalidOperationException($"Cannot quarantine job {Id}: quarantine is only allowed from Processing or Evaluating, but current status is {Status}.");
 
-        AcceptedAttemptId = lastAttemptId;
+        AcceptedAttemptId = null;
+        QuarantinedAttemptId = lastAttemptId;
         Status = ImageJobStatus.Quarantined;
         FailureReason = reason;
+        CompletedAt = now;
+        LeaseUntil = null;
+        Version++;
+        Touch();
+    }
+
+    public void Fail(string reason, bool isRetryable, DateTime now)
+    {
+        if (Status == ImageJobStatus.Completed || Status == ImageJobStatus.Quarantined || Status == ImageJobStatus.Cancelled)
+            throw new InvalidOperationException($"Cannot fail job {Id} because it is already in terminal state {Status}.");
+
+        Status = ImageJobStatus.Failed;
+        FailureReason = reason;
+        IsRetryable = isRetryable;
+        CompletedAt = now;
+        LeaseUntil = null;
+        Version++;
+        Touch();
+    }
+
+    public void Cancel(DateTime now)
+    {
+        if (IsTerminal())
+            throw new InvalidOperationException($"Cannot cancel job {Id} because it is already in terminal state {Status}.");
+
+        Status = ImageJobStatus.Cancelled;
         CompletedAt = now;
         LeaseUntil = null;
         Version++;
@@ -168,6 +197,7 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
+    [Obsolete("Use StartRunning instead for strict state machine transitions.", error: false)]
     public void MarkProcessing(string? providerJobId = null, string? workerId = null, TimeSpan? leaseDuration = null, DateTime? startedAt = null)
     {
         var now = startedAt ?? Clock.Now;
@@ -188,6 +218,7 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
+    [Obsolete("Use AcceptAttempt instead for strict atomic state machine transitions.", error: false)]
     public void MarkCompleted(DateTime? completedAt = null, string? metadataJson = null)
     {
         if (IsTerminal())
@@ -205,6 +236,7 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
+    [Obsolete("Use Fail instead for strict state machine transitions.", error: false)]
     public void MarkFailed(string reason, bool isRetryable, DateTime? failedAt = null)
     {
         if (Status == ImageJobStatus.Completed || Status == ImageJobStatus.Quarantined || Status == ImageJobStatus.Cancelled)
@@ -219,6 +251,7 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
+    [Obsolete("Use Cancel instead for strict state machine transitions.", error: false)]
     public void MarkCancelled(DateTime? cancelledAt = null)
     {
         if (IsTerminal())
