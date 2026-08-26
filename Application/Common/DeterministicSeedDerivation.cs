@@ -1,0 +1,47 @@
+﻿using System.Security.Cryptography;
+using System.Text;
+
+namespace Application.Common;
+
+/// <summary>
+/// Provides pure, deterministic seed derivation and generation attempt fingerprinting.
+/// Guarantees exact reproducibility and idempotency across retry attempts.
+/// </summary>
+public static class DeterministicSeedDerivation
+{
+    /// <summary>
+    /// Derives a deterministic seed for a given attempt number from the base seed.
+    /// Attempt 1 returns baseSeed unmodified.
+    /// Attempts > 1 return a deterministic permutation using 64-bit SplitMix.
+    /// </summary>
+    public static long Derive(long baseSeed, int attemptNumber)
+    {
+        if (attemptNumber <= 1)
+            return baseSeed;
+
+        ulong z = (ulong)baseSeed + ((ulong)attemptNumber * 0x9E3779B97F4A7C15UL);
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+        ulong result = z ^ (z >> 31);
+
+        // Map to positive signed 64-bit integer
+        return (long)(result & 0x7FFFFFFFFFFFFFFFUL);
+    }
+
+    /// <summary>
+    /// Computes a unique, deterministic fingerprint for a generation attempt.
+    /// Used to enforce idempotency and prevent duplicate generation on worker retries.
+    /// </summary>
+    public static string ComputeFingerprint(
+        Guid jobId,
+        Guid snapshotTurnId,
+        int sceneRevision,
+        int attemptNumber,
+        long derivedSeed,
+        string parametersJson)
+    {
+        var rawKey = $"{jobId:N}:{snapshotTurnId:N}:{sceneRevision}:{attemptNumber}:{derivedSeed}:{parametersJson}";
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+}

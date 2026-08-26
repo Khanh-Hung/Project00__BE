@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using Application.DTOs;
+using Application.Enums;
 using Application.Exceptions;
 using Application.Interfaces;
+using Application.Services;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
@@ -18,19 +20,25 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
     private readonly IImageGenerationService _imageService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<ImageGenerationJobHandler> _logger;
+    private readonly IIdentityQualityEvaluator? _qualityEvaluator;
+    private readonly IdentityQualityGuardPolicy _qualityGuardPolicy;
 
     public ImageGenerationJobHandler(
         ProjectDbContext dbContext,
         IVisualPromptCompiler visualCompiler,
         IImageGenerationService imageService,
         ILogger<ImageGenerationJobHandler> logger,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        IIdentityQualityEvaluator? qualityEvaluator = null,
+        IdentityQualityGuardPolicy? qualityGuardPolicy = null)
     {
         _dbContext = dbContext;
         _visualCompiler = visualCompiler;
         _imageService = imageService;
         _logger = logger;
         _dateTimeProvider = dateTimeProvider;
+        _qualityEvaluator = qualityEvaluator;
+        _qualityGuardPolicy = qualityGuardPolicy ?? IdentityQualityGuardPolicy.Default;
     }
 
     public async Task<JobExecutionResult> HandleSceneImageGenerationAsync(
@@ -188,33 +196,91 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
 
         try
         {
-            // 4. Deterministic prompt compilation purely from frozen VisualSnapshot
-            var compiledPrompt = _visualCompiler.CompileScenePrompt(snapshot);
-            var compiledNegative = _visualCompiler.CompileNegativePrompt(snapshot);
-            var imageReq = ImageGenerationRequest.FromSnapshot(
-                snapshot: snapshot,
-                compiledPrompt: compiledPrompt,
-                compiledNegative: compiledNegative,
-                previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
-                providerJobId: job.ProviderJobId,
-                onPromptQueuedAsync: async (promptId, token) =>
-                {
-                    job.SetProviderJobId(promptId);
-                    await _dbContext.SaveChangesAsync(token);
-                }
-            );
+            // 4. Bounded Deterministic Generation & Identity Quality Mitigation Loop
+            int maxAttempts = (_qualityEvaluator != null && _qualityGuardPolicy.IsActive)
+                ? _qualityGuardPolicy.MaxAttempts
+                : 1;
 
-            // 5. Generate Image via configured Provider
-            var genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+            int attempt = 1;
+            ImageGenerationResult? genResult = null;
+            IdentityEvaluationResult? lastEvaluation = null;
+            string lastCompiledPrompt = string.Empty;
+            bool isIdentityPassed = true;
+            long baseSeed = snapshot.GenerationProfile.Seed;
 
-            // Strict Validation: ImageUrl must be non-empty; never mark Job Completed without an artifact!
-            if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
+            while (attempt <= maxAttempts)
             {
-                _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}.", job.Id);
-                throw new GpuNonTransientException("Image generation completed without producing an image URL.");
+                QualityMitigationAction mitigation = attempt == 1
+                    ? QualityMitigationAction.Pass
+                    : _qualityGuardPolicy.DecideMitigation(attempt - 1, lastEvaluation!);
+
+                var (attemptProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
+                    snapshot, mitigation, attempt, baseSeed);
+
+                // Derive attempt snapshot with adjusted profile and deterministic seed
+                var attemptSnapshot = snapshot with
+                {
+                    GenerationProfile = attemptProfile with { Seed = derivedSeed }
+                };
+
+                lastCompiledPrompt = _visualCompiler.CompileScenePrompt(attemptSnapshot);
+                var compiledNegative = _visualCompiler.CompileNegativePrompt(attemptSnapshot);
+
+                var imageReq = ImageGenerationRequest.FromSnapshot(
+                    snapshot: attemptSnapshot,
+                    compiledPrompt: lastCompiledPrompt,
+                    compiledNegative: compiledNegative,
+                    previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
+                    providerJobId: job.ProviderJobId,
+                    onPromptQueuedAsync: async (promptId, token) =>
+                    {
+                        job.SetProviderJobId(promptId);
+                        await _dbContext.SaveChangesAsync(token);
+                    }
+                );
+
+                genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+
+                if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
+                {
+                    _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
+                    throw new GpuNonTransientException("Image generation completed without producing an image URL.");
+                }
+
+                if (_qualityEvaluator != null && _qualityGuardPolicy.IsActive)
+                {
+                    lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
+                    var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
+
+                    if (nextAction == QualityMitigationAction.Pass)
+                    {
+                        _logger.LogInformation("[IdentityGuardPassed] JobId={JobId}, Attempt={Attempt}/{MaxAttempts}, FaceSim={FaceSim:F4}, Status={Status}",
+                            job.Id, attempt, maxAttempts, lastEvaluation.FaceSimilarity, lastEvaluation.Status);
+                        isIdentityPassed = true;
+                        break;
+                    }
+                    else if (nextAction == QualityMitigationAction.RejectDegraded)
+                    {
+                        _logger.LogWarning("[IdentityGuardExhausted] JobId={JobId}, Max attempts {MaxAttempts} reached without passing. Quarantining frame from continuity.",
+                            job.Id, maxAttempts);
+                        isIdentityPassed = false;
+                        break;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("[IdentityGuardDegraded] JobId={JobId}, Attempt={Attempt}/{MaxAttempts} degraded (FaceSim={FaceSim:F4}, Status={Status}). Triggering {NextAction}.",
+                            job.Id, attempt, maxAttempts, lastEvaluation.FaceSimilarity, lastEvaluation.Status, nextAction);
+                        attempt++;
+                    }
+                }
+                else
+                {
+                    isIdentityPassed = true;
+                    break;
+                }
             }
 
-            // 6. Strict Atomic DB Conditional Fencing & Artifact Persistence in ONE Unit of Work
+            // 5. Strict Atomic DB Conditional Fencing & Artifact Persistence in ONE Unit of Work
             var liveUtc = _dateTimeProvider.UtcNow;
 
             if (_dbContext.Database.IsRelational())
@@ -223,7 +289,6 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 {
                     await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
 
-                    // Step 6a: Conditional update as atomic fencing gate
                     var rowsAffected = await _dbContext.ImageGenerationJobs
                         .Where(j => j.Id == job.Id 
                                     && j.ClaimedBy == workerId 
@@ -234,7 +299,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(j => j.Status, ImageJobStatus.Completed)
                             .SetProperty(j => j.CompletedAt, liveUtc)
-                            .SetProperty(j => j.GenerationMetadataJson, genResult.MetadataJson)
+                            .SetProperty(j => j.GenerationMetadataJson, genResult!.MetadataJson)
                             .SetProperty(j => j.Version, j => j.Version + 1)
                             .SetProperty(j => j.UpdatedAt, liveUtc), ct);
 
@@ -246,26 +311,29 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before conditional update");
                     }
 
-                    // Step 6b: Deactivate previous currents for this revision within the SAME transaction
-                    await _dbContext.SceneImages
-                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                        .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+                    // P0 Hard Gate: If identity passed, promote to isCurrent=true and demote previous currents.
+                    // If degraded/quarantined, save with isCurrent=false, keeping the last-known-good reference intact!
+                    if (isIdentityPassed)
+                    {
+                        await _dbContext.SceneImages
+                            .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                            .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+                    }
 
-                    // Step 6c: Insert new SceneImage artifact within the SAME transaction
                     var artifact = new SceneImage(
                         sessionId: snapshot.SessionId,
                         characterId: snapshot.CharacterId,
                         turnId: snapshot.TurnId,
                         sceneRevision: snapshot.SceneRevision,
-                        imageUrl: genResult.ImageUrl,
-                        prompt: compiledPrompt,
+                        imageUrl: genResult!.ImageUrl,
+                        prompt: lastCompiledPrompt,
                         generationRequestId: generationRequestId,
                         generationJobId: job.Id,
                         identityReferenceUrl: snapshot.IdentityReferenceUrl,
                         previousSceneImageUrl: resolvedPreviousSceneImageUrl,
                         workflow: workflow,
                         workflowVersion: workflowVersion,
-                        isCurrent: true
+                        isCurrent: isIdentityPassed
                     );
 
                     await _dbContext.SceneImages.AddAsync(artifact, ct);
@@ -316,13 +384,16 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or expired before commit");
                 }
 
-                var previousCurrents = await _dbContext.SceneImages
-                    .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                    .ToListAsync(ct);
-
-                foreach (var prev in previousCurrents)
+                if (isIdentityPassed)
                 {
-                    prev.SetCurrent(false);
+                    var previousCurrents = await _dbContext.SceneImages
+                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                        .ToListAsync(ct);
+
+                    foreach (var prev in previousCurrents)
+                    {
+                        prev.SetCurrent(false);
+                    }
                 }
 
                 var artifact = new SceneImage(
@@ -330,15 +401,15 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     characterId: snapshot.CharacterId,
                     turnId: snapshot.TurnId,
                     sceneRevision: snapshot.SceneRevision,
-                    imageUrl: genResult.ImageUrl,
-                    prompt: compiledPrompt,
+                    imageUrl: genResult!.ImageUrl,
+                    prompt: lastCompiledPrompt,
                     generationRequestId: generationRequestId,
                     generationJobId: job.Id,
                     identityReferenceUrl: snapshot.IdentityReferenceUrl,
                     previousSceneImageUrl: resolvedPreviousSceneImageUrl,
                     workflow: workflow,
                     workflowVersion: workflowVersion,
-                    isCurrent: true
+                    isCurrent: isIdentityPassed
                 );
 
                 try
@@ -356,8 +427,8 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             }
 
             stopwatch.Stop();
-            _logger.LogInformation("[SceneGenerationCompleted] OutboxId={OutboxId}, JobId={JobId}, SessionId={SessionId}, Revision={Revision}, RequestId={RequestId}, LatencyMs={LatencyMs}",
-                outboxId, job.Id, snapshot.SessionId, snapshot.SceneRevision, generationRequestId, stopwatch.ElapsedMilliseconds);
+            _logger.LogInformation("[SceneGenerationCompleted] OutboxId={OutboxId}, JobId={JobId}, SessionId={SessionId}, Revision={Revision}, RequestId={RequestId}, LatencyMs={LatencyMs}, IdentityPassed={Passed}",
+                outboxId, job.Id, snapshot.SessionId, snapshot.SceneRevision, generationRequestId, stopwatch.ElapsedMilliseconds, isIdentityPassed);
 
             return new JobExecutionResult(JobExecutionStatus.Completed);
         }
