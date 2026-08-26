@@ -217,33 +217,48 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                 if (existingFingerprintArtifact != null)
                 {
-                    _logger.LogInformation("[SceneGenerationArtifactReused] Existing artifact {ArtifactId} already committed for fingerprint {Fingerprint}. Returning Completed.",
+                    _logger.LogInformation("[SceneGenerationArtifactReused] Existing artifact {ArtifactId} already committed for fingerprint {Fingerprint}. Resolving attempt and routing through authoritative acceptance.",
                         existingFingerprintArtifact.Id, attemptFingerprint);
 
-                    if (job.Status != ImageJobStatus.Completed)
+                    var existingAttemptForArtifact = await _dbContext.ImageGenerationAttempts
+                        .FirstOrDefaultAsync(a => a.GenerationFingerprint == attemptFingerprint, ct);
+
+                    var liveTime = _dateTimeProvider.UtcNow;
+                    if (existingAttemptForArtifact == null)
                     {
-                        var liveTime = _dateTimeProvider.UtcNow;
-                        if (_dbContext.Database.IsRelational())
-                        {
-                            await _dbContext.ImageGenerationJobs
-                                .Where(j => j.Id == job.Id && j.Status != ImageJobStatus.Completed)
-                                .ExecuteUpdateAsync(s => s
-                                    .SetProperty(j => j.Status, ImageJobStatus.Completed)
-                                    .SetProperty(j => j.CompletedAt, liveTime)
-                                    .SetProperty(j => j.UpdatedAt, liveTime), ct);
-                        }
-                        else
-                        {
-                            if (job.Status == ImageJobStatus.Processing || job.Status == ImageJobStatus.Evaluating)
-                            {
-                                job.AcceptAttempt(existingFingerprintArtifact.Id, liveTime, workerId, null);
-                            }
-                            await _dbContext.SaveChangesAsync(ct);
-                        }
+                        existingAttemptForArtifact = new ImageGenerationAttempt(
+                            generationJobId: job.Id,
+                            turnId: snapshot.TurnId,
+                            sceneRevision: snapshot.SceneRevision,
+                            attemptNumber: attempt,
+                            derivedSeed: derivedSeed,
+                            parametersJson: attemptProfile.ParametersJson ?? string.Empty,
+                            generationFingerprint: attemptFingerprint,
+                            status: GenerationAttemptStatus.Running,
+                            claimedBy: workerId,
+                            startedAt: liveTime,
+                            leaseUntil: liveTime.AddMinutes(2)
+                        );
+                        existingAttemptForArtifact.MarkSucceeded(existingFingerprintArtifact.ImageUrl, existingFingerprintArtifact.Workflow, null, null, liveTime, workerId, liveTime);
+                        await _dbContext.ImageGenerationAttempts.AddAsync(existingAttemptForArtifact, ct);
+                        await _dbContext.SaveChangesAsync(ct);
+                    }
+                    else if (existingAttemptForArtifact.Status != GenerationAttemptStatus.Succeeded)
+                    {
+                        existingAttemptForArtifact.MarkSucceeded(existingFingerprintArtifact.ImageUrl, existingFingerprintArtifact.Workflow, null, null, liveTime, workerId, liveTime);
+                        await _dbContext.SaveChangesAsync(ct);
                     }
 
-                    stopwatch.Stop();
-                    return new JobExecutionResult(JobExecutionStatus.Completed);
+                    winningAttemptRecord = existingAttemptForArtifact;
+                    genResult = new ImageGenerationResult(
+                        ImageUrl: existingFingerprintArtifact.ImageUrl,
+                        Provider: existingFingerprintArtifact.Workflow,
+                        ProviderJobId: null,
+                        DurationMs: 0,
+                        Seed: derivedSeed
+                    );
+                    isIdentityPassed = true;
+                    break;
                 }
 
                 var existingAttempt = await _dbContext.ImageGenerationAttempts

@@ -137,31 +137,55 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                 }
 
                 // 2. Artifact Promotion / Demotion within same transaction boundary
-                if (isIdentityPassed)
+                var existingArtifact = await _dbContext.SceneImages
+                    .FirstOrDefaultAsync(img => (img.SessionId == snapshot.SessionId && img.GenerationRequestId == job.GenerationRequestId)
+                                                || (fingerprint != null && img.GenerationFingerprint == fingerprint), ct);
+
+                SceneImage artifact;
+                if (existingArtifact != null)
                 {
-                    await _dbContext.SceneImages
-                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                        .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+                    if (isIdentityPassed)
+                    {
+                        await _dbContext.SceneImages
+                            .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent && img.Id != existingArtifact.Id)
+                            .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+
+                        existingArtifact.SetCurrent(true);
+                    }
+                    else
+                    {
+                        existingArtifact.SetCurrent(false);
+                    }
+                    artifact = existingArtifact;
                 }
+                else
+                {
+                    if (isIdentityPassed)
+                    {
+                        await _dbContext.SceneImages
+                            .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                            .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+                    }
 
-                var artifact = new SceneImage(
-                    sessionId: snapshot.SessionId,
-                    characterId: snapshot.CharacterId,
-                    turnId: snapshot.TurnId,
-                    sceneRevision: snapshot.SceneRevision,
-                    imageUrl: imageUrl,
-                    prompt: compiledPrompt,
-                    generationRequestId: job.GenerationRequestId,
-                    generationJobId: job.Id,
-                    identityReferenceUrl: snapshot.IdentityReferenceUrl,
-                    previousSceneImageUrl: resolvedPreviousSceneImageUrl,
-                    workflow: workflow,
-                    workflowVersion: workflowVersion,
-                    isCurrent: isIdentityPassed,
-                    generationFingerprint: fingerprint
-                );
+                    artifact = new SceneImage(
+                        sessionId: snapshot.SessionId,
+                        characterId: snapshot.CharacterId,
+                        turnId: snapshot.TurnId,
+                        sceneRevision: snapshot.SceneRevision,
+                        imageUrl: imageUrl,
+                        prompt: compiledPrompt,
+                        generationRequestId: job.GenerationRequestId,
+                        generationJobId: job.Id,
+                        identityReferenceUrl: snapshot.IdentityReferenceUrl,
+                        previousSceneImageUrl: resolvedPreviousSceneImageUrl,
+                        workflow: workflow,
+                        workflowVersion: workflowVersion,
+                        isCurrent: isIdentityPassed,
+                        generationFingerprint: fingerprint
+                    );
 
-                await _dbContext.SceneImages.AddAsync(artifact, ct);
+                    await _dbContext.SceneImages.AddAsync(artifact, ct);
+                }
 
                 // 3. Outbox Lifecycle Domain Event Persistence in the SAME Relational Transaction (P0-3)
                 var outboxPayloadJson = isIdentityPassed
@@ -267,39 +291,69 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
             if (isIdentityPassed)
             {
                 job.AcceptAttempt(attemptId, liveUtc, workerId, metadataJson);
-
-                var existingCurrentImages = await _dbContext.SceneImages
-                    .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                    .ToListAsync(ct);
-
-                foreach (var img in existingCurrentImages)
-                {
-                    img.DemoteCurrent();
-                }
             }
             else
             {
                 job.Quarantine(attemptId, "Identity invariant threshold not met across maximum retry attempts", liveUtc, workerId);
             }
 
-            var artifact = new SceneImage(
-                sessionId: snapshot.SessionId,
-                characterId: snapshot.CharacterId,
-                turnId: snapshot.TurnId,
-                sceneRevision: snapshot.SceneRevision,
-                imageUrl: imageUrl,
-                prompt: compiledPrompt,
-                generationRequestId: job.GenerationRequestId,
-                generationJobId: job.Id,
-                identityReferenceUrl: snapshot.IdentityReferenceUrl,
-                previousSceneImageUrl: resolvedPreviousSceneImageUrl,
-                workflow: workflow,
-                workflowVersion: workflowVersion,
-                isCurrent: isIdentityPassed,
-                generationFingerprint: fingerprint
-            );
+            var existingArtifact = await _dbContext.SceneImages
+                .FirstOrDefaultAsync(img => (img.SessionId == snapshot.SessionId && img.GenerationRequestId == job.GenerationRequestId)
+                                            || (fingerprint != null && img.GenerationFingerprint == fingerprint), ct);
 
-            await _dbContext.SceneImages.AddAsync(artifact, ct);
+            SceneImage artifact;
+            if (existingArtifact != null)
+            {
+                if (isIdentityPassed)
+                {
+                    var otherCurrent = await _dbContext.SceneImages
+                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent && img.Id != existingArtifact.Id)
+                        .ToListAsync(ct);
+                    foreach (var img in otherCurrent)
+                    {
+                        img.DemoteCurrent();
+                    }
+                    existingArtifact.SetCurrent(true);
+                }
+                else
+                {
+                    existingArtifact.SetCurrent(false);
+                }
+                artifact = existingArtifact;
+            }
+            else
+            {
+                if (isIdentityPassed)
+                {
+                    var existingCurrentImages = await _dbContext.SceneImages
+                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                        .ToListAsync(ct);
+
+                    foreach (var img in existingCurrentImages)
+                    {
+                        img.DemoteCurrent();
+                    }
+                }
+
+                artifact = new SceneImage(
+                    sessionId: snapshot.SessionId,
+                    characterId: snapshot.CharacterId,
+                    turnId: snapshot.TurnId,
+                    sceneRevision: snapshot.SceneRevision,
+                    imageUrl: imageUrl,
+                    prompt: compiledPrompt,
+                    generationRequestId: job.GenerationRequestId,
+                    generationJobId: job.Id,
+                    identityReferenceUrl: snapshot.IdentityReferenceUrl,
+                    previousSceneImageUrl: resolvedPreviousSceneImageUrl,
+                    workflow: workflow,
+                    workflowVersion: workflowVersion,
+                    isCurrent: isIdentityPassed,
+                    generationFingerprint: fingerprint
+                );
+
+                await _dbContext.SceneImages.AddAsync(artifact, ct);
+            }
 
             var outboxPayloadJson = isIdentityPassed
                 ? JsonSerializer.Serialize(new GenerationJobAcceptedEvent(

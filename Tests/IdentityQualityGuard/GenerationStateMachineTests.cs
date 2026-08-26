@@ -65,6 +65,17 @@ public sealed class GenerationStateMachineTests
         Assert.Throws<ArgumentException>(() => job.AcceptAttempt(Guid.Empty, Clock.Now, workerId: "worker-1"));
     }
 
+    [Fact]
+    public void ImageGenerationJob_CannotComplete_WithNullOrEmptyAcceptedAttemptId()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
+
+        Assert.Throws<ArgumentException>(() => job.AcceptAttempt(Guid.Empty, Clock.Now, "worker-1"));
+        Assert.Equal(ImageJobStatus.Processing, job.Status);
+        Assert.Null(job.AcceptedAttemptId);
+    }
+
     #region Strict Illegal State Machine Transitions (Reviewer P0 Invariants)
 
     [Fact]

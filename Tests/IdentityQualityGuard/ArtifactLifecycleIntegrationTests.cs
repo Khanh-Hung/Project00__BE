@@ -772,6 +772,134 @@ public sealed class ArtifactLifecycleIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task ExistingFingerprintArtifactReuse_RoutesThroughAcceptance_SetsAcceptedAttemptId_BelongingToJob_AndZeroGpuCalls()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var genReqId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("throne room", "sitting"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 123456L)
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: genReqId
+        );
+
+        var compiler = new FakePromptCompiler("1man king on throne", "1girl");
+        var priorJobId = Guid.NewGuid();
+        var priorReqId = Guid.NewGuid();
+        var jobInstance = new ImageGenerationJob(sessionId, turnId, characterId, 1, genReqId);
+        var derivedSeed = DeterministicSeedDerivation.Derive(123456L, 1);
+        var expectedFp = DeterministicSeedDerivation.ComputeFingerprint(
+            jobId: jobInstance.Id,
+            snapshotTurnId: turnId,
+            sceneRevision: 1,
+            attemptNumber: 1,
+            derivedSeed: derivedSeed,
+            parametersJson: snapshot.GenerationProfile?.ParametersJson ?? string.Empty,
+            workflow: "VisualIdentity",
+            workflowVersion: 1,
+            compiledPrompt: "1man king on throne",
+            compiledNegativePrompt: "1girl",
+            previousReferenceUrl: null
+        );
+
+        // Pre-condition: An existing committed artifact with this exact fingerprint already exists in DB from a prior request
+        using (var dbPre = new ProjectDbContext(options))
+        {
+            var preJob = new ImageGenerationJob(sessionId, turnId, characterId, 1, priorReqId) { Id = priorJobId };
+            await dbPre.ImageGenerationJobs.AddRangeAsync(preJob, jobInstance);
+
+            var existingArtifact = new SceneImage(
+                sessionId: sessionId,
+                characterId: characterId,
+                turnId: turnId,
+                sceneRevision: 1,
+                imageUrl: "https://cdn.project00.ai/images/reused_king.png",
+                prompt: "1man king on throne",
+                generationRequestId: priorReqId,
+                generationJobId: priorJobId,
+                isCurrent: true,
+                generationFingerprint: expectedFp
+            );
+            await dbPre.SceneImages.AddAsync(existingArtifact);
+            await dbPre.SaveChangesAsync();
+        }
+
+        // Execution: Worker 1 executes generation for the new job
+        var countingImageService = new ConcurrentTrackingImageService();
+        var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
+
+        using (var dbWorker = new ProjectDbContext(options))
+        {
+            var timeProvider = new SystemDateTimeProvider();
+            var handler = new ImageGenerationJobHandler(
+                dbContext: dbWorker,
+                visualCompiler: compiler,
+                imageService: countingImageService,
+                logger: NullLogger<ImageGenerationJobHandler>.Instance,
+                dateTimeProvider: timeProvider,
+                qualityEvaluator: evaluator,
+                qualityGuardPolicy: policy
+            );
+
+            var result = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", Clock.Now);
+            Assert.True(result.Status == JobExecutionStatus.Completed, $"Expected Completed but was {result.Status} with message: {result.Reason}");
+        }
+
+        // Assert 1: Zero GPU generation invocations!
+        Assert.Equal(0, countingImageService.CallCount);
+
+        // Assert 2: Job state machine invariants - Completed with valid non-null AcceptedAttemptId belonging to this Job
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var job = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == genReqId);
+            Assert.Equal(ImageJobStatus.Completed, job.Status);
+            Assert.NotNull(job.AcceptedAttemptId);
+
+            var attempt = await dbVerify.ImageGenerationAttempts.FirstAsync(a => a.Id == job.AcceptedAttemptId.Value);
+            Assert.Equal(job.Id, attempt.GenerationJobId);
+            Assert.Equal(GenerationAttemptStatus.Succeeded, attempt.Status);
+            Assert.Equal("https://cdn.project00.ai/images/reused_king.png", attempt.ImageUrl);
+
+            // Assert 3: No duplicate SceneImage created for this fingerprint
+            var images = await dbVerify.SceneImages.Where(img => img.GenerationFingerprint == expectedFp).ToListAsync();
+            Assert.Single(images);
+            Assert.True(images[0].IsCurrent);
+
+            // Assert 4: GenerationJobAccepted outbox event was emitted with non-null AcceptedAttemptId
+            var outboxEvents = await dbVerify.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.GenerationJobAccepted).ToListAsync();
+            Assert.Contains(outboxEvents, m => m.PayloadJson.Contains(job.AcceptedAttemptId.Value.ToString()));
+        }
+    }
+
     private sealed class TestLifecycleEventDispatcher : IOutboxLifecycleEventDispatcher
     {
         public List<(string EventType, string Payload)> DispatchedEvents { get; } = new();

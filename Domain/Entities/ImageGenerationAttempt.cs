@@ -109,16 +109,6 @@ public sealed class ImageGenerationAttempt : BaseEntity
         Touch();
     }
 
-    [Obsolete("Use StartEvaluating(workerId, now) to enforce lease validity.", error: false)]
-    public void StartEvaluating(DateTime now)
-    {
-        if (Status != GenerationAttemptStatus.Running)
-            throw new InvalidOperationException($"Cannot transition attempt {Id} to Evaluating: transition is only allowed from Running, but current status is {Status}.");
-
-        Status = GenerationAttemptStatus.Evaluating;
-        Touch();
-    }
-
     public void MarkSucceeded(string imageUrl, string? providerJobId, float? identitySimilarity, float? featScore, DateTime completedAt, string workerId, DateTime now)
     {
         if (Status != GenerationAttemptStatus.Evaluating && Status != GenerationAttemptStatus.Running)
