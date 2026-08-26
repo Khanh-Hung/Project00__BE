@@ -91,6 +91,19 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
+    public void ScheduleRetry(DateTime nextAttemptAt, string reason, DateTime now)
+    {
+        Status = ImageJobStatus.Queued;
+        RetryCount++;
+        NextAttemptAt = nextAttemptAt;
+        FailureReason = reason;
+        IsRetryable = true;
+        ClaimedBy = null;
+        LeaseUntil = null;
+        Version++;
+        Touch();
+    }
+
     public bool TryClaim(string workerId, TimeSpan leaseDuration, DateTime now)
     {
         if (Status == ImageJobStatus.Completed || Status == ImageJobStatus.Quarantined || (Status == ImageJobStatus.Failed && !IsRetryable))

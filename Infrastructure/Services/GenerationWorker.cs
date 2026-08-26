@@ -163,19 +163,5 @@ public sealed class GenerationWorker : BackgroundService
         }
     }
 
-    public static GenerationFailureCategory ClassifyException(Exception ex) => ex switch
-    {
-        OperationCanceledException => GenerationFailureCategory.Cancellation,
-        GpuTransientException gpuEx when gpuEx.StatusCode == 408 => GenerationFailureCategory.ProviderTimeout,
-        GpuTransientException gpuEx when gpuEx.StatusCode == 429 => GenerationFailureCategory.ProviderRateLimited,
-        GpuTransientException gpuEx when gpuEx.StatusCode >= 500 => GenerationFailureCategory.ProviderUnavailable,
-        GpuTransientException => GenerationFailureCategory.GpuFailure,
-        GpuNonTransientException => GenerationFailureCategory.InvalidWorkflow,
-        TimeoutException => GenerationFailureCategory.ProviderTimeout,
-        HttpRequestException => GenerationFailureCategory.TransientNetwork,
-        DbUpdateConcurrencyException => GenerationFailureCategory.DatabaseTransient,
-        DbUpdateException => GenerationFailureCategory.DatabaseTransient,
-        ArgumentException => GenerationFailureCategory.InvalidInput,
-        _ => GenerationFailureCategory.Unknown
-    };
+    public static GenerationFailureCategory ClassifyException(Exception ex) => GenerationFailureClassifier.Classify(ex);
 }

@@ -15,7 +15,7 @@ namespace Infrastructure.Services;
 /// <summary>
 /// Authoritative lease crash-recovery and durable re-dispatch service.
 /// Detects abandoned worker leases, fences stale workers via CAS increments,
-/// and re-dispatches due pending/queued outbox jobs into the in-memory queue.
+/// applies exponential backoff with jitter to retries, and re-dispatches due pending/queued outbox jobs into the in-memory queue.
 /// </summary>
 public sealed class GenerationRecoveryService : IGenerationRecoveryService
 {
@@ -105,7 +105,11 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
                 }
                 else if (job.RetryCount < _retryPolicy.MaxRetries)
                 {
-                    // Requeue eligible job
+                    // Calculate exponential backoff delay with jitter
+                    var backoffDelay = _retryPolicy.CalculateDelay(job.RetryCount);
+                    var nextAttemptAt = now.Add(backoffDelay);
+
+                    // Requeue eligible job with scheduled next attempt time
                     if (_dbContext.Database.IsRelational())
                     {
                         var rows = await _dbContext.ImageGenerationJobs
@@ -115,8 +119,8 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
                             .ExecuteUpdateAsync(s => s
                                 .SetProperty(j => j.Status, ImageJobStatus.Queued)
                                 .SetProperty(j => j.RetryCount, j => j.RetryCount + 1)
-                                .SetProperty(j => j.NextAttemptAt, now)
-                                .SetProperty(j => j.FailureReason, "Lease expired: automatically recovered")
+                                .SetProperty(j => j.NextAttemptAt, nextAttemptAt)
+                                .SetProperty(j => j.FailureReason, $"Lease expired: automatically recovered with {backoffDelay.TotalSeconds:F1}s backoff")
                                 .SetProperty(j => j.IsRetryable, true)
                                 .SetProperty(j => j.ClaimedBy, (string?)null)
                                 .SetProperty(j => j.LeaseUntil, (DateTime?)null)
@@ -126,15 +130,15 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
                         if (rows > 0)
                         {
                             recoveredCount++;
-                            _logger.LogInformation("[GenerationRecoveryRequeued] JobId={JobId} requeued to Queued (Attempt #{RetryCount}).", job.Id, job.RetryCount + 1);
+                            _logger.LogInformation("[GenerationRecoveryRequeued] JobId={JobId} requeued to Queued (Attempt #{RetryCount}) with NextAttemptAt={NextAttemptAt:O}.",
+                                job.Id, job.RetryCount + 1, nextAttemptAt);
                         }
                     }
                     else
                     {
                         try
                         {
-                            job.ResetToPending();
-                            job.MarkQueued(now);
+                            job.ScheduleRetry(nextAttemptAt, $"Lease expired: automatically recovered with {backoffDelay.TotalSeconds:F1}s backoff", now);
                             await _dbContext.SaveChangesAsync(ct);
                             recoveredCount++;
                         }
@@ -191,7 +195,7 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
             }
         }
 
-        // 2. Durable Re-dispatch: Re-hydrate in-memory queue from pending outbox messages in DB
+        // 2. Durable Re-dispatch: Re-hydrate in-memory queue from pending outbox messages in DB, respecting ImageGenerationJob.NextAttemptAt authoritative schedule
         if (_jobQueue != null)
         {
             var dueOutboxMessages = await _dbContext.OutboxMessages
@@ -209,6 +213,35 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
                     var payload = JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(outboxMsg.PayloadJson);
                     if (payload?.Snapshot != null)
                     {
+                        // Check authoritative ImageGenerationJob gate to prevent bypassing exponential backoff
+                        var job = await _dbContext.ImageGenerationJobs
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(j => j.SessionId == payload.Snapshot.SessionId && j.GenerationRequestId == payload.GenerationRequestId, ct);
+
+                        if (job != null)
+                        {
+                            // If terminal, skip
+                            if (job.Status is ImageJobStatus.Completed or ImageJobStatus.Quarantined or ImageJobStatus.Cancelled or ImageJobStatus.Failed)
+                            {
+                                continue;
+                            }
+
+                            // If actively executing under valid lease, skip
+                            if ((job.Status == ImageJobStatus.Processing || job.Status == ImageJobStatus.Evaluating)
+                                && job.LeaseUntil.HasValue && job.LeaseUntil.Value > now)
+                            {
+                                continue;
+                            }
+
+                            // Authoritative Gate: If NextAttemptAt is in the future, backoff has not elapsed yet -> DO NOT ENQUEUE
+                            if (job.NextAttemptAt.HasValue && job.NextAttemptAt.Value > now)
+                            {
+                                _logger.LogDebug("[GenerationRecoveryBackoffGate] JobId={JobId} is scheduled for retry at {NextAttemptAt:O} (now: {Now:O}). Respecting backoff.",
+                                    job.Id, job.NextAttemptAt.Value, now);
+                                continue;
+                            }
+                        }
+
                         var workItem = new GenerationWorkItem(payload, outboxMsg.Id, outboxMsg.CreatedAt, Priority: 5);
                         await _jobQueue.EnqueueAsync(workItem, ct);
                     }

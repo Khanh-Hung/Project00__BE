@@ -235,4 +235,118 @@ public sealed class GenerationCancellationTests
             Assert.Equal("prompt-targeted-999", mockComfy.DeletedPromptId);
         }
     }
+
+    [Fact]
+    public async Task Cancellation_ConcurrentlyFencesArtifactAcceptance_AndPreventsArtifactPromotion()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var now = DateTime.UtcNow;
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var reqId = Guid.NewGuid();
+
+        var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, reqId);
+        job.TryClaim("worker-A", TimeSpan.FromMinutes(2), now);
+
+        var attempt = new ImageGenerationAttempt(
+            generationJobId: job.Id,
+            turnId: turnId,
+            sceneRevision: 1,
+            attemptNumber: 1,
+            derivedSeed: 42,
+            parametersJson: "{}",
+            generationFingerprint: "fp-race-test",
+            status: GenerationAttemptStatus.Evaluating,
+            claimedBy: "worker-A",
+            startedAt: now,
+            leaseUntil: now.AddMinutes(2)
+        );
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.ImageGenerationJobs.AddAsync(job);
+            await dbSeed.ImageGenerationAttempts.AddAsync(attempt);
+            await dbSeed.SaveChangesAsync();
+        }
+
+        // 1. User / Worker B cancels the job concurrently
+        using (var dbCancel = new ProjectDbContext(options))
+        {
+            var cancellationService = new GenerationCancellationService(
+                dbContext: dbCancel,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                logger: NullLogger<GenerationCancellationService>.Instance
+            );
+
+            var cancelled = await cancellationService.RequestCancellationAsync(job.Id, "User cancelled during evaluation");
+            Assert.True(cancelled);
+        }
+
+        // 2. Worker A finishes quality evaluation and attempts to atomically accept the artifact
+        using (var dbAccept = new ProjectDbContext(options))
+        {
+            var acceptanceService = new ArtifactAcceptanceService(
+                dbContext: dbAccept,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                logger: NullLogger<ArtifactAcceptanceService>.Instance
+            );
+
+            var snapshot = new Domain.ValueObjects.VisualSnapshot(
+                TurnId: turnId,
+                SessionId: sessionId,
+                CharacterId: characterId,
+                SceneRevision: 1,
+                VisualIdentity: null,
+                SceneState: new Domain.ValueObjects.SessionSceneState("scene", "neutral"),
+                TransientState: null,
+                GenerationProfile: Domain.ValueObjects.GenerationProfile.CreateDefault()
+            );
+
+            var acceptRequest = new ArtifactAcceptanceRequest(
+                JobId: job.Id,
+                WinningAttemptId: attempt.Id,
+                Snapshot: snapshot,
+                ImageUrl: "https://cdn.project00.ai/race_test.png",
+                CompiledPrompt: "prompt",
+                ResolvedPreviousSceneImageUrl: null,
+                GenerationFingerprint: "fp-race-test",
+                MetadataJson: "{}",
+                IsIdentityPassed: true,
+                WorkerId: "worker-A",
+                OutboxId: Guid.NewGuid()
+            );
+
+            var acceptResult = await acceptanceService.AcceptAttemptAtomicallyAsync(acceptRequest);
+
+            // Acceptance MUST fail/defer due to cancellation fence!
+            Assert.Equal(JobExecutionStatus.Deferred, acceptResult.Status);
+        }
+
+        // 3. Authoritative verification: Job is NOT Completed, AcceptedAttemptId is null, and no SceneImage was promoted to IsCurrent
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var finalJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
+            Assert.NotEqual(ImageJobStatus.Completed, finalJob.Status);
+            Assert.Null(finalJob.AcceptedAttemptId);
+            Assert.True(finalJob.CancellationRequested);
+
+            var currentImages = await dbVerify.SceneImages
+                .Where(img => img.SessionId == sessionId && img.IsCurrent)
+                .ToListAsync();
+
+            Assert.Empty(currentImages); // Zero artifacts promoted to IsCurrent!
+        }
+    }
 }

@@ -404,7 +404,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     catch (Exception ex)
                     {
                         var failTime = _dateTimeProvider.UtcNow;
-                        attemptRecord.MarkFailed(ex.Message, failTime, workerId, failTime);
+                        var category = GenerationFailureClassifier.Classify(ex);
+                        attemptRecord.MarkFailed(category, ex.Message, failTime, workerId, failTime);
                         await _dbContext.SaveChangesAsync(ct);
                         throw;
                     }
@@ -412,7 +413,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
                     {
                         var emptyFailTime = _dateTimeProvider.UtcNow;
-                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", emptyFailTime, workerId, emptyFailTime);
+                        attemptRecord.MarkFailed(GenerationFailureCategory.InvalidWorkflow, "Provider returned empty ImageUrl", emptyFailTime, workerId, emptyFailTime);
                         await _dbContext.SaveChangesAsync(ct);
                         _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
                         throw new GpuNonTransientException("Image generation completed without producing an image URL.");
