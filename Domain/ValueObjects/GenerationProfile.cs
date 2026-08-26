@@ -25,6 +25,7 @@ public sealed record GenerationProfile(
     /// Immutably creates a copy of this GenerationProfile with overridden conditioning parameters and derived seed.
     /// Preserves Model, Width, Height, Steps, Cfg, Sampler, Scheduler, Workflow, WorkflowVersion,
     /// and all other root/nested JSON properties in ParametersJson.
+    /// Invariant: Malformed ParametersJson throws InvalidOperationException (fail-fast, no silent fallback data loss).
     /// </summary>
     public GenerationProfile WithConditioningOverride(
         float slot1Weight,
@@ -56,40 +57,56 @@ public sealed record GenerationProfile(
         }
         else
         {
+            JsonObject node;
             try
             {
-                var node = JsonNode.Parse(ParametersJson) as JsonObject ?? new JsonObject();
+                var parsed = JsonNode.Parse(ParametersJson);
+                if (parsed is not JsonObject jsonObject)
+                {
+                    throw new InvalidOperationException("GenerationProfile.ParametersJson must represent a JSON object.");
+                }
+                node = jsonObject;
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException(
+                    "GenerationProfile.ParametersJson is malformed or invalid JSON.",
+                    ex);
+            }
+
+            // Patch existing ipAdapter node (or create if missing) to preserve any other nested properties
+            if (node.TryGetPropertyValue("ipAdapter", out var ipVal) && ipVal is JsonObject ipObj)
+            {
+                ipObj["weight"] = slot1Weight;
+                ipObj["endAt"] = slot1EndAt;
+            }
+            else
+            {
                 node["ipAdapter"] = new JsonObject
                 {
                     ["weight"] = slot1Weight,
                     ["endAt"] = slot1EndAt
                 };
+            }
+
+            // Patch existing sceneContinuity node (or create if missing) to preserve any other nested properties
+            if (node.TryGetPropertyValue("sceneContinuity", out var contVal) && contVal is JsonObject contObj)
+            {
+                contObj["weight"] = slot2Weight;
+                contObj["endAt"] = slot2EndAt;
+                contObj["weightType"] = weightType;
+            }
+            else
+            {
                 node["sceneContinuity"] = new JsonObject
                 {
                     ["weight"] = slot2Weight,
                     ["endAt"] = slot2EndAt,
                     ["weightType"] = weightType
                 };
-                updatedParametersJson = node.ToJsonString();
             }
-            catch (JsonException)
-            {
-                var node = new JsonObject
-                {
-                    ["ipAdapter"] = new JsonObject
-                    {
-                        ["weight"] = slot1Weight,
-                        ["endAt"] = slot1EndAt
-                    },
-                    ["sceneContinuity"] = new JsonObject
-                    {
-                        ["weight"] = slot2Weight,
-                        ["endAt"] = slot2EndAt,
-                        ["weightType"] = weightType
-                    }
-                };
-                updatedParametersJson = node.ToJsonString();
-            }
+
+            updatedParametersJson = node.ToJsonString();
         }
 
         return this with

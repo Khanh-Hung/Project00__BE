@@ -1160,6 +1160,80 @@ public sealed class IdentityQualityGuardTests
         }
     }
 
+    [Fact]
+    public void WithConditioningOverride_Preserves_All_Unrelated_Parameters()
+    {
+        var inputJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ipAdapter = new
+            {
+                weight = 0.60,
+                endAt = 0.85,
+                custom = "must-preserve",
+                startAt = 0.0
+            },
+            sceneContinuity = new
+            {
+                weight = 0.12,
+                endAt = 0.25,
+                weightType = "style transfer",
+                custom = "must-preserve"
+            },
+            sampler = "DPM++ 2M Karras",
+            cfg = 7.0,
+            steps = 30,
+            customRoot = "must-preserve"
+        });
+
+        var profile = GenerationProfile.CreateDefault(seed: 1000L, parametersJson: inputJson);
+
+        var overridden = profile.WithConditioningOverride(
+            slot1Weight: 0.65f,
+            slot1EndAt: 0.85f,
+            slot2Weight: 0.06f,
+            slot2EndAt: 0.15f,
+            weightType: "style transfer",
+            newSeed: 2000L
+        );
+
+        Assert.Equal(2000L, overridden.Seed);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(overridden.ParametersJson!);
+        var root = doc.RootElement;
+
+        // Root properties preserved
+        Assert.Equal("DPM++ 2M Karras", root.GetProperty("sampler").GetString());
+        Assert.Equal(7.0, root.GetProperty("cfg").GetDouble(), 2);
+        Assert.Equal(30, root.GetProperty("steps").GetInt32());
+        Assert.Equal("must-preserve", root.GetProperty("customRoot").GetString());
+
+        // Nested ipAdapter properties preserved and patched
+        var ip = root.GetProperty("ipAdapter");
+        Assert.Equal(0.65f, (float)ip.GetProperty("weight").GetDouble(), 2);
+        Assert.Equal(0.85f, (float)ip.GetProperty("endAt").GetDouble(), 2);
+        Assert.Equal("must-preserve", ip.GetProperty("custom").GetString());
+        Assert.Equal(0.0, ip.GetProperty("startAt").GetDouble(), 2);
+
+        // Nested sceneContinuity properties preserved and patched
+        var cont = root.GetProperty("sceneContinuity");
+        Assert.Equal(0.06f, (float)cont.GetProperty("weight").GetDouble(), 2);
+        Assert.Equal(0.15f, (float)cont.GetProperty("endAt").GetDouble(), 2);
+        Assert.Equal("style transfer", cont.GetProperty("weightType").GetString());
+        Assert.Equal("must-preserve", cont.GetProperty("custom").GetString());
+    }
+
+    [Fact]
+    public void WithConditioningOverride_MalformedJson_FailsFast()
+    {
+        var malformedJson = "{ invalid_json: 123 ";
+        var profile = GenerationProfile.CreateDefault(seed: 1000L, parametersJson: malformedJson);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            profile.WithConditioningOverride(0.65f, 0.85f, 0.06f, 0.15f, "style transfer", 2000L));
+
+        Assert.Contains("ParametersJson is malformed or invalid JSON", ex.Message);
+    }
+
     private sealed class FakePromptCompiler : IVisualPromptCompiler
     {
         private readonly string _pos;
