@@ -234,7 +234,10 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         }
                         else
                         {
-                            job.MarkCompleted(liveTime, null);
+                            if (job.Status == ImageJobStatus.Processing || job.Status == ImageJobStatus.Evaluating)
+                            {
+                                job.AcceptAttempt(existingFingerprintArtifact.Id, liveTime, workerId, null);
+                            }
                             await _dbContext.SaveChangesAsync(ct);
                         }
                     }
@@ -484,8 +487,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
             // 5. Atomic Acceptance Fencing & Artifact Persistence (P0-1)
             var acceptanceRequest = new ArtifactAcceptanceRequest(
-                Job: job,
-                WinningAttempt: winningAttemptRecord!,
+                JobId: job.Id,
+                WinningAttemptId: winningAttemptRecord!.Id,
                 Snapshot: snapshot,
                 ImageUrl: genResult!.ImageUrl,
                 CompiledPrompt: lastCompiledPrompt,

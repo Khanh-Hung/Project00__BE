@@ -150,7 +150,8 @@ public sealed class ChatSessionMessageEnrichmentTests
         await db.CharacterTurns.AddAsync(turn);
 
         var job = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqId);
-        job.MarkProcessing("comfy-exec-1", "worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job.SetProviderJobId("comfy-exec-1");
         await db.ImageGenerationJobs.AddAsync(job);
         await db.SaveChangesAsync();
 
@@ -221,7 +222,8 @@ public sealed class ChatSessionMessageEnrichmentTests
 
         // In-flight regeneration Job #2
         var job2 = new ImageGenerationJob(session.Id, turnId, character.Id, 2, generationRequestId: genReqId2);
-        job2.MarkProcessing("comfy-exec-2", "worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job2.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job2.SetProviderJobId("comfy-exec-2");
         await db.ImageGenerationJobs.AddAsync(job2);
         await db.SaveChangesAsync();
 
@@ -292,7 +294,8 @@ public sealed class ChatSessionMessageEnrichmentTests
 
         // Failed regeneration Job #2
         var job2 = new ImageGenerationJob(session.Id, turnId, character.Id, 2, generationRequestId: genReqId2);
-        job2.MarkFailed("ComfyUI render timeout", isRetryable: true);
+        job2.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job2.Fail("ComfyUI render timeout", isRetryable: true, DateTime.UtcNow, "worker-1");
         await db.ImageGenerationJobs.AddAsync(job2);
         await db.SaveChangesAsync();
 
@@ -350,12 +353,14 @@ public sealed class ChatSessionMessageEnrichmentTests
 
         // Job 1 (Active / Processing, created earlier with 5 min lease)
         var jobActive = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqActive);
-        jobActive.MarkProcessing("comfy-1", "worker-1", TimeSpan.FromMinutes(5), DateTime.UtcNow.AddMinutes(-2));
+        jobActive.TryClaim("worker-1", TimeSpan.FromMinutes(5), DateTime.UtcNow.AddMinutes(-2));
+        jobActive.SetProviderJobId("comfy-1");
         await db.ImageGenerationJobs.AddAsync(jobActive);
 
         // Job 2 (Failed, created later)
         var jobFailed = new ImageGenerationJob(session.Id, turnId, character.Id, 2, generationRequestId: genReqFailed);
-        jobFailed.MarkFailed("cancelled", isRetryable: true);
+        jobFailed.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        jobFailed.Fail("cancelled", isRetryable: true, DateTime.UtcNow, "worker-1");
         await db.ImageGenerationJobs.AddAsync(jobFailed);
         await db.SaveChangesAsync();
 
@@ -413,12 +418,14 @@ public sealed class ChatSessionMessageEnrichmentTests
 
         // Job 1 (Failed, created earlier)
         var jobFailed = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqFailed);
-        jobFailed.MarkFailed("Network error", isRetryable: true);
+        jobFailed.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        jobFailed.Fail("Network error", isRetryable: true, DateTime.UtcNow, "worker-1");
         await db.ImageGenerationJobs.AddAsync(jobFailed);
 
         // Job 2 (Processing, created later)
         var jobProcessing = new ImageGenerationJob(session.Id, turnId, character.Id, 2, generationRequestId: genReqProcessing);
-        jobProcessing.MarkProcessing("comfy-2", "worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        jobProcessing.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        jobProcessing.SetProviderJobId("comfy-2");
         await db.ImageGenerationJobs.AddAsync(jobProcessing);
         await db.SaveChangesAsync();
 
@@ -490,7 +497,8 @@ public sealed class ChatSessionMessageEnrichmentTests
 
         // Stale regeneration Job (Lease expired 5 minutes before fixedTime)
         var staleJob = new ImageGenerationJob(session.Id, turnId, character.Id, 2, generationRequestId: genReqStaleJob);
-        staleJob.MarkProcessing("comfy-stale", "worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-10));
+        staleJob.TryClaim("worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-10));
+        staleJob.SetProviderJobId("comfy-stale");
         staleJob.ExpireLease(fixedTime.AddMinutes(-5));
         await db.ImageGenerationJobs.AddAsync(staleJob);
         await db.SaveChangesAsync();
@@ -551,7 +559,8 @@ public sealed class ChatSessionMessageEnrichmentTests
 
         // Stale Job with expired lease and no prior image
         var staleJob = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqStaleJob);
-        staleJob.MarkProcessing("comfy-stale", "worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-10));
+        staleJob.TryClaim("worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-10));
+        staleJob.SetProviderJobId("comfy-stale");
         staleJob.ExpireLease(fixedTime.AddMinutes(-5));
         await db.ImageGenerationJobs.AddAsync(staleJob);
         await db.SaveChangesAsync();
@@ -611,7 +620,8 @@ public sealed class ChatSessionMessageEnrichmentTests
 
         // Boundary test: Lease expired EXACTLY at fixedTime (LeaseUntil == now)
         var staleJob = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqStaleJob);
-        staleJob.MarkProcessing("comfy-stale", "worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-2));
+        staleJob.TryClaim("worker-dead", TimeSpan.FromMinutes(2), fixedTime.AddMinutes(-2));
+        staleJob.SetProviderJobId("comfy-stale");
         staleJob.ExpireLease(fixedTime);
         await db.ImageGenerationJobs.AddAsync(staleJob);
         await db.SaveChangesAsync();
@@ -668,7 +678,7 @@ public sealed class ChatSessionMessageEnrichmentTests
         await db.CharacterTurns.AddAsync(turn);
 
         var cancelledJob = new ImageGenerationJob(session.Id, turnId, character.Id, 1, generationRequestId: genReqCancelled);
-        cancelledJob.MarkCancelled();
+        cancelledJob.Cancel(DateTime.UtcNow);
         await db.ImageGenerationJobs.AddAsync(cancelledJob);
         await db.SaveChangesAsync();
 

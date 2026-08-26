@@ -32,7 +32,7 @@ public sealed class GenerationStateMachineTests
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
 
         var attemptId = Guid.NewGuid();
-        job.AcceptAttempt(attemptId, Clock.Now, metadataJson: "{\"model\":\"flux\"}");
+        job.AcceptAttempt(attemptId, Clock.Now, workerId: "worker-1", metadataJson: "{\"model\":\"flux\"}");
 
         Assert.Equal(ImageJobStatus.Completed, job.Status);
         Assert.Equal(attemptId, job.AcceptedAttemptId);
@@ -47,7 +47,7 @@ public sealed class GenerationStateMachineTests
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
 
         var lastAttemptId = Guid.NewGuid();
-        job.Quarantine(lastAttemptId, "Invariant degraded across 3 attempts", Clock.Now);
+        job.Quarantine(lastAttemptId, "Invariant degraded across 3 attempts", Clock.Now, workerId: "worker-1");
 
         Assert.Equal(ImageJobStatus.Quarantined, job.Status);
         Assert.Null(job.AcceptedAttemptId); // P0-2: AcceptedAttemptId is strictly NULL for Quarantined jobs!
@@ -62,7 +62,7 @@ public sealed class GenerationStateMachineTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
 
-        Assert.Throws<ArgumentException>(() => job.AcceptAttempt(Guid.Empty, Clock.Now));
+        Assert.Throws<ArgumentException>(() => job.AcceptAttempt(Guid.Empty, Clock.Now, workerId: "worker-1"));
     }
 
     #region Strict Illegal State Machine Transitions (Reviewer P0 Invariants)
@@ -72,7 +72,7 @@ public sealed class GenerationStateMachineTests
     {
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
-        job.AcceptAttempt(Guid.NewGuid(), Clock.Now);
+        job.AcceptAttempt(Guid.NewGuid(), Clock.Now, workerId: "worker-1");
 
         Assert.Equal(ImageJobStatus.Completed, job.Status);
         Assert.Throws<InvalidOperationException>(() => job.StartRunning("worker-2", TimeSpan.FromMinutes(2), Clock.Now));
@@ -84,9 +84,9 @@ public sealed class GenerationStateMachineTests
     {
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
-        job.AcceptAttempt(Guid.NewGuid(), Clock.Now);
+        job.AcceptAttempt(Guid.NewGuid(), Clock.Now, workerId: "worker-1");
 
-        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now));
+        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now, workerId: "worker-1"));
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class GenerationStateMachineTests
     {
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
-        job.Quarantine(Guid.NewGuid(), "degraded", Clock.Now);
+        job.Quarantine(Guid.NewGuid(), "degraded", Clock.Now, workerId: "worker-1");
 
         Assert.Equal(ImageJobStatus.Quarantined, job.Status);
         Assert.Throws<InvalidOperationException>(() => job.StartRunning("worker-2", TimeSpan.FromMinutes(2), Clock.Now));
@@ -106,17 +106,17 @@ public sealed class GenerationStateMachineTests
     {
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
-        job.MarkFailed("crash", isRetryable: false, Clock.Now);
+        job.Fail("crash", isRetryable: false, Clock.Now, workerId: "worker-1");
 
         Assert.Equal(ImageJobStatus.Failed, job.Status);
-        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now));
+        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now, workerId: "worker-1"));
     }
 
     [Fact]
     public void StateTransition_Cancelled_To_Running_ThrowsInvalidOperationException()
     {
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        job.MarkCancelled(Clock.Now);
+        job.Cancel(Clock.Now);
 
         Assert.Equal(ImageJobStatus.Cancelled, job.Status);
         Assert.Throws<InvalidOperationException>(() => job.StartRunning("worker-2", TimeSpan.FromMinutes(2), Clock.Now));
@@ -129,7 +129,7 @@ public sealed class GenerationStateMachineTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         Assert.Equal(ImageJobStatus.Pending, job.Status);
 
-        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now));
+        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now, workerId: "worker-1"));
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public sealed class GenerationStateMachineTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         Assert.Equal(ImageJobStatus.Pending, job.Status);
 
-        Assert.Throws<InvalidOperationException>(() => job.AcceptAttempt(Guid.NewGuid(), Clock.Now));
+        Assert.Throws<InvalidOperationException>(() => job.AcceptAttempt(Guid.NewGuid(), Clock.Now, workerId: "worker-1"));
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class GenerationStateMachineTests
         job.MarkQueued(Clock.Now);
         Assert.Equal(ImageJobStatus.Queued, job.Status);
 
-        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now));
+        Assert.Throws<InvalidOperationException>(() => job.MarkEvaluating(Clock.Now, workerId: "worker-1"));
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public sealed class GenerationStateMachineTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.MarkQueued(Clock.Now);
 
-        Assert.Throws<InvalidOperationException>(() => job.AcceptAttempt(Guid.NewGuid(), Clock.Now));
+        Assert.Throws<InvalidOperationException>(() => job.AcceptAttempt(Guid.NewGuid(), Clock.Now, workerId: "worker-1"));
     }
 
     [Fact]

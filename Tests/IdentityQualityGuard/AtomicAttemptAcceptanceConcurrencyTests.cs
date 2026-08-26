@@ -183,9 +183,9 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
                 status: GenerationAttemptStatus.Running,
                 claimedBy: "worker-1",
                 startedAt: DateTime.UtcNow.AddMinutes(-5),
-                leaseUntil: DateTime.UtcNow.AddMinutes(-3)
+                leaseUntil: DateTime.UtcNow.AddMinutes(5)
             );
-            attempt.MarkSucceeded("https://cdn.project00.ai/images/attempt1_recovered.png", "comfy_job_1", 0.88f, 0.90f, DateTime.UtcNow.AddMinutes(-4));
+            attempt.MarkSucceeded("https://cdn.project00.ai/images/attempt1_recovered.png", "comfy_job_1", 0.88f, 0.90f, DateTime.UtcNow.AddMinutes(-4), "worker-1", DateTime.UtcNow.AddMinutes(-4));
             await dbCrash.ImageGenerationAttempts.AddAsync(attempt);
             await dbCrash.SaveChangesAsync();
         }
@@ -238,7 +238,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
 
         var jobA = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         var jobB = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
-        var attemptOfJobB = new ImageGenerationAttempt(jobB.Id, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_job_b");
+        var attemptOfJobB = new ImageGenerationAttempt(jobB.Id, Guid.NewGuid(), 1, 1, 1000L, "{}", "fp_job_b", status: GenerationAttemptStatus.Running, claimedBy: "worker-1", startedAt: Clock.Now, leaseUntil: Clock.Now.AddMinutes(2));
+
+        await db.ImageGenerationJobs.AddRangeAsync(jobA, jobB);
+        await db.ImageGenerationAttempts.AddAsync(attemptOfJobB);
+        await db.SaveChangesAsync();
 
         var snapshot = new VisualSnapshot(
             TurnId: Guid.NewGuid(),
@@ -252,8 +256,8 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         );
 
         var request = new ArtifactAcceptanceRequest(
-            Job: jobA,
-            WinningAttempt: attemptOfJobB, // Attempt belongs to Job B, but passed with Job A!
+            JobId: jobA.Id,
+            WinningAttemptId: attemptOfJobB.Id, // Attempt belongs to Job B, but passed with Job A!
             Snapshot: snapshot,
             ImageUrl: "https://cdn.project00.ai/image.png",
             CompiledPrompt: "prompt",
@@ -308,8 +312,8 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         );
 
         var request = new ArtifactAcceptanceRequest(
-            Job: job,
-            WinningAttempt: attempt,
+            JobId: job.Id,
+            WinningAttemptId: attempt.Id,
             Snapshot: snapshot,
             ImageUrl: "https://cdn.project00.ai/image.png",
             CompiledPrompt: "prompt",
@@ -364,8 +368,8 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         );
 
         var request = new ArtifactAcceptanceRequest(
-            Job: job,
-            WinningAttempt: attempt,
+            JobId: job.Id,
+            WinningAttemptId: attempt.Id,
             Snapshot: snapshot,
             ImageUrl: "https://cdn.project00.ai/image.png",
             CompiledPrompt: "prompt",
@@ -558,6 +562,46 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             var images = await verifyDb.SceneImages.ToListAsync();
             Assert.Single(images);
             Assert.True(images[0].IsCurrent);
+        }
+    }
+
+    [Fact]
+    public async Task DatabaseInvariant_SceneImage_OnlyOneIsCurrentTrue_PerSessionAndRevision_EnforcedByDatabase()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var req1 = Guid.NewGuid();
+        var req2 = Guid.NewGuid();
+
+        using (var db1 = new ProjectDbContext(options))
+        {
+            var job1 = new ImageGenerationJob(sessionId, turnId, characterId, 1, req1);
+            var job2 = new ImageGenerationJob(sessionId, turnId, characterId, 1, req2);
+            await db1.ImageGenerationJobs.AddRangeAsync(job1, job2);
+
+            var img1 = new SceneImage(sessionId, characterId, turnId, sceneRevision: 1, "https://cdn.project00.ai/1.png", "prompt1", req1, job1.Id, isCurrent: true);
+            await db1.SceneImages.AddAsync(img1);
+            await db1.SaveChangesAsync();
+
+            // Attempting to insert a 2nd SceneImage with IsCurrent = true for the same (SessionId, SceneRevision) without demoting img1
+            var img2 = new SceneImage(sessionId, characterId, turnId, sceneRevision: 1, "https://cdn.project00.ai/2.png", "prompt2", req2, job2.Id, isCurrent: true);
+            await db1.SceneImages.AddAsync(img2);
+
+            // Must throw DbUpdateException due to unique constraint on (SessionId, SceneRevision) WHERE IsCurrent = true!
+            await Assert.ThrowsAsync<DbUpdateException>(() => db1.SaveChangesAsync());
         }
     }
 }

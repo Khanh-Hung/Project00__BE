@@ -37,8 +37,25 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
         ArtifactAcceptanceRequest request,
         CancellationToken ct = default)
     {
-        var (job, winningAttempt, snapshot, imageUrl, compiledPrompt, resolvedPreviousSceneImageUrl,
+        var (jobId, winningAttemptId, snapshot, imageUrl, compiledPrompt, resolvedPreviousSceneImageUrl,
             fingerprint, metadataJson, isIdentityPassed, workerId, outboxId) = request;
+
+        // 1. Authoritative DB Lookup of Job and Winning Attempt
+        var job = await _dbContext.ImageGenerationJobs
+            .FirstOrDefaultAsync(j => j.Id == jobId, ct);
+
+        if (job == null)
+        {
+            throw new InvalidOperationException($"Cannot accept attempt: Job {jobId} does not exist in database.");
+        }
+
+        var winningAttempt = await _dbContext.ImageGenerationAttempts
+            .FirstOrDefaultAsync(a => a.Id == winningAttemptId, ct);
+
+        if (winningAttempt == null)
+        {
+            throw new InvalidOperationException($"Cannot accept attempt: Attempt {winningAttemptId} does not exist in database.");
+        }
 
         // Invariant P1-2: Winning attempt must strictly belong to the target Job
         if (winningAttempt.GenerationJobId != job.Id)
@@ -58,6 +75,10 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
             throw new InvalidOperationException($"Attempt {winningAttempt.Id} is in invalid status {winningAttempt.Status} for acceptance.");
         }
 
+        // Business Rule / Architecture Invariant:
+        // Attempt ownership != Acceptance ownership.
+        // If the attempt is still in-flight (Running/Evaluating), it must belong to the active worker and hold a valid lease.
+        // If the attempt is already durable & terminal (Succeeded/Degraded), an active worker holding the Job lease during crash recovery is authorized to accept it.
         if (winningAttempt.Status == GenerationAttemptStatus.Running || winningAttempt.Status == GenerationAttemptStatus.Evaluating)
         {
             if (winningAttempt.ClaimedBy != null && !string.Equals(winningAttempt.ClaimedBy, workerId, StringComparison.Ordinal))
@@ -245,7 +266,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
 
             if (isIdentityPassed)
             {
-                job.AcceptAttempt(attemptId, liveUtc, metadataJson, workerId);
+                job.AcceptAttempt(attemptId, liveUtc, workerId, metadataJson);
 
                 var existingCurrentImages = await _dbContext.SceneImages
                     .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)

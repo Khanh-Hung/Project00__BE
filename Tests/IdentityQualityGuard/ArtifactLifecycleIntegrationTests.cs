@@ -256,7 +256,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             startedAt: DateTime.UtcNow.AddMinutes(-1),
             leaseUntil: DateTime.UtcNow.AddMinutes(1)
         );
-        crashedAttempt.MarkSucceeded("https://cdn.project00.ai/images/recovered_image.png", "job_recovered", 0.85f, 0.90f, DateTime.UtcNow);
+        crashedAttempt.MarkSucceeded("https://cdn.project00.ai/images/recovered_image.png", "job_recovered", 0.85f, 0.90f, DateTime.UtcNow, "worker-1", DateTime.UtcNow);
         await db.ImageGenerationAttempts.AddAsync(crashedAttempt);
         await db.SaveChangesAsync();
 

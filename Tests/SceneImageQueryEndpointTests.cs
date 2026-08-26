@@ -154,7 +154,8 @@ public sealed class SceneImageQueryEndpointTests
         await db.ChatSessions.AddAsync(session);
 
         var job = new ImageGenerationJob(sessionId, turnId, charId, 1, generationRequestId: requestId);
-        job.MarkProcessing("comfy-job-123", "worker-1", TimeSpan.FromMinutes(2), startedAt: DateTime.UtcNow);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job.SetProviderJobId("comfy-job-123");
         await db.ImageGenerationJobs.AddAsync(job);
         await db.SaveChangesAsync();
 
@@ -268,7 +269,8 @@ public sealed class SceneImageQueryEndpointTests
         await db.ChatSessions.AddAsync(session);
 
         var job = new ImageGenerationJob(sessionId, turnId, charId, 1, generationRequestId: requestId);
-        job.MarkFailed("ComfyUI Connection Timeout", isRetryable: true, failedAt: DateTime.UtcNow);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job.Fail("ComfyUI Connection Timeout", isRetryable: true, DateTime.UtcNow, "worker-1");
         await db.ImageGenerationJobs.AddAsync(job);
         await db.SaveChangesAsync();
 

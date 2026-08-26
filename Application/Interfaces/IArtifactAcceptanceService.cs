@@ -6,8 +6,8 @@ using Domain.ValueObjects;
 namespace Application.Interfaces;
 
 public sealed record ArtifactAcceptanceRequest(
-    ImageGenerationJob Job,
-    ImageGenerationAttempt WinningAttempt,
+    Guid JobId,
+    Guid WinningAttemptId,
     VisualSnapshot Snapshot,
     string ImageUrl,
     string CompiledPrompt,
