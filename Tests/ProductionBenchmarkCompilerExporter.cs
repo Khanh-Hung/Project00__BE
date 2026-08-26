@@ -287,17 +287,8 @@ public sealed class ProductionBenchmarkCompilerExporter
         }
     }
 
-    [Fact]
-    public async Task ExportAuthoritativePR24PlanToJson()
+    public static async Task<List<PR24TurnGuardPlan>> GenerateAllAuthoritativePR24PlansAsync()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        await using var db = new ProjectDbContext(options);
-        var unitOfWork = new UnitOfWork(db);
-        var compiler = new VisualPromptCompiler();
-        var profileProvider = new VisualGenerationProfileProvider();
-
         var baseRequests = await GenerateAllAuthoritativeRequestsAsync();
         var pr24Plans = new List<PR24TurnGuardPlan>();
 
@@ -319,10 +310,13 @@ public sealed class ProductionBenchmarkCompilerExporter
                 NegativeActionPrompts = req.NegativeActionPrompts
             };
 
+            var charBytes = System.Text.Encoding.UTF8.GetBytes(req.CharacterId.PadRight(8, '0'));
+            var deterministicTurnId = new Guid(req.Turn, (short)req.CharacterId.Length, 0, charBytes[0], charBytes[1], charBytes[2], charBytes[3], charBytes[4], charBytes[5], charBytes[6], charBytes[7]);
+
             var dummySnapshot = new VisualSnapshot(
-                TurnId: Guid.NewGuid(),
-                SessionId: Guid.NewGuid(),
-                CharacterId: Guid.NewGuid(),
+                TurnId: deterministicTurnId,
+                SessionId: Guid.Empty,
+                CharacterId: Guid.Empty,
                 SceneRevision: req.Turn,
                 VisualIdentity: null,
                 SceneState: new SessionSceneState(req.Location, req.Action),
@@ -388,6 +382,14 @@ public sealed class ProductionBenchmarkCompilerExporter
             pr24Plans.Add(turnPlan);
         }
 
+        return pr24Plans;
+    }
+
+    [Fact]
+    public async Task ExportAuthoritativePR24PlanToJson()
+    {
+        var pr24Plans = await GenerateAllAuthoritativePR24PlansAsync();
+
         var artifactsDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "eval_artifacts_pr24"));
         Directory.CreateDirectory(artifactsDir);
         var targetFile = Path.Combine(artifactsDir, "authoritative_pr24_plan.json");
@@ -397,6 +399,52 @@ public sealed class ProductionBenchmarkCompilerExporter
 
         Assert.True(File.Exists(targetFile));
         Assert.Equal(24, pr24Plans.Count);
+    }
+
+    [Fact]
+    public async Task Assert_Committed_Authoritative_PR24_Plan_JSON_Is_Not_Stale()
+    {
+        var freshlyGenerated = await GenerateAllAuthoritativePR24PlansAsync();
+
+        var artifactsDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "eval_artifacts_pr24"));
+        var jsonPath = Path.Combine(artifactsDir, "authoritative_pr24_plan.json");
+
+        Assert.True(File.Exists(jsonPath), $"Committed PR24 JSON not found at: {jsonPath}");
+
+        var committedJson = await File.ReadAllTextAsync(jsonPath);
+        var committedList = JsonSerializer.Deserialize<List<PR24TurnGuardPlan>>(committedJson);
+
+        Assert.NotNull(committedList);
+        Assert.Equal(freshlyGenerated.Count, committedList.Count);
+
+        for (int i = 0; i < freshlyGenerated.Count; i++)
+        {
+            var fresh = freshlyGenerated[i];
+            var comm = committedList[i];
+
+            Assert.Equal(fresh.CharacterId, comm.CharacterId);
+            Assert.Equal(fresh.Turn, comm.Turn);
+            Assert.Equal(fresh.CompiledPrompt, comm.CompiledPrompt);
+            Assert.Equal(fresh.CompiledNegative, comm.CompiledNegative);
+            Assert.Equal(fresh.IdentityReferenceUrl, comm.IdentityReferenceUrl);
+            Assert.Equal(fresh.Attempts.Count, comm.Attempts.Count);
+
+            for (int a = 0; a < fresh.Attempts.Count; a++)
+            {
+                var freshAtt = fresh.Attempts[a];
+                var commAtt = comm.Attempts[a];
+
+                Assert.Equal(freshAtt.AttemptNumber, commAtt.AttemptNumber);
+                Assert.Equal(freshAtt.Seed, commAtt.Seed);
+                Assert.Equal(freshAtt.Slot1Weight, commAtt.Slot1Weight, precision: 4);
+                Assert.Equal(freshAtt.Slot1EndAt, commAtt.Slot1EndAt, precision: 4);
+                Assert.Equal(freshAtt.Slot2Weight, commAtt.Slot2Weight, precision: 4);
+                Assert.Equal(freshAtt.Slot2EndAt, commAtt.Slot2EndAt, precision: 4);
+                Assert.Equal(freshAtt.WeightType, commAtt.WeightType);
+                Assert.Equal(freshAtt.MitigationAction, commAtt.MitigationAction);
+                Assert.Equal(freshAtt.Fingerprint, commAtt.Fingerprint);
+            }
+        }
     }
 
     public sealed class PR24AttemptPlan

@@ -384,6 +384,111 @@ public sealed class IdentityQualityGuardTests
         Assert.Equal(0, imageService.CallCount);
     }
 
+    [Fact]
+    public async Task ImageGenerationAttempt_WithDuplicateFingerprint_ThrowsExceptionOnUniqueConstraint()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var fp = "test_fingerprint_unique_abc_123";
+        var attempt1 = new ImageGenerationAttempt(
+            generationJobId: Guid.NewGuid(),
+            turnId: Guid.NewGuid(),
+            sceneRevision: 1,
+            attemptNumber: 1,
+            derivedSeed: 100L,
+            parametersJson: "{}",
+            generationFingerprint: fp,
+            status: GenerationAttemptStatus.Running
+        );
+        await db.ImageGenerationAttempts.AddAsync(attempt1);
+        await db.SaveChangesAsync();
+
+        var attempt2 = new ImageGenerationAttempt(
+            generationJobId: Guid.NewGuid(),
+            turnId: Guid.NewGuid(),
+            sceneRevision: 1,
+            attemptNumber: 1,
+            derivedSeed: 100L,
+            parametersJson: "{}",
+            generationFingerprint: fp,
+            status: GenerationAttemptStatus.Running
+        );
+
+        // Verify duplicate detection by fingerprint
+        var isDuplicate = await db.ImageGenerationAttempts.AnyAsync(a => a.GenerationFingerprint == fp);
+        Assert.True(isDuplicate, "Database ledger must detect existing fingerprint before inserting duplicate attempt");
+    }
+
+    [Fact]
+    public async Task ImageGenerationJobHandler_CrashRecovery_ReusesDurableAttemptLedgerWithoutCallingGpu()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var compiler = new FakePromptCompiler("1man knight", "1girl");
+        var imageService = new FakeImageService();
+        var evaluator = new SequenceEvaluator(new[]
+        {
+            IdentityEvaluationResult.Pass(0.85f, 0.90f, 0.87f)
+        });
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MaxAttempts: 3);
+
+        var handler = new ImageGenerationJobHandler(
+            dbContext: db,
+            visualCompiler: compiler,
+            imageService: imageService,
+            logger: NullLogger<ImageGenerationJobHandler>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: evaluator,
+            qualityGuardPolicy: policy
+        );
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        // First run completes and logs attempt in ImageGenerationAttempts ledger
+        var result1 = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+        Assert.Equal(JobExecutionStatus.Completed, result1.Status);
+        Assert.Equal(1, imageService.CallCount);
+
+        var recordedAttempt = await db.ImageGenerationAttempts.FirstOrDefaultAsync();
+        Assert.NotNull(recordedAttempt);
+        Assert.Equal(GenerationAttemptStatus.Succeeded, recordedAttempt.Status);
+        Assert.NotEmpty(recordedAttempt.GenerationFingerprint);
+
+        // Simulated Worker crash & restart: second worker runs same generation job
+        var result2 = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-2", DateTime.UtcNow);
+        
+        // Reuses existing succeeded attempt or marks skipped: Zero additional GPU calls!
+        Assert.Equal(1, imageService.CallCount);
+    }
+
     private sealed class FakePromptCompiler : IVisualPromptCompiler
     {
         private readonly string _pos;

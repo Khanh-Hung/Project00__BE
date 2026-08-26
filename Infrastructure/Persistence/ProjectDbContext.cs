@@ -31,6 +31,7 @@ public class ProjectDbContext : DbContext
     public DbSet<SceneImage> SceneImages { get; set; }
     public DbSet<AudioArtifact> AudioArtifacts { get; set; }
     public DbSet<ImageGenerationJob> ImageGenerationJobs { get; set; }
+    public DbSet<ImageGenerationAttempt> ImageGenerationAttempts { get; set; }
 
     private string NormalizeUserId()
     {

@@ -232,51 +232,82 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 lastCompiledPrompt = _visualCompiler.CompileScenePrompt(attemptSnapshot);
                 var compiledNegative = _visualCompiler.CompileNegativePrompt(attemptSnapshot);
 
-                // Database-enforced Idempotency Check: lookup existing attempt artifact by exact fingerprint before invoking GPU
-                var existingAttemptArtifact = await _dbContext.SceneImages
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(img => img.GenerationFingerprint == attemptFingerprint, ct);
+                // Database-enforced Idempotency & Crash-Safety: Check durable attempt ledger or existing artifact
+                var existingAttempt = await _dbContext.ImageGenerationAttempts
+                    .FirstOrDefaultAsync(a => a.GenerationFingerprint == attemptFingerprint, ct);
 
-                if (existingAttemptArtifact != null && !string.IsNullOrWhiteSpace(existingAttemptArtifact.ImageUrl))
+                ImageGenerationAttempt attemptRecord;
+
+                if (existingAttempt != null && existingAttempt.Status == GenerationAttemptStatus.Succeeded && !string.IsNullOrWhiteSpace(existingAttempt.ImageUrl))
                 {
-                    _logger.LogInformation("[SceneGenerationAttemptReused] Reusing existing artifact {ImageId} for JobId={JobId}, Attempt={Attempt}, Fingerprint={Fingerprint}",
-                        existingAttemptArtifact.Id, job.Id, attempt, attemptFingerprint);
+                    _logger.LogInformation("[SceneGenerationAttemptReused] Reusing existing succeeded attempt {AttemptId} for JobId={JobId}, Attempt={Attempt}, Fingerprint={Fingerprint}",
+                        existingAttempt.Id, job.Id, attempt, attemptFingerprint);
 
+                    attemptRecord = existingAttempt;
                     genResult = new ImageGenerationResult(
-                        ImageUrl: existingAttemptArtifact.ImageUrl,
-                        Provider: existingAttemptArtifact.Workflow,
-                        ProviderJobId: existingAttemptArtifact.Id.ToString(),
+                        ImageUrl: existingAttempt.ImageUrl,
+                        Provider: "ComfyUI",
+                        ProviderJobId: existingAttempt.ProviderJobId,
                         DurationMs: 0,
                         Seed: derivedSeed
                     );
                 }
                 else
                 {
+                    if (existingAttempt == null)
+                    {
+                        attemptRecord = new ImageGenerationAttempt(
+                            generationJobId: job.Id,
+                            turnId: snapshot.TurnId,
+                            sceneRevision: snapshot.SceneRevision,
+                            attemptNumber: attempt,
+                            derivedSeed: derivedSeed,
+                            parametersJson: attemptProfile.ParametersJson ?? string.Empty,
+                            generationFingerprint: attemptFingerprint,
+                            status: GenerationAttemptStatus.Running
+                        );
+                        await _dbContext.ImageGenerationAttempts.AddAsync(attemptRecord, ct);
+                        await _dbContext.SaveChangesAsync(ct);
+                    }
+                    else
+                    {
+                        attemptRecord = existingAttempt;
+                    }
+
                     var imageReq = ImageGenerationRequest.FromSnapshot(
                         snapshot: attemptSnapshot,
                         compiledPrompt: lastCompiledPrompt,
                         compiledNegative: compiledNegative,
                         previousSceneImageUrlOverride: resolvedPreviousSceneImageUrl,
-                        providerJobId: job.ProviderJobId,
+                        providerJobId: attemptRecord.ProviderJobId ?? job.ProviderJobId,
                         onPromptQueuedAsync: async (promptId, token) =>
                         {
                             job.SetProviderJobId(promptId);
+                            attemptRecord.SetProviderJobId(promptId);
                             await _dbContext.SaveChangesAsync(token);
                         }
                     );
 
                     genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
-                }
 
-                if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
-                {
-                    _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
-                    throw new GpuNonTransientException("Image generation completed without producing an image URL.");
+                    if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
+                    {
+                        attemptRecord.MarkFailed("Provider returned empty ImageUrl", _dateTimeProvider.UtcNow);
+                        await _dbContext.SaveChangesAsync(ct);
+                        _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
+                        throw new GpuNonTransientException("Image generation completed without producing an image URL.");
+                    }
+
+                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, null, null, _dateTimeProvider.UtcNow);
+                    await _dbContext.SaveChangesAsync(ct);
                 }
 
                 if (_qualityGuardPolicy.IsActive)
                 {
                     lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
+                    attemptRecord.MarkSucceeded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.FaceSimilarity, lastEvaluation.FeatureScore, _dateTimeProvider.UtcNow);
+                    await _dbContext.SaveChangesAsync(ct);
+
                     var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
 
                     if (nextAction == QualityMitigationAction.Pass)
