@@ -889,14 +889,112 @@ public sealed class ArtifactLifecycleIntegrationTests
             Assert.Equal(GenerationAttemptStatus.Succeeded, attempt.Status);
             Assert.Equal("https://cdn.project00.ai/images/reused_king.png", attempt.ImageUrl);
 
-            // Assert 3: No duplicate SceneImage created for this fingerprint
+            // Assert 3: Explicit, unambiguous cross-job artifact reuse:
+            // Reused artifact remains owned by the original rendering Job (Option A) and is promoted as current
             var images = await dbVerify.SceneImages.Where(img => img.GenerationFingerprint == expectedFp).ToListAsync();
             Assert.Single(images);
             Assert.True(images[0].IsCurrent);
+            Assert.Equal(priorJobId, images[0].GenerationJobId);
+            Assert.Equal("https://cdn.project00.ai/images/reused_king.png", images[0].ImageUrl);
 
             // Assert 4: GenerationJobAccepted outbox event was emitted with non-null AcceptedAttemptId
             var outboxEvents = await dbVerify.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.GenerationJobAccepted).ToListAsync();
             Assert.Contains(outboxEvents, m => m.PayloadJson.Contains(job.AcceptedAttemptId.Value.ToString()));
+        }
+    }
+
+    [Fact]
+    public async Task SameJobReplay_Idempotency_DoesNotDuplicateSceneImage()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var genReqId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("throne room", "sitting"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 123456L)
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: genReqId
+        );
+
+        var compiler = new FakePromptCompiler("1man king on throne", "1girl");
+        var jobInstance = new ImageGenerationJob(sessionId, turnId, characterId, 1, genReqId);
+
+        // Pre-condition: SceneImage already committed for this exact request
+        using (var dbPre = new ProjectDbContext(options))
+        {
+            await dbPre.ImageGenerationJobs.AddAsync(jobInstance);
+
+            var existingArtifact = new SceneImage(
+                sessionId: sessionId,
+                characterId: characterId,
+                turnId: turnId,
+                sceneRevision: 1,
+                imageUrl: "https://cdn.project00.ai/images/reused_king.png",
+                prompt: "1man king on throne",
+                generationRequestId: genReqId,
+                generationJobId: jobInstance.Id,
+                isCurrent: true,
+                generationFingerprint: "fp_replay"
+            );
+            await dbPre.SceneImages.AddAsync(existingArtifact);
+            await dbPre.SaveChangesAsync();
+        }
+
+        var countingImageService = new ConcurrentTrackingImageService();
+        var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
+
+        using (var dbWorker = new ProjectDbContext(options))
+        {
+            var timeProvider = new SystemDateTimeProvider();
+            var handler = new ImageGenerationJobHandler(
+                dbContext: dbWorker,
+                visualCompiler: compiler,
+                imageService: countingImageService,
+                logger: NullLogger<ImageGenerationJobHandler>.Instance,
+                dateTimeProvider: timeProvider,
+                qualityEvaluator: evaluator,
+                qualityGuardPolicy: policy
+            );
+
+            var result = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", Clock.Now);
+            Assert.Equal(JobExecutionStatus.Skipped, result.Status);
+        }
+
+        Assert.Equal(0, countingImageService.CallCount);
+
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var images = await dbVerify.SceneImages.Where(img => img.GenerationRequestId == genReqId).ToListAsync();
+            Assert.Single(images);
+            Assert.True(images[0].IsCurrent);
+            Assert.Equal(jobInstance.Id, images[0].GenerationJobId);
         }
     }
 

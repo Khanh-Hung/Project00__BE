@@ -172,6 +172,86 @@ public sealed class GenerationStateMachineTests
     }
 
     [Fact]
+    public void StateTransition_Pending_To_Fail_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        Assert.Equal(ImageJobStatus.Pending, job.Status);
+
+        Assert.Throws<InvalidOperationException>(() => job.Fail("crash", isRetryable: false, now: Clock.Now, workerId: "worker-1"));
+    }
+
+    [Fact]
+    public void StateTransition_Queued_To_Fail_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.MarkQueued(Clock.Now);
+        Assert.Equal(ImageJobStatus.Queued, job.Status);
+
+        Assert.Throws<InvalidOperationException>(() => job.Fail("crash", isRetryable: false, now: Clock.Now, workerId: "worker-1"));
+    }
+
+    [Fact]
+    public void StateTransition_Completed_To_Fail_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
+        job.AcceptAttempt(Guid.NewGuid(), Clock.Now, workerId: "worker-1");
+        Assert.Equal(ImageJobStatus.Completed, job.Status);
+
+        Assert.Throws<InvalidOperationException>(() => job.Fail("crash", isRetryable: false, now: Clock.Now, workerId: "worker-1"));
+    }
+
+    [Fact]
+    public void StateTransition_Quarantined_To_Fail_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
+        job.Quarantine(Guid.NewGuid(), "degraded", Clock.Now, workerId: "worker-1");
+        Assert.Equal(ImageJobStatus.Quarantined, job.Status);
+
+        Assert.Throws<InvalidOperationException>(() => job.Fail("crash", isRetryable: false, now: Clock.Now, workerId: "worker-1"));
+    }
+
+    [Fact]
+    public void StateTransition_Cancelled_To_Fail_ThrowsInvalidOperationException()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.Cancel(Clock.Now);
+        Assert.Equal(ImageJobStatus.Cancelled, job.Status);
+
+        Assert.Throws<InvalidOperationException>(() => job.Fail("crash", isRetryable: false, now: Clock.Now, workerId: "worker-1"));
+    }
+
+    [Fact]
+    public void StateTransition_Processing_ActiveLease_Fail_Succeeds()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
+        Assert.Equal(ImageJobStatus.Processing, job.Status);
+
+        job.Fail("Network timeout", isRetryable: true, now: Clock.Now, workerId: "worker-1");
+        Assert.Equal(ImageJobStatus.Failed, job.Status);
+        Assert.Equal("Network timeout", job.FailureReason);
+        Assert.True(job.IsRetryable);
+        Assert.Null(job.LeaseUntil);
+    }
+
+    [Fact]
+    public void StateTransition_Evaluating_ActiveLease_Fail_Succeeds()
+    {
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), Clock.Now);
+        job.MarkEvaluating(Clock.Now, workerId: "worker-1");
+        Assert.Equal(ImageJobStatus.Evaluating, job.Status);
+
+        job.Fail("Quality evaluation failure", isRetryable: false, now: Clock.Now, workerId: "worker-1");
+        Assert.Equal(ImageJobStatus.Failed, job.Status);
+        Assert.Equal("Quality evaluation failure", job.FailureReason);
+        Assert.False(job.IsRetryable);
+        Assert.Null(job.LeaseUntil);
+    }
+
+    [Fact]
     public void Job_ExpiredLease_CannotFail_ThrowsInvalidOperationException()
     {
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
