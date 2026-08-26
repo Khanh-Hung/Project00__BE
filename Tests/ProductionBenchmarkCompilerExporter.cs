@@ -1,7 +1,8 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Abstractions.Data;
 using Application.Common;
 using Application.DTOs;
+using Application.Enums;
 using Application.Interfaces;
 using Application.Services;
 using Domain.Common.DateTimes;
@@ -284,6 +285,148 @@ public sealed class ProductionBenchmarkCompilerExporter
                 NegativeActionPrompts = t.negActions.ToList()
             });
         }
+    }
+
+    [Fact]
+    public async Task ExportAuthoritativePR24PlanToJson()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+        var unitOfWork = new UnitOfWork(db);
+        var compiler = new VisualPromptCompiler();
+        var profileProvider = new VisualGenerationProfileProvider();
+
+        var baseRequests = await GenerateAllAuthoritativeRequestsAsync();
+        var pr24Plans = new List<PR24TurnGuardPlan>();
+
+        foreach (var req in baseRequests)
+        {
+            var turnPlan = new PR24TurnGuardPlan
+            {
+                CharacterId = req.CharacterId,
+                CharacterName = req.CharacterName,
+                Gender = req.Gender,
+                Turn = req.Turn,
+                Location = req.Location,
+                Action = req.Action,
+                IsTransition = req.IsTransition,
+                CompiledPrompt = req.CompiledPrompt,
+                CompiledNegative = req.CompiledNegative,
+                IdentityReferenceUrl = req.IdentityReferenceUrl,
+                TargetActionPrompt = req.TargetActionPrompt,
+                NegativeActionPrompts = req.NegativeActionPrompts
+            };
+
+            var dummySnapshot = new VisualSnapshot(
+                TurnId: Guid.NewGuid(),
+                SessionId: Guid.NewGuid(),
+                CharacterId: Guid.NewGuid(),
+                SceneRevision: req.Turn,
+                VisualIdentity: null,
+                SceneState: new SessionSceneState(req.Location, req.Action),
+                TransientState: null,
+                GenerationProfile: GenerationProfile.CreateDefault(
+                    seed: req.Seed,
+                    parametersJson: JsonSerializer.Serialize(new
+                    {
+                        ipAdapter = new { weight = 0.60, endAt = 0.85 },
+                        sceneContinuity = new { weight = req.Slot2Weight, endAt = req.Slot2EndAt, weightType = req.WeightType }
+                    })
+                )
+            );
+
+            // Attempt 1 (Standard)
+            var (p1, s1) = IdentityMitigationProfileResolver.ResolveMitigation(dummySnapshot, QualityMitigationAction.Pass, 1, req.Seed);
+            var fp1 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, dummySnapshot.TurnId, req.Turn, 1, s1, p1.ParametersJson ?? string.Empty);
+            turnPlan.Attempts.Add(new PR24AttemptPlan
+            {
+                AttemptNumber = 1,
+                Seed = s1,
+                Slot1Weight = 0.60,
+                Slot1EndAt = 0.85,
+                Slot2Weight = req.Slot2Weight,
+                Slot2EndAt = req.Slot2EndAt,
+                WeightType = req.WeightType,
+                MitigationAction = "Pass",
+                Fingerprint = fp1
+            });
+
+            // Attempt 2 (Attenuated)
+            var (p2, s2) = IdentityMitigationProfileResolver.ResolveMitigation(dummySnapshot, QualityMitigationAction.RetryAttenuated, 2, req.Seed);
+            var fp2 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, dummySnapshot.TurnId, req.Turn, 2, s2, p2.ParametersJson ?? string.Empty);
+            turnPlan.Attempts.Add(new PR24AttemptPlan
+            {
+                AttemptNumber = 2,
+                Seed = s2,
+                Slot1Weight = 0.65,
+                Slot1EndAt = 0.85,
+                Slot2Weight = 0.06,
+                Slot2EndAt = 0.15,
+                WeightType = "style transfer",
+                MitigationAction = "RetryAttenuated",
+                Fingerprint = fp2
+            });
+
+            // Attempt 3 (Isolated)
+            var (p3, s3) = IdentityMitigationProfileResolver.ResolveMitigation(dummySnapshot, QualityMitigationAction.RetryIsolated, 3, req.Seed);
+            var fp3 = DeterministicSeedDerivation.ComputeFingerprint(Guid.Empty, dummySnapshot.TurnId, req.Turn, 3, s3, p3.ParametersJson ?? string.Empty);
+            turnPlan.Attempts.Add(new PR24AttemptPlan
+            {
+                AttemptNumber = 3,
+                Seed = s3,
+                Slot1Weight = 0.70,
+                Slot1EndAt = 0.85,
+                Slot2Weight = 0.0,
+                Slot2EndAt = 0.0,
+                WeightType = "style transfer",
+                MitigationAction = "RetryIsolated",
+                Fingerprint = fp3
+            });
+
+            pr24Plans.Add(turnPlan);
+        }
+
+        var artifactsDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "eval_artifacts_pr24"));
+        Directory.CreateDirectory(artifactsDir);
+        var targetFile = Path.Combine(artifactsDir, "authoritative_pr24_plan.json");
+
+        var json = JsonSerializer.Serialize(pr24Plans, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(targetFile, json);
+
+        Assert.True(File.Exists(targetFile));
+        Assert.Equal(24, pr24Plans.Count);
+    }
+
+    public sealed class PR24AttemptPlan
+    {
+        public int AttemptNumber { get; set; }
+        public long Seed { get; set; }
+        public double Slot1Weight { get; set; }
+        public double Slot1EndAt { get; set; }
+        public double Slot2Weight { get; set; }
+        public double Slot2EndAt { get; set; }
+        public string WeightType { get; set; } = "style transfer";
+        public string MitigationAction { get; set; } = "Pass";
+        public string Fingerprint { get; set; } = string.Empty;
+    }
+
+    public sealed class PR24TurnGuardPlan
+    {
+        public string CharacterId { get; set; } = string.Empty;
+        public string CharacterName { get; set; } = string.Empty;
+        public string Gender { get; set; } = string.Empty;
+        public int Turn { get; set; }
+        public string Location { get; set; } = string.Empty;
+        public string Action { get; set; } = string.Empty;
+        public bool IsTransition { get; set; }
+        public string CompiledPrompt { get; set; } = string.Empty;
+        public string CompiledNegative { get; set; } = string.Empty;
+        public string IdentityReferenceUrl { get; set; } = string.Empty;
+        public string TargetActionPrompt { get; set; } = string.Empty;
+        public List<string> NegativeActionPrompts { get; set; } = new();
+        public List<PR24AttemptPlan> Attempts { get; set; } = new();
     }
 
     private sealed class DummySceneStateTracker : ISceneStateTrackerService

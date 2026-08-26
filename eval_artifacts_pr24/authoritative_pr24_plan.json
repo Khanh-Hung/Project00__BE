@@ -1,0 +1,1269 @@
+[
+  {
+    "CharacterId": "character_01_lyra",
+    "CharacterName": "Lyra",
+    "Gender": "Female",
+    "Turn": 1,
+    "Location": "Sanctuary (Standing Window)",
+    "Action": "standing",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Lyra_tight_face.png",
+    "TargetActionPrompt": "an anime girl standing beside an arched window",
+    "NegativeActionPrompts": [
+      "an anime girl sitting on a chair",
+      "an anime girl kneeling in prayer",
+      "an anime girl lying on the floor"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 100001,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "7d24f5033276991a5d0e1c3210321f9311241ddd73f22556dbe1aa3ace737d11"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 5256317435297051884,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "1c159d71213469c37ec73e0dc57c5d3c20c7367e8d1265299516e940b853cf06"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 6718805291132161177,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "fc502e72e17be22f845b48b410ebebd3b1daeb3fb469cf5022fd650d24b864d4"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_01_lyra",
+    "CharacterName": "Lyra",
+    "Gender": "Female",
+    "Turn": 2,
+    "Location": "Sanctuary (Walking Altar)",
+    "Action": "walking",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, walking, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Lyra_tight_face.png",
+    "TargetActionPrompt": "an anime girl walking along an aisle holding a book",
+    "NegativeActionPrompts": [
+      "an anime girl sitting down",
+      "an anime girl sleeping",
+      "an anime girl lying down"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 100002,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "67d6e0c0b28f95a2ae38aaf39eb8a51e4ce08f54dd9bdf58c0bd6269f8f8d6cc"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 736371036653310532,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "dedf72910121a75b19c1b1d8ec39309c2a0bb231cf840c3f2eb676668fe38681"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 6918223028406975239,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "41e4da8251e2c4c492f72402f94e7fa84cb39d8d93c10d8131b4a6b748298e18"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_01_lyra",
+    "CharacterName": "Lyra",
+    "Gender": "Female",
+    "Turn": 3,
+    "Location": "Sanctuary (Kneeling Prayer)",
+    "Action": "kneeling",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, kneeling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Lyra_tight_face.png",
+    "TargetActionPrompt": "an anime girl kneeling in prayer before an altar hands clasped",
+    "NegativeActionPrompts": [
+      "an anime girl standing tall",
+      "an anime girl running fast",
+      "an anime girl dancing"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 100003,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "1a2a046a92d68740f86be21b75e140699fb08303a8221ad2601bce7680ffba73"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 4632681220306272213,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "3dcdfb769d4c6206b40c72d34273143642d9e782702fb0ce9f4cb588acff5b7f"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 3920766972448081495,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "e12d66a8bbe113b75af979dc67a8e4723c2241d7dbc71c137f5b1505fef8411d"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_01_lyra",
+    "CharacterName": "Lyra",
+    "Gender": "Female",
+    "Turn": 4,
+    "Location": "Sanctuary (Smiling Turn)",
+    "Action": "standing/smiling",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Lyra_tight_face.png",
+    "TargetActionPrompt": "an anime girl standing and smiling warmly looking at viewer",
+    "NegativeActionPrompts": [
+      "an anime girl crying sadly",
+      "an anime girl sleeping",
+      "an anime girl lying down"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 100004,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "dfe9d4a818b78540d503437561318f903569e5c345f9fe1c731ff8639247b981"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 3564584762382109606,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "2bda1c0f0bb1e755a4c04e7bbb753151cfa4dc5c29e989ca7f4e9f07a6cc3bb2"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 6389523764628103656,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "b88eedef49742855407df70f9709b08d97802dd712dddc8ddbd22b2a44e80c13"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_01_lyra",
+    "CharacterName": "Lyra",
+    "Gender": "Female",
+    "Turn": 5,
+    "Location": "Library (Sitting Tea)",
+    "Action": "sitting",
+    "IsTransition": true,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Library, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Lyra_tight_face.png",
+    "TargetActionPrompt": "an anime girl sitting at a wooden table drinking tea",
+    "NegativeActionPrompts": [
+      "an anime girl standing outside",
+      "an anime girl running",
+      "an anime girl lying on bed"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 100005,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "270a138a7fc18cea04493ee7b1fb34c863b020b0ee12fcdee06a56476782f10d"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 8173950475672276956,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "ebbd306109aadb111fa23865f2f7466d2436ac22480e1e28e3dbd5be46ce564d"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 4418361068166907970,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "9c301456a849205ab32407af5b9560bb592e92a0d967ec81e475a2228f350319"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_01_lyra",
+    "CharacterName": "Lyra",
+    "Gender": "Female",
+    "Turn": 6,
+    "Location": "Library (Reading Grimoire)",
+    "Action": "reading/leaning",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Library, Daytime, Peaceful, Neutral, Graceful posture, reading/leaning, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Lyra_tight_face.png",
+    "TargetActionPrompt": "an anime girl leaning over an open book reading a grimoire",
+    "NegativeActionPrompts": [
+      "an anime girl standing straight",
+      "an anime girl dancing actively",
+      "an anime girl sleeping"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 100006,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "1e60b87e7d4601ae4f769e899ee6531542be2a8efaaafebb393e3ecb8005ba87"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 9076639359584760658,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "26c20ae432acf634d383e289339823bdee246777334fd92dfad7c2b67b120303"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 2844694613582723914,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "25c3c6be8747c6781131fd89376cdd761f161e2a768147e470b1b4ca1aa8ed4c"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_01_lyra",
+    "CharacterName": "Lyra",
+    "Gender": "Female",
+    "Turn": 7,
+    "Location": "Balcony (Twilight Walk)",
+    "Action": "walking",
+    "IsTransition": true,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Balcony, Daytime, Peaceful, Neutral, Graceful posture, walking, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Lyra_tight_face.png",
+    "TargetActionPrompt": "an anime girl walking on an outdoor stone balcony at twilight",
+    "NegativeActionPrompts": [
+      "an anime girl sitting inside a room",
+      "an anime girl sleeping in bed"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 100007,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "23f20f974fd55cdbc505c182ef9164382bda1875db8f034e22b8035867ae107d"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 684716202839214240,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "8f95c18a099165aa446af98c1db38bc06c9b49ecf41658b3c8ef9e4781065c53"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 1488509496941210767,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "382175a5090c69e9810db41e19f1d1c3dbe8312fa40eb1781b20619bb6b7e44f"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_01_lyra",
+    "CharacterName": "Lyra",
+    "Gender": "Female",
+    "Turn": 8,
+    "Location": "Balcony (Night Stars)",
+    "Action": "leaning/gazing",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Balcony, Daytime, Peaceful, Neutral, Graceful posture, leaning/gazing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Lyra_tight_face.png",
+    "TargetActionPrompt": "an anime girl leaning against a stone balustrade looking at distance",
+    "NegativeActionPrompts": [
+      "an anime girl running indoors",
+      "an anime girl sitting on a couch"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 100008,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "51325cefb8450172cd97f2e201b2f234eaadf11aad57b953c0540380451c0450"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 3280571753495760176,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "fe17654734c10ec0f206698f321a5a053683098f07326bd246d7fe03dda12884"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 7223400504428891422,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "c7c2d1fcfce2aae9c806ce0515e6478c99ca31b6f68721f4bf4dd56e10207b7f"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_02_elysia",
+    "CharacterName": "Elysia",
+    "Gender": "Female",
+    "Turn": 1,
+    "Location": "Academy (Standing Desk)",
+    "Action": "standing",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Elysia_tight_face.png",
+    "TargetActionPrompt": "an elf girl standing in an academy classroom beside a desk",
+    "NegativeActionPrompts": [
+      "an elf girl sitting on floor",
+      "an elf girl running",
+      "an elf girl sleeping"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 200001,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "d3002c5b16e92a76e9eff41cde4198967e722b4e8e79c0704f644613005aa8d2"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 3675382716994098873,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "c5a0eb19e29cae9872ea1f8237bc71af1b80fcb0146cf3d530539294e9eeb700"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 2486853931492684877,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "fb8e3e5a997531d4c33c3981009e88d5e605419362ff858952127181f32d4d5f"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_02_elysia",
+    "CharacterName": "Elysia",
+    "Gender": "Female",
+    "Turn": 2,
+    "Location": "Academy (Walking Shelf)",
+    "Action": "walking",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, walking, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Elysia_tight_face.png",
+    "TargetActionPrompt": "an elf girl walking between tall bookshelves reaching for a book",
+    "NegativeActionPrompts": [
+      "an elf girl sitting down",
+      "an elf girl sleeping in bed",
+      "an elf girl dancing"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 200002,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "62078e9ab0d597a3ba8690c2674fdaaabe5a783a6b691fac7aeedf9a697065d8"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 4688765992448829538,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "52b0c0c36fe38650ededfaa8d1bcea267d37fe4f04d7d65ad07a57a8206d8cea"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 2186407576593599095,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "435563c8b2d8b9a3c20a9eaff983d32e76cbb2bc667b92749020b513a03eedd4"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_02_elysia",
+    "CharacterName": "Elysia",
+    "Gender": "Female",
+    "Turn": 3,
+    "Location": "Academy (Sitting Desk)",
+    "Action": "sitting",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Elysia_tight_face.png",
+    "TargetActionPrompt": "an elf girl sitting at a desk writing on parchment with a quill",
+    "NegativeActionPrompts": [
+      "an elf girl standing outside",
+      "an elf girl running fast",
+      "an elf girl lying on grass"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 200003,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "9657b43a4f4f39b0bfdd5ef39eaf36739e3bcaf9c94ed650e6664658dfafbc62"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 8671881686433519553,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "70eeebb3d78f3d4f490001a270346fae3158a83c0d8b7ca67b28861fcb3da73d"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 9146323333158707119,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "de1fcf791b9c114fd4bb396a8aa85a4362d9ab935ca264ba2deb7f0c78ad2d15"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_02_elysia",
+    "CharacterName": "Elysia",
+    "Gender": "Female",
+    "Turn": 4,
+    "Location": "Academy (Kneeling Sorting)",
+    "Action": "kneeling",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, kneeling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Elysia_tight_face.png",
+    "TargetActionPrompt": "an elf girl kneeling on the carpet organizing ancient scrolls",
+    "NegativeActionPrompts": [
+      "an elf girl standing tall",
+      "an elf girl sitting on chair",
+      "an elf girl running"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 200004,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "f44ebf9a2e8ead1a5d0b4be7fe1cf19b83899c4eb7f71c6cc2ca2c56febf432f"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 156079335091780273,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "b818f9faa34ebb0e45414ae592300cf331a38f7b9540d1447f5cb85510aaef8d"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 6366465869072591809,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "33c1d2e51d674064630a33ae75f28ae5a880e88d71c5970cfbe46f4b7b08345d"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_02_elysia",
+    "CharacterName": "Elysia",
+    "Gender": "Female",
+    "Turn": 5,
+    "Location": "Botanical Garden (Standing Flower)",
+    "Action": "standing/smiling",
+    "IsTransition": true,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Botanical Garden, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Elysia_tight_face.png",
+    "TargetActionPrompt": "an elf girl standing among glowing flowers in a greenhouse",
+    "NegativeActionPrompts": [
+      "an elf girl sitting in dark room",
+      "an elf girl sleeping",
+      "an elf girl running in street"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 200005,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "50692151bff762f2e005ca0a1b7cd3babc8cdb32dff36deee25a871eda062d49"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 7607235208037039368,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "3d580597feb8be31a4f8b726d0d01f2674b5aae0db50d79cc74ce72552501b41"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 8273992015635610028,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "3eaa9160960366c5c5fcf083c64b9bf923a8590f770b77f29b206c2a567796c7"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_02_elysia",
+    "CharacterName": "Elysia",
+    "Gender": "Female",
+    "Turn": 6,
+    "Location": "Botanical Garden (Sitting Bench)",
+    "Action": "sitting",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Botanical Garden, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Elysia_tight_face.png",
+    "TargetActionPrompt": "an elf girl sitting on a garden bench sketching botanical plants",
+    "NegativeActionPrompts": [
+      "an elf girl standing on stage",
+      "an elf girl running",
+      "an elf girl swimming"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 200006,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "68baec004372dbcaee386ea92abbf83ca4006bfeb476e327974b7147e35c6bfc"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 8313483069648999741,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "2fad3d8dbd9fbe1ae5904859ca3f02403659050b1a175cac825a7e367e523725"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 1156060426333281628,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "5376ed4f5884121764efce7ebcf002f11ce33d0e54b63a916d39e2242dd1a2b2"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_02_elysia",
+    "CharacterName": "Elysia",
+    "Gender": "Female",
+    "Turn": 7,
+    "Location": "Observatory (Standing Telescope)",
+    "Action": "standing/leaning",
+    "IsTransition": true,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Observatory, Daytime, Peaceful, Neutral, Graceful posture, standing/leaning, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Elysia_tight_face.png",
+    "TargetActionPrompt": "an elf girl leaning against a brass astronomical telescope at night",
+    "NegativeActionPrompts": [
+      "an elf girl sitting in bright sun",
+      "an elf girl running outdoors"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 200007,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "40b251047f5d28076a4299b1722dd4eb9db798aaa4598dbb73fe7ddb759b427a"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 3266719985733023123,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "c0ae392b35ea8e629adaf2367bf468f0bc8dd428eb481cc438b43ca6309e860a"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 2095026308234782152,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "e6709ec80b1011cc36d73bd25336c0bc3bcbd8ec1544670b6f65470d0957909e"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_02_elysia",
+    "CharacterName": "Elysia",
+    "Gender": "Female",
+    "Turn": 8,
+    "Location": "Observatory (Looking Sky)",
+    "Action": "standing/smiling",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Observatory, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Elysia_tight_face.png",
+    "TargetActionPrompt": "an elf girl looking up at the starry night sky with wonder",
+    "NegativeActionPrompts": [
+      "an elf girl looking down sadly",
+      "an elf girl sleeping on sofa"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 200008,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "eae33311eacc988feca7ccf47950da6b0025f7c31f2612654e1216f76f8b0c30"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 5687532053935720463,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "9e3a7b23e355bcec9e0e9fd4bda8d9ce5a26c3e0acb24a57578f989c0b8e3fd8"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 1768883653541997148,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "0933b59649e4c48ce3b97a56d2d2590230327e3beb1dc67759a958803e371c24"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_03_valerius",
+    "CharacterName": "Valerius",
+    "Gender": "Male",
+    "Turn": 1,
+    "Location": "Armory (Inspecting Blade)",
+    "Action": "standing",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Armory, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Valerius_tight_face.png",
+    "TargetActionPrompt": "an anime knight man standing holding a sheathed sword",
+    "NegativeActionPrompts": [
+      "an anime knight sitting down",
+      "an anime knight sleeping",
+      "an anime knight lying on ground"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 300001,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "b7b03db82658cfeedf73f05be708808315c0b38fa6b9a2990835b4775f918409"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 5455541445421253433,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "6ec1c32ccf7c6732e77120b33ad8057c9295570329c7e03ed3ce044abd0b8ff2"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 7642525087689776012,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "8c67baf66dde3f1504f5eedc601f77f935681cf414038b0cef3d20131e9385d8"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_03_valerius",
+    "CharacterName": "Valerius",
+    "Gender": "Male",
+    "Turn": 2,
+    "Location": "Armory (Polishing Armor)",
+    "Action": "sitting",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Armory, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Valerius_tight_face.png",
+    "TargetActionPrompt": "an anime knight man sitting at a workbench maintaining equipment",
+    "NegativeActionPrompts": [
+      "an anime knight running outdoors",
+      "an anime knight dancing",
+      "an anime knight swimming"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 300002,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "7044c10d8ee494e8e3ca193b135a578a95d96e8fff2e7539039cf65782b8b43b"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 5279767861443249772,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "c38022b0ff98bdd18095ffeb63d72fcecc6b2281042f99207a945e47e0b37eaf"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 517753358366546465,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "cd6de77d9dad8374fc31d7c00cbc22abb5256f7d8fd7e936549a75cda4c70162"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_03_valerius",
+    "CharacterName": "Valerius",
+    "Gender": "Male",
+    "Turn": 3,
+    "Location": "War Room (Studying Map)",
+    "Action": "leaning",
+    "IsTransition": true,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, leaning, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Valerius_tight_face.png",
+    "TargetActionPrompt": "an anime knight man leaning over a war map planning strategy",
+    "NegativeActionPrompts": [
+      "an anime knight sleeping in bed",
+      "an anime knight dancing",
+      "an anime knight sitting on floor"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 300003,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "c0f3a8890a16657df4af1ff1d40182e4aa406b02fe8007ecdb07d3ac747cc91d"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 7274490070643381855,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "3b473a55c02e4f543eedc03729f6fc5fe79d6e896d90da8fb6f8bbd39a0bafd5"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 2764534899745552972,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "de394c792a9c3dbc92d6286583e3e091baf9ef2a1f7dd0ce9f362b3eaefbf198"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_03_valerius",
+    "CharacterName": "Valerius",
+    "Gender": "Male",
+    "Turn": 4,
+    "Location": "War Room (Standing Briefing)",
+    "Action": "standing",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Valerius_tight_face.png",
+    "TargetActionPrompt": "an anime knight man standing giving a briefing",
+    "NegativeActionPrompts": [
+      "an anime knight sitting on couch",
+      "an anime knight sleeping",
+      "an anime knight lying down"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 300004,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "332d8e19f8ab693e167d843246a2dd9407d681bd286e311e26b33e08b47f1501"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 1071934391199240247,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "ff7155bc41f38eaa3d7adb021fe9fbacb3cee7f32b92afe86d7f09adcb83b1d7"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 1587290363791092603,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "8a4dc00394c7ef774fefa2b7064834bac860660d4f91ca6d3bcf60c372031381"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_03_valerius",
+    "CharacterName": "Valerius",
+    "Gender": "Male",
+    "Turn": 5,
+    "Location": "War Room (Wine Cup Rest)",
+    "Action": "sitting",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Valerius_tight_face.png",
+    "TargetActionPrompt": "an anime knight man sitting in a heavy chair holding a metal goblet",
+    "NegativeActionPrompts": [
+      "an anime knight running actively",
+      "an anime knight jumping",
+      "an anime knight lying on ground"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 300005,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "c82b5d1eabf7cf6c98ab1b0fbe0d2029cae792c5b2364ea13ad97f1e39e1e124"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 7324789881343891070,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "b19aa164e59b346704e38ffcfa909031032bfd9cd8830da6eee18cc94df4452c"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 586587949547860712,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "68717c77d1206f7f6f6f73f2e1b211dff809343ae9174eb384edf2dc31ae2181"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_03_valerius",
+    "CharacterName": "Valerius",
+    "Gender": "Male",
+    "Turn": 6,
+    "Location": "Battlements (Gazing Kingdom)",
+    "Action": "standing/leaning",
+    "IsTransition": true,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, standing/leaning, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Valerius_tight_face.png",
+    "TargetActionPrompt": "an anime knight man standing on fortress battlements looking at the kingdom",
+    "NegativeActionPrompts": [
+      "an anime knight sitting inside room",
+      "an anime knight sleeping in bed"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 300006,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "ad95b2dee1678f068f8509f2a4c2476add794cb1a43635ae08d2191976b1100f"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 4278408140368525266,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "3695946e13ce5d1f3b4a704a644db32ef8157df6f69fddaf717c073ea7ea8857"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 2606932838633122101,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "5f6586a14d64dc2d8220845ab74254b226fe953c7f24d26baf2b1b1fd877a7ab"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_03_valerius",
+    "CharacterName": "Valerius",
+    "Gender": "Male",
+    "Turn": 7,
+    "Location": "Battlements (Night Patrol Walk)",
+    "Action": "walking",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, walking, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Valerius_tight_face.png",
+    "TargetActionPrompt": "an anime knight man walking along the ramparts carrying a torch",
+    "NegativeActionPrompts": [
+      "an anime knight sitting at desk",
+      "an anime knight sleeping",
+      "an anime knight dancing"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 300007,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "9ff9229ef9ef2679a60fbbb494036cb00bef339fe7a31f601613264046290270"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 5049346738657681485,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "b592a11214a3c1e914aa4c8ed6dca5194e83ce23abeb931f454d518966f319e2"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 196365109267166873,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "a2c88650d6fbda23e3c716406ca1ffaec8069f84d60c78e874e1b487ddf9bd4e"
+      }
+    ]
+  },
+  {
+    "CharacterId": "character_03_valerius",
+    "CharacterName": "Valerius",
+    "Gender": "Male",
+    "Turn": 8,
+    "Location": "Battlements (Salute to Dawn)",
+    "Action": "standing",
+    "IsTransition": false,
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
+    "IdentityReferenceUrl": "Valerius_tight_face.png",
+    "TargetActionPrompt": "an anime knight man standing saluting the rising sun with drawn sword",
+    "NegativeActionPrompts": [
+      "an anime knight sitting down",
+      "an anime knight sleeping",
+      "an anime knight lying in bed"
+    ],
+    "Attempts": [
+      {
+        "AttemptNumber": 1,
+        "Seed": 300008,
+        "Slot1Weight": 0.6,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.12,
+        "Slot2EndAt": 0.25,
+        "WeightType": "style transfer",
+        "MitigationAction": "Pass",
+        "Fingerprint": "63c1a65327daa4ce95cfa6192450000cf680e6deba93c9a5360007ddce3eaf29"
+      },
+      {
+        "AttemptNumber": 2,
+        "Seed": 7509637087420089391,
+        "Slot1Weight": 0.65,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0.06,
+        "Slot2EndAt": 0.15,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryAttenuated",
+        "Fingerprint": "516a71df2b2189e49ef01adef8bb300fb146d64590a891abfba641c677df0a05"
+      },
+      {
+        "AttemptNumber": 3,
+        "Seed": 3585078824446731152,
+        "Slot1Weight": 0.7,
+        "Slot1EndAt": 0.85,
+        "Slot2Weight": 0,
+        "Slot2EndAt": 0,
+        "WeightType": "style transfer",
+        "MitigationAction": "RetryIsolated",
+        "Fingerprint": "5ac12940ff32a45319124e24e383a6417dc2818b50d4c585ee09bee8c3e9b77f"
+      }
+    ]
+  }
+]

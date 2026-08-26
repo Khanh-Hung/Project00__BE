@@ -109,13 +109,17 @@ def wait_for_execution(prompt_id, timeout=120):
         time.sleep(1.0)
     raise TimeoutError(f"Generation timed out after {timeout}s for prompt_id {prompt_id}")
 
-def build_workflow_graph(template, prompt_text, negative_text, seed, avatar_file, prev_scene_file=None, slot2_weight=0.12, slot2_end_at=0.25, weight_type="style transfer"):
+def build_workflow_graph(template, prompt_text, negative_text, seed, avatar_file, prev_scene_file=None, slot1_weight=0.60, slot1_end_at=0.85, slot2_weight=0.12, slot2_end_at=0.25, weight_type="style transfer"):
     import copy
     wf = copy.deepcopy(template)
     wf["6"]["inputs"]["text"] = prompt_text
     wf["7"]["inputs"]["text"] = negative_text
     wf["3"]["inputs"]["seed"] = int(seed)
     wf["1"]["inputs"]["image"] = os.path.basename(avatar_file)
+
+    if "10" in wf:
+        wf["10"]["inputs"]["weight"] = round(float(slot1_weight), 4)
+        wf["10"]["inputs"]["end_at"] = round(float(slot1_end_at), 4)
 
     if prev_scene_file and os.path.exists(prev_scene_file) and slot2_weight > 0.0:
         wf["13"]["inputs"]["image"] = os.path.basename(prev_scene_file)
@@ -213,8 +217,16 @@ def evaluate_frame_quality(img_path, avatar_path, char_name, turn_data):
 # Main Benchmark Execution
 # -------------------------------------------------------------
 def run_benchmark(max_turns=4, mode_filter=None):
-    with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
-        all_requests = json.load(f)
+    authoritative_plan_file = os.path.join(ARTIFACTS_DIR, "authoritative_pr24_plan.json")
+    if os.path.exists(authoritative_plan_file):
+        print(f"📖 Loading C# Authoritative PR24 Plan from: {authoritative_plan_file}", flush=True)
+        with open(authoritative_plan_file, "r", encoding="utf-8") as f:
+            all_requests = json.load(f)
+    else:
+        print(f"⚠️ Authoritative PR24 plan not found at {authoritative_plan_file}, falling back to {REQUESTS_FILE}", flush=True)
+        with open(REQUESTS_FILE, "r", encoding="utf-8") as f:
+            all_requests = json.load(f)
+
     with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
         template = json.load(f)
 
@@ -229,14 +241,25 @@ def run_benchmark(max_turns=4, mode_filter=None):
                 "gender": r.get("Gender", "Female"),
                 "turns": []
             }
+        
+        attempts_list = r.get("Attempts", [])
+        if not attempts_list:
+            base_s = int(r["Seed"])
+            attempts_list = [
+                {"AttemptNumber": 1, "Seed": base_s, "Slot1Weight": 0.60, "Slot1EndAt": 0.85, "Slot2Weight": 0.12, "Slot2EndAt": 0.25, "WeightType": "style transfer", "Fingerprint": ""},
+                {"AttemptNumber": 2, "Seed": derive_seed(base_s, 2), "Slot1Weight": 0.65, "Slot1EndAt": 0.85, "Slot2Weight": 0.06, "Slot2EndAt": 0.15, "WeightType": "style transfer", "Fingerprint": ""},
+                {"AttemptNumber": 3, "Seed": derive_seed(base_s, 3), "Slot1Weight": 0.70, "Slot1EndAt": 0.85, "Slot2Weight": 0.0, "Slot2EndAt": 0.0, "WeightType": "style transfer", "Fingerprint": ""}
+            ]
+
         characters_data[cid]["turns"].append({
             "scene_revision": r["Turn"],
-            "seed": int(r["Seed"]),
+            "seed": int(r.get("Seed", attempts_list[0]["Seed"])),
             "compiled_prompt": r["CompiledPrompt"],
             "compiled_negative_prompt": r["CompiledNegative"],
             "context": "ColdStart" if r["Turn"] == 1 else ("SceneTransition" if r.get("IsTransition") else "SameScene"),
             "target_action": r.get("TargetActionPrompt", ""),
-            "negative_actions": r.get("NegativeActionPrompts", [])
+            "negative_actions": r.get("NegativeActionPrompts", []),
+            "attempts": attempts_list
         })
 
     modes = [
@@ -293,23 +316,21 @@ def run_benchmark(max_turns=4, mode_filter=None):
 
                 print(f"  Turn {rev} ({context}): BaseSeed={base_seed}", flush=True)
 
-                attempt = 1
                 max_attempts = 3 if use_guard else 1
                 final_img_path = None
                 final_eval = None
                 final_seed = base_seed
+                attempts_to_run = turn["attempts"][:max_attempts]
 
-                while attempt <= max_attempts:
-                    cur_seed = derive_seed(base_seed, attempt)
-                    if attempt == 1:
-                        slot2_w = 0.12 if not is_cold else 0.0
-                        slot2_e = 0.25 if not is_cold else 0.0
-                    elif attempt == 2:
-                        slot2_w = 0.06
-                        slot2_e = 0.15
-                    else:
-                        slot2_w = 0.0
-                        slot2_e = 0.0
+                for att_plan in attempts_to_run:
+                    attempt = att_plan["AttemptNumber"]
+                    cur_seed = att_plan["Seed"]
+                    slot1_w = att_plan["Slot1Weight"]
+                    slot1_e = att_plan["Slot1EndAt"]
+                    slot2_w = att_plan["Slot2Weight"] if not is_cold else 0.0
+                    slot2_e = att_plan["Slot2EndAt"] if not is_cold else 0.0
+                    weight_type = att_plan["WeightType"]
+                    fp = att_plan.get("Fingerprint", "")
 
                     prev_img_input = last_known_good_image if (not is_cold and last_known_good_image) else None
 
@@ -324,9 +345,11 @@ def run_benchmark(max_turns=4, mode_filter=None):
                             seed=cur_seed,
                             avatar_file=avatar_local,
                             prev_scene_file=prev_img_input,
+                            slot1_weight=slot1_w,
+                            slot1_end_at=slot1_e,
                             slot2_weight=slot2_w,
                             slot2_end_at=slot2_e,
-                            weight_type="style transfer"
+                            weight_type=weight_type
                         )
                         q_res = queue_prompt(wf)
                         pid = q_res["prompt_id"]
@@ -339,11 +362,10 @@ def run_benchmark(max_turns=4, mode_filter=None):
                     final_img_path = dest_path
                     final_seed = cur_seed
 
-                    print(f"    Attempt {attempt}: Status={eval_res['status']}, FaceSim={eval_res['face_similarity']:.4f}, FeatScore={eval_res['feature_score']:.4f}", flush=True)
+                    print(f"    Attempt {attempt}: Status={eval_res['status']}, FaceSim={eval_res['face_similarity']:.4f}, FeatScore={eval_res['feature_score']:.4f}, Action={att_plan['MitigationAction']}", flush=True)
 
                     if not use_guard or eval_res["status"] == "Passed":
                         break
-                    attempt += 1
 
                 # Continuity & Action metrics
                 img_emb = get_image_embedding(final_img_path)

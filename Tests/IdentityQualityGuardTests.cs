@@ -211,6 +211,8 @@ public sealed class IdentityQualityGuardTests
         Assert.NotNull(savedImage);
         Assert.Equal("https://cdn.project00.ai/images/gen_attempt_2.png", savedImage.ImageUrl);
         Assert.True(savedImage.IsCurrent, "Successfully recovered attempt 2 must be marked as IsCurrent = true");
+        Assert.NotNull(savedImage.GenerationFingerprint);
+        Assert.NotEmpty(savedImage.GenerationFingerprint);
     }
 
     [Fact]

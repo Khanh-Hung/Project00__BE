@@ -61,7 +61,7 @@ public static class IdentityMitigationProfileResolver
         }
         else if (action == QualityMitigationAction.RetryIsolated)
         {
-            // Isolate canonical reference authority completely by zeroing Slot 2
+            // Remove recursive Slot 2 conditioning and boost canonical Slot 1 authority
             slot1Weight = Math.Clamp(slot1Weight + 0.10f, 0.50f, 0.90f);
             slot2Weight = 0.0f;
             slot2EndAt = 0.0f;

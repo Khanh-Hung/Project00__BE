@@ -6,10 +6,15 @@ using Domain.ValueObjects;
 namespace Infrastructure.Services;
 
 /// <summary>
-/// Default production evaluator performing invariant validation and reference authority verification.
-/// Can be extended with local or remote CLIP / embedding services.
+/// Development / Passthrough Identity Quality Evaluator.
+/// Implements IIdentityQualityEvaluator for local testing, CI builds, and orchestration validation.
+/// Explicitly classified as a baseline passthrough evaluator that validates structural invariants
+/// (e.g. non-empty image location) without executing heavy ML / CLIP vision models on CPU/GPU.
+/// 
+/// In staging/production environments, a dedicated multimodal evaluator (e.g., CLIP / ViT / FaceNet adapter)
+/// can be registered in DI to perform real image-to-avatar embedding similarity.
 /// </summary>
-public sealed class DefaultIdentityQualityEvaluator : IIdentityQualityEvaluator
+public sealed class DevelopmentPassThroughIdentityQualityEvaluator : IIdentityQualityEvaluator
 {
     public Task<IdentityEvaluationResult> EvaluateAsync(
         string imageLocation,
@@ -33,10 +38,27 @@ public sealed class DefaultIdentityQualityEvaluator : IIdentityQualityEvaluator
             ));
         }
 
+        // Development baseline pass-through
         return Task.FromResult(IdentityEvaluationResult.Pass(
             faceSimilarity: 0.85f,
             featureScore: 0.90f,
             overallScore: 0.87f
         ));
+    }
+}
+
+/// <summary>
+/// Alias for DevelopmentPassThroughIdentityQualityEvaluator for backwards compatibility.
+/// </summary>
+public sealed class DefaultIdentityQualityEvaluator : IIdentityQualityEvaluator
+{
+    private readonly DevelopmentPassThroughIdentityQualityEvaluator _inner = new();
+
+    public Task<IdentityEvaluationResult> EvaluateAsync(
+        string imageLocation,
+        VisualSnapshot snapshot,
+        CancellationToken ct = default)
+    {
+        return _inner.EvaluateAsync(imageLocation, snapshot, ct);
     }
 }

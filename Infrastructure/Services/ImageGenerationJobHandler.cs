@@ -206,6 +206,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             ImageGenerationResult? genResult = null;
             IdentityEvaluationResult? lastEvaluation = null;
             string lastCompiledPrompt = string.Empty;
+            string lastAttemptFingerprint = string.Empty;
             bool isIdentityPassed = true;
             long baseSeed = snapshot.GenerationProfile.Seed;
 
@@ -219,7 +220,8 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     snapshot, mitigation, attempt, baseSeed);
 
                 var attemptFingerprint = DeterministicSeedDerivation.ComputeFingerprint(
-                    job.Id, snapshot.TurnId, snapshot.SceneRevision, attempt, derivedSeed, attemptProfile.ParametersJson);
+                    job.Id, snapshot.TurnId, snapshot.SceneRevision, attempt, derivedSeed, attemptProfile.ParametersJson ?? string.Empty);
+                lastAttemptFingerprint = attemptFingerprint;
 
                 // Derive attempt snapshot with adjusted profile and deterministic seed
                 var attemptSnapshot = snapshot with
@@ -230,14 +232,10 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                 lastCompiledPrompt = _visualCompiler.CompileScenePrompt(attemptSnapshot);
                 var compiledNegative = _visualCompiler.CompileNegativePrompt(attemptSnapshot);
 
-                // Attempt-level Idempotency Check: lookup existing attempt artifact before invoking GPU
+                // Database-enforced Idempotency Check: lookup existing attempt artifact by exact fingerprint before invoking GPU
                 var existingAttemptArtifact = await _dbContext.SceneImages
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(img =>
-                        img.SessionId == snapshot.SessionId &&
-                        img.SceneRevision == snapshot.SceneRevision &&
-                        (img.GenerationJobId == job.Id || img.GenerationRequestId == generationRequestId) &&
-                        img.Prompt == lastCompiledPrompt, ct);
+                    .FirstOrDefaultAsync(img => img.GenerationFingerprint == attemptFingerprint, ct);
 
                 if (existingAttemptArtifact != null && !string.IsNullOrWhiteSpace(existingAttemptArtifact.ImageUrl))
                 {
@@ -362,7 +360,8 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         previousSceneImageUrl: resolvedPreviousSceneImageUrl,
                         workflow: workflow,
                         workflowVersion: workflowVersion,
-                        isCurrent: isIdentityPassed
+                        isCurrent: isIdentityPassed,
+                        generationFingerprint: lastAttemptFingerprint
                     );
 
                     await _dbContext.SceneImages.AddAsync(artifact, ct);
@@ -438,7 +437,8 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     previousSceneImageUrl: resolvedPreviousSceneImageUrl,
                     workflow: workflow,
                     workflowVersion: workflowVersion,
-                    isCurrent: isIdentityPassed
+                    isCurrent: isIdentityPassed,
+                    generationFingerprint: lastAttemptFingerprint
                 );
 
                 try
