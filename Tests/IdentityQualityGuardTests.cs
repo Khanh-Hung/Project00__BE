@@ -1022,6 +1022,144 @@ public sealed class IdentityQualityGuardTests
         Assert.Equal(fp2, fp2_repeat);
     }
 
+    [Fact]
+    public void IdentityQualityGuardPolicy_Constructor_PrecedenceRule_IdentitySimilarityTakesPrecedenceOverLegacyFaceSimilarity()
+    {
+        // 1. Both provided: MinAcceptableIdentitySimilarity (0.75) is authoritative over MinAcceptableFaceSimilarity (0.80)
+        var policyBoth = new IdentityQualityGuardPolicy(
+            MinAcceptableIdentitySimilarity: 0.75f,
+            MinAcceptableFaceSimilarity: 0.80f
+        );
+        Assert.Equal(0.75f, policyBoth.MinAcceptableIdentitySimilarity);
+
+        // 2. Legacy alias only provided: resolves to 0.82f
+        var policyLegacy = new IdentityQualityGuardPolicy(
+            MinAcceptableFaceSimilarity: 0.82f
+        );
+        Assert.Equal(0.82f, policyLegacy.MinAcceptableIdentitySimilarity);
+
+        // 3. Authoritative only provided: resolves to 0.88f
+        var policyAuth = new IdentityQualityGuardPolicy(
+            MinAcceptableIdentitySimilarity: 0.88f
+        );
+        Assert.Equal(0.88f, policyAuth.MinAcceptableIdentitySimilarity);
+
+        // 4. Default: resolves to 0.75f
+        var policyDefault = new IdentityQualityGuardPolicy();
+        Assert.Equal(0.75f, policyDefault.MinAcceptableIdentitySimilarity);
+    }
+
+    [Fact]
+    public void IdentityMitigationProfileResolver_PreservesAllGenerationProfileAndParametersJsonProperties()
+    {
+        long baseSeed = 777777L;
+        var richParametersJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            sampler = "dpmpp_2m",
+            cfg = 8.5,
+            steps = 45,
+            lora = new { name = "cyberpunk_neon", strength = 0.85 },
+            controlnet = new { type = "openpose", weight = 0.70 },
+            ipAdapter = new { weight = 0.60, endAt = 0.85 },
+            sceneContinuity = new { weight = 0.12, endAt = 0.25, weightType = "style transfer" }
+        });
+
+        var richProfile = new GenerationProfile(
+            Seed: baseSeed,
+            Model: "custom_cyberpunk_v2.safetensors",
+            Width: 768,
+            Height: 1024,
+            Steps: 45,
+            Cfg: 8.5f,
+            Sampler: "dpmpp_2m",
+            Scheduler: "exponential",
+            Workflow: "VisualIdentityCustom",
+            WorkflowVersion: 3,
+            ParametersJson: richParametersJson
+        );
+
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("neon_alley", "running"),
+            TransientState: null,
+            GenerationProfile: richProfile
+        );
+
+        // Act: Resolve Attempt 2 (RetryAttenuated)
+        var (attempt2Profile, attempt2Seed) = IdentityMitigationProfileResolver.ResolveMitigation(
+            snapshot, QualityMitigationAction.RetryAttenuated, 2, baseSeed);
+
+        // Assert Attempt 2: All GenerationProfile root fields are preserved intact!
+        Assert.Equal("custom_cyberpunk_v2.safetensors", attempt2Profile.Model);
+        Assert.Equal(768, attempt2Profile.Width);
+        Assert.Equal(1024, attempt2Profile.Height);
+        Assert.Equal(45, attempt2Profile.Steps);
+        Assert.Equal(8.5f, attempt2Profile.Cfg);
+        Assert.Equal("dpmpp_2m", attempt2Profile.Sampler);
+        Assert.Equal("exponential", attempt2Profile.Scheduler);
+        Assert.Equal("VisualIdentityCustom", attempt2Profile.Workflow);
+        Assert.Equal(3, attempt2Profile.WorkflowVersion);
+        Assert.Equal(DeterministicSeedDerivation.Derive(baseSeed, 2), attempt2Seed);
+        Assert.Equal(attempt2Seed, attempt2Profile.Seed);
+
+        // Assert Attempt 2 ParametersJson: custom fields preserved, conditioning mutated!
+        using (var doc2 = System.Text.Json.JsonDocument.Parse(attempt2Profile.ParametersJson!))
+        {
+            var root = doc2.RootElement;
+            Assert.Equal("dpmpp_2m", root.GetProperty("sampler").GetString());
+            Assert.Equal(8.5, root.GetProperty("cfg").GetDouble(), 2);
+            Assert.Equal(45, root.GetProperty("steps").GetInt32());
+            Assert.Equal("cyberpunk_neon", root.GetProperty("lora").GetProperty("name").GetString());
+            Assert.Equal(0.85, root.GetProperty("lora").GetProperty("strength").GetDouble(), 2);
+            Assert.Equal("openpose", root.GetProperty("controlnet").GetProperty("type").GetString());
+            Assert.Equal(0.70, root.GetProperty("controlnet").GetProperty("weight").GetDouble(), 2);
+
+            // Conditioning modified for Attempt 2
+            Assert.Equal(0.65f, (float)root.GetProperty("ipAdapter").GetProperty("weight").GetDouble(), 2);
+            Assert.Equal(0.85f, (float)root.GetProperty("ipAdapter").GetProperty("endAt").GetDouble(), 2);
+            Assert.Equal(0.06f, (float)root.GetProperty("sceneContinuity").GetProperty("weight").GetDouble(), 2);
+            Assert.Equal(0.15f, (float)root.GetProperty("sceneContinuity").GetProperty("endAt").GetDouble(), 2);
+        }
+
+        // Act: Resolve Attempt 3 (RetryIsolated)
+        var (attempt3Profile, attempt3Seed) = IdentityMitigationProfileResolver.ResolveMitigation(
+            snapshot, QualityMitigationAction.RetryIsolated, 3, baseSeed);
+
+        // Assert Attempt 3: All GenerationProfile root fields are preserved intact!
+        Assert.Equal("custom_cyberpunk_v2.safetensors", attempt3Profile.Model);
+        Assert.Equal(768, attempt3Profile.Width);
+        Assert.Equal(1024, attempt3Profile.Height);
+        Assert.Equal(45, attempt3Profile.Steps);
+        Assert.Equal(8.5f, attempt3Profile.Cfg);
+        Assert.Equal("dpmpp_2m", attempt3Profile.Sampler);
+        Assert.Equal("exponential", attempt3Profile.Scheduler);
+        Assert.Equal("VisualIdentityCustom", attempt3Profile.Workflow);
+        Assert.Equal(3, attempt3Profile.WorkflowVersion);
+        Assert.Equal(DeterministicSeedDerivation.Derive(baseSeed, 3), attempt3Seed);
+        Assert.Equal(attempt3Seed, attempt3Profile.Seed);
+
+        // Assert Attempt 3 ParametersJson: custom fields preserved, conditioning mutated!
+        using (var doc3 = System.Text.Json.JsonDocument.Parse(attempt3Profile.ParametersJson!))
+        {
+            var root = doc3.RootElement;
+            Assert.Equal("dpmpp_2m", root.GetProperty("sampler").GetString());
+            Assert.Equal(8.5, root.GetProperty("cfg").GetDouble(), 2);
+            Assert.Equal(45, root.GetProperty("steps").GetInt32());
+            Assert.Equal("cyberpunk_neon", root.GetProperty("lora").GetProperty("name").GetString());
+            Assert.Equal(0.85, root.GetProperty("lora").GetProperty("strength").GetDouble(), 2);
+
+            // Conditioning modified for Attempt 3
+            Assert.Equal(0.70f, (float)root.GetProperty("ipAdapter").GetProperty("weight").GetDouble(), 2);
+            Assert.Equal(0.85f, (float)root.GetProperty("ipAdapter").GetProperty("endAt").GetDouble(), 2);
+            Assert.Equal(0.0f, (float)root.GetProperty("sceneContinuity").GetProperty("weight").GetDouble(), 2);
+            Assert.Equal(0.0f, (float)root.GetProperty("sceneContinuity").GetProperty("endAt").GetDouble(), 2);
+        }
+    }
+
     private sealed class FakePromptCompiler : IVisualPromptCompiler
     {
         private readonly string _pos;

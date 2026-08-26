@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
 namespace Domain.ValueObjects;
 
 /// <summary>
@@ -18,6 +21,84 @@ public sealed record GenerationProfile(
     string? ParametersJson = null
 )
 {
+    /// <summary>
+    /// Immutably creates a copy of this GenerationProfile with overridden conditioning parameters and derived seed.
+    /// Preserves Model, Width, Height, Steps, Cfg, Sampler, Scheduler, Workflow, WorkflowVersion,
+    /// and all other root/nested JSON properties in ParametersJson.
+    /// </summary>
+    public GenerationProfile WithConditioningOverride(
+        float slot1Weight,
+        float slot1EndAt,
+        float slot2Weight,
+        float slot2EndAt,
+        string weightType = "style transfer",
+        long? newSeed = null)
+    {
+        string updatedParametersJson;
+
+        if (string.IsNullOrWhiteSpace(ParametersJson))
+        {
+            var node = new JsonObject
+            {
+                ["ipAdapter"] = new JsonObject
+                {
+                    ["weight"] = slot1Weight,
+                    ["endAt"] = slot1EndAt
+                },
+                ["sceneContinuity"] = new JsonObject
+                {
+                    ["weight"] = slot2Weight,
+                    ["endAt"] = slot2EndAt,
+                    ["weightType"] = weightType
+                }
+            };
+            updatedParametersJson = node.ToJsonString();
+        }
+        else
+        {
+            try
+            {
+                var node = JsonNode.Parse(ParametersJson) as JsonObject ?? new JsonObject();
+                node["ipAdapter"] = new JsonObject
+                {
+                    ["weight"] = slot1Weight,
+                    ["endAt"] = slot1EndAt
+                };
+                node["sceneContinuity"] = new JsonObject
+                {
+                    ["weight"] = slot2Weight,
+                    ["endAt"] = slot2EndAt,
+                    ["weightType"] = weightType
+                };
+                updatedParametersJson = node.ToJsonString();
+            }
+            catch (JsonException)
+            {
+                var node = new JsonObject
+                {
+                    ["ipAdapter"] = new JsonObject
+                    {
+                        ["weight"] = slot1Weight,
+                        ["endAt"] = slot1EndAt
+                    },
+                    ["sceneContinuity"] = new JsonObject
+                    {
+                        ["weight"] = slot2Weight,
+                        ["endAt"] = slot2EndAt,
+                        ["weightType"] = weightType
+                    }
+                };
+                updatedParametersJson = node.ToJsonString();
+            }
+        }
+
+        return this with
+        {
+            Seed = newSeed ?? Seed,
+            ParametersJson = updatedParametersJson
+        };
+    }
+
     public static GenerationProfile CreateDefault(
         long? seed = null,
         string? model = null,

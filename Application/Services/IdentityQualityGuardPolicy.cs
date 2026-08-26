@@ -42,8 +42,14 @@ public sealed record IdentityQualityGuardPolicy
     /// </summary>
     public bool AllowStubEvaluatorInProduction { get; init; } = false;
 
+    /// <summary>
+    /// Initializes a new instance of IdentityQualityGuardPolicy.
+    /// Precedence Rule: MinAcceptableIdentitySimilarity is the authoritative parameter.
+    /// If both MinAcceptableIdentitySimilarity and legacy MinAcceptableFaceSimilarity are provided,
+    /// MinAcceptableIdentitySimilarity takes authoritative precedence.
+    /// </summary>
     public IdentityQualityGuardPolicy(
-        float MinAcceptableIdentitySimilarity = 0.75f,
+        float? MinAcceptableIdentitySimilarity = null,
         float MinAcceptableFeatureScore = 0.50f,
         int MaxAttempts = 3,
         bool IsActive = true,
@@ -51,7 +57,12 @@ public sealed record IdentityQualityGuardPolicy
         bool AllowStubEvaluatorInProduction = false,
         float? MinAcceptableFaceSimilarity = null)
     {
-        float minIdentity = MinAcceptableFaceSimilarity ?? MinAcceptableIdentitySimilarity;
+        // Deterministic Precedence:
+        // 1. MinAcceptableIdentitySimilarity is authoritative if provided.
+        // 2. Otherwise legacy MinAcceptableFaceSimilarity is used if provided.
+        // 3. Defaults to 0.75f if neither is provided.
+        float minIdentity = MinAcceptableIdentitySimilarity ?? MinAcceptableFaceSimilarity ?? 0.75f;
+
         if (MaxAttempts < 1 || MaxAttempts > MaxAllowedAttempts)
         {
             throw new ArgumentOutOfRangeException(nameof(MaxAttempts), $"MaxAttempts must be between 1 and {MaxAllowedAttempts}, but got {MaxAttempts}.");

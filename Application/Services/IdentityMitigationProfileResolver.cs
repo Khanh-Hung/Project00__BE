@@ -68,25 +68,13 @@ public static class IdentityMitigationProfileResolver
             weightType = "style transfer";
         }
 
-        var parametersJson = JsonSerializer.Serialize(new
-        {
-            ipAdapter = new
-            {
-                weight = slot1Weight,
-                endAt = slot1EndAt
-            },
-            sceneContinuity = new
-            {
-                weight = slot2Weight,
-                endAt = slot2EndAt,
-                weightType = weightType
-            }
-        });
-
-        var adjustedProfile = GenerationProfile.CreateDefault(
-            workflow: snapshot.GenerationProfile.Workflow,
-            workflowVersion: snapshot.GenerationProfile.WorkflowVersion,
-            parametersJson: parametersJson
+        var adjustedProfile = snapshot.GenerationProfile.WithConditioningOverride(
+            slot1Weight: slot1Weight,
+            slot1EndAt: slot1EndAt,
+            slot2Weight: slot2Weight,
+            slot2EndAt: slot2EndAt,
+            weightType: weightType,
+            newSeed: derivedSeed
         );
 
         return (adjustedProfile, derivedSeed);
