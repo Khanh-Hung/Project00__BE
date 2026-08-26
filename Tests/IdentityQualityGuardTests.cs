@@ -9,6 +9,7 @@ using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Infrastructure.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -385,16 +386,24 @@ public sealed class IdentityQualityGuardTests
     }
 
     [Fact]
-    public async Task ImageGenerationAttempt_WithDuplicateFingerprint_ThrowsExceptionOnUniqueConstraint()
+    public async Task ImageGenerationAttempt_WithDuplicateFingerprint_ThrowsDbUpdateExceptionOnRelationalDatabase()
     {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseSqlite(connection)
             .Options;
         await using var db = new ProjectDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
+        await db.ImageGenerationJobs.AddAsync(job);
+        await db.SaveChangesAsync();
 
         var fp = "test_fingerprint_unique_abc_123";
         var attempt1 = new ImageGenerationAttempt(
-            generationJobId: Guid.NewGuid(),
+            generationJobId: job.Id,
             turnId: Guid.NewGuid(),
             sceneRevision: 1,
             attemptNumber: 1,
@@ -407,7 +416,7 @@ public sealed class IdentityQualityGuardTests
         await db.SaveChangesAsync();
 
         var attempt2 = new ImageGenerationAttempt(
-            generationJobId: Guid.NewGuid(),
+            generationJobId: job.Id,
             turnId: Guid.NewGuid(),
             sceneRevision: 1,
             attemptNumber: 1,
@@ -417,9 +426,137 @@ public sealed class IdentityQualityGuardTests
             status: GenerationAttemptStatus.Running
         );
 
-        // Verify duplicate detection by fingerprint
-        var isDuplicate = await db.ImageGenerationAttempts.AnyAsync(a => a.GenerationFingerprint == fp);
-        Assert.True(isDuplicate, "Database ledger must detect existing fingerprint before inserting duplicate attempt");
+        await db.ImageGenerationAttempts.AddAsync(attempt2);
+        
+        // Strictly asserts database rejects duplicate fingerprint with DbUpdateException
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task SceneImage_WithDuplicateFingerprint_ThrowsDbUpdateExceptionOnRelationalDatabase()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new ProjectDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var fp = "test_scene_image_fp_unique_xyz_789";
+        var sessionId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        var img1 = new SceneImage(
+            sessionId: sessionId,
+            characterId: charId,
+            turnId: Guid.NewGuid(),
+            sceneRevision: 1,
+            imageUrl: "https://cdn.project00.ai/images/1.png",
+            prompt: "1man knight",
+            generationRequestId: Guid.NewGuid(),
+            generationFingerprint: fp
+        );
+        await db.SceneImages.AddAsync(img1);
+        await db.SaveChangesAsync();
+
+        var img2 = new SceneImage(
+            sessionId: sessionId,
+            characterId: charId,
+            turnId: Guid.NewGuid(),
+            sceneRevision: 2,
+            imageUrl: "https://cdn.project00.ai/images/2.png",
+            prompt: "1man knight in room",
+            generationRequestId: Guid.NewGuid(),
+            generationFingerprint: fp
+        );
+        await db.SceneImages.AddAsync(img2);
+
+        // Strictly asserts database rejects duplicate fingerprint with DbUpdateException
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task ImageGenerationJobHandler_WhenAttemptIsRunningUnderActiveLeaseByAnotherWorker_DefersExecutionWithoutGpuCall()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ProjectDbContext(options);
+
+        var compiler = new FakePromptCompiler("1man knight", "1girl");
+        var imageService = new FakeImageService();
+        var evaluator = new SequenceEvaluator(new[]
+        {
+            IdentityEvaluationResult.Pass(0.85f, 0.90f, 0.87f)
+        });
+        var policy = new IdentityQualityGuardPolicy(MinAcceptableFaceSimilarity: 0.75f, MaxAttempts: 3);
+
+        var handler = new ImageGenerationJobHandler(
+            dbContext: db,
+            visualCompiler: compiler,
+            imageService: imageService,
+            logger: NullLogger<ImageGenerationJobHandler>.Instance,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            qualityEvaluator: evaluator,
+            qualityGuardPolicy: policy
+        );
+
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+
+        var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, requestId);
+        await db.ImageGenerationJobs.AddAsync(job);
+        await db.SaveChangesAsync();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("courtyard", "standing"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+        );
+
+        // Compute expected attempt 1 fingerprint using the job's actual Id
+        var fp = DeterministicSeedDerivation.ComputeFingerprint(job.Id, turnId, 1, 1, 100000L, snapshot.GenerationProfile.ParametersJson ?? string.Empty);
+
+        // Seed an active running attempt owned by worker-A with a valid lease
+        var activeAttempt = new ImageGenerationAttempt(
+            generationJobId: job.Id,
+            turnId: turnId,
+            sceneRevision: 1,
+            attemptNumber: 1,
+            derivedSeed: 100000L,
+            parametersJson: snapshot.GenerationProfile.ParametersJson ?? string.Empty,
+            generationFingerprint: fp,
+            status: GenerationAttemptStatus.Running,
+            claimedBy: "worker-A",
+            startedAt: DateTime.UtcNow,
+            leaseUntil: DateTime.UtcNow.AddMinutes(5)
+        );
+        await db.ImageGenerationAttempts.AddAsync(activeAttempt);
+        await db.SaveChangesAsync();
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: requestId
+        );
+
+        // Worker-B attempts to handle the job
+        var result = await handler.HandleSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-B", DateTime.UtcNow);
+
+        // Must be deferred without invoking GPU!
+        Assert.Equal(JobExecutionStatus.Deferred, result.Status);
+        Assert.Equal(0, imageService.CallCount);
     }
 
     [Fact]

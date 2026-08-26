@@ -237,6 +237,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     .FirstOrDefaultAsync(a => a.GenerationFingerprint == attemptFingerprint, ct);
 
                 ImageGenerationAttempt attemptRecord;
+                var nowUtc = now;
 
                 if (existingAttempt != null && existingAttempt.Status == GenerationAttemptStatus.Succeeded && !string.IsNullOrWhiteSpace(existingAttempt.ImageUrl))
                 {
@@ -252,6 +253,18 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                         Seed: derivedSeed
                     );
                 }
+                else if (existingAttempt != null && 
+                         existingAttempt.Status == GenerationAttemptStatus.Running && 
+                         existingAttempt.ClaimedBy != null && 
+                         existingAttempt.ClaimedBy != workerId && 
+                         existingAttempt.LeaseUntil.HasValue && 
+                         existingAttempt.LeaseUntil.Value > nowUtc)
+                {
+                    // Another active worker is currently executing this attempt under valid lease -> do NOT duplicate GPU call!
+                    _logger.LogInformation("[SceneGenerationAttemptActive] Attempt {AttemptId} is actively running by worker '{ClaimedBy}' (LeaseUntil={LeaseUntil}). Deferring execution.",
+                        existingAttempt.Id, existingAttempt.ClaimedBy, existingAttempt.LeaseUntil);
+                    return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
+                }
                 else
                 {
                     if (existingAttempt == null)
@@ -264,14 +277,20 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                             derivedSeed: derivedSeed,
                             parametersJson: attemptProfile.ParametersJson ?? string.Empty,
                             generationFingerprint: attemptFingerprint,
-                            status: GenerationAttemptStatus.Running
+                            status: GenerationAttemptStatus.Running,
+                            claimedBy: workerId,
+                            startedAt: nowUtc,
+                            leaseUntil: nowUtc.AddMinutes(2)
                         );
                         await _dbContext.ImageGenerationAttempts.AddAsync(attemptRecord, ct);
                         await _dbContext.SaveChangesAsync(ct);
                     }
                     else
                     {
+                        // Reclaim stale/crashed attempt
                         attemptRecord = existingAttempt;
+                        attemptRecord.Claim(workerId, nowUtc, TimeSpan.FromMinutes(2));
+                        await _dbContext.SaveChangesAsync(ct);
                     }
 
                     var imageReq = ImageGenerationRequest.FromSnapshot(

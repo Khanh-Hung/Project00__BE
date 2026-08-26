@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -21,6 +21,7 @@ public class ImageGenerationAttemptConfiguration : IEntityTypeConfiguration<Imag
         builder.Property(x => x.Status).IsRequired().HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.ImageUrl).HasMaxLength(2048);
         builder.Property(x => x.ProviderJobId).HasMaxLength(256);
+        builder.Property(x => x.ClaimedBy).HasMaxLength(128);
         builder.Property(x => x.ErrorMessage).HasMaxLength(2048);
 
         // Strict Database-Enforced Invariant: Unique per GenerationFingerprint
