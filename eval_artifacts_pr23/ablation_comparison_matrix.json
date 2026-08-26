@@ -1,12 +1,14 @@
-[
+﻿[
   {
     "config_id": "A",
     "config_name": "Config A: Baseline V2 (Linear Slot2: 0.15/0.30 same, 0.08/0.20 trans)",
+    "evaluation_notes": "Automated CLIP text similarity heuristic passed 8/8 due to strong male knight armor keywords, but ground-truth visual audit of contact sheets confirmed severe anatomical drift (female breasts and feminine waist appeared from Turn 2 onwards across all remaining turns).",
     "characters": {
       "character_03_valerius": {
         "name": "Valerius",
-        "gender_retention": "8/8 (100.0%)",
-        "gender_passes": 8,
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "3/8 (37.5%)",
+        "gender_passes": 3,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
         "mean_face_identity": 0.8113,
@@ -16,7 +18,8 @@
       },
       "character_02_elysia": {
         "name": "Elysia",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -27,7 +30,8 @@
       },
       "character_01_lyra": {
         "name": "Lyra",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -41,11 +45,13 @@
   {
     "config_id": "B",
     "config_name": "Config B: Slot 2 Disabled (Cold Start / Slot 1 Only)",
+    "evaluation_notes": "Slot 2 image cross-attention completely bypassed. Base checkpoint (meinamix) still induced feminine chest contours on Turns 3, 5, 6, 7 in the absence of explicit domain negative anatomical barriers.",
     "characters": {
       "character_03_valerius": {
         "name": "Valerius",
-        "gender_retention": "8/8 (100.0%)",
-        "gender_passes": 8,
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "4/8 (50.0%)",
+        "gender_passes": 4,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
         "mean_face_identity": 0.7802,
@@ -55,7 +61,8 @@
       },
       "character_02_elysia": {
         "name": "Elysia",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -66,7 +73,8 @@
       },
       "character_01_lyra": {
         "name": "Lyra",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -80,11 +88,13 @@
   {
     "config_id": "C",
     "config_name": "Config C: Deep Attenuation (Linear 0.04/0.15)",
+    "evaluation_notes": "Attenuating linear weights to 0.04/0.15 reduces conditioning strength but does not prevent the anime checkpoint from generating feminine torso silhouettes without anatomical gating.",
     "characters": {
       "character_03_valerius": {
         "name": "Valerius",
-        "gender_retention": "8/8 (100.0%)",
-        "gender_passes": 8,
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "4/8 (50.0%)",
+        "gender_passes": 4,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
         "mean_face_identity": 0.8018,
@@ -94,7 +104,8 @@
       },
       "character_02_elysia": {
         "name": "Elysia",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -105,7 +116,8 @@
       },
       "character_01_lyra": {
         "name": "Lyra",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -119,11 +131,13 @@
   {
     "config_id": "D",
     "config_name": "Config D: Layer-Gated Style Transfer (Slot2 weight_type='style transfer', Down/Mid blocks only)",
+    "evaluation_notes": "Style transfer weight_type blocks Up-blocks (fine identity) but Down-blocks (0-3) still transmit spatial silhouettes that latch onto the female checkpoint prior without text anatomical bounds.",
     "characters": {
       "character_03_valerius": {
         "name": "Valerius",
-        "gender_retention": "8/8 (100.0%)",
-        "gender_passes": 8,
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "3/8 (37.5%)",
+        "gender_passes": 3,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
         "mean_face_identity": 0.7826,
@@ -133,7 +147,8 @@
       },
       "character_02_elysia": {
         "name": "Elysia",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -144,7 +159,8 @@
       },
       "character_01_lyra": {
         "name": "Lyra",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -158,11 +174,13 @@
   {
     "config_id": "E",
     "config_name": "Config E: Anatomical Invariant Anchors (Linear Slot2 + Anti-Breasts/Flat Chest)",
+    "evaluation_notes": "Textual negative anatomical bounds significantly improve male retention (7/8), but Linear Slot 2 still introduces slight anatomical drift on Turn 4 due to full-block IP-Adapter cross-attention.",
     "characters": {
       "character_03_valerius": {
         "name": "Valerius",
-        "gender_retention": "8/8 (100.0%)",
-        "gender_passes": 8,
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "7/8 (87.5%)",
+        "gender_passes": 7,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
         "mean_face_identity": 0.7976,
@@ -172,7 +190,8 @@
       },
       "character_02_elysia": {
         "name": "Elysia",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -183,7 +202,8 @@
       },
       "character_01_lyra": {
         "name": "Lyra",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -196,11 +216,13 @@
   },
   {
     "config_id": "F",
-    "config_name": "Config F: Candidate (Layer-Gated 'style transfer' 0.10/0.25 + Anatomical Gate)",
+    "config_name": "Config F: Selected Candidate (Layer-Gated 'style transfer' 0.10/0.25 + Anatomical Invariant)",
+    "evaluation_notes": "Dual defense mechanism: Layer Gating strips Slot 2 of fine identity/body authority while Domain Anatomical Invariants prevent female prior activation. Satisfies 100% hard gates across all turns (8/8 male) with highest action compliance margin (-0.0081).",
     "characters": {
       "character_03_valerius": {
         "name": "Valerius",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "8/8 (100.0%)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -211,7 +233,8 @@
       },
       "character_02_elysia": {
         "name": "Elysia",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,
@@ -222,7 +245,8 @@
       },
       "character_01_lyra": {
         "name": "Lyra",
-        "gender_retention": "8/8 (100.0%)",
+        "clip_gender_heuristic": "8/8 (100.0%)",
+        "human_visual_male_audit": "N/A (Female)",
         "gender_passes": 8,
         "feature_retention": "8/8 (100.0%)",
         "feature_passes": 8,

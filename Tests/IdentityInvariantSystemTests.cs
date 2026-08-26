@@ -216,12 +216,91 @@ public sealed class IdentityInvariantSystemTests
     [InlineData("AiProviders:ImageGeneration:Slot2Policy:SameSceneWeight", "-0.1")]
     [InlineData("AiProviders:ImageGeneration:Slot2Policy:TransitionWeight", "NaN")]
     [InlineData("AiProviders:ImageGeneration:Slot2Policy:BypassOnColdStart", "not_a_bool")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "999")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "-1")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "0")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "UnknownMode")]
+    [InlineData("AiProviders:ImageGeneration:Slot2Policy:Mode", "RandomString")]
     public void Slot2ConditioningPolicy_FromConfiguration_ThrowsOnInvalidConfiguration(string key, string invalidValue)
     {
         var config = new Microsoft.Extensions.Configuration.ConfigurationManager();
         config[key] = invalidValue;
 
         Assert.Throws<InvalidOperationException>(() => Slot2ConditioningPolicy.FromConfiguration(config));
+    }
+
+    [Theory]
+    [InlineData("SceneStyleContinuity", Slot2ConditioningMode.SceneStyleContinuity)]
+    [InlineData("style transfer", Slot2ConditioningMode.SceneStyleContinuity)]
+    [InlineData("style_transfer", Slot2ConditioningMode.SceneStyleContinuity)]
+    [InlineData("FullLinearContinuity", Slot2ConditioningMode.FullLinearContinuity)]
+    [InlineData("linear", Slot2ConditioningMode.FullLinearContinuity)]
+    [InlineData("Bypassed", Slot2ConditioningMode.Bypassed)]
+    [InlineData("disabled", Slot2ConditioningMode.Bypassed)]
+    [InlineData("none", Slot2ConditioningMode.Bypassed)]
+    public void Slot2ConditioningPolicy_FromConfiguration_ParsesValidAliases(string modeString, Slot2ConditioningMode expectedMode)
+    {
+        var config = new Microsoft.Extensions.Configuration.ConfigurationManager();
+        config["AiProviders:ImageGeneration:Slot2Policy:Mode"] = modeString;
+
+        var policy = Slot2ConditioningPolicy.FromConfiguration(config);
+
+        Assert.Equal(expectedMode, policy.Mode);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public void Slot2ConditioningPolicy_Decide_WithBypassedMode_AlwaysReturnsBypassedDecision(bool isColdStart, bool isTransition)
+    {
+        var policy = new Slot2ConditioningPolicy(
+            SameSceneWeight: 0.12,
+            SameSceneEndAt: 0.25,
+            TransitionWeight: 0.06,
+            TransitionEndAt: 0.15,
+            Mode: Slot2ConditioningMode.Bypassed
+        );
+
+        var decision = policy.Decide(isColdStart, isTransition);
+
+        Assert.False(decision.IsActive);
+        Assert.Equal(0.0f, decision.Weight);
+        Assert.Equal(0.0f, decision.EndAt);
+        Assert.Equal(Slot2ConditioningMode.Bypassed, decision.Mode);
+    }
+
+    [Theory]
+    [InlineData("unsupported_weight_type")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void VisualContinuityWorkflowV2Builder_ThrowsOnUnsupportedOrMalformedWeightType(string invalidWeightType)
+    {
+        var builder = new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1man, knight",
+            NegativePrompt: "1girl",
+            Seed: 12345,
+            ParametersJson: $"{{\"sceneContinuity\":{{\"weight\":0.12,\"endAt\":0.25,\"weightType\":\"{invalidWeightType}\"}}}}"
+        );
+
+        Assert.Throws<Application.Exceptions.GpuNonTransientException>(() =>
+            builder.BuildWorkflow(request, "avatar.png", "prev_scene.png"));
+    }
+
+    [Fact]
+    public void VisualContinuityWorkflowV2Builder_ThrowsWhenWeightTypeIsNotString()
+    {
+        var builder = new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder();
+        var request = new ImageGenerationRequest(
+            Prompt: "1man, knight",
+            NegativePrompt: "1girl",
+            Seed: 12345,
+            ParametersJson: "{\"sceneContinuity\":{\"weight\":0.12,\"endAt\":0.25,\"weightType\":999}}"
+        );
+
+        Assert.Throws<Application.Exceptions.GpuNonTransientException>(() =>
+            builder.BuildWorkflow(request, "avatar.png", "prev_scene.png"));
     }
 
     [Fact]

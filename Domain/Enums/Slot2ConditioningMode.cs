@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Domain-level authority mode for Slot 2 (Previous Scene) conditioning.
-/// Distinguishes between pure scene/style continuity (Down/Mid blocks only) vs full linear continuity vs complete bypass.
+/// Represents business intent for scene/style continuity without granting full anatomical conditioning authority.
 /// </summary>
 public enum Slot2ConditioningMode
 {

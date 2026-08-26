@@ -79,15 +79,34 @@ public sealed record Slot2ConditioningPolicy(
         if (string.IsNullOrWhiteSpace(modeStr))
             return defaultMode;
 
-        if (Enum.TryParse<Slot2ConditioningMode>(modeStr, ignoreCase: true, out var parsed))
-            return parsed;
+        var trimmed = modeStr.Trim();
 
-        if (string.Equals(modeStr, "style transfer", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(modeStr, "style_transfer", StringComparison.OrdinalIgnoreCase))
+        // Explicitly reject numeric strings like "999", "-1", "0"
+        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+        {
+            throw new InvalidOperationException(
+                $"Invalid configuration for 'AiProviders:ImageGeneration:Slot2Policy:Mode': '{modeStr}'. Numeric mode values are not allowed. Valid values: 'SceneStyleContinuity', 'FullLinearContinuity', 'Bypassed'.");
+        }
+
+        if (string.Equals(trimmed, nameof(Slot2ConditioningMode.SceneStyleContinuity), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "style transfer", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "style_transfer", StringComparison.OrdinalIgnoreCase))
+        {
             return Slot2ConditioningMode.SceneStyleContinuity;
+        }
 
-        if (string.Equals(modeStr, "linear", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(trimmed, nameof(Slot2ConditioningMode.FullLinearContinuity), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "linear", StringComparison.OrdinalIgnoreCase))
+        {
             return Slot2ConditioningMode.FullLinearContinuity;
+        }
+
+        if (string.Equals(trimmed, nameof(Slot2ConditioningMode.Bypassed), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "disabled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return Slot2ConditioningMode.Bypassed;
+        }
 
         throw new InvalidOperationException(
             $"Invalid configuration for 'AiProviders:ImageGeneration:Slot2Policy:Mode': '{modeStr}'. Valid values: 'SceneStyleContinuity', 'FullLinearContinuity', 'Bypassed'.");
@@ -134,6 +153,17 @@ public sealed record Slot2ConditioningPolicy(
                 Weight: 0.0f,
                 EndAt: 0.0f,
                 Context: Slot2Context.ColdStart,
+                Mode: Slot2ConditioningMode.Bypassed
+            );
+        }
+
+        if (Mode == Slot2ConditioningMode.Bypassed)
+        {
+            return new Slot2ConditioningDecision(
+                IsActive: false,
+                Weight: 0.0f,
+                EndAt: 0.0f,
+                Context: isTransition ? Slot2Context.SceneTransition : Slot2Context.SameScene,
                 Mode: Slot2ConditioningMode.Bypassed
             );
         }
