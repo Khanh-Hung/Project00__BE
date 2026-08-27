@@ -94,7 +94,16 @@ public sealed class GetTurnImageGenerationStatusHandler : IRequestHandler<GetTur
                     $"State divergence: Winning attempt '{latestJob.AcceptedAttemptId.Value}' was not found in ledger.");
             }
 
-            if (!string.IsNullOrWhiteSpace(winningAttempt.GenerationFingerprint))
+            if (winningAttempt.AcceptedArtifactId.HasValue)
+            {
+                artifact = await _dbContext.SceneImages
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(img => img.Id == winningAttempt.AcceptedArtifactId.Value
+                                                && img.SessionId == request.SessionId
+                                                && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, cancellationToken);
+            }
+
+            if (artifact == null && !string.IsNullOrWhiteSpace(winningAttempt.GenerationFingerprint))
             {
                 artifact = await _dbContext.SceneImages
                     .AsNoTracking()

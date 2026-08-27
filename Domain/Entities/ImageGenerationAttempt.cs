@@ -7,6 +7,7 @@ namespace Domain.Entities;
 /// Durable ledger tracking discrete generation attempts for idempotency, crash-safety, and diagnostic history.
 /// Invariant: Unique per GenerationFingerprint in the database.
 /// Supports distributed worker leasing to avoid concurrent execution races for the same attempt fingerprint.
+/// PR #29: Contains authoritative reference AcceptedArtifactId to the accepted SceneImage artifact.
 /// </summary>
 public sealed class ImageGenerationAttempt : BaseEntity
 {
@@ -34,6 +35,11 @@ public sealed class ImageGenerationAttempt : BaseEntity
     public string? ErrorMessage { get; private set; }
     public GenerationFailureCategory FailureCategory { get; private set; } = GenerationFailureCategory.None;
 
+    /// <summary>
+    /// Authoritative foreign key directly referencing the accepted SceneImage artifact produced by this winning attempt.
+    /// </summary>
+    public Guid? AcceptedArtifactId { get; private set; }
+
     private ImageGenerationAttempt() { } // EF Core
 
     public ImageGenerationAttempt(
@@ -47,9 +53,15 @@ public sealed class ImageGenerationAttempt : BaseEntity
         GenerationAttemptStatus status = GenerationAttemptStatus.Running,
         string? claimedBy = null,
         DateTime? startedAt = null,
-        DateTime? leaseUntil = null)
+        DateTime? leaseUntil = null,
+        Guid? acceptedArtifactId = null,
+        Guid? id = null)
     {
-        Id = Guid.NewGuid();
+        if (id.HasValue && id.Value != Guid.Empty)
+        {
+            Id = id.Value;
+        }
+
         GenerationJobId = generationJobId;
         TurnId = turnId;
         SceneRevision = sceneRevision;
@@ -61,6 +73,7 @@ public sealed class ImageGenerationAttempt : BaseEntity
         ClaimedBy = claimedBy;
         StartedAt = startedAt;
         LeaseUntil = leaseUntil;
+        AcceptedArtifactId = acceptedArtifactId;
     }
 
     public void SetProviderJobId(string providerJobId)
@@ -123,6 +136,27 @@ public sealed class ImageGenerationAttempt : BaseEntity
         FeatureScore = featScore;
         Status = GenerationAttemptStatus.Succeeded;
         CompletedAt = completedAt;
+        Touch();
+    }
+
+    /// <summary>
+    /// Atomically attaches the accepted SceneImage artifact to this winning attempt.
+    /// Invariants:
+    /// - Attempt status must be Succeeded.
+    /// - AcceptedArtifactId must be null (immutable once set).
+    /// </summary>
+    public void AttachAcceptedArtifact(Guid artifactId, DateTime now)
+    {
+        if (artifactId == Guid.Empty)
+            throw new ArgumentException("ArtifactId cannot be empty.", nameof(artifactId));
+
+        if (Status != GenerationAttemptStatus.Succeeded)
+            throw new InvalidOperationException($"Cannot attach accepted artifact to attempt {Id}: attempt is in status {Status}, but must be Succeeded.");
+
+        if (AcceptedArtifactId.HasValue)
+            throw new InvalidOperationException($"Cannot attach accepted artifact to attempt {Id}: attempt already has AcceptedArtifactId {AcceptedArtifactId.Value}.");
+
+        AcceptedArtifactId = artifactId;
         Touch();
     }
 

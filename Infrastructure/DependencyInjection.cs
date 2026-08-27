@@ -175,6 +175,9 @@ public static class DependencyInjection
         services.AddScoped<IArtifactRetentionService, Application.Services.ArtifactRetentionService>();
         services.AddHostedService<VisualArtifactCleanupWorker>();
 
+        // PR #29: Artifact Reference Integrity & Visual State Consistency
+        services.AddScoped<IVisualStateConsistencyService, Application.Services.VisualStateConsistencyService>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();

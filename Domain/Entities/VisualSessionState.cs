@@ -8,13 +8,19 @@ namespace Domain.Entities;
 /// the current generation job, and the monotonic visual revision number.
 /// Invariants:
 /// 1. Exactly one VisualSessionState per ChatSession (SessionId is PK).
-/// 2. CurrentImageId must reference an accepted, non-quarantined SceneImage.
+/// 2. CurrentImageId (CurrentArtifactId) must reference an accepted, non-quarantined SceneImage.
 /// 3. VisualRevision increments monotonically upon each accepted visual artifact promotion.
 /// </summary>
 public sealed class VisualSessionState : Entity
 {
     public Guid SessionId { get; private set; }
     public Guid? CurrentImageId { get; private set; }
+
+    /// <summary>
+    /// Authoritative alias for CurrentImageId.
+    /// </summary>
+    public Guid? CurrentArtifactId => CurrentImageId;
+
     public Guid? CurrentGenerationJobId { get; private set; }
     public int VisualRevision { get; private set; }
 
@@ -51,6 +57,22 @@ public sealed class VisualSessionState : Entity
         VisualRevision++;
         SetUpdated(now);
         return VisualRevision;
+    }
+
+    /// <summary>
+    /// Deterministically restores or repairs the current visual state pointer without unintentionally advancing the visual revision counter.
+    /// </summary>
+    public void RestoreCurrent(Guid artifactId, Guid generationJobId, int visualRevision, DateTime now)
+    {
+        if (artifactId == Guid.Empty)
+            throw new ArgumentException("ArtifactId cannot be empty.", nameof(artifactId));
+        if (generationJobId == Guid.Empty)
+            throw new ArgumentException("GenerationJobId cannot be empty.", nameof(generationJobId));
+
+        CurrentImageId = artifactId;
+        CurrentGenerationJobId = generationJobId;
+        VisualRevision = Math.Max(VisualRevision, visualRevision);
+        SetUpdated(now);
     }
 
     /// <summary>

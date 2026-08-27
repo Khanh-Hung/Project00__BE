@@ -1,3 +1,5 @@
+using Domain.Enums;
+
 namespace Domain.Events;
 
 /// <summary>
@@ -9,7 +11,8 @@ public sealed record VisualArtifactAccepted(
     Guid ArtifactId,
     Guid GenerationJobId,
     int VisualRevision,
-    DateTime OccurredAt
+    DateTime OccurredAt,
+    Guid? AcceptedAttemptId = null
 );
 
 /// <summary>
@@ -45,4 +48,17 @@ public sealed record VisualGenerationRegenerated(
     Guid NewJobId,
     int SceneRevision,
     DateTime OccurredAt
+);
+
+/// <summary>
+/// Domain event published when visual state consistency verification detects an anomaly or evaluation result.
+/// </summary>
+public sealed record VisualStateConsistencyDetected(
+    Guid SessionId,
+    Guid TurnId,
+    int VisualRevision,
+    Guid? ArtifactId,
+    VisualStateConsistencyStatus ConsistencyStatus,
+    string? Reason,
+    DateTime DetectedAt
 );
