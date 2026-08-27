@@ -169,6 +169,13 @@ public static class DependencyInjection
         services.AddSingleton(Application.Services.GenerationRetryBudget.Default);
         services.AddSingleton<IGenerationMetrics, Infrastructure.Telemetry.GenerationMetrics>();
 
+        // PR #28: Visual Session Integration & Character Image Lifecycle
+        services.AddScoped<IVisualPredecessorResolver, Application.Services.VisualPredecessorResolver>();
+        services.AddScoped<IVisualArtifactService, Application.Services.VisualArtifactService>();
+        services.AddScoped<IVisualHistoryService, Application.Services.VisualHistoryService>();
+        services.AddScoped<IArtifactRetentionService, Application.Services.ArtifactRetentionService>();
+        services.AddHostedService<VisualArtifactCleanupWorker>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();

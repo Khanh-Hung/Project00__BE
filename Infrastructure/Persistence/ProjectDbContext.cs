@@ -32,6 +32,7 @@ public class ProjectDbContext : DbContext
     public DbSet<AudioArtifact> AudioArtifacts { get; set; }
     public DbSet<ImageGenerationJob> ImageGenerationJobs { get; set; }
     public DbSet<ImageGenerationAttempt> ImageGenerationAttempts { get; set; }
+    public DbSet<VisualSessionState> VisualSessionStates { get; set; }
 
     private string NormalizeUserId()
     {

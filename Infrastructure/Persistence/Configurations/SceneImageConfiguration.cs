@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -24,6 +25,14 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
         builder.Property(x => x.Workflow).IsRequired().HasMaxLength(128);
         builder.Property(x => x.WorkflowVersion).IsRequired();
         builder.Property(x => x.GenerationFingerprint).HasMaxLength(128);
+        builder.Property(x => x.VisualRevision).IsRequired().HasDefaultValue(1);
+        builder.Property(x => x.LifecycleStatus).IsRequired().HasDefaultValue(ArtifactLifecycleStatus.Current);
+
+        // Predecessor reference to another SceneImage (Self-referencing FK)
+        builder.HasOne<SceneImage>()
+            .WithMany()
+            .HasForeignKey(x => x.PredecessorArtifactId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // Invariant: Unique per generation request attempt; non-unique per revision to support multiple regenerations
         builder.HasIndex(x => new { x.SessionId, x.GenerationRequestId }).IsUnique();

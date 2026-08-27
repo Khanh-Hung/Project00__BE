@@ -117,9 +117,49 @@ public sealed class ChatController : ControllerBase
     /// Triggers async scene image generation for a specific conversation turn using its frozen VisualSnapshot
     /// </summary>
     [HttpPost("sessions/{sessionId:guid}/turns/{turnId:guid}/image")]
-    public async Task<IActionResult> GenerateTurnImage(Guid sessionId, Guid turnId, CancellationToken ct)
+    public async Task<IActionResult> GenerateTurnImage(Guid sessionId, Guid turnId, [FromQuery] Guid? requestId, CancellationToken ct)
     {
-        var result = await _sender.Send(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), ct);
+        var result = await _sender.Send(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId, requestId), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Triggers scene image regeneration for a conversation turn, creating a new independent generation job.
+    /// </summary>
+    [HttpPost("sessions/{sessionId:guid}/turns/{turnId:guid}/image/regenerate")]
+    public async Task<IActionResult> RegenerateTurnImage(Guid sessionId, Guid turnId, [FromQuery] Guid? requestId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new Application.Features.Chat.Commands.RegenerateTurnSceneImage.RegenerateTurnSceneImageCommand(sessionId, turnId, requestId), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Gets the current active visual artifact for a session.
+    /// </summary>
+    [HttpGet("sessions/{sessionId:guid}/visual/current")]
+    public async Task<IActionResult> GetCurrentVisualState(Guid sessionId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new Application.Features.Chat.Queries.VisualSession.GetCurrentVisualStateQuery(sessionId), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Gets the visual artifact history for a session ordered newest to oldest.
+    /// </summary>
+    [HttpGet("sessions/{sessionId:guid}/visual/history")]
+    public async Task<IActionResult> GetSessionVisualHistory(Guid sessionId, [FromQuery] int? limit, CancellationToken ct)
+    {
+        var result = await _sender.Send(new Application.Features.Chat.Queries.VisualSession.GetSessionVisualHistoryQuery(sessionId, limit), ct);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Gets the visual generation status and artifact for a specific turn.
+    /// </summary>
+    [HttpGet("sessions/{sessionId:guid}/turns/{turnId:guid}/image/status")]
+    public async Task<IActionResult> GetTurnImageStatus(Guid sessionId, Guid turnId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new Application.Features.Chat.Queries.VisualSession.GetTurnImageGenerationStatusQuery(sessionId, turnId), ct);
         return result.ToActionResult();
     }
 

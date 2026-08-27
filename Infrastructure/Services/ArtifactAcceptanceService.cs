@@ -15,7 +15,7 @@ namespace Infrastructure.Services;
 
 /// <summary>
 /// Service executing atomic compare-and-swap acceptance fencing, artifact lineage promotion,
-/// and outbox event persistence in one single unit of work / relational transaction (P0-1, P0-3, P1-2).
+/// VisualSessionState advancement, and outbox event persistence in one single unit of work / relational transaction.
 /// </summary>
 public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
 {
@@ -81,10 +81,6 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
             throw new InvalidOperationException($"Attempt {winningAttempt.Id} is in invalid status {winningAttempt.Status} for acceptance.");
         }
 
-        // Business Rule / Architecture Invariant:
-        // Attempt ownership != Acceptance ownership.
-        // If the attempt is still in-flight (Running/Evaluating), it must belong to the active worker and hold a valid lease.
-        // If the attempt is already durable & terminal (Succeeded/Degraded), an active worker holding the Job lease during crash recovery is authorized to accept it.
         if (winningAttempt.Status == GenerationAttemptStatus.Running || winningAttempt.Status == GenerationAttemptStatus.Evaluating)
         {
             if (winningAttempt.ClaimedBy != null && !string.Equals(winningAttempt.ClaimedBy, workerId, StringComparison.Ordinal))
@@ -143,7 +139,24 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease lost or attempt already accepted by concurrent worker");
                 }
 
-                // 2. Artifact Promotion / Demotion within same transaction boundary
+                // 2. Predecessor resolution for lineage tracking
+                Guid? predecessorArtifactId = null;
+                if (!string.IsNullOrWhiteSpace(resolvedPreviousSceneImageUrl))
+                {
+                    var predecessor = await _dbContext.SceneImages
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(img => img.ImageUrl == resolvedPreviousSceneImageUrl && img.SessionId == snapshot.SessionId, ct);
+                    predecessorArtifactId = predecessor?.Id;
+                }
+
+                // 3. Visual Session State lookup & revision calculation
+                var sessionState = await _dbContext.VisualSessionStates
+                    .FirstOrDefaultAsync(s => s.SessionId == snapshot.SessionId, ct);
+
+                int newVisualRevision = (sessionState?.VisualRevision ?? 0) + 1;
+                Guid? previousArtifactId = sessionState?.CurrentImageId;
+
+                // 4. Artifact Promotion / Demotion within same transaction boundary
                 var existingArtifact = await _dbContext.SceneImages
                     .FirstOrDefaultAsync(img => (img.SessionId == snapshot.SessionId && img.GenerationRequestId == job.GenerationRequestId)
                                                 || (fingerprint != null && img.GenerationFingerprint == fingerprint), ct);
@@ -154,14 +167,17 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     if (isIdentityPassed)
                     {
                         await _dbContext.SceneImages
-                            .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent && img.Id != existingArtifact.Id)
-                            .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+                            .Where(img => img.SessionId == snapshot.SessionId && img.IsCurrent && img.Id != existingArtifact.Id)
+                            .ExecuteUpdateAsync(s => s
+                                .SetProperty(img => img.IsCurrent, false)
+                                .SetProperty(img => img.LifecycleStatus, ArtifactLifecycleStatus.Historical)
+                                .SetProperty(img => img.UpdatedAt, liveUtc), ct);
 
-                        existingArtifact.SetCurrent(true);
+                        existingArtifact.PromoteToCurrent(newVisualRevision, predecessorArtifactId);
                     }
                     else
                     {
-                        existingArtifact.SetCurrent(false);
+                        existingArtifact.MarkQuarantined();
                     }
 
                     if (request.Provenance != null)
@@ -176,8 +192,11 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     if (isIdentityPassed)
                     {
                         await _dbContext.SceneImages
-                            .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
-                            .ExecuteUpdateAsync(s => s.SetProperty(img => img.IsCurrent, false), ct);
+                            .Where(img => img.SessionId == snapshot.SessionId && img.IsCurrent)
+                            .ExecuteUpdateAsync(s => s
+                                .SetProperty(img => img.IsCurrent, false)
+                                .SetProperty(img => img.LifecycleStatus, ArtifactLifecycleStatus.Historical)
+                                .SetProperty(img => img.UpdatedAt, liveUtc), ct);
                     }
 
                     artifact = new SceneImage(
@@ -195,13 +214,30 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                         workflowVersion: workflowVersion,
                         isCurrent: isIdentityPassed,
                         generationFingerprint: fingerprint,
-                        provenanceJson: request.Provenance?.ToJson()
+                        provenanceJson: request.Provenance?.ToJson(),
+                        predecessorArtifactId: predecessorArtifactId,
+                        visualRevision: newVisualRevision,
+                        lifecycleStatus: isIdentityPassed ? ArtifactLifecycleStatus.Current : ArtifactLifecycleStatus.Quarantined
                     );
 
                     await _dbContext.SceneImages.AddAsync(artifact, ct);
                 }
 
-                // 3. Outbox Lifecycle Domain Event Persistence in the SAME Relational Transaction (P0-3)
+                // 5. Update or Create VisualSessionState upon successful acceptance
+                if (isIdentityPassed)
+                {
+                    if (sessionState != null)
+                    {
+                        sessionState.PromoteArtifact(artifact.Id, job.Id, liveUtc);
+                    }
+                    else
+                    {
+                        sessionState = new VisualSessionState(snapshot.SessionId, artifact.Id, job.Id, newVisualRevision, liveUtc);
+                        await _dbContext.VisualSessionStates.AddAsync(sessionState, ct);
+                    }
+                }
+
+                // 6. Outbox Lifecycle Domain Event Persistence in the SAME Relational Transaction (P0-3)
                 var outboxPayloadJson = isIdentityPassed
                     ? JsonSerializer.Serialize(new GenerationJobAcceptedEvent(
                         JobId: job.Id,
@@ -227,11 +263,45 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
 
                 await _dbContext.OutboxMessages.AddAsync(lifecycleOutboxMsg, ct);
 
+                if (isIdentityPassed)
+                {
+                    var acceptedDomainEvent = new VisualArtifactAccepted(
+                        SessionId: snapshot.SessionId,
+                        TurnId: snapshot.TurnId,
+                        ArtifactId: artifact.Id,
+                        GenerationJobId: job.Id,
+                        VisualRevision: newVisualRevision,
+                        OccurredAt: liveUtc
+                    );
+
+                    await _dbContext.OutboxMessages.AddAsync(new OutboxMessage(
+                        eventType: "VisualArtifactAccepted",
+                        payloadJson: JsonSerializer.Serialize(acceptedDomainEvent)
+                    ), ct);
+
+                    if (previousArtifactId.HasValue && previousArtifactId.Value != artifact.Id)
+                    {
+                        var supersededDomainEvent = new VisualArtifactSuperseded(
+                            SessionId: snapshot.SessionId,
+                            TurnId: snapshot.TurnId,
+                            PreviousArtifactId: previousArtifactId.Value,
+                            NewArtifactId: artifact.Id,
+                            NewVisualRevision: newVisualRevision,
+                            OccurredAt: liveUtc
+                        );
+
+                        await _dbContext.OutboxMessages.AddAsync(new OutboxMessage(
+                            eventType: "VisualArtifactSuperseded",
+                            payloadJson: JsonSerializer.Serialize(supersededDomainEvent)
+                        ), ct);
+                    }
+                }
+
                 await _dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
-                _logger.LogInformation("[ArtifactAcceptanceService] Transaction committed. JobId={JobId}, AttemptId={AttemptId}, ArtifactId={ArtifactId}, IsCurrent={IsCurrent}, OutboxEventType={EventType}",
-                    job.Id, attemptId, artifact.Id, isIdentityPassed, outboxEventType);
+                _logger.LogInformation("[ArtifactAcceptanceService] Transaction committed. JobId={JobId}, AttemptId={AttemptId}, ArtifactId={ArtifactId}, IsCurrent={IsCurrent}, VisualRevision={VisualRevision}",
+                    job.Id, attemptId, artifact.Id, isIdentityPassed, newVisualRevision);
             }
             catch (DbUpdateException ex)
             {
@@ -240,7 +310,6 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
 
                 if (isUnique)
                 {
-                    // P0-1 Fix: Re-query database to verify if peer worker actually committed the artifact and finished the job!
                     var dbJob = await _dbContext.ImageGenerationJobs
                         .AsNoTracking()
                         .FirstOrDefaultAsync(j => j.Id == job.Id, ct);
@@ -286,6 +355,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
         }
         else
         {
+            // Non-relational (in-memory) test harness path
             var currentJob = await _dbContext.ImageGenerationJobs
                 .AsNoTracking()
                 .FirstOrDefaultAsync(j => j.Id == job.Id, ct);
@@ -312,6 +382,21 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                 job.Quarantine(attemptId, "Identity invariant threshold not met across maximum retry attempts", liveUtc, workerId);
             }
 
+            Guid? predecessorArtifactId = null;
+            if (!string.IsNullOrWhiteSpace(resolvedPreviousSceneImageUrl))
+            {
+                var predecessor = await _dbContext.SceneImages
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(img => img.ImageUrl == resolvedPreviousSceneImageUrl && img.SessionId == snapshot.SessionId, ct);
+                predecessorArtifactId = predecessor?.Id;
+            }
+
+            var sessionState = await _dbContext.VisualSessionStates
+                .FirstOrDefaultAsync(s => s.SessionId == snapshot.SessionId, ct);
+
+            int newVisualRevision = (sessionState?.VisualRevision ?? 0) + 1;
+            Guid? previousArtifactId = sessionState?.CurrentImageId;
+
             var existingArtifact = await _dbContext.SceneImages
                 .FirstOrDefaultAsync(img => (img.SessionId == snapshot.SessionId && img.GenerationRequestId == job.GenerationRequestId)
                                             || (fingerprint != null && img.GenerationFingerprint == fingerprint), ct);
@@ -322,14 +407,19 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                 if (isIdentityPassed)
                 {
                     var otherCurrent = await _dbContext.SceneImages
-                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent && img.Id != existingArtifact.Id)
+                        .Where(img => img.SessionId == snapshot.SessionId && img.IsCurrent && img.Id != existingArtifact.Id)
                         .ToListAsync(ct);
                     foreach (var img in otherCurrent)
                     {
                         img.DemoteCurrent();
                     }
-                    existingArtifact.SetCurrent(true);
+                    existingArtifact.PromoteToCurrent(newVisualRevision, predecessorArtifactId);
                 }
+                else
+                {
+                    existingArtifact.MarkQuarantined();
+                }
+
                 if (request.Provenance != null)
                 {
                     existingArtifact.AttachProvenance(request.Provenance);
@@ -342,7 +432,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                 if (isIdentityPassed)
                 {
                     var existingCurrentImages = await _dbContext.SceneImages
-                        .Where(img => img.SessionId == snapshot.SessionId && img.SceneRevision == snapshot.SceneRevision && img.IsCurrent)
+                        .Where(img => img.SessionId == snapshot.SessionId && img.IsCurrent)
                         .ToListAsync(ct);
 
                     foreach (var img in existingCurrentImages)
@@ -366,10 +456,26 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     workflowVersion: workflowVersion,
                     isCurrent: isIdentityPassed,
                     generationFingerprint: fingerprint,
-                    provenanceJson: request.Provenance?.ToJson()
+                    provenanceJson: request.Provenance?.ToJson(),
+                    predecessorArtifactId: predecessorArtifactId,
+                    visualRevision: newVisualRevision,
+                    lifecycleStatus: isIdentityPassed ? ArtifactLifecycleStatus.Current : ArtifactLifecycleStatus.Quarantined
                 );
 
                 await _dbContext.SceneImages.AddAsync(artifact, ct);
+            }
+
+            if (isIdentityPassed)
+            {
+                if (sessionState != null)
+                {
+                    sessionState.PromoteArtifact(artifact.Id, job.Id, liveUtc);
+                }
+                else
+                {
+                    sessionState = new VisualSessionState(snapshot.SessionId, artifact.Id, job.Id, newVisualRevision, liveUtc);
+                    await _dbContext.VisualSessionStates.AddAsync(sessionState, ct);
+                }
             }
 
             var outboxPayloadJson = isIdentityPassed
