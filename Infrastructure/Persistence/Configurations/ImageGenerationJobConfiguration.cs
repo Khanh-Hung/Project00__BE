@@ -14,8 +14,10 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.Property(x => x.SessionId).IsRequired();
         builder.Property(x => x.TurnId).IsRequired();
         builder.Property(x => x.CharacterId).IsRequired();
+        builder.Property(x => x.UserId).IsRequired();
         builder.Property(x => x.SceneRevision).IsRequired();
         builder.Property(x => x.GenerationRequestId).IsRequired();
+        builder.Property(x => x.OutboxMessageId);
         builder.Property(x => x.Provider).IsRequired().HasMaxLength(64);
         builder.Property(x => x.ProviderJobId).HasMaxLength(256);
         builder.Property(x => x.Status).IsRequired();
@@ -28,11 +30,16 @@ public class ImageGenerationJobConfiguration : IEntityTypeConfiguration<ImageGen
         builder.Property(x => x.QuarantinedAttemptId);
         builder.Property(x => x.CurrentAttemptNumber).IsRequired().HasDefaultValue(0);
         builder.Property(x => x.FailureReason).HasMaxLength(2048);
+        builder.Property(x => x.RetryCount).IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.NextAttemptAt);
+        builder.Property(x => x.CancellationRequested).IsRequired().HasDefaultValue(false);
+        builder.Property(x => x.LastHeartbeatAt);
         builder.Property(x => x.Version).IsConcurrencyToken();
 
         builder.HasIndex(x => new { x.SessionId, x.GenerationRequestId }).IsUnique();
         builder.HasIndex(x => new { x.SessionId, x.TurnId, x.SceneRevision });
         builder.HasIndex(x => new { x.Status, x.LeaseUntil });
+        builder.HasIndex(x => new { x.Status, x.NextAttemptAt });
         builder.HasIndex(x => x.AcceptedAttemptId);
         builder.HasIndex(x => x.QuarantinedAttemptId);
 

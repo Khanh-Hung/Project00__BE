@@ -161,4 +161,50 @@ public sealed class ComfyUIClient : IComfyUIClient
             throw new GpuTransientException($"Failed to download rendered image from ComfyUI /view: {ex.Message}", statusCode: null, innerException: ex);
         }
     }
+
+    public async Task<bool> DeleteQueuedPromptAsync(string promptId, CancellationToken ct = default)
+    {
+        var serverUrl = GetServerUrl();
+        try
+        {
+            var content = JsonContent.Create(new { delete = new[] { promptId } });
+            var res = await _httpClient.PostAsync($"{serverUrl}/queue", content, ct);
+            if (res.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Successfully deleted queued prompt {PromptId} from ComfyUI server at {ServerUrl}", promptId, serverUrl);
+                return true;
+            }
+            else
+            {
+                _logger.LogWarning("ComfyUI /queue delete for PromptId {PromptId} returned HTTP {StatusCode}", promptId, (int)res.StatusCode);
+                return false;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to delete queued prompt {PromptId} from ComfyUI at {ServerUrl}", promptId, serverUrl);
+            return false;
+        }
+    }
+
+    public async Task InterruptAsync(CancellationToken ct = default)
+    {
+        var serverUrl = GetServerUrl();
+        try
+        {
+            var res = await _httpClient.PostAsync($"{serverUrl}/interrupt", null, ct);
+            if (res.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Successfully sent interrupt signal to ComfyUI server at {ServerUrl}", serverUrl);
+            }
+            else
+            {
+                _logger.LogWarning("ComfyUI /interrupt returned HTTP {StatusCode}", (int)res.StatusCode);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to send interrupt request to ComfyUI at {ServerUrl}", serverUrl);
+        }
+    }
 }

@@ -49,6 +49,12 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
             throw new InvalidOperationException($"Cannot accept attempt: Job {jobId} does not exist in database.");
         }
 
+        if (job.CancellationRequested)
+        {
+            _logger.LogWarning("[ArtifactAcceptanceService] JobId={JobId} was flagged for cancellation. Rejecting artifact acceptance.", job.Id);
+            return new JobExecutionResult(JobExecutionStatus.Deferred, "Job was cancelled");
+        }
+
         var winningAttempt = await _dbContext.ImageGenerationAttempts
             .FirstOrDefaultAsync(a => a.Id == winningAttemptId, ct);
 
@@ -117,6 +123,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                                 && j.Version == job.Version
                                 && (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
                                 && j.AcceptedAttemptId == null
+                                && !j.CancellationRequested
                                 && j.LeaseUntil.HasValue
                                 && j.LeaseUntil.Value > liveUtc)
                     .ExecuteUpdateAsync(s => s
@@ -281,11 +288,12 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                 !currentJob.LeaseUntil.HasValue || 
                 currentJob.LeaseUntil.Value <= liveUtc || 
                 currentJob.Version != job.Version ||
+                currentJob.CancellationRequested ||
                 (currentJob.Status != ImageJobStatus.Processing && currentJob.Status != ImageJobStatus.Evaluating))
             {
                 _logger.LogWarning("[ArtifactAcceptanceService] In-memory job validation failed for JobId={JobId}, WorkerId={WorkerId}. Discarding artifact.",
                     job.Id, workerId);
-                return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease expired or stolen during generation");
+                return new JobExecutionResult(JobExecutionStatus.Deferred, "Worker lease expired, stolen, or job was cancelled during generation");
             }
 
             if (isIdentityPassed)

@@ -32,6 +32,7 @@ public sealed class ImageGenerationAttempt : BaseEntity
     public float? FeatureScore { get; private set; }
     public DateTime? CompletedAt { get; private set; }
     public string? ErrorMessage { get; private set; }
+    public GenerationFailureCategory FailureCategory { get; private set; } = GenerationFailureCategory.None;
 
     private ImageGenerationAttempt() { } // EF Core
 
@@ -158,12 +159,16 @@ public sealed class ImageGenerationAttempt : BaseEntity
     }
 
     public void MarkFailed(string errorMessage, DateTime completedAt, string workerId, DateTime now)
+        => MarkFailed(GenerationFailureCategory.Unknown, errorMessage, completedAt, workerId, now);
+
+    public void MarkFailed(GenerationFailureCategory failureCategory, string errorMessage, DateTime completedAt, string workerId, DateTime now)
     {
         if (Status == GenerationAttemptStatus.Succeeded)
             throw new InvalidOperationException($"Attempt {Id} is already in terminal state Succeeded.");
 
         EnsureActiveLease(workerId, now);
 
+        FailureCategory = failureCategory;
         ErrorMessage = errorMessage;
         Status = GenerationAttemptStatus.Failed;
         CompletedAt = completedAt;
