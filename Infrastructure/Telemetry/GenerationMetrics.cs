@@ -28,10 +28,16 @@ public sealed class GenerationMetrics : IGenerationMetrics
         _logger.LogInformation("[GenerationStarted] JobId={JobId}, RequestId={RequestId}", jobId, requestId);
     }
 
+    public void RecordAttemptStarted(Guid jobId, int attemptNumber)
+    {
+        GenerationObservability.AttemptsTotal.Add(1);
+
+        _logger.LogInformation("[GenerationAttemptStarted] JobId={JobId}, AttemptNumber={AttemptNumber}", jobId, attemptNumber);
+    }
+
     public void RecordGenerationCompleted(Guid jobId, int attempts, GenerationTiming timing)
     {
         GenerationObservability.JobsCompletedTotal.Add(1);
-        GenerationObservability.AttemptsTotal.Add(attempts);
 
         RecordTiming(timing);
 
@@ -42,7 +48,6 @@ public sealed class GenerationMetrics : IGenerationMetrics
     public void RecordGenerationFailed(Guid jobId, GenerationFailureCategory category, int attempts, TimeSpan totalDuration)
     {
         GenerationObservability.JobsFailedTotal.Add(1);
-        GenerationObservability.AttemptsTotal.Add(attempts);
         GenerationObservability.TotalLatencyMs.Record(totalDuration.TotalMilliseconds);
 
         _logger.LogError("[GenerationFailed] JobId={JobId}, Category={Category}, Attempts={Attempts}, TotalDurationMs={TotalDurationMs:F1}",
@@ -61,7 +66,6 @@ public sealed class GenerationMetrics : IGenerationMetrics
     {
         GenerationObservability.JobsQuarantinedTotal.Add(1);
         GenerationObservability.IdentityGuardQuarantineTotal.Add(1);
-        GenerationObservability.AttemptsTotal.Add(attempts);
 
         _logger.LogWarning("[GenerationQuarantined] JobId={JobId}, Attempts={Attempts}, FinalSimilarity={FinalSimilarity:F4}, FinalFeatureScore={FinalFeatureScore:F4}",
             jobId, attempts, finalSimilarity, finalFeatureScore);

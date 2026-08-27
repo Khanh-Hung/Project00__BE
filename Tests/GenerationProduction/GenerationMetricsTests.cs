@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Tests.GenerationProduction;
 
+[Collection("NonParallelMetricsCollection")]
 public sealed class GenerationMetricsTests
 {
     private readonly IGenerationMetrics _metrics = new GenerationMetrics(NullLogger<GenerationMetrics>.Instance);

@@ -232,6 +232,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
             while (attempt <= maxAttempts)
             {
                 genResult = null;
+                _metrics.RecordAttemptStarted(job.Id, attempt);
 
                 // Enforce cost and time-bounded retry budget before starting attempt > 1
                 if (attempt > 1)
@@ -243,6 +244,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         break;
                     }
                 }
+
+                using var attemptCts = _retryBudget.CreateAttemptCancellationTokenSource(ct, totalStopwatch.Elapsed);
+                var attemptCt = attemptCts.Token;
 
                 QualityMitigationAction currentAction = (attempt == 1) ? QualityMitigationAction.Pass : _qualityGuardPolicy.DecideMitigation(attempt - 1, lastEvaluation!);
                 var baseSeed = snapshot.GenerationProfile?.Seed ?? 12345;
@@ -262,7 +266,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     attemptNumber: attempt,
                     workflow: workflow,
                     workflowVersion: workflowVersion,
-                    modelIdentifier: snapshot.GenerationProfile?.Model ?? "ComfyUI/SDXL",
+                    modelIdentifier: snapshot.GenerationProfile?.Model,
                     compiledPrompt: lastCompiledPrompt,
                     compiledNegativePrompt: compiledNegative,
                     previousReferenceUrl: resolvedPreviousSceneImageUrl,
@@ -448,7 +452,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     try
                     {
                         var genSw = Stopwatch.StartNew();
-                        genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+                        genResult = await _imageService.GenerateImageWithResultAsync(imageReq, attemptCt);
                         genSw.Stop();
                         cumulativeGenLatency += genSw.Elapsed;
                         lastSuccessfulGenResult = genResult;
@@ -459,6 +463,11 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         var category = GenerationFailureClassifier.Classify(ex);
                         attemptRecord.MarkFailed(category, ex.Message, failTime, workerId, failTime);
                         await _dbContext.SaveChangesAsync(ct);
+
+                        _retryBudget.CanRetryFailure(attempt, totalStopwatch.Elapsed, category, out var failBudgetReason);
+                        _logger.LogError(ex, "[GenerationFailure] JobId={JobId}, Attempt={Attempt} failed ({Category}: {Message}). Reason={Reason}",
+                            job.Id, attempt, category, ex.Message, failBudgetReason ?? "Operational failure");
+                        _metrics.RecordGenerationFailed(job.Id, category, attempt, totalStopwatch.Elapsed);
                         throw;
                     }
 
@@ -485,7 +494,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     attemptRecord.StartEvaluating(workerId, evalStartTime);
 
                     var evalSw = Stopwatch.StartNew();
-                    lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
+                    lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, attemptCt);
                     evalSw.Stop();
                     cumulativeEvalLatency += evalSw.Elapsed;
 
@@ -551,6 +560,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     {
                         _logger.LogWarning("[IdentityGuardDegraded] JobId={JobId}, Attempt={Attempt}/{MaxAttempts} degraded (IdentitySim={IdentitySim:F4}). Escalating to {NextAction}.",
                             job.Id, attempt, maxAttempts, lastEvaluation.IdentitySimilarity, nextAction);
+                        _metrics.RecordGenerationRetry(job.Id, attempt, TimeSpan.Zero);
                         attempt++;
                     }
                 }

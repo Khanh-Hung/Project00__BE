@@ -6,6 +6,8 @@ namespace Domain.ValueObjects;
 /// <summary>
 /// Immutable audit and provenance record tracking the exact generation parameters,
 /// conditioning configuration, seed derivation, and quality evaluation results that produced a SceneImage artifact.
+/// Note: CreatedAt represents audit metadata capturing when the artifact was produced by the orchestrator,
+/// and is not an input to deterministic seed derivation or uniqueness fingerprinting.
 /// </summary>
 public sealed record GenerationProvenance
 {

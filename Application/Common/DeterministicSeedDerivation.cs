@@ -9,6 +9,11 @@ namespace Application.Common;
 /// </summary>
 public static class DeterministicSeedDerivation
 {
+    public const string DefaultModel = "meinamix_meinaV11.safetensors";
+    public const string DefaultWorkflow = "VisualIdentity";
+    public const int DefaultWorkflowVersion = 1;
+    public const string DefaultMitigationAction = "Pass";
+
     /// <summary>
     /// Derives a deterministic seed for a given attempt number from the base seed.
     /// Attempt 1 returns baseSeed unmodified.
@@ -42,8 +47,8 @@ public static class DeterministicSeedDerivation
         int attemptNumber,
         long derivedSeed,
         string parametersJson,
-        string workflow = "VisualIdentity",
-        int workflowVersion = 1,
+        string workflow = DefaultWorkflow,
+        int workflowVersion = DefaultWorkflowVersion,
         string? compiledPrompt = null,
         string? compiledNegativePrompt = null,
         string? previousReferenceUrl = null,
@@ -57,14 +62,14 @@ public static class DeterministicSeedDerivation
             sceneRevision = sceneRevision,
             attemptNumber = attemptNumber,
             derivedSeed = derivedSeed,
-            workflow = workflow ?? "VisualIdentity",
-            workflowVersion = workflowVersion,
-            modelIdentifier = modelIdentifier ?? "meinamix_meinaV11.safetensors",
+            workflow = !string.IsNullOrWhiteSpace(workflow) ? workflow : DefaultWorkflow,
+            workflowVersion = workflowVersion > 0 ? workflowVersion : DefaultWorkflowVersion,
+            modelIdentifier = !string.IsNullOrWhiteSpace(modelIdentifier) ? modelIdentifier : DefaultModel,
             parametersJson = parametersJson ?? string.Empty,
             compiledPrompt = compiledPrompt ?? string.Empty,
             compiledNegativePrompt = compiledNegativePrompt ?? string.Empty,
             previousReferenceUrl = previousReferenceUrl ?? string.Empty,
-            mitigationAction = mitigationAction ?? "Pass"
+            mitigationAction = !string.IsNullOrWhiteSpace(mitigationAction) ? mitigationAction : DefaultMitigationAction
         };
 
         var canonicalBytes = JsonSerializer.SerializeToUtf8Bytes(canonicalPayload);

@@ -10,6 +10,8 @@ public interface IGenerationMetrics
 {
     void RecordGenerationStarted(Guid jobId, Guid requestId);
 
+    void RecordAttemptStarted(Guid jobId, int attemptNumber);
+
     void RecordGenerationCompleted(Guid jobId, int attempts, GenerationTiming timing);
 
     void RecordGenerationFailed(Guid jobId, GenerationFailureCategory category, int attempts, TimeSpan totalDuration);

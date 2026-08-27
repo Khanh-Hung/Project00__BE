@@ -19,8 +19,8 @@ public sealed class GenerationFingerprintService : IGenerationFingerprintService
         GenerationProfile profile,
         long derivedSeed,
         int attemptNumber,
-        string workflow = "VisualIdentity",
-        int workflowVersion = 1,
+        string workflow = DeterministicSeedDerivation.DefaultWorkflow,
+        int workflowVersion = DeterministicSeedDerivation.DefaultWorkflowVersion,
         string? modelIdentifier = null,
         string? compiledPrompt = null,
         string? compiledNegativePrompt = null,
@@ -32,9 +32,11 @@ public sealed class GenerationFingerprintService : IGenerationFingerprintService
 
         var resolvedModel = !string.IsNullOrWhiteSpace(modelIdentifier)
             ? modelIdentifier
-            : (!string.IsNullOrWhiteSpace(profile.Model) ? profile.Model : "ComfyUI/SDXL");
+            : (!string.IsNullOrWhiteSpace(profile.Model) ? profile.Model : DeterministicSeedDerivation.DefaultModel);
 
-        var resolvedMitigation = mitigationAction ?? "Pass";
+        var resolvedMitigation = !string.IsNullOrWhiteSpace(mitigationAction)
+            ? mitigationAction
+            : DeterministicSeedDerivation.DefaultMitigationAction;
 
         return ComputeRawFingerprint(
             jobId: jobId,
@@ -60,8 +62,8 @@ public sealed class GenerationFingerprintService : IGenerationFingerprintService
         int attemptNumber,
         long derivedSeed,
         string parametersJson,
-        string workflow = "VisualIdentity",
-        int workflowVersion = 1,
+        string workflow = DeterministicSeedDerivation.DefaultWorkflow,
+        int workflowVersion = DeterministicSeedDerivation.DefaultWorkflowVersion,
         string? compiledPrompt = null,
         string? compiledNegativePrompt = null,
         string? previousReferenceUrl = null,
