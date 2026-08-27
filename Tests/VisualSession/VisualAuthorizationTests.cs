@@ -37,6 +37,12 @@ public sealed class VisualAuthorizationTests
         var session = new ChatSession(characterId, ownerUserId, "Test Session") { Id = sessionId };
         db.ChatSessions.Add(session);
 
+        var job = new ImageGenerationJob(sessionId, turnId, characterId, 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+
+        var attempt = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-auth-setup", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        job.AcceptAttempt(attempt.Id, DateTime.UtcNow, "worker-1", "{}");
+
         // Create SceneImage
         var artifact = new SceneImage(
             sessionId: sessionId,
@@ -45,19 +51,19 @@ public sealed class VisualAuthorizationTests
             sceneRevision: 1,
             imageUrl: "https://cdn.project00.ai/scene.png",
             prompt: "1girl",
+            generationJobId: job.Id,
+            generationFingerprint: "fp-auth-setup",
             visualRevision: 1,
             isCurrent: true,
             lifecycleStatus: ArtifactLifecycleStatus.Current
         );
         db.SceneImages.Add(artifact);
 
-        var state = new VisualSessionState(sessionId, artifact.Id, Guid.NewGuid(), visualRevision: 1);
+        var state = new VisualSessionState(sessionId, artifact.Id, job.Id, visualRevision: 1);
         db.VisualSessionStates.Add(state);
 
-        var job = new ImageGenerationJob(sessionId, turnId, characterId, 1);
-        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
-        job.AcceptAttempt(Guid.NewGuid(), DateTime.UtcNow, "worker-1", "{}");
         db.ImageGenerationJobs.Add(job);
+        db.ImageGenerationAttempts.Add(attempt);
 
         db.SaveChanges();
 
@@ -203,5 +209,76 @@ public sealed class VisualAuthorizationTests
         Assert.True(result.Value!.HasArtifact);
         // Must resolve artifact2 corresponding directly to attempt2 (AcceptedAttemptId)!
         Assert.Equal("https://cdn.project00.ai/attempt2_winning.png", result.Value.ImageUrl);
+    }
+
+    [Fact]
+    public async Task GetTurnImageStatus_WhenAcceptedAttemptIdMissingInDb_Returns500StateDivergence()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        var db = new ProjectDbContext(options);
+        var userId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+
+        var session = new ChatSession(charId, userId, "Session") { Id = sessionId };
+        db.ChatSessions.Add(session);
+
+        var missingAttemptId = Guid.NewGuid();
+        var job = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        job.AcceptAttempt(missingAttemptId, DateTime.UtcNow, "worker-1", "{}");
+
+        db.ImageGenerationJobs.Add(job);
+        await db.SaveChangesAsync();
+
+        var authProvider = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };
+        var handler = new GetTurnImageGenerationStatusHandler(db, authProvider);
+
+        var result = await handler.Handle(new GetTurnImageGenerationStatusQuery(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("State divergence", result.Errors.First());
+    }
+
+    [Fact]
+    public async Task GetTurnImageStatus_WhenWinningArtifactMissingInDb_Returns500StateDivergence()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        var db = new ProjectDbContext(options);
+        var userId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+
+        var session = new ChatSession(charId, userId, "Session") { Id = sessionId };
+        db.ChatSessions.Add(session);
+
+        var job = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+
+        var winningAttempt = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-winning-missing-art", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        job.AcceptAttempt(winningAttempt.Id, DateTime.UtcNow, "worker-1", "{}");
+
+        db.ImageGenerationJobs.Add(job);
+        db.ImageGenerationAttempts.Add(winningAttempt);
+        // Note: SceneImages is intentionally empty to simulate artifact divergence / corruption
+        await db.SaveChangesAsync();
+
+        var authProvider = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };
+        var handler = new GetTurnImageGenerationStatusHandler(db, authProvider);
+
+        var result = await handler.Handle(new GetTurnImageGenerationStatusQuery(sessionId, turnId), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StatusCodes.Status500InternalServerError, result.StatusCode);
+        Assert.Contains("State divergence", result.Errors.First());
     }
 }
