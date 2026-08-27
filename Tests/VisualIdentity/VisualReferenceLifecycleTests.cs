@@ -105,4 +105,20 @@ public sealed class VisualReferenceLifecycleTests
         var ex = Assert.Throws<InvalidOperationException>(() => reference.PromoteToCanonical(now));
         Assert.Contains("archived", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Theory]
+    [InlineData(VisualReferenceType.GeneratedEvidence)]
+    [InlineData(VisualReferenceType.SceneReference)]
+    public void CreateReference_WhenEvidenceOrSceneInitializedAsCanonical_ThrowsArgumentException(VisualReferenceType invalidType)
+    {
+        var charId = Guid.NewGuid();
+        var ex = Assert.Throws<ArgumentException>(() => new CharacterVisualReference(
+            characterId: charId,
+            referenceUrl: "https://cdn.project00.ai/invalid.png",
+            type: invalidType,
+            isCanonical: true
+        ));
+
+        Assert.Contains("Cannot initialize visual reference", ex.Message);
+    }
 }

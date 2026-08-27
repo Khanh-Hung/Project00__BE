@@ -1,6 +1,6 @@
-using Application.Services;
 using Domain.Entities;
 using Infrastructure.Persistence;
+using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -45,14 +45,63 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         var p2 = await service.UpdateAppearanceAsync(charId, "Silver hair", "Red eyes", "Pale", "Athletic", "Scar");
         Assert.Equal(2, p2.VisualVersion);
 
-        var refId = Guid.NewGuid();
-        var p3 = await service.SetPrimaryReferenceAsync(charId, refId);
-        Assert.Equal(3, p3.VisualVersion);
-        Assert.Equal(refId, p3.PrimaryReferenceId);
+        var refB = new CharacterVisualReference(charId, "https://cdn.project00.ai/p3.png");
+        db.CharacterVisualReferences.Add(refB);
+        await db.SaveChangesAsync();
 
-        var faceId = Guid.NewGuid();
-        var p4 = await service.SetFaceReferenceAsync(charId, faceId);
+        var p3 = await service.SetPrimaryReferenceAsync(charId, refB.Id);
+        Assert.Equal(3, p3.VisualVersion);
+        Assert.Equal(refB.Id, p3.PrimaryReferenceId);
+
+        var faceRef = new CharacterVisualReference(charId, "https://cdn.project00.ai/face.png");
+        db.CharacterVisualReferences.Add(faceRef);
+        await db.SaveChangesAsync();
+
+        var p4 = await service.SetFaceReferenceAsync(charId, faceRef.Id);
         Assert.Equal(4, p4.VisualVersion);
-        Assert.Equal(faceId, p4.FaceReferenceId);
+        Assert.Equal(faceRef.Id, p4.FaceReferenceId);
+    }
+
+    [Fact]
+    public async Task ConcurrentProfileUpdates_WhenWorkerUpdatesStaleVersion_ThrowsDbUpdateConcurrencyException()
+    {
+        var charId = Guid.NewGuid();
+
+        // 1. Initialize profile at Version 1
+        await using (var seedDb = new ProjectDbContext(_options))
+        {
+            var profile = new CharacterVisualProfile(charId, "Original Black Hair", "Brown Eyes");
+            seedDb.CharacterVisualProfiles.Add(profile);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // 2. Worker A and Worker B load profile concurrently at Version 1
+        await using var dbA = new ProjectDbContext(_options);
+        await using var dbB = new ProjectDbContext(_options);
+
+        var profileA = await dbA.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == charId);
+        var profileB = await dbB.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == charId);
+
+        Assert.Equal(1, profileA.VisualVersion);
+        Assert.Equal(1, profileB.VisualVersion);
+
+        // 3. Worker A updates appearance and commits (Version 1 -> Version 2)
+        profileA.UpdateAppearance("Silver Hair", "Red Eyes", "Pale", "Athletic", "None", DateTime.UtcNow);
+        await dbA.SaveChangesAsync();
+
+        // 4. Worker B attempts to update from stale Version 1
+        profileB.UpdateAppearance("Golden Hair", "Blue Eyes", "Tan", "Tall", "None", DateTime.UtcNow);
+
+        // Assert: EF Core optimistic concurrency token (VisualVersion) detects stale update and throws DbUpdateConcurrencyException
+        var ex = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => dbB.SaveChangesAsync());
+        Assert.NotNull(ex);
+
+        // 5. Verify database state in separate context: remains at Version 2 with Worker A's update (no silent lost updates)
+        await using var verifyDb = new ProjectDbContext(_options);
+        var finalProfile = await verifyDb.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == charId);
+
+        Assert.Equal(2, finalProfile.VisualVersion);
+        Assert.Equal("Silver Hair", finalProfile.HairDescription);
+        Assert.Equal("Red Eyes", finalProfile.EyeDescription);
     }
 }

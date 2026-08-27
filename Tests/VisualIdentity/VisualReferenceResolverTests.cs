@@ -1,8 +1,8 @@
 using Application.DTOs;
-using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
+using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -57,6 +57,47 @@ public sealed class VisualReferenceResolverTests
 
         Assert.Single(result.SecondaryReferences);
         Assert.Equal(secondary.Id, result.SecondaryReferences[0].ReferenceId);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenNoCanonicalExists_ReturnsNullPrimaryIdentityReference_WithoutPromotingTransientEvidence()
+    {
+        using var db = CreateInMemoryDb();
+        var resolver = new CharacterVisualReferenceResolver(db, NullLogger<CharacterVisualReferenceResolver>.Instance);
+        var charId = Guid.NewGuid();
+
+        var secondary = new CharacterVisualReference(
+            characterId: charId,
+            referenceUrl: "https://cdn.project00.ai/secondary.png",
+            type: VisualReferenceType.SecondaryCanonical,
+            status: VisualReferenceStatus.Active,
+            isCanonical: false,
+            priority: 10
+        );
+
+        var sceneEvidence = new CharacterVisualReference(
+            characterId: charId,
+            referenceUrl: "https://cdn.project00.ai/scene_evidence.png",
+            type: VisualReferenceType.GeneratedEvidence,
+            status: VisualReferenceStatus.Active,
+            isCanonical: false,
+            priority: 50 // Even with high priority
+        );
+
+        db.CharacterVisualReferences.AddRange(secondary, sceneEvidence);
+        await db.SaveChangesAsync();
+
+        var result = await resolver.ResolveAsync(charId, new VisualReferenceContext());
+
+        // Invariant: PrimaryIdentityReference MUST be null if no canonical identity reference exists
+        Assert.Null(result.PrimaryIdentityReference);
+
+        // Secondary and scene evidence are categorized into their respective bounded sets
+        Assert.Single(result.SecondaryReferences);
+        Assert.Equal(secondary.Id, result.SecondaryReferences[0].ReferenceId);
+
+        Assert.Single(result.SceneReferences);
+        Assert.Equal(sceneEvidence.Id, result.SceneReferences[0].ReferenceId);
     }
 
     [Fact]

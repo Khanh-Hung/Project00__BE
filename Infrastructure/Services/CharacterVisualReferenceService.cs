@@ -6,7 +6,7 @@ using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services;
+namespace Infrastructure.Services;
 
 public sealed class CharacterVisualReferenceService : ICharacterVisualReferenceService
 {

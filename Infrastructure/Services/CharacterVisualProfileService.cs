@@ -5,7 +5,7 @@ using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services;
+namespace Infrastructure.Services;
 
 public sealed class CharacterVisualProfileService : ICharacterVisualProfileService
 {
@@ -54,13 +54,31 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
             now: DateTime.UtcNow
         );
 
-        await _dbContext.CharacterVisualProfiles.AddAsync(profile, ct);
-        await _dbContext.SaveChangesAsync(ct);
+        try
+        {
+            await _dbContext.CharacterVisualProfiles.AddAsync(profile, ct);
+            await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("[CharacterVisualProfileService] Created Visual Profile for CharacterId={CharacterId} (Version={Version})",
-            characterId, profile.VisualVersion);
+            _logger.LogInformation("[CharacterVisualProfileService] Created Visual Profile for CharacterId={CharacterId} (Version={Version})",
+                characterId, profile.VisualVersion);
 
-        return profile;
+            return profile;
+        }
+        catch (DbUpdateException)
+        {
+            // Deterministic concurrency resolution: if another concurrent worker created the profile, return the existing authoritative profile
+            var winningProfile = await _dbContext.CharacterVisualProfiles
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.CharacterId == characterId, ct);
+
+            if (winningProfile != null)
+            {
+                _logger.LogInformation("[CharacterVisualProfileService] Concurrent profile creation resolved for CharacterId={CharacterId}", characterId);
+                return winningProfile;
+            }
+
+            throw;
+        }
     }
 
     public async Task<CharacterVisualProfile> UpdateAppearanceAsync(
@@ -79,23 +97,10 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
 
         if (profile == null)
         {
-            profile = new CharacterVisualProfile(
-                characterId: characterId,
-                hairDescription: hair,
-                eyeDescription: eye,
-                skinDescription: skin,
-                bodyDescription: body,
-                distinguishingFeatures: features,
-                visualVersion: 1,
-                now: now
-            );
-            await _dbContext.CharacterVisualProfiles.AddAsync(profile, ct);
-        }
-        else
-        {
-            profile.UpdateAppearance(hair, eye, skin, body, features, now);
+            return await CreateProfileAsync(characterId, hair, eye, skin, body, features, ct);
         }
 
+        profile.UpdateAppearance(hair, eye, skin, body, features, now);
         await _dbContext.SaveChangesAsync(ct);
 
         _logger.LogInformation("[CharacterVisualProfileService] Updated Appearance for CharacterId={CharacterId} (New Version={Version})",
@@ -106,6 +111,15 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
 
     public async Task<CharacterVisualProfile> SetPrimaryReferenceAsync(Guid characterId, Guid referenceId, CancellationToken ct = default)
     {
+        // Enforce Character Ownership on Reference
+        var reference = await _dbContext.CharacterVisualReferences
+            .FirstOrDefaultAsync(r => r.Id == referenceId && r.CharacterId == characterId, ct);
+
+        if (reference == null)
+        {
+            throw new InvalidOperationException($"Cross-aggregate reference assignment rejected: Visual reference '{referenceId}' does not belong to Character '{characterId}'.");
+        }
+
         var profile = await _dbContext.CharacterVisualProfiles
             .FirstOrDefaultAsync(p => p.CharacterId == characterId, ct);
 
@@ -137,6 +151,15 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
 
     public async Task<CharacterVisualProfile> SetFaceReferenceAsync(Guid characterId, Guid referenceId, CancellationToken ct = default)
     {
+        // Enforce Character Ownership on Reference
+        var reference = await _dbContext.CharacterVisualReferences
+            .FirstOrDefaultAsync(r => r.Id == referenceId && r.CharacterId == characterId, ct);
+
+        if (reference == null)
+        {
+            throw new InvalidOperationException($"Cross-aggregate reference assignment rejected: Visual reference '{referenceId}' does not belong to Character '{characterId}'.");
+        }
+
         var profile = await _dbContext.CharacterVisualProfiles
             .FirstOrDefaultAsync(p => p.CharacterId == characterId, ct);
 

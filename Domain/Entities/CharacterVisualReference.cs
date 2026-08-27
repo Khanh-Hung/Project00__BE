@@ -47,10 +47,13 @@ public sealed class CharacterVisualReference : BaseEntity
         if (string.IsNullOrWhiteSpace(referenceUrl))
             throw new ArgumentException("ReferenceUrl cannot be empty.", nameof(referenceUrl));
 
+        if (isCanonical && (type == VisualReferenceType.GeneratedEvidence || type == VisualReferenceType.SceneReference))
+            throw new ArgumentException($"Cannot initialize visual reference of type '{type}' as canonical. Only Canonical references can be canonical.", nameof(type));
+
         Id = Guid.CreateVersion7();
         CharacterId = characterId;
         ReferenceUrl = referenceUrl;
-        Type = type;
+        Type = isCanonical ? VisualReferenceType.Canonical : type;
         Status = status;
         IsCanonical = isCanonical;
         VisualProfileId = visualProfileId;
