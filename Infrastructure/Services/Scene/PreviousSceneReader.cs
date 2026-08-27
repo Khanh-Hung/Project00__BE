@@ -19,8 +19,7 @@ public sealed class PreviousSceneReader : IPreviousSceneReader
         return await _dbContext.SceneSpecifications
             .AsNoTracking()
             .Where(s => s.SessionId == sessionId)
-            .OrderByDescending(s => s.SceneRevision)
-            .ThenByDescending(s => s.CreatedAt)
+            .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync(ct);
     }
 
@@ -28,6 +27,6 @@ public sealed class PreviousSceneReader : IPreviousSceneReader
     {
         return await _dbContext.SceneSpecifications
             .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.SessionId == sessionId && s.TurnId == turnId);
+            .FirstOrDefaultAsync(s => s.SessionId == sessionId && s.TurnId == turnId, ct);
     }
 }

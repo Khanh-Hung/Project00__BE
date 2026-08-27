@@ -2,6 +2,7 @@ using Application.DTOs;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
+using Domain.ValueObjects;
 using Xunit;
 
 namespace Tests.SceneComposition;
@@ -21,19 +22,25 @@ public sealed class ScenePromptComposerTests
             currentOutfit: "Ebony Armor"
         );
 
+        var env = SceneEnvironment.Create(
+            location: "Ancient Library",
+            architecture: "Tall bookshelves with ancient tomes",
+            props: new[] { "Spellbook", "Candle" },
+            atmosphere: "tense atmosphere"
+        );
+
         var spec = new SceneSpecification(
             characterId: charId,
             location: "Ancient Library",
             action: "Reading a spellbook",
             pose: "seated at desk",
-            environment: "Tall bookshelves with ancient tomes",
+            environment: env,
             lighting: "warm candlelight",
             camera: "medium cinematic shot",
             weather: "stormy rain",
             timeOfDay: "midnight",
             mood: "tense atmosphere",
-            outfitContext: "Ebony Armor",
-            objects: new[] { "Spellbook", "Candle" }
+            outfitContext: "Ebony Armor"
         );
 
         var visualContext = new VisualContextResolutionResult(

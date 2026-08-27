@@ -1,5 +1,6 @@
 using Application.Interfaces;
 using Domain.Entities;
+using Domain.Enums;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,9 +21,14 @@ public sealed class VisualMemoryReader : IVisualMemoryReader
         int maxResults = 3,
         CancellationToken ct = default)
     {
-        var query = _dbContext.CharacterVisualMemories
-            .AsNoTracking()
-            .Where(m => m.CharacterId == characterId);
+        // Enforce Artifact Lifecycle Invariant: Only memories linked to usable artifacts (Current or Historical) are eligible.
+        // Quarantined (3) and Deleted (4) artifacts are strictly excluded from visual conditioning context.
+        var query = from memory in _dbContext.CharacterVisualMemories.AsNoTracking()
+                    join img in _dbContext.SceneImages.AsNoTracking() on memory.ArtifactId equals img.Id
+                    where memory.CharacterId == characterId
+                          && img.LifecycleStatus != ArtifactLifecycleStatus.Quarantined
+                          && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted
+                    select memory;
 
         if (!string.IsNullOrWhiteSpace(locationContext))
         {
@@ -44,11 +50,12 @@ public sealed class VisualMemoryReader : IVisualMemoryReader
         Guid characterId,
         CancellationToken ct = default)
     {
-        return await _dbContext.CharacterVisualMemories
-            .AsNoTracking()
-            .Where(m => m.CharacterId == characterId)
-            .OrderByDescending(m => m.SceneRevision)
-            .ThenByDescending(m => m.CreatedAt)
-            .FirstOrDefaultAsync(ct);
+        return await (from memory in _dbContext.CharacterVisualMemories.AsNoTracking()
+                      join img in _dbContext.SceneImages.AsNoTracking() on memory.ArtifactId equals img.Id
+                      where memory.CharacterId == characterId
+                            && img.LifecycleStatus != ArtifactLifecycleStatus.Quarantined
+                            && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted
+                      orderby memory.CreatedAt descending
+                      select memory).FirstOrDefaultAsync(ct);
     }
 }

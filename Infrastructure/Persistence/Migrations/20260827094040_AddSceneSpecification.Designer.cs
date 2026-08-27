@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Project.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ProjectDbContext))]
-    [Migration("20260827092710_AddSceneSpecification")]
+    [Migration("20260827094040_AddSceneSpecification")]
     partial class AddSceneSpecification
     {
         /// <inheritdoc />
@@ -1363,10 +1363,6 @@ namespace Project.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
 
-                    b.Property<string>("AtmosphereElements")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<string>("Camera")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
@@ -1387,8 +1383,8 @@ namespace Project.Infrastructure.Persistence.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("Environment")
-                        .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<bool>("IsSoftDeleted")
                         .HasColumnType("boolean");
@@ -1406,10 +1402,6 @@ namespace Project.Infrastructure.Persistence.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
-                    b.Property<string>("Objects")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<string>("OutfitContext")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
@@ -1417,6 +1409,11 @@ namespace Project.Infrastructure.Persistence.Migrations
                     b.Property<string>("Pose")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("SceneFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("SceneRevision")
                         .ValueGeneratedOnAdd()
@@ -1446,6 +1443,8 @@ namespace Project.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CharacterId");
+
+                    b.HasIndex("SceneFingerprint");
 
                     b.HasIndex("SessionId");
 

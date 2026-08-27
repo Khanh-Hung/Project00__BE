@@ -7,7 +7,7 @@ namespace Tests.SceneComposition;
 public sealed class SceneContinuityPolicyTests
 {
     [Fact]
-    public void EvaluateTransition_WhenLocationMatches_ReturnsSameScene()
+    public void EvaluateTransition_WhenExactLocationMatches_ReturnsSameScene()
     {
         var result = SceneContinuityPolicy.EvaluateTransition(
             previousLocation: "Gothic Library",
@@ -20,11 +20,11 @@ public sealed class SceneContinuityPolicyTests
     }
 
     [Fact]
-    public void EvaluateTransition_WhenLocationIsSubcategory_ReturnsSameLocation()
+    public void EvaluateTransition_WhenStructuredSubLocationMatches_ReturnsSameLocation()
     {
         var result = SceneContinuityPolicy.EvaluateTransition(
-            previousLocation: "Grand Palace",
-            currentLocation: "Grand Palace - Throne Room",
+            previousLocation: "Grand Palace - Throne Room",
+            currentLocation: "Grand Palace - Courtyard",
             previousAction: "walking into the palace",
             currentAction: "kneeling before throne"
         );
@@ -32,16 +32,23 @@ public sealed class SceneContinuityPolicyTests
         Assert.Equal(SceneTransitionType.SameLocation, result);
     }
 
-    [Fact]
-    public void EvaluateTransition_WhenLocationCompletelyChanges_ReturnsLocationTransition()
+    [Theory]
+    [InlineData("Forest", "Rainforest")]
+    [InlineData("City", "Old City")]
+    [InlineData("Library", "Balcony Garden")]
+    [InlineData("Bedroom", "Bedroom dream sequence")]
+    public void EvaluateTransition_WhenUnrelatedOrSubstringLocations_ReturnsLocationTransition_NoHeuristicFalsePositives(
+        string prevLocation,
+        string currLocation)
     {
         var result = SceneContinuityPolicy.EvaluateTransition(
-            previousLocation: "Library",
-            currentLocation: "Balcony Garden",
-            previousAction: "reading",
-            currentAction: "looking at stars"
+            previousLocation: prevLocation,
+            currentLocation: currLocation,
+            previousAction: "action a",
+            currentAction: "action b"
         );
 
+        // Invariant: Substring matching is strictly rejected; returns LocationTransition
         Assert.Equal(SceneTransitionType.LocationTransition, result);
     }
 }

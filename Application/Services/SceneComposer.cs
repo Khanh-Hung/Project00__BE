@@ -2,6 +2,7 @@ using Application.DTOs;
 using Application.Interfaces;
 using Domain.Entities;
 using Domain.Policies;
+using Domain.ValueObjects;
 using Domain.ValueObjects.Scene;
 using Microsoft.Extensions.Logging;
 
@@ -52,15 +53,16 @@ public sealed class SceneComposer : ISceneComposer
         else
         {
             var actionLower = action.Value.ToLowerInvariant();
-            if (actionLower.Contains("read") || actionLower.Contains("sit") || actionLower.Contains("rest") || actionLower.Contains("eat") || actionLower.Contains("drink"))
+            if (actionLower.Contains("read") || actionLower.Contains("sit") || actionLower.Contains("rest") || actionLower.Contains("eat") || actionLower.Contains("drink")
+                || actionLower.Contains("đọc") || actionLower.Contains("ngồi") || actionLower.Contains("uống") || actionLower.Contains("ăn"))
             {
                 pose = "seated naturally";
             }
-            else if (actionLower.Contains("sleep") || actionLower.Contains("lie") || actionLower.Contains("lay"))
+            else if (actionLower.Contains("sleep") || actionLower.Contains("lie") || actionLower.Contains("lay") || actionLower.Contains("nằm") || actionLower.Contains("ngủ"))
             {
                 pose = "lying down relaxed";
             }
-            else if (actionLower.Contains("walk") || actionLower.Contains("run") || actionLower.Contains("stride"))
+            else if (actionLower.Contains("walk") || actionLower.Contains("run") || actionLower.Contains("stride") || actionLower.Contains("bước") || actionLower.Contains("chạy") || actionLower.Contains("đi"))
             {
                 pose = "mid-stride dynamic movement";
             }
@@ -135,40 +137,40 @@ public sealed class SceneComposer : ISceneComposer
             camera = "medium cinematic shot, eye-level angle, centered subject placement";
         }
 
-        // 7. Resolve Environment
-        string? environment = intent.EnvironmentHint;
-        if (string.IsNullOrWhiteSpace(environment))
+        // 7. Resolve Environment & Props
+        var architecture = intent.EnvironmentHint;
+        var props = new List<string>(intent.ObjectHints);
+        var atmosphere = new List<string>(intent.AtmosphereHints);
+
+        if (transitionType == Domain.Enums.SceneTransitionType.SameScene && context.PreviousScene?.Environment != null)
         {
-            if (transitionType == Domain.Enums.SceneTransitionType.SameScene && !string.IsNullOrWhiteSpace(context.PreviousScene?.Environment))
+            if (string.IsNullOrWhiteSpace(architecture))
             {
-                environment = context.PreviousScene.Environment;
+                architecture = context.PreviousScene.Environment.Architecture;
             }
-            else
+            foreach (var prevProp in context.PreviousScene.Environment.Props)
             {
-                environment = $"atmospheric {location.Value} setting";
+                if (!props.Contains(prevProp, StringComparer.OrdinalIgnoreCase))
+                {
+                    props.Add(prevProp);
+                }
             }
         }
 
-        // 8. Resolve Mood & Outfit
         var mood = !string.IsNullOrWhiteSpace(intent.MoodHint) ? intent.MoodHint.Trim() : "neutral cinematic";
         var outfit = !string.IsNullOrWhiteSpace(intent.OutfitHint)
             ? intent.OutfitHint.Trim()
             : context.CharacterVisualProfile?.CurrentOutfit;
 
-        // 9. Collect Objects and Atmosphere Elements
-        var objects = new List<string>(intent.ObjectHints);
-        if (transitionType == Domain.Enums.SceneTransitionType.SameScene && context.PreviousScene != null)
-        {
-            foreach (var prevObj in context.PreviousScene.Objects)
-            {
-                if (!objects.Contains(prevObj, StringComparer.OrdinalIgnoreCase))
-                {
-                    objects.Add(prevObj);
-                }
-            }
-        }
-
-        var atmosphere = new List<string>(intent.AtmosphereHints);
+        var sceneEnvironment = SceneEnvironment.Create(
+            location: location.Value,
+            architecture: architecture,
+            props: props,
+            weather: weather,
+            timeOfDay: timeOfDay,
+            lighting: lighting,
+            atmosphere: mood
+        );
 
         var spec = new SceneSpecification(
             characterId: context.CharacterId,
@@ -178,20 +180,18 @@ public sealed class SceneComposer : ISceneComposer
             sessionId: context.SessionId,
             turnId: context.TurnId,
             pose: pose,
-            environment: environment,
+            environment: sceneEnvironment,
             lighting: lighting,
             camera: camera,
             weather: weather,
             timeOfDay: timeOfDay,
             mood: mood,
-            outfitContext: outfit,
-            objects: objects,
-            atmosphereElements: atmosphere
+            outfitContext: outfit
         );
 
         _logger.LogInformation(
-            "[SceneComposer] Composed SceneSpecification Id={SceneId}, CharacterId={CharacterId}, Location='{Location}', Action='{Action}', Revision={Revision}, Transition={Transition}",
-            spec.Id, spec.CharacterId, spec.Location, spec.Action, spec.SceneRevision, transitionType);
+            "[SceneComposer] Composed SceneSpecification Id={SceneId}, CharacterId={CharacterId}, Location='{Location}', Action='{Action}', Fingerprint='{Fingerprint}', Revision={Revision}, Transition={Transition}",
+            spec.Id, spec.CharacterId, spec.Location, spec.Action, spec.SceneFingerprint, spec.SceneRevision, transitionType);
 
         return Task.FromResult(spec);
     }

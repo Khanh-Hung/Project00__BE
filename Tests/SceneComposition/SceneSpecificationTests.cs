@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.ValueObjects;
 using Xunit;
 
 namespace Tests.SceneComposition;
@@ -6,12 +7,19 @@ namespace Tests.SceneComposition;
 public sealed class SceneSpecificationTests
 {
     [Fact]
-    public void Constructor_WithValidInputs_InitializesCorrectly()
+    public void Constructor_WithValidInputs_InitializesCorrectly_AndComputesFingerprint()
     {
         var charId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
         var now = DateTime.UtcNow;
+
+        var env = SceneEnvironment.Create(
+            location: "Gothic Library",
+            architecture: "Tall bookshelves, dusty windows",
+            props: new[] { "Grimoire", "Candle", "Inkwell" },
+            atmosphere: "mysterious"
+        );
 
         var spec = new SceneSpecification(
             characterId: charId,
@@ -21,15 +29,13 @@ public sealed class SceneSpecificationTests
             sessionId: sessionId,
             turnId: turnId,
             pose: "seated at desk",
-            environment: "Tall bookshelves, dusty windows",
+            environment: env,
             lighting: "warm candlelight",
             camera: "medium close-up",
             weather: "rain outside",
             timeOfDay: "night",
             mood: "mysterious",
             outfitContext: "Scholar robes",
-            objects: new[] { "Grimoire", "Candle", "Inkwell" },
-            atmosphereElements: new[] { "Dust motes", "Shadows" },
             now: now
         );
 
@@ -41,10 +47,12 @@ public sealed class SceneSpecificationTests
         Assert.Equal(sessionId, spec.SessionId);
         Assert.Equal(turnId, spec.TurnId);
         Assert.Equal("seated at desk", spec.Pose);
-        Assert.Equal("Tall bookshelves, dusty windows", spec.Environment);
-        Assert.Equal(3, spec.Objects.Count);
-        Assert.Equal(2, spec.AtmosphereElements.Count);
+        Assert.NotNull(spec.Environment);
+        Assert.Equal("Tall bookshelves, dusty windows", spec.Environment.Architecture);
+        Assert.Equal(3, spec.Environment.Props.Length);
         Assert.Equal(now, spec.CreatedAt);
+        Assert.NotNull(spec.SceneFingerprint);
+        Assert.Equal(64, spec.SceneFingerprint.Length); // SHA-256 hex string
     }
 
     [Fact]

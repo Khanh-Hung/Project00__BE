@@ -8,7 +8,7 @@ public sealed class SceneEnvironmentTests
     [Fact]
     public void SceneEnvironment_InitializesCorrectly_WithBackgroundAndProps()
     {
-        var env = new SceneEnvironment(
+        var env = SceneEnvironment.Create(
             location: "Gothic Library",
             architecture: "High vaulted stone arches with stained glass",
             backgroundElements: new[] { "Bookshelves", "Tall windows" },

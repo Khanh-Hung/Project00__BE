@@ -57,14 +57,16 @@ public sealed class ScenePromptComposer : IScenePromptComposer
         }
 
         // 5. ENVIRONMENT SECTION
-        var env = !string.IsNullOrWhiteSpace(scene.Environment) ? scene.Environment : scene.Location;
+        var env = !string.IsNullOrWhiteSpace(scene.Environment.Architecture)
+            ? scene.Environment.Architecture
+            : scene.Location;
         sb.Append($"[Environment: {env}]. ");
         structuredSummary.AppendLine($"ENVIRONMENT: {env}");
 
         // 6. PROPS & OBJECTS SECTION
-        if (scene.Objects.Count > 0)
+        if (scene.Environment.Props.Length > 0)
         {
-            var propsStr = string.Join(", ", scene.Objects);
+            var propsStr = string.Join(", ", scene.Environment.Props);
             sb.Append($"[Props: {propsStr}]. ");
             structuredSummary.AppendLine($"PROPS: {propsStr}");
         }

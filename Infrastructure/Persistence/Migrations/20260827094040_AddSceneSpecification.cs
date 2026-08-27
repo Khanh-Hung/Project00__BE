@@ -23,15 +23,14 @@ namespace Project.Infrastructure.Persistence.Migrations
                     Location = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: false),
                     Action = table.Column<string>(type: "character varying(2048)", maxLength: 2048, nullable: false),
                     Pose = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: true),
-                    Environment = table.Column<string>(type: "character varying(2048)", maxLength: 2048, nullable: true),
                     Lighting = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: true),
                     Camera = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: true),
                     Weather = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true),
                     TimeOfDay = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true),
                     Mood = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true),
                     OutfitContext = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: true),
-                    Objects = table.Column<string>(type: "text", nullable: false),
-                    AtmosphereElements = table.Column<string>(type: "text", nullable: false),
+                    Environment = table.Column<string>(type: "text", nullable: false),
+                    SceneFingerprint = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedBy = table.Column<string>(type: "text", nullable: true),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -56,6 +55,11 @@ namespace Project.Infrastructure.Persistence.Migrations
                 columns: new[] { "CharacterId", "SessionId", "TurnId", "SceneRevision" },
                 unique: true,
                 filter: "\"SessionId\" IS NOT NULL AND \"TurnId\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SceneSpecifications_SceneFingerprint",
+                table: "SceneSpecifications",
+                column: "SceneFingerprint");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SceneSpecifications_SessionId",

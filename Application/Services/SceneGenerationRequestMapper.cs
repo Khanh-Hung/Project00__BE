@@ -24,7 +24,7 @@ public sealed class SceneGenerationRequestMapper
         var sceneDesc = new VisualSceneDescription(
             shotType: scene.Camera,
             detailedAction: scene.Action,
-            detailedEnvironment: scene.Environment ?? scene.Location,
+            detailedEnvironment: scene.Environment?.Architecture ?? scene.Location,
             lightingStyle: scene.Lighting,
             atmosphere: scene.Mood,
             englishPromptTags: new[] { prompt.PositivePrompt }

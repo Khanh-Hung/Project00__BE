@@ -34,6 +34,12 @@ public sealed class SceneGenerationRequestMapperTests
             currentOutfit: "Ebony Armor"
         );
 
+        var env = SceneEnvironment.Create(
+            location: "Courtyard",
+            architecture: "Stone courtyard with banners",
+            lighting: "morning sunlight"
+        );
+
         var spec = new SceneSpecification(
             characterId: charId,
             location: "Courtyard",
@@ -42,7 +48,7 @@ public sealed class SceneGenerationRequestMapperTests
             sessionId: sessionId,
             turnId: turnId,
             pose: "battle stance",
-            environment: "Stone courtyard with banners",
+            environment: env,
             lighting: "morning sunlight"
         );
 

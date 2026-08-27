@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.Entities;
+using Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -22,39 +23,34 @@ public class SceneSpecificationConfiguration : IEntityTypeConfiguration<SceneSpe
         builder.Property(x => x.Action).IsRequired().HasMaxLength(2048);
 
         builder.Property(x => x.Pose).HasMaxLength(1024);
-        builder.Property(x => x.Environment).HasMaxLength(2048);
         builder.Property(x => x.Lighting).HasMaxLength(1024);
         builder.Property(x => x.Camera).HasMaxLength(1024);
         builder.Property(x => x.Weather).HasMaxLength(512);
         builder.Property(x => x.TimeOfDay).HasMaxLength(512);
         builder.Property(x => x.Mood).HasMaxLength(512);
         builder.Property(x => x.OutfitContext).HasMaxLength(1024);
+        builder.Property(x => x.SceneFingerprint).IsRequired().HasMaxLength(64);
 
-        var listComparer = new ValueComparer<IReadOnlyList<string>>(
-            (c1, c2) => (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.SequenceEqual(c2)),
-            c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
-            c => c.ToList()
+        var envComparer = new ValueComparer<SceneEnvironment>(
+            (c1, c2) => (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.Equals(c2)),
+            c => c.GetHashCode(),
+            c => c
         );
 
-        builder.Property(x => x.Objects)
+        builder.Property(x => x.Environment)
+            .IsRequired()
             .HasConversion(
                 v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>()
+                v => JsonSerializer.Deserialize<SceneEnvironment>(v, (JsonSerializerOptions?)null)!
             )
-            .Metadata.SetValueComparer(listComparer);
-
-        builder.Property(x => x.AtmosphereElements)
-            .HasConversion(
-                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>()
-            )
-            .Metadata.SetValueComparer(listComparer);
+            .Metadata.SetValueComparer(envComparer);
 
         // Unique constraint for canonical scene specification per (CharacterId, SessionId, TurnId, SceneRevision)
         builder.HasIndex(x => new { x.CharacterId, x.SessionId, x.TurnId, x.SceneRevision })
             .HasFilter("\"SessionId\" IS NOT NULL AND \"TurnId\" IS NOT NULL")
             .IsUnique();
 
+        builder.HasIndex(x => x.SceneFingerprint);
         builder.HasIndex(x => x.CharacterId);
         builder.HasIndex(x => x.SessionId);
     }
