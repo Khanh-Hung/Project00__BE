@@ -159,4 +159,49 @@ public sealed class VisualAuthorizationTests
         Assert.False(resUnauth.IsSuccess);
         Assert.Equal(StatusCodes.Status401Unauthorized, resUnauth.StatusCode);
     }
+
+    [Fact]
+    public async Task GetTurnImageStatus_ResolvesArtifactOfAcceptedAttempt_WhenMultipleAttemptsExist()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        var db = new ProjectDbContext(options);
+        var userId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+
+        var session = new ChatSession(charId, userId, "Session") { Id = sessionId };
+        db.ChatSessions.Add(session);
+
+        var job = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+
+        // Attempt 1: Failed / degraded
+        var attempt1 = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-attempt-1", GenerationAttemptStatus.Degraded, claimedBy: "worker-1");
+        var artifact1 = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/attempt1.png", "prompt 1", generationJobId: job.Id, generationFingerprint: "fp-attempt-1", isCurrent: false, lifecycleStatus: ArtifactLifecycleStatus.Historical);
+
+        // Attempt 2: Winning / Succeeded attempt
+        var attempt2 = new ImageGenerationAttempt(job.Id, turnId, 1, 2, 2000L, "{}", "fp-attempt-2", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        var artifact2 = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/attempt2_winning.png", "prompt 2", generationJobId: job.Id, generationFingerprint: "fp-attempt-2", isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
+
+        job.AcceptAttempt(attempt2.Id, DateTime.UtcNow, "worker-1", "{}");
+
+        db.ImageGenerationJobs.Add(job);
+        db.ImageGenerationAttempts.AddRange(attempt1, attempt2);
+        db.SceneImages.AddRange(artifact1, artifact2);
+        await db.SaveChangesAsync();
+
+        var authProvider = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };
+        var handler = new GetTurnImageGenerationStatusHandler(db, authProvider);
+
+        var result = await handler.Handle(new GetTurnImageGenerationStatusQuery(sessionId, turnId), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value!.HasArtifact);
+        // Must resolve artifact2 corresponding directly to attempt2 (AcceptedAttemptId)!
+        Assert.Equal("https://cdn.project00.ai/attempt2_winning.png", result.Value.ImageUrl);
+    }
 }

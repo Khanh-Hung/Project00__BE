@@ -103,12 +103,13 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
         }
 
         var jobRepo = _unitOfWork.GetRepository<ImageGenerationJob>();
+        Guid targetRequestId;
 
-        // 6. Fast-path Idempotency Check: If specific RequestId was requested, check if already exists
-        var targetRequestId = command.RequestId ?? Guid.NewGuid();
-
+        // 6. Fast-path Idempotency & In-flight Deduplication
         if (command.RequestId.HasValue)
         {
+            // Explicit RequestId provided: Idempotent lookup by (SessionId, TurnId, RequestId)
+            targetRequestId = command.RequestId.Value;
             var existingJob = await jobRepo.GetAsync(
                 j => j.SessionId == command.SessionId && j.TurnId == command.TurnId && j.GenerationRequestId == targetRequestId,
                 cancellationToken);
@@ -128,6 +129,36 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
                     Status: existingStatus
                 ), StatusCodes.Status200OK);
             }
+        }
+        else
+        {
+            // RequestId == null: Lookup active in-flight job for this turn to collapse duplicate generation requests
+            var activeJob = await jobRepo.GetAsync(
+                j => j.SessionId == command.SessionId
+                     && j.TurnId == command.TurnId
+                     && (j.Status == ImageJobStatus.Pending
+                         || j.Status == ImageJobStatus.Queued
+                         || j.Status == ImageJobStatus.Processing
+                         || j.Status == ImageJobStatus.Evaluating),
+                cancellationToken);
+
+            if (activeJob != null)
+            {
+                var activeStatus = (activeJob.Status == ImageJobStatus.Pending || activeJob.Status == ImageJobStatus.Queued)
+                    ? "queued"
+                    : activeJob.Status.ToString().ToLowerInvariant();
+
+                _logger.LogInformation("Collapsing duplicate in-flight generation request: SessionId={SessionId}, TurnId={TurnId}, ExistingRequestId={RequestId}, Status={Status}",
+                    command.SessionId, command.TurnId, activeJob.GenerationRequestId, activeStatus);
+
+                return Result<TriggerSceneImageResponse>.Success(new TriggerSceneImageResponse(
+                    GenerationRequestId: activeJob.GenerationRequestId,
+                    TurnId: command.TurnId,
+                    Status: activeStatus
+                ), StatusCodes.Status202Accepted);
+            }
+
+            targetRequestId = Guid.NewGuid();
         }
 
         // 7. Atomic Idempotency Fence: Create Pending ImageGenerationJob and Outbox Message together

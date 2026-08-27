@@ -70,10 +70,49 @@ public sealed class GetTurnImageGenerationStatusHandler : IRequestHandler<GetTur
                 $"No generation job found for turn '{request.TurnId}' in session '{request.SessionId}'.");
         }
 
-        // 3. Deterministic Artifact Resolution based on Job Status and Attempt
+        // 3. Authoritative Artifact Resolution: AcceptedAttemptId -> Winning Attempt -> Artifact
         SceneImage? artifact = null;
 
-        if (latestJob.AcceptedAttemptId.HasValue || latestJob.Status == ImageJobStatus.Completed)
+        if (latestJob.AcceptedAttemptId.HasValue)
+        {
+            var winningAttempt = await _dbContext.ImageGenerationAttempts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == latestJob.AcceptedAttemptId.Value, cancellationToken);
+
+            if (winningAttempt != null)
+            {
+                if (!string.IsNullOrWhiteSpace(winningAttempt.GenerationFingerprint))
+                {
+                    artifact = await _dbContext.SceneImages
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(img => img.SessionId == request.SessionId
+                                                    && img.GenerationFingerprint == winningAttempt.GenerationFingerprint
+                                                    && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, cancellationToken);
+                }
+
+                if (artifact == null && !string.IsNullOrWhiteSpace(winningAttempt.ImageUrl))
+                {
+                    artifact = await _dbContext.SceneImages
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(img => img.SessionId == request.SessionId
+                                                    && img.ImageUrl == winningAttempt.ImageUrl
+                                                    && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, cancellationToken);
+                }
+            }
+
+            if (artifact == null)
+            {
+                artifact = await _dbContext.SceneImages
+                    .AsNoTracking()
+                    .Where(img => img.SessionId == request.SessionId
+                                  && img.GenerationJobId == latestJob.Id
+                                  && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted)
+                    .OrderByDescending(img => img.VisualRevision)
+                    .ThenByDescending(img => img.CreatedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+        }
+        else if (latestJob.Status == ImageJobStatus.Completed)
         {
             artifact = await _dbContext.SceneImages
                 .AsNoTracking()
@@ -86,13 +125,32 @@ public sealed class GetTurnImageGenerationStatusHandler : IRequestHandler<GetTur
         }
         else if (latestJob.Status == ImageJobStatus.Quarantined)
         {
-            artifact = await _dbContext.SceneImages
-                .AsNoTracking()
-                .Where(img => img.SessionId == request.SessionId
-                              && img.GenerationJobId == latestJob.Id
-                              && img.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
-                .OrderByDescending(img => img.CreatedAt)
-                .FirstOrDefaultAsync(cancellationToken);
+            if (latestJob.QuarantinedAttemptId.HasValue)
+            {
+                var quarantinedAttempt = await _dbContext.ImageGenerationAttempts
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(a => a.Id == latestJob.QuarantinedAttemptId.Value, cancellationToken);
+
+                if (quarantinedAttempt != null && !string.IsNullOrWhiteSpace(quarantinedAttempt.GenerationFingerprint))
+                {
+                    artifact = await _dbContext.SceneImages
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(img => img.SessionId == request.SessionId
+                                                    && img.GenerationFingerprint == quarantinedAttempt.GenerationFingerprint
+                                                    && img.LifecycleStatus == ArtifactLifecycleStatus.Quarantined, cancellationToken);
+                }
+            }
+
+            if (artifact == null)
+            {
+                artifact = await _dbContext.SceneImages
+                    .AsNoTracking()
+                    .Where(img => img.SessionId == request.SessionId
+                                  && img.GenerationJobId == latestJob.Id
+                                  && img.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
+                    .OrderByDescending(img => img.CreatedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
         }
         else
         {
