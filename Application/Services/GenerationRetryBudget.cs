@@ -4,8 +4,11 @@ namespace Application.Services;
 
 /// <summary>
 /// Authoritative cost and time-bounded retry budget manager.
-/// Enforces hard limits: Maximum 3 attempts, bounded total generation duration,
-/// and enforces hard execution deadlines across generation attempts using linked cancellation tokens.
+/// Architectural Separation of Concerns:
+/// - GenerationRetryBudget determines IF an attempt or retry is permissible based on hard resource limits
+///   (max 3 attempts, 90s total wall-clock execution deadline, minimum attempt execution buffer).
+/// - GenerationRetryPolicy determines WHEN an operational retry should execute by calculating exponential
+///   backoff delay intervals with jitter.
 /// </summary>
 public sealed class GenerationRetryBudget
 {
@@ -47,77 +50,83 @@ public sealed class GenerationRetryBudget
     }
 
     /// <summary>
-    /// Creates a linked CancellationTokenSource configured with a hard deadline based on remaining total budget.
+    /// Creates a linked CancellationTokenSource configured with an exact timeout corresponding to the
+    /// remaining duration in the generation retry budget.
+    /// If the remaining budget is zero or already expired, the token will be in a canceled state.
     /// </summary>
     public CancellationTokenSource CreateAttemptCancellationTokenSource(CancellationToken parentToken, TimeSpan elapsedTotalTime)
     {
         var remaining = GetRemainingTime(elapsedTotalTime);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
-        if (remaining > TimeSpan.Zero)
-        {
-            cts.CancelAfter(remaining);
-        }
-        else
+
+        if (remaining <= TimeSpan.Zero)
         {
             cts.Cancel();
         }
+        else
+        {
+            cts.CancelAfter(remaining);
+        }
+
         return cts;
     }
 
     /// <summary>
-    /// Evaluates if an operational failure from a completed attempt can schedule a subsequent retry attempt.
+    /// Evaluates if a quality guard mitigation attempt can proceed under the budget.
+    /// Invariant: Target attempt number must be &lt;= MaxAttempts and remaining generation time must exceed MinAttemptRemainingTime.
+    /// </summary>
+    public bool CanRetryMitigation(
+        int targetAttemptNumber,
+        TimeSpan elapsedTotalTime,
+        out string? reason)
+    {
+        if (targetAttemptNumber > MaxAttempts)
+        {
+            reason = $"Target attempt {targetAttemptNumber} exceeds maximum allowed attempts ({MaxAttempts}).";
+            return false;
+        }
+
+        var remainingTime = GetRemainingTime(elapsedTotalTime);
+        if (remainingTime < MinAttemptRemainingTime)
+        {
+            reason = $"Insufficient remaining generation duration ({remainingTime.TotalMilliseconds:F0}ms &lt; {MinAttemptRemainingTime.TotalMilliseconds:F0}ms). Total budget: {MaxTotalGenerationTime.TotalSeconds:F0}s, Elapsed: {elapsedTotalTime.TotalSeconds:F1}s.";
+            return false;
+        }
+
+        reason = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Evaluates if an operational failure attempt can proceed under the budget.
+    /// Invariant: Failure category must be retryable, current attempt &lt; MaxAttempts, and remaining time &gt;= MinAttemptRemainingTime.
     /// </summary>
     public bool CanRetryFailure(
         int currentAttemptNumber,
         TimeSpan elapsedTotalTime,
         GenerationFailureCategory category,
-        out string? budgetExhaustionReason)
+        out string? reason)
     {
         if (!GenerationRetryPolicy.IsRetryable(category))
         {
-            budgetExhaustionReason = $"Failure category {category} is non-retryable";
+            reason = $"Failure category '{category}' is non-retryable.";
             return false;
         }
 
         if (currentAttemptNumber >= MaxAttempts)
         {
-            budgetExhaustionReason = $"Maximum attempt budget of {MaxAttempts} attempts exhausted";
+            reason = $"Current attempt {currentAttemptNumber} exhausted maximum allowed retry budget ({MaxAttempts}).";
             return false;
         }
 
-        var remaining = GetRemainingTime(elapsedTotalTime);
-        if (remaining < MinAttemptRemainingTime)
+        var remainingTime = GetRemainingTime(elapsedTotalTime);
+        if (remainingTime < MinAttemptRemainingTime)
         {
-            budgetExhaustionReason = $"Insufficient remaining generation duration ({remaining.TotalMilliseconds:F0}ms remaining, min required {MinAttemptRemainingTime.TotalMilliseconds:F0}ms)";
+            reason = $"Insufficient remaining generation duration ({remainingTime.TotalMilliseconds:F0}ms &lt; {MinAttemptRemainingTime.TotalMilliseconds:F0}ms). Total budget: {MaxTotalGenerationTime.TotalSeconds:F0}s, Elapsed: {elapsedTotalTime.TotalSeconds:F1}s.";
             return false;
         }
 
-        budgetExhaustionReason = null;
-        return true;
-    }
-
-    /// <summary>
-    /// Evaluates if an upcoming mitigation attempt number (e.g. attempt 2, 3) is within the attempt and duration budget.
-    /// </summary>
-    public bool CanRetryMitigation(
-        int targetAttemptNumber,
-        TimeSpan elapsedTotalTime,
-        out string? budgetExhaustionReason)
-    {
-        if (targetAttemptNumber > MaxAttempts)
-        {
-            budgetExhaustionReason = $"Target attempt {targetAttemptNumber} exceeds maximum attempt budget of {MaxAttempts}";
-            return false;
-        }
-
-        var remaining = GetRemainingTime(elapsedTotalTime);
-        if (remaining < MinAttemptRemainingTime)
-        {
-            budgetExhaustionReason = $"Insufficient remaining generation duration ({remaining.TotalMilliseconds:F0}ms remaining, min required {MinAttemptRemainingTime.TotalMilliseconds:F0}ms)";
-            return false;
-        }
-
-        budgetExhaustionReason = null;
+        reason = null;
         return true;
     }
 }

@@ -470,15 +470,6 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         {
                             _logger.LogError(ex, "[GenerationFailureTerminal] JobId={JobId}, Attempt={Attempt} failed terminally ({Category}: {Message}). Reason={Reason}",
                                 job.Id, attempt, category, ex.Message, failBudgetReason ?? "Non-retryable");
-                            _metrics.RecordGenerationFailed(job.Id, category, attempt, totalStopwatch.Elapsed);
-
-                            // Fast-fail job terminally
-                            if (job.Status == ImageJobStatus.Processing || job.Status == ImageJobStatus.Evaluating)
-                            {
-                                job.Fail(ex.Message, isRetryable: false, now: failTime, workerId: workerId);
-                                await _dbContext.SaveChangesAsync(CancellationToken.None);
-                            }
-
                             throw new GpuNonTransientException($"Terminal generation failure: {ex.Message} ({failBudgetReason})", innerException: ex);
                         }
 
