@@ -221,6 +221,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         ImageGenerationResult? lastSuccessfulGenResult = null;
         IdentityEvaluationResult? lastEvaluation = null;
         ImageGenerationAttempt? winningAttemptRecord = null;
+        QualityMitigationAction winningMitigationAction = QualityMitigationAction.Pass;
+        GenerationProfile? winningProfile = snapshot.GenerationProfile;
         string? lastCompiledPrompt = null;
         string? lastAttemptFingerprint = null;
         bool isIdentityPassed = false;
@@ -246,6 +248,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 var baseSeed = snapshot.GenerationProfile?.Seed ?? 12345;
                 var (attemptProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(snapshot, currentAction, attempt, baseSeed);
                 var attemptSnapshot = snapshot with { GenerationProfile = attemptProfile };
+                winningMitigationAction = currentAction;
+                winningProfile = attemptProfile;
 
                 lastCompiledPrompt = _visualCompiler.CompileScenePrompt(attemptSnapshot);
                 var compiledNegative = _visualCompiler.CompileNegativePrompt(attemptSnapshot);
@@ -564,8 +568,39 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 }
             }
 
-            // 5. Formulate Provenance Record
+            // 5. Formulate Provenance Record from Actual Winning Attempt Profile
             var nowTime = _dateTimeProvider.UtcNow;
+            float actualSlot1Weight = 1.0f;
+            float actualSlot2Weight = 0.0f;
+            string actualSlot2Mode = "Disabled";
+
+            if (!string.IsNullOrWhiteSpace(winningProfile?.ParametersJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(winningProfile.ParametersJson);
+                    if (doc.RootElement.TryGetProperty("ipAdapter", out var ipProp) && ipProp.TryGetProperty("weight", out var w1))
+                    {
+                        actualSlot1Weight = (float)w1.GetDouble();
+                    }
+                    if (doc.RootElement.TryGetProperty("sceneContinuity", out var contProp) && contProp.TryGetProperty("weight", out var w2))
+                    {
+                        actualSlot2Weight = (float)w2.GetDouble();
+                        actualSlot2Mode = actualSlot2Weight > 0f ? "SceneStyleContinuity" : "Disabled";
+                    }
+                }
+                catch
+                {
+                    // Fallback to default continuous weights if parameters parsing fails
+                }
+            }
+            else if (snapshot.VisualIdentity != null && resolvedPreviousSceneImageUrl != null)
+            {
+                actualSlot1Weight = 0.60f;
+                actualSlot2Weight = 0.12f;
+                actualSlot2Mode = "SceneStyleContinuity";
+            }
+
             var provenance = new GenerationProvenance(
                 generationRequestId: generationRequestId,
                 jobId: job.Id,
@@ -575,11 +610,11 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 generationFingerprint: lastAttemptFingerprint ?? string.Empty,
                 workflow: workflow,
                 workflowVersion: workflowVersion,
-                modelIdentifier: "ComfyUI/SDXL",
-                slot1Weight: 1.0f,
-                slot2Weight: snapshot.VisualIdentity != null && resolvedPreviousSceneImageUrl != null ? 0.35f : 0.0f,
-                slot2ConditioningMode: snapshot.VisualIdentity != null && resolvedPreviousSceneImageUrl != null ? "ContextAnchor" : "Disabled",
-                mitigationAction: lastEvaluation != null ? _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation).ToString() : "None",
+                modelIdentifier: snapshot.GenerationProfile?.Model ?? "ComfyUI/SDXL",
+                slot1Weight: actualSlot1Weight,
+                slot2Weight: actualSlot2Weight,
+                slot2ConditioningMode: actualSlot2Mode,
+                mitigationAction: winningMitigationAction.ToString(),
                 identitySimilarity: winningAttemptRecord.IdentitySimilarity,
                 featureScore: winningAttemptRecord.FeatureScore,
                 identityStatus: isIdentityPassed ? "Passed" : "Quarantined",
@@ -611,8 +646,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
             acceptanceLatency = acceptSw.Elapsed;
 
             totalStopwatch.Stop();
+            var queueLatency = jobClaimTime > job.CreatedAt ? jobClaimTime - job.CreatedAt : TimeSpan.Zero;
             var timing = new GenerationTiming(
-                QueueLatency: TimeSpan.Zero,
+                QueueLatency: queueLatency,
                 GenerationLatency: cumulativeGenLatency,
                 EvaluationLatency: cumulativeEvalLatency,
                 AcceptanceLatency: acceptanceLatency,

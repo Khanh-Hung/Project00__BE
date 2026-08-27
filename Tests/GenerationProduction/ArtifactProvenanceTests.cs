@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.Entities;
 using Domain.ValueObjects;
 using Xunit;
@@ -24,10 +25,10 @@ public sealed class ArtifactProvenanceTests
             workflow: "VisualIdentity",
             workflowVersion: 1,
             modelIdentifier: "ComfyUI/SDXL",
-            slot1Weight: 1.0f,
-            slot2Weight: 0.35f,
-            slot2ConditioningMode: "ContextAnchor",
-            mitigationAction: "Pass",
+            slot1Weight: 0.65f,
+            slot2Weight: 0.06f,
+            slot2ConditioningMode: "SceneStyleContinuity",
+            mitigationAction: "RetryAttenuated",
             identitySimilarity: 0.884f,
             featureScore: 0.725f,
             identityStatus: "Passed",
@@ -47,10 +48,10 @@ public sealed class ArtifactProvenanceTests
         Assert.Equal("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", deserialized.GenerationFingerprint);
         Assert.Equal("VisualIdentity", deserialized.Workflow);
         Assert.Equal(1, deserialized.WorkflowVersion);
-        Assert.Equal(1.0f, deserialized.Slot1Weight);
-        Assert.Equal(0.35f, deserialized.Slot2Weight);
-        Assert.Equal("ContextAnchor", deserialized.Slot2ConditioningMode);
-        Assert.Equal("Pass", deserialized.MitigationAction);
+        Assert.Equal(0.65f, deserialized.Slot1Weight);
+        Assert.Equal(0.06f, deserialized.Slot2Weight);
+        Assert.Equal("SceneStyleContinuity", deserialized.Slot2ConditioningMode);
+        Assert.Equal("RetryAttenuated", deserialized.MitigationAction);
         Assert.Equal(0.884f, deserialized.IdentitySimilarity);
         Assert.Equal(0.725f, deserialized.FeatureScore);
         Assert.Equal("Passed", deserialized.IdentityStatus);
@@ -87,6 +88,10 @@ public sealed class ArtifactProvenanceTests
             sceneRevision: 1,
             derivedSeed: 42L,
             generationFingerprint: "fp123456",
+            slot1Weight: 0.60f,
+            slot2Weight: 0.12f,
+            slot2ConditioningMode: "SceneStyleContinuity",
+            mitigationAction: "Pass",
             identitySimilarity: 0.91f,
             featureScore: 0.85f,
             identityStatus: "Passed"
@@ -101,6 +106,26 @@ public sealed class ArtifactProvenanceTests
         Assert.Equal(jobId, retrieved.JobId);
         Assert.Equal(attemptId, retrieved.AttemptId);
         Assert.Equal("fp123456", retrieved.GenerationFingerprint);
+        Assert.Equal(0.60f, retrieved.Slot1Weight);
+        Assert.Equal(0.12f, retrieved.Slot2Weight);
+        Assert.Equal("SceneStyleContinuity", retrieved.Slot2ConditioningMode);
+        Assert.Equal("Pass", retrieved.MitigationAction);
         Assert.Equal(0.91f, retrieved.IdentitySimilarity);
+    }
+
+    [Fact]
+    public void FromJson_WhenNullOrEmpty_ReturnsNull()
+    {
+        Assert.Null(GenerationProvenance.FromJson(null));
+        Assert.Null(GenerationProvenance.FromJson(""));
+        Assert.Null(GenerationProvenance.FromJson("   "));
+    }
+
+    [Fact]
+    public void FromJson_WhenCorruptJson_ThrowsJsonException()
+    {
+        var corruptedJson = "{ \"generationRequestId\": \"not-a-valid-guid\", bad json here";
+
+        Assert.ThrowsAny<JsonException>(() => GenerationProvenance.FromJson(corruptedJson));
     }
 }

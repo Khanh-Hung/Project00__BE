@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Domain.ValueObjects;
 
@@ -13,28 +14,29 @@ public sealed record GenerationProvenance
         PropertyNameCaseInsensitive = true
     };
 
-    public Guid GenerationRequestId { get; set; }
-    public Guid JobId { get; set; }
-    public Guid AttemptId { get; set; }
-    public int SceneRevision { get; set; }
-    public long DerivedSeed { get; set; }
-    public string GenerationFingerprint { get; set; } = string.Empty;
-    public string Workflow { get; set; } = "VisualIdentity";
-    public int WorkflowVersion { get; set; } = 1;
-    public string ModelIdentifier { get; set; } = "ComfyUI/SDXL";
-    public float Slot1Weight { get; set; } = 1.0f;
-    public float Slot2Weight { get; set; } = 0.0f;
-    public string Slot2ConditioningMode { get; set; } = "Disabled";
-    public string MitigationAction { get; set; } = "None";
-    public float? IdentitySimilarity { get; set; }
-    public float? FeatureScore { get; set; }
-    public string IdentityStatus { get; set; } = "Passed";
-    public DateTime CreatedAt { get; set; }
+    public Guid GenerationRequestId { get; init; }
+    public Guid JobId { get; init; }
+    public Guid AttemptId { get; init; }
+    public int SceneRevision { get; init; }
+    public long DerivedSeed { get; init; }
+    public string GenerationFingerprint { get; init; } = string.Empty;
+    public string Workflow { get; init; } = "VisualIdentity";
+    public int WorkflowVersion { get; init; } = 1;
+    public string ModelIdentifier { get; init; } = "ComfyUI/SDXL";
+    public float Slot1Weight { get; init; } = 1.0f;
+    public float Slot2Weight { get; init; } = 0.0f;
+    public string Slot2ConditioningMode { get; init; } = "Disabled";
+    public string MitigationAction { get; init; } = "None";
+    public float? IdentitySimilarity { get; init; }
+    public float? FeatureScore { get; init; }
+    public string IdentityStatus { get; init; } = "Passed";
+    public DateTime CreatedAt { get; init; }
 
     public GenerationProvenance()
     {
     }
 
+    [JsonConstructor]
     public GenerationProvenance(
         Guid generationRequestId,
         Guid jobId,
@@ -52,7 +54,7 @@ public sealed record GenerationProvenance
         float? identitySimilarity = null,
         float? featureScore = null,
         string identityStatus = "Passed",
-        DateTime? createdAt = null)
+        DateTime createdAt = default)
     {
         GenerationRequestId = generationRequestId;
         JobId = jobId;
@@ -70,23 +72,21 @@ public sealed record GenerationProvenance
         IdentitySimilarity = identitySimilarity;
         FeatureScore = featureScore;
         IdentityStatus = identityStatus ?? "Passed";
-        CreatedAt = createdAt ?? DateTime.UtcNow;
+        CreatedAt = createdAt != default ? createdAt : DateTime.UtcNow;
     }
 
     public string ToJson() => JsonSerializer.Serialize(this, s_jsonOptions);
 
+    /// <summary>
+    /// Deserializes a provenance record from JSON.
+    /// Returns null if json is null or whitespace.
+    /// Throws JsonException if json is invalid or corrupted.
+    /// </summary>
     public static GenerationProvenance? FromJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
             return null;
 
-        try
-        {
-            return JsonSerializer.Deserialize<GenerationProvenance>(json, s_jsonOptions);
-        }
-        catch
-        {
-            return null;
-        }
+        return JsonSerializer.Deserialize<GenerationProvenance>(json, s_jsonOptions);
     }
 }

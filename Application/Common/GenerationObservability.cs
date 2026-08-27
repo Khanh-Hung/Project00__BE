@@ -52,18 +52,25 @@ public static class GenerationObservability
         "generation_orphan_artifacts_total",
         description: "Total number of orphan artifacts reconciled");
 
-    // Identity Guard Counters
-    public static readonly Counter<long> IdentityGuardTriggerTotal = s_meter.CreateCounter<long>(
-        "identity_guard_trigger_total",
-        description: "Total number of identity guard evaluations triggered");
+    // Identity Evaluation & Quality Guard Counters
+    public static readonly Counter<long> IdentityEvaluationTotal = s_meter.CreateCounter<long>(
+        "identity_evaluation_total",
+        description: "Total number of individual visual quality evaluations executed");
+
+    public static readonly Counter<long> IdentityGuardRetryTotal = s_meter.CreateCounter<long>(
+        "identity_guard_retry_total",
+        description: "Total number of degraded frames escalating to mitigation retries");
 
     public static readonly Counter<long> IdentityGuardRecoveryTotal = s_meter.CreateCounter<long>(
         "identity_guard_recovery_total",
-        description: "Total number of identity guard retries that successfully recovered");
+        description: "Total number of identity guard retries that successfully recovered to Passed");
 
     public static readonly Counter<long> IdentityGuardQuarantineTotal = s_meter.CreateCounter<long>(
         "identity_guard_quarantine_total",
-        description: "Total number of identity guard evaluations leading to quarantine");
+        description: "Total number of identity guard evaluations leading to frame quarantine");
+
+    // Backward-compatibility alias
+    public static readonly Counter<long> IdentityGuardTriggerTotal = IdentityEvaluationTotal;
 
     // Granular Stage Latency Histograms (ms)
     public static readonly Histogram<double> QueueLatencyMs = s_meter.CreateHistogram<double>(

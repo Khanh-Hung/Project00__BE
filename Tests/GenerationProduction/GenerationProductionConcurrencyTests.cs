@@ -24,9 +24,7 @@ public sealed class GenerationProductionConcurrencyTests
             .UseSqlite(connection)
             .Options;
 
-        var context = new ProjectDbContext(options);
-        context.Database.EnsureCreated();
-        return context;
+        return new ProjectDbContext(options);
     }
 
     [Fact]
@@ -35,7 +33,11 @@ public sealed class GenerationProductionConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
 
-        var dbContext = CreateSqliteDbContext(connection);
+        // 1. Initialize schema on shared SQLite in-memory connection
+        using (var dbInit = CreateSqliteDbContext(connection))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
 
         var sessionId = Guid.NewGuid();
         var characterId = Guid.NewGuid();
@@ -64,36 +66,51 @@ public sealed class GenerationProductionConcurrencyTests
         );
 
         var dateTimeProvider = new SystemDateTimeProvider();
-        var compiler = new FakePromptCompiler("a knight in shining armor", "blurry, distorted");
+        var compiler1 = new FakePromptCompiler("a knight in shining armor", "blurry, distorted");
+        var compiler2 = new FakePromptCompiler("a knight in shining armor", "blurry, distorted");
         var qualityGuardPolicy = new IdentityQualityGuardPolicy(IsActive: true);
-        var lineageResolver = new PredecessorLineageResolver(dbContext, NullLogger<PredecessorLineageResolver>.Instance);
-        var acceptanceService = new ArtifactAcceptanceService(dbContext, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
 
+        // Worker 1 has its OWN isolated DbContext instance
+        using var dbContext1 = CreateSqliteDbContext(connection);
+        var lineageResolver1 = new PredecessorLineageResolver(dbContext1, NullLogger<PredecessorLineageResolver>.Instance);
+        var acceptanceService1 = new ArtifactAcceptanceService(dbContext1, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
         var imageService1 = new FakeImageService();
-        var imageService2 = new FakeImageService();
-        var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var evaluator1 = new DevelopmentPassThroughIdentityQualityEvaluator();
 
         var orchestrator1 = new ImageGenerationOrchestrator(
-            dbContext, compiler, imageService1, NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider, evaluator, qualityGuardPolicy, lineageResolver, acceptanceService
+            dbContext1, compiler1, imageService1, NullLogger<ImageGenerationOrchestrator>.Instance,
+            dateTimeProvider, evaluator1, qualityGuardPolicy, lineageResolver1, acceptanceService1
         );
+
+        // Worker 2 has its OWN isolated DbContext instance
+        using var dbContext2 = CreateSqliteDbContext(connection);
+        var lineageResolver2 = new PredecessorLineageResolver(dbContext2, NullLogger<PredecessorLineageResolver>.Instance);
+        var acceptanceService2 = new ArtifactAcceptanceService(dbContext2, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
+        var imageService2 = new FakeImageService();
+        var evaluator2 = new DevelopmentPassThroughIdentityQualityEvaluator();
 
         var orchestrator2 = new ImageGenerationOrchestrator(
-            dbContext, compiler, imageService2, NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider, evaluator, qualityGuardPolicy, lineageResolver, acceptanceService
+            dbContext2, compiler2, imageService2, NullLogger<ImageGenerationOrchestrator>.Instance,
+            dateTimeProvider, evaluator2, qualityGuardPolicy, lineageResolver2, acceptanceService2
         );
 
-        // Execute sequentially or concurrently against SQLite in-memory
-        var result1 = await orchestrator1.OrchestrateSceneImageGenerationAsync(payload, outboxId, "worker-1", DateTime.UtcNow);
-        var result2 = await orchestrator2.OrchestrateSceneImageGenerationAsync(payload, outboxId, "worker-2", DateTime.UtcNow);
+        // 2. TRUE CONCURRENT EXECUTION across parallel asynchronous tasks
+        var now = DateTime.UtcNow;
+        var task1 = orchestrator1.OrchestrateSceneImageGenerationAsync(payload, outboxId, "worker-1", now);
+        var task2 = orchestrator2.OrchestrateSceneImageGenerationAsync(payload, outboxId, "worker-2", now);
 
-        // One must complete, the second must skip (artifact exists / job completed)
+        var results = await Task.WhenAll(task1, task2);
+        var result1 = results[0];
+        var result2 = results[1];
+
+        // One must complete, the other must skip or defer gracefully without throwing or corrupting state
         Assert.True(result1.Status == JobExecutionStatus.Completed || result2.Status == JobExecutionStatus.Completed);
-        Assert.True(result1.Status == JobExecutionStatus.Skipped || result2.Status == JobExecutionStatus.Skipped ||
-                    result1.Status == JobExecutionStatus.Completed || result2.Status == JobExecutionStatus.Completed);
+        Assert.True(result1.Status == JobExecutionStatus.Skipped || result1.Status == JobExecutionStatus.Deferred || result1.Status == JobExecutionStatus.Completed);
+        Assert.True(result2.Status == JobExecutionStatus.Skipped || result2.Status == JobExecutionStatus.Deferred || result2.Status == JobExecutionStatus.Completed);
 
-        // Assert DB invariants: Exactly one current image
-        var currentImages = await dbContext.SceneImages
+        // 3. Assert DB invariants using an independent verification DbContext
+        using var dbVerify = CreateSqliteDbContext(connection);
+        var currentImages = await dbVerify.SceneImages
             .Where(img => img.SessionId == sessionId && img.SceneRevision == revision && img.IsCurrent)
             .ToListAsync();
 
@@ -101,7 +118,7 @@ public sealed class GenerationProductionConcurrencyTests
         var acceptedArtifact = currentImages[0];
         Assert.True(acceptedArtifact.IsCurrent);
 
-        // Assert Provenance is populated
+        // Assert Provenance is populated accurately
         Assert.NotNull(acceptedArtifact.ProvenanceJson);
         var provenance = acceptedArtifact.GetProvenance();
         Assert.NotNull(provenance);

@@ -9,6 +9,8 @@ namespace Application.Services;
 /// </summary>
 public sealed class GenerationRetryBudget
 {
+    public const int MaxAllowedAttempts = 3;
+
     public int MaxAttempts { get; }
     public TimeSpan MaxTotalGenerationTime { get; }
 
@@ -21,8 +23,8 @@ public sealed class GenerationRetryBudget
         int maxAttempts = 3,
         TimeSpan? maxTotalGenerationTime = null)
     {
-        if (maxAttempts <= 0 || maxAttempts > 10)
-            throw new ArgumentOutOfRangeException(nameof(maxAttempts), "MaxAttempts must be between 1 and 10.");
+        if (maxAttempts <= 0 || maxAttempts > MaxAllowedAttempts)
+            throw new ArgumentOutOfRangeException(nameof(maxAttempts), $"MaxAttempts must be between 1 and {MaxAllowedAttempts}.");
 
         var resolvedMaxTime = maxTotalGenerationTime ?? TimeSpan.FromSeconds(90);
         if (resolvedMaxTime <= TimeSpan.Zero)

@@ -32,8 +32,8 @@ public static class DeterministicSeedDerivation
     /// <summary>
     /// Computes a unique, canonical, deterministic fingerprint for a generation attempt covering all
     /// authoritative generation request inputs:
-    /// JobId, TurnId, SceneRevision, AttemptNumber, DerivedSeed, Workflow, WorkflowVersion, ParametersJson,
-    /// CompiledPrompt, CompiledNegativePrompt, and PreviousReferenceUrl.
+    /// JobId, TurnId, SceneRevision, AttemptNumber, DerivedSeed, Workflow, WorkflowVersion, ModelIdentifier, ParametersJson,
+    /// CompiledPrompt, CompiledNegativePrompt, PreviousReferenceUrl, and MitigationAction.
     /// Used to enforce strict DB-level uniqueness and idempotency across worker retries.
     /// </summary>
     public static string ComputeFingerprint(
@@ -47,7 +47,9 @@ public static class DeterministicSeedDerivation
         int workflowVersion = 1,
         string? compiledPrompt = null,
         string? compiledNegativePrompt = null,
-        string? previousReferenceUrl = null)
+        string? previousReferenceUrl = null,
+        string? modelIdentifier = null,
+        string? mitigationAction = null)
     {
         var rawKey = string.Join("|",
             jobId.ToString("N"),
@@ -57,10 +59,12 @@ public static class DeterministicSeedDerivation
             derivedSeed.ToString(CultureInfo.InvariantCulture),
             workflow ?? string.Empty,
             workflowVersion.ToString(CultureInfo.InvariantCulture),
+            modelIdentifier ?? "ComfyUI/SDXL",
             parametersJson ?? string.Empty,
             compiledPrompt ?? string.Empty,
             compiledNegativePrompt ?? string.Empty,
-            previousReferenceUrl ?? string.Empty);
+            previousReferenceUrl ?? string.Empty,
+            mitigationAction ?? "Pass");
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();

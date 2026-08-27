@@ -29,6 +29,9 @@ public sealed class GenerationFingerprintService : IGenerationFingerprintService
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(profile);
 
+        var resolvedModel = !string.IsNullOrWhiteSpace(modelIdentifier) ? modelIdentifier : (profile.Model ?? "ComfyUI/SDXL");
+        var resolvedMitigation = mitigationAction ?? "Pass";
+
         return ComputeRawFingerprint(
             jobId: jobId,
             snapshotTurnId: snapshot.TurnId,
@@ -41,8 +44,8 @@ public sealed class GenerationFingerprintService : IGenerationFingerprintService
             compiledPrompt: compiledPrompt,
             compiledNegativePrompt: compiledNegativePrompt,
             previousReferenceUrl: previousReferenceUrl,
-            modelIdentifier: modelIdentifier,
-            mitigationAction: mitigationAction
+            modelIdentifier: resolvedModel,
+            mitigationAction: resolvedMitigation
         );
     }
 
@@ -72,7 +75,9 @@ public sealed class GenerationFingerprintService : IGenerationFingerprintService
             workflowVersion: workflowVersion,
             compiledPrompt: compiledPrompt,
             compiledNegativePrompt: compiledNegativePrompt,
-            previousReferenceUrl: previousReferenceUrl
+            previousReferenceUrl: previousReferenceUrl,
+            modelIdentifier: modelIdentifier,
+            mitigationAction: mitigationAction
         );
     }
 }

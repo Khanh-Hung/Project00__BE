@@ -89,7 +89,7 @@ public sealed class GenerationRetryBudgetTests
     public void RetryBudget_Constructor_ValidatesArguments()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryBudget(maxAttempts: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryBudget(maxAttempts: 15));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryBudget(maxAttempts: 4)); // Invariant: <= 3
         Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryBudget(maxAttempts: 3, maxTotalGenerationTime: TimeSpan.Zero));
     }
 }

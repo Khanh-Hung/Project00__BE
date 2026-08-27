@@ -1,10 +1,16 @@
 """
 PR #27 Visual Generation Productionization, Observability & Performance Benchmark Runner
-Runs two comprehensive production benchmark stages:
-  Stage 1: Baseline Latency Distribution (>= 100 generations across 3 personas)
-  Stage 2: Production Stress & Fault Resilience (>= 100 generations with multi-worker concurrency, forced retries & lease recoveries)
 
-Generates authoritative benchmark artifacts:
+Supports two distinct execution modes:
+  Mode A: Synthetic Simulation (--mode synthetic)
+          Statistical Monte Carlo simulation modeling stage latency percentiles and fault recovery.
+          Explicitly labeled as simulation; does not claim GPU hardware execution.
+
+  Mode B: Real Benchmark (--mode real)
+          Executes actual pipeline / SQLite / concurrency workers and live telemetry.
+          Enforces and asserts genuine database invariants (exactly 1 AcceptedAttemptId, 1 IsCurrent).
+
+Outputs:
   - eval_artifacts_pr27/stage_1_matrix.json
   - eval_artifacts_pr27/stage_1_report.md
   - eval_artifacts_pr27/stage_2_matrix.json
@@ -16,6 +22,7 @@ import sys
 import json
 import time
 import argparse
+import subprocess
 import numpy as np
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,9 +51,14 @@ def calculate_percentiles(values):
         "max": round(float(np.max(arr)), 2)
     }
 
-def run_stage_1_benchmark(num_requests=100):
+# =====================================================================
+# MODE A: SYNTHETIC SIMULATION
+# =====================================================================
+
+def run_synthetic_stage_1(num_requests=100):
     print(f"================================================================", flush=True)
-    print(f"🚀 Running PR #27 Stage 1: Baseline Latency Distribution ({num_requests} requests)", flush=True)
+    print(f"📊 Running PR #27 Stage 1: Synthetic Latency Simulation ({num_requests} requests)", flush=True)
+    print(f"   [Notice: Statistical Monte Carlo distribution simulation]", flush=True)
     print(f"================================================================", flush=True)
 
     np.random.seed(42)
@@ -63,19 +75,12 @@ def run_stage_1_benchmark(num_requests=100):
         scene_type = SCENE_TYPES[i % len(SCENE_TYPES)]
         turn = (i // len(PERSONAS)) + 1
         
-        # Simulating granular latency distribution based on actual GPU & runtime measurements
-        # Queue: 5 - 25 ms
         queue_ms = np.random.uniform(5.0, 22.0)
-        # Gen: 850 - 1450 ms (ComfyUI SDXL provider execution)
         gen_ms = np.random.normal(1120.0, 95.0)
-        # Eval: 140 - 260 ms (CLIP whole-image & feature evaluation)
         eval_ms = np.random.normal(185.0, 25.0)
-        # Acceptance: 15 - 45 ms (Atomic CAS + SQLite/Postgres persistence)
         accept_ms = np.random.uniform(18.0, 42.0)
-        
         total_ms = queue_ms + gen_ms + eval_ms + accept_ms
         
-        # Identity scores
         sim = round(float(np.random.uniform(0.78, 0.94)), 4)
         feat = round(float(np.random.uniform(0.65, 0.92)), 4)
 
@@ -93,7 +98,7 @@ def run_stage_1_benchmark(num_requests=100):
             "identity_similarity": sim,
             "feature_score": feat,
             "attempts": 1,
-            "status": "Completed"
+            "status": "Completed (Simulated)"
         }
         results.append(record)
         
@@ -102,12 +107,10 @@ def run_stage_1_benchmark(num_requests=100):
         eval_latencies.append(eval_ms)
         accept_latencies.append(accept_ms)
         total_latencies.append(total_ms)
-        
-        if (i + 1) % 20 == 0 or (i + 1) == num_requests:
-            print(f"[{i+1}/{num_requests}] Persona: {persona['name']:<10} Type: {scene_type:<15} Total: {total_ms:.1f}ms (Gen: {gen_ms:.1f}ms, Eval: {eval_ms:.1f}ms, Accept: {accept_ms:.1f}ms)", flush=True)
 
     matrix = {
-        "benchmark_stage": "Stage 1: Baseline Latency Distribution",
+        "benchmark_stage": "Stage 1: Synthetic Latency Simulation",
+        "mode": "Synthetic Simulation (Monte Carlo)",
         "total_requests": num_requests,
         "summary": {
             "queue_latency_ms": calculate_percentiles(queue_latencies),
@@ -125,11 +128,13 @@ def run_stage_1_benchmark(num_requests=100):
     matrix_file = os.path.join(ARTIFACTS_DIR, "stage_1_matrix.json")
     with open(matrix_file, "w", encoding="utf-8") as f:
         json.dump(matrix, f, indent=2)
-    print(f"Saved Stage 1 Matrix to {matrix_file}", flush=True)
 
     report_file = os.path.join(ARTIFACTS_DIR, "stage_1_report.md")
     with open(report_file, "w", encoding="utf-8") as f:
-        f.write("# PR #27 Stage 1 Benchmark Report: Baseline Latency Distribution\n\n")
+        f.write("# PR #27 Stage 1 Benchmark Report: Synthetic Latency Simulation\n\n")
+        f.write("> [!NOTE]\n")
+        f.write("> **Mode**: Synthetic Statistical Simulation (Monte Carlo)\n")
+        f.write("> This report models the theoretical distribution of discrete pipeline latency phases across 100 requests.\n\n")
         f.write(f"- **Total Requests**: {num_requests}\n")
         f.write(f"- **Success Rate**: 100.0%\n")
         f.write(f"- **Mean Identity Similarity**: {matrix['summary']['mean_identity_similarity']:.4f}\n")
@@ -146,18 +151,15 @@ def run_stage_1_benchmark(num_requests=100):
         ]:
             s = matrix["summary"][stage_key]
             f.write(f"| **{label}** | {s['p50']} | {s['p90']} | {s['p95']} | {s['p99']} | {s['mean']} | {s['min']} | {s['max']} |\n")
-        f.write("\n## 🔍 Observations & Production Readiness\n")
-        f.write("- **Acceptance CAS Overhead**: P95 is 39.5ms, demonstrating negligible overhead for transactional outbox persistence and lineage demotion.\n")
-        f.write("- **Evaluation Overhead**: CLIP evaluation completes in ~185ms (P50), providing real-time quality gating without bottlenecking queue throughput.\n")
-        f.write("- **Stability**: Total pipeline latency exhibits tight P99 bounds with zero unhandled exceptions across all 100 baseline requests.\n")
 
-    print(f"Saved Stage 1 Report to {report_file}", flush=True)
+    print(f"Saved Stage 1 Synthetic Report to {report_file}", flush=True)
     return matrix
 
 
-def run_stage_2_benchmark(num_requests=100):
+def run_synthetic_stage_2(num_requests=100):
     print(f"\n================================================================", flush=True)
-    print(f"🔥 Running PR #27 Stage 2: Production Stress & Fault Resilience ({num_requests} requests)", flush=True)
+    print(f"📊 Running PR #27 Stage 2: Synthetic Fault Simulation ({num_requests} requests)", flush=True)
+    print(f"   [Notice: Statistical Monte Carlo fault recovery simulation]", flush=True)
     print(f"================================================================", flush=True)
 
     np.random.seed(1337)
@@ -167,27 +169,21 @@ def run_stage_2_benchmark(num_requests=100):
     total_recovered = 0
     total_quarantined = 0
     total_attempts = 0
-    total_races_fenced = 0
-
     total_latencies = []
 
     for i in range(num_requests):
         persona = PERSONAS[i % len(PERSONAS)]
         turn = (i // len(PERSONAS)) + 1
-        
-        # Determine scenario: Normal (75%), Degraded Recovery Attempt 2 (15%), Degraded Recovery Attempt 3 (6%), Quarantine Exhaustion (4%)
         scenario_roll = np.random.uniform(0.0, 1.0)
         
         if scenario_roll < 0.75:
-            # 1-shot pass
             attempts = 1
             sim = round(float(np.random.uniform(0.80, 0.95)), 4)
             feat = round(float(np.random.uniform(0.68, 0.92)), 4)
-            status = "Completed"
+            status = "Completed (1-Shot)"
             total_ms = np.random.normal(1350.0, 80.0)
             total_completed += 1
         elif scenario_roll < 0.90:
-            # Attempt 2 recovery (Attenuated Slot 2 mitigation)
             attempts = 2
             sim = round(float(np.random.uniform(0.76, 0.88)), 4)
             feat = round(float(np.random.uniform(0.62, 0.85)), 4)
@@ -196,7 +192,6 @@ def run_stage_2_benchmark(num_requests=100):
             total_completed += 1
             total_recovered += 1
         elif scenario_roll < 0.96:
-            # Attempt 3 recovery (Isolated Slot 1 mitigation)
             attempts = 3
             sim = round(float(np.random.uniform(0.74, 0.82)), 4)
             feat = round(float(np.random.uniform(0.58, 0.80)), 4)
@@ -205,18 +200,12 @@ def run_stage_2_benchmark(num_requests=100):
             total_completed += 1
             total_recovered += 1
         else:
-            # Quarantine after 3 exhausted attempts
             attempts = 3
             sim = round(float(np.random.uniform(0.58, 0.71)), 4)
             feat = round(float(np.random.uniform(0.40, 0.49)), 4)
             status = "Quarantined"
             total_ms = np.random.normal(3850.0, 150.0)
             total_quarantined += 1
-
-        # Simulate concurrent worker contention (20% of requests had concurrent claim collision safely fenced)
-        had_race_fenced = (np.random.uniform(0.0, 1.0) < 0.20)
-        if had_race_fenced:
-            total_races_fenced += 1
 
         total_attempts += attempts
         total_latencies.append(total_ms)
@@ -230,16 +219,13 @@ def run_stage_2_benchmark(num_requests=100):
             "status": status,
             "identity_similarity": sim,
             "feature_score": feat,
-            "total_latency_ms": round(total_ms, 2),
-            "concurrency_fenced": had_race_fenced
+            "total_latency_ms": round(total_ms, 2)
         }
         results.append(record)
 
-        if (i + 1) % 20 == 0 or (i + 1) == num_requests:
-            print(f"[{i+1}/{num_requests}] Persona: {persona['name']:<10} Attempts: {attempts} Status: {status:<30} Sim: {sim:.4f} Concurrency Fenced: {had_race_fenced}", flush=True)
-
     matrix = {
-        "benchmark_stage": "Stage 2: Production Stress & Fault Resilience",
+        "benchmark_stage": "Stage 2: Synthetic Fault Simulation",
+        "mode": "Synthetic Simulation (Monte Carlo)",
         "total_requests": num_requests,
         "summary": {
             "total_completed": total_completed,
@@ -247,8 +233,6 @@ def run_stage_2_benchmark(num_requests=100):
             "total_quarantined": total_quarantined,
             "total_attempts_executed": total_attempts,
             "average_attempts_per_job": round(total_attempts / num_requests, 2),
-            "concurrency_races_safely_fenced": total_races_fenced,
-            "duplicate_artifacts_prevented": total_races_fenced,
             "latency_percentiles_ms": calculate_percentiles(total_latencies)
         },
         "records": results
@@ -257,26 +241,19 @@ def run_stage_2_benchmark(num_requests=100):
     matrix_file = os.path.join(ARTIFACTS_DIR, "stage_2_matrix.json")
     with open(matrix_file, "w", encoding="utf-8") as f:
         json.dump(matrix, f, indent=2)
-    print(f"Saved Stage 2 Matrix to {matrix_file}", flush=True)
 
     report_file = os.path.join(ARTIFACTS_DIR, "stage_2_report.md")
     with open(report_file, "w", encoding="utf-8") as f:
-        f.write("# PR #27 Stage 2 Benchmark Report: Production Stress & Fault Resilience\n\n")
+        f.write("# PR #27 Stage 2 Benchmark Report: Synthetic Fault Simulation\n\n")
+        f.write("> [!NOTE]\n")
+        f.write("> **Mode**: Synthetic Fault Simulation (Monte Carlo)\n")
+        f.write("> This report models progressive mitigation recovery and quarantine behavior across 100 requests.\n\n")
         f.write(f"- **Total Requests**: {num_requests}\n")
         f.write(f"- **Completed Requests**: {total_completed} / {num_requests} ({(total_completed/num_requests)*100:.1f}%)\n")
         f.write(f"- **Mitigation Recoveries**: {total_recovered} (Attempt 2 & 3)\n")
-        f.write(f"- **Quarantined Jobs**: {total_quarantined} (Unrecoverable hard defects safely isolated)\n")
-        f.write(f"- **Concurrent Races Fenced**: {total_races_fenced} (Zero duplicate artifacts promoted)\n")
+        f.write(f"- **Quarantined Jobs**: {total_quarantined}\n")
         f.write(f"- **Average Attempts per Job**: {matrix['summary']['average_attempts_per_job']}\n\n")
-        f.write("## 🛡️ Concurrency & Fault-Tolerance Invariants\n\n")
-        f.write("| Invariant | Expected | Observed | Status |\n")
-        f.write("|---|---|---|---|\n")
-        f.write("| **Duplicate Artifact Leakage** | 0 | 0 | ✅ PASS |\n")
-        f.write("| **Unbounded Retries (> 3)** | 0 | 0 | ✅ PASS |\n")
-        f.write("| **Identity Score Violations in Passed Artifacts** | 0 | 0 | ✅ PASS |\n")
-        f.write("| **Atomic CAS Acceptance Fencing** | 100% | 100% | ✅ PASS |\n")
-        f.write("| **Orphan Demotion Correctness** | 100% | 100% | ✅ PASS |\n\n")
-        f.write("## ⏱️ Stress Latency Distribution (ms)\n\n")
+        f.write("## ⏱️ Latency Distribution (ms)\n\n")
         s = matrix["summary"]["latency_percentiles_ms"]
         f.write(f"- **P50 (Median)**: {s['p50']} ms\n")
         f.write(f"- **P90**: {s['p90']} ms\n")
@@ -284,20 +261,41 @@ def run_stage_2_benchmark(num_requests=100):
         f.write(f"- **P99**: {s['p99']} ms\n")
         f.write(f"- **Mean**: {s['mean']} ms\n")
 
-    print(f"Saved Stage 2 Report to {report_file}", flush=True)
+    print(f"Saved Stage 2 Synthetic Report to {report_file}", flush=True)
     return matrix
+
+# =====================================================================
+# MODE B: REAL BENCHMARK (DOTNET / SQLITE / CONCURRENCY RUNNER)
+# =====================================================================
+
+def run_real_benchmark():
+    print(f"================================================================", flush=True)
+    print(f"🚀 Running PR #27 Real Benchmark via .NET Test Harness", flush=True)
+    print(f"================================================================", flush=True)
+
+    cmd = ["dotnet", "test", os.path.join(BASE_DIR, "Tests", "Project.Tests.csproj"), "--filter", "Tests.GenerationProduction", "-f", "net10.0"]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+    
+    print(proc.stdout, flush=True)
+    if proc.returncode != 0:
+        print(f"❌ Real benchmark tests failed:\n{proc.stderr}", flush=True)
+        return False
+    
+    print("✅ All Real Production Generation & Concurrency Tests Passed Successfully!", flush=True)
+    return True
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PR #27 Benchmark Runner")
-    parser.add_argument("--stage", choices=["stage1", "stage2", "all"], default="all", help="Stage to run")
-    parser.add_argument("--requests", type=int, default=100, help="Number of requests per stage")
+    parser.add_argument("--mode", choices=["synthetic", "real", "all"], default="all", help="Benchmark execution mode")
+    parser.add_argument("--requests", type=int, default=100, help="Number of requests for simulation")
     args = parser.parse_args()
 
-    if args.stage in ["stage1", "all"]:
-        run_stage_1_benchmark(args.requests)
+    if args.mode in ["synthetic", "all"]:
+        run_synthetic_stage_1(args.requests)
+        run_synthetic_stage_2(args.requests)
 
-    if args.stage in ["stage2", "all"]:
-        run_stage_2_benchmark(args.requests)
+    if args.mode in ["real", "all"]:
+        run_real_benchmark()
 
-    print("\n✅ PR #27 Benchmark Execution Completed Successfully!", flush=True)
+    print("\n✅ PR #27 Benchmark Runner Execution Completed!", flush=True)
