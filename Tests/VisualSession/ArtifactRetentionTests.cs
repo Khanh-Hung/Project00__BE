@@ -23,6 +23,19 @@ public sealed class ArtifactRetentionTests
     }
 
     [Fact]
+    public async Task MissingArtifact_ReturnsNotEligibleAndNotProtected()
+    {
+        var (_, service) = CreateContext();
+        var nonExistentId = Guid.NewGuid();
+
+        var eval = await service.EvaluateEligibilityAsync(nonExistentId);
+
+        Assert.False(eval.IsProtected);
+        Assert.False(eval.IsEligibleForCleanup);
+        Assert.Equal("ArtifactNotFound", eval.ProtectionReason);
+    }
+
+    [Fact]
     public async Task CurrentArtifact_IsIndefinitelyProtected()
     {
         var (db, service) = CreateContext();
@@ -86,23 +99,45 @@ public sealed class ArtifactRetentionTests
     }
 
     [Fact]
-    public async Task CleanupExpiredArtifacts_MarksQuarantinedAndHistoricalPastTTL_AsDeleted()
+    public async Task CleanupExpiredArtifacts_UsesQuarantinedAtTimestamp_NotJustCreatedAt()
     {
         var (db, service) = CreateContext();
         var sessionId = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
-        var oldTime = DateTime.UtcNow.AddDays(-10);
+        var oldCreatedAt = DateTime.UtcNow.AddDays(-20);
+        var recentQuarantinedAt = DateTime.UtcNow.AddDays(-2); // Quarantined 2 days ago (TTL: 7 days) -> NOT EXPIRED!
+        var expiredQuarantinedAt = DateTime.UtcNow.AddDays(-10); // Quarantined 10 days ago (TTL: 7 days) -> EXPIRED!
 
-        // Expired quarantined artifact (10 days old, TTL 7 days)
-        var quarantinedImg = new SceneImage(sessionId, charId, Guid.NewGuid(), 1, "https://cdn.project00.ai/quarantined.png", "prompt", isCurrent: false, lifecycleStatus: ArtifactLifecycleStatus.Quarantined);
-        quarantinedImg.SetCreated(oldTime);
-        await db.SceneImages.AddAsync(quarantinedImg);
+        // Artifact 1: Old created, but recently quarantined (within 7-day TTL)
+        var recentQuarantined = new SceneImage(
+            sessionId: sessionId,
+            characterId: charId,
+            turnId: Guid.NewGuid(),
+            sceneRevision: 1,
+            imageUrl: "https://cdn.project00.ai/recent_q.png",
+            prompt: "1girl",
+            isCurrent: false,
+            lifecycleStatus: ArtifactLifecycleStatus.Quarantined,
+            quarantinedAt: recentQuarantinedAt
+        );
+        recentQuarantined.SetCreated(oldCreatedAt);
+        await db.SceneImages.AddAsync(recentQuarantined);
 
-        // Active current artifact
-        var currentImg = new SceneImage(sessionId, charId, Guid.NewGuid(), 2, "https://cdn.project00.ai/current.png", "prompt", isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
-        currentImg.SetCreated(oldTime);
-        await db.SceneImages.AddAsync(currentImg);
+        // Artifact 2: Quarantined 10 days ago (past 7-day TTL)
+        var expiredQuarantined = new SceneImage(
+            sessionId: sessionId,
+            characterId: charId,
+            turnId: Guid.NewGuid(),
+            sceneRevision: 2,
+            imageUrl: "https://cdn.project00.ai/expired_q.png",
+            prompt: "1girl",
+            isCurrent: false,
+            lifecycleStatus: ArtifactLifecycleStatus.Quarantined,
+            quarantinedAt: expiredQuarantinedAt
+        );
+        expiredQuarantined.SetCreated(oldCreatedAt);
+        await db.SceneImages.AddAsync(expiredQuarantined);
 
         await db.SaveChangesAsync();
 
@@ -110,13 +145,13 @@ public sealed class ArtifactRetentionTests
             quarantinedTtl: TimeSpan.FromDays(7),
             orphanTtl: TimeSpan.FromDays(30));
 
+        // Exactly 1 artifact cleaned (expiredQuarantined), recentQuarantined is PRESERVED!
         Assert.Equal(1, cleanedCount);
 
-        var reloadedQuarantined = await db.SceneImages.FirstAsync(img => img.Id == quarantinedImg.Id);
-        Assert.Equal(ArtifactLifecycleStatus.Deleted, reloadedQuarantined.LifecycleStatus);
+        var reloadedRecent = await db.SceneImages.FirstAsync(img => img.Id == recentQuarantined.Id);
+        Assert.Equal(ArtifactLifecycleStatus.Quarantined, reloadedRecent.LifecycleStatus);
 
-        var reloadedCurrent = await db.SceneImages.FirstAsync(img => img.Id == currentImg.Id);
-        Assert.Equal(ArtifactLifecycleStatus.Current, reloadedCurrent.LifecycleStatus);
-        Assert.True(reloadedCurrent.IsCurrent);
+        var reloadedExpired = await db.SceneImages.FirstAsync(img => img.Id == expiredQuarantined.Id);
+        Assert.Equal(ArtifactLifecycleStatus.Deleted, reloadedExpired.LifecycleStatus);
     }
 }

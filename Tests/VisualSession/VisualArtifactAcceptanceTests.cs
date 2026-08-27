@@ -41,7 +41,7 @@ public sealed class VisualArtifactAcceptanceTests
     }
 
     [Fact]
-    public async Task AcceptAttempt_PromotesArtifactToCurrent_AndInitializesVisualSessionState()
+    public async Task AcceptAttempt_PromotesArtifactToCurrent_AndInitializesVisualSessionStateAtRevision1()
     {
         var (db, service) = CreateContext();
         var sessionId = Guid.NewGuid();
@@ -84,7 +84,7 @@ public sealed class VisualArtifactAcceptanceTests
         Assert.Equal(ArtifactLifecycleStatus.Current, artifact.LifecycleStatus);
         Assert.Equal(1, artifact.VisualRevision);
 
-        // Verify VisualSessionState
+        // Verify VisualSessionState: must be 1, NOT 2 (No double increment!)
         var sessionState = await db.VisualSessionStates.FirstAsync(s => s.SessionId == sessionId);
         Assert.Equal(artifact.Id, sessionState.CurrentImageId);
         Assert.Equal(job.Id, sessionState.CurrentGenerationJobId);
@@ -92,7 +92,7 @@ public sealed class VisualArtifactAcceptanceTests
     }
 
     [Fact]
-    public async Task AcceptAttempt_DemotesPreviousCurrentArtifact_AndAdvancesVisualRevision()
+    public async Task AcceptAttempt_DemotesPreviousCurrentArtifact_AndAdvancesVisualRevisionExactlyOnce()
     {
         var (db, service) = CreateContext();
         var sessionId = Guid.NewGuid();
@@ -152,21 +152,21 @@ public sealed class VisualArtifactAcceptanceTests
         Assert.False(reloadedPrevious.IsCurrent);
         Assert.Equal(ArtifactLifecycleStatus.Historical, reloadedPrevious.LifecycleStatus);
 
-        // New artifact promoted to Current with VisualRevision 2 and Predecessor link
+        // New artifact promoted to Current with VisualRevision 2 (exactly 1 increment: 1 -> 2)
         var newArtifact = await db.SceneImages.FirstAsync(img => img.GenerationJobId == job2.Id);
         Assert.True(newArtifact.IsCurrent);
         Assert.Equal(ArtifactLifecycleStatus.Current, newArtifact.LifecycleStatus);
         Assert.Equal(2, newArtifact.VisualRevision);
         Assert.Equal(previousArtifact.Id, newArtifact.PredecessorArtifactId);
 
-        // VisualSessionState updated to revision 2
+        // VisualSessionState updated to revision 2 (matching newArtifact.VisualRevision!)
         var reloadedState = await db.VisualSessionStates.FirstAsync(s => s.SessionId == sessionId);
         Assert.Equal(newArtifact.Id, reloadedState.CurrentImageId);
         Assert.Equal(2, reloadedState.VisualRevision);
     }
 
     [Fact]
-    public async Task QuarantinedAttempt_DoesNotPromote_AndPreservesExistingSessionState()
+    public async Task QuarantinedAttempt_DoesNotPromote_SetsQuarantinedAt_AndPreservesExistingSessionState()
     {
         var (db, service) = CreateContext();
         var sessionId = Guid.NewGuid();
@@ -219,12 +219,13 @@ public sealed class VisualArtifactAcceptanceTests
 
         Assert.Equal(JobExecutionStatus.Completed, result.Status);
 
-        // Verify new artifact is marked Quarantined and NOT Current
+        // Verify new artifact is marked Quarantined with QuarantinedAt timestamp
         var quarantinedArtifact = await db.SceneImages.FirstAsync(img => img.GenerationJobId == job.Id);
         Assert.False(quarantinedArtifact.IsCurrent);
         Assert.Equal(ArtifactLifecycleStatus.Quarantined, quarantinedArtifact.LifecycleStatus);
+        Assert.NotNull(quarantinedArtifact.QuarantinedAt);
 
-        // Verify existing session state remains untouched (active artifact still Current)
+        // Verify existing session state remains untouched
         var reloadedState = await db.VisualSessionStates.FirstAsync(s => s.SessionId == sessionId);
         Assert.Equal(activeArtifact.Id, reloadedState.CurrentImageId);
         Assert.Equal(1, reloadedState.VisualRevision);

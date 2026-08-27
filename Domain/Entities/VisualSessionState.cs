@@ -38,7 +38,8 @@ public sealed class VisualSessionState : Entity
     /// Atomically promotes an accepted artifact to be the current visual state for the session,
     /// advancing the visual revision counter.
     /// </summary>
-    public void PromoteArtifact(Guid artifactId, Guid generationJobId, DateTime now)
+    /// <returns>The newly incremented visual revision number.</returns>
+    public int PromoteArtifact(Guid artifactId, Guid generationJobId, DateTime now)
     {
         if (artifactId == Guid.Empty)
             throw new ArgumentException("ArtifactId cannot be empty.", nameof(artifactId));
@@ -49,6 +50,7 @@ public sealed class VisualSessionState : Entity
         CurrentGenerationJobId = generationJobId;
         VisualRevision++;
         SetUpdated(now);
+        return VisualRevision;
     }
 
     /// <summary>

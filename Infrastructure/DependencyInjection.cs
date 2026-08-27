@@ -171,7 +171,6 @@ public static class DependencyInjection
 
         // PR #28: Visual Session Integration & Character Image Lifecycle
         services.AddScoped<IVisualPredecessorResolver, Application.Services.VisualPredecessorResolver>();
-        services.AddScoped<IVisualArtifactService, Application.Services.VisualArtifactService>();
         services.AddScoped<IVisualHistoryService, Application.Services.VisualHistoryService>();
         services.AddScoped<IArtifactRetentionService, Application.Services.ArtifactRetentionService>();
         services.AddHostedService<VisualArtifactCleanupWorker>();

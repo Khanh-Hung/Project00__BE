@@ -20,21 +20,32 @@ public sealed class VisualSessionStateTests
     }
 
     [Fact]
-    public void PromoteArtifact_AdvancesRevision_AndSetsNewCurrentArtifact()
+    public void PromoteArtifact_AdvancesRevision_AndReturnsNewRevision()
     {
         var sessionId = Guid.NewGuid();
-        var state = new VisualSessionState(sessionId, visualRevision: 2);
+        var state = new VisualSessionState(sessionId, visualRevision: 1);
 
-        var artifactId = Guid.NewGuid();
-        var jobId = Guid.NewGuid();
-        var promotionTime = DateTime.UtcNow;
+        var artifactId1 = Guid.NewGuid();
+        var jobId1 = Guid.NewGuid();
+        var promotionTime1 = DateTime.UtcNow;
 
-        state.PromoteArtifact(artifactId, jobId, promotionTime);
+        var rev1 = state.PromoteArtifact(artifactId1, jobId1, promotionTime1);
 
-        Assert.Equal(artifactId, state.CurrentImageId);
-        Assert.Equal(jobId, state.CurrentGenerationJobId);
+        Assert.Equal(2, rev1);
+        Assert.Equal(2, state.VisualRevision);
+        Assert.Equal(artifactId1, state.CurrentImageId);
+        Assert.Equal(jobId1, state.CurrentGenerationJobId);
+
+        var artifactId2 = Guid.NewGuid();
+        var jobId2 = Guid.NewGuid();
+        var promotionTime2 = DateTime.UtcNow.AddMinutes(1);
+
+        var rev2 = state.PromoteArtifact(artifactId2, jobId2, promotionTime2);
+
+        Assert.Equal(3, rev2);
         Assert.Equal(3, state.VisualRevision);
-        Assert.Equal(promotionTime, state.UpdatedAt);
+        Assert.Equal(artifactId2, state.CurrentImageId);
+        Assert.Equal(jobId2, state.CurrentGenerationJobId);
     }
 
     [Fact]

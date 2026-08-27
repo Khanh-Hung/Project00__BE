@@ -11,11 +11,13 @@ namespace Application.Services;
 /// <summary>
 /// Authoritative resolver for Slot 2 (Scene Continuity) predecessor reference images.
 /// Follows strict 4-tier resolution priority:
-/// 1. Explicit predecessor from VisualSnapshot
-/// 2. Latest accepted current artifact of the session
+/// 1. Explicit predecessor from VisualSnapshot (PredecessorSceneImageId authoritative, then PreviousSceneImageUrl)
+/// 2. Latest accepted current artifact of the session (only when no explicit predecessor specified)
 /// 3. Character canonical reference
 /// 4. No predecessor (null)
-/// Invariants: Never resolves a Quarantined, Failed, Cancelled, or Cross-Session artifact.
+/// Invariants:
+/// - Never resolves a Quarantined, Failed, Cancelled, or Cross-Session artifact.
+/// - If an explicit predecessor is specified but invalid, strictly REJECTS (returns null) rather than silently falling back.
 /// </summary>
 public sealed class VisualPredecessorResolver : IVisualPredecessorResolver
 {
@@ -39,45 +41,92 @@ public sealed class VisualPredecessorResolver : IVisualPredecessorResolver
         if (snapshot == null)
             throw new ArgumentNullException(nameof(snapshot));
 
-        // 1. Tier 1: Explicit Predecessor from VisualSnapshot (PreviousSceneImageUrl or PredecessorSceneImageId)
-        var explicitUrl = snapshot.PreviousSceneImageUrl;
-        if (!string.IsNullOrWhiteSpace(explicitUrl))
+        bool hasExplicitPredecessor = false;
+
+        // 1. Tier 1A: Authoritative Explicit Predecessor ID from VisualSnapshot
+        if (snapshot.PredecessorSceneImageId.HasValue && snapshot.PredecessorSceneImageId.Value != Guid.Empty)
         {
-            // Verify if explicit URL points to an artifact in the database
+            hasExplicitPredecessor = true;
+            var explicitId = snapshot.PredecessorSceneImageId.Value;
+
+            var matchingArtifact = await _dbContext.SceneImages
+                .AsNoTracking()
+                .FirstOrDefaultAsync(img => img.Id == explicitId, ct);
+
+            if (matchingArtifact == null)
+            {
+                _logger.LogWarning("[VisualPredecessorResolver] Explicit predecessor artifact ID {ArtifactId} not found in database for Session {SessionId}. Strict reject.",
+                    explicitId, sessionId);
+                return null;
+            }
+
+            // Invariant: Cross-session predecessor is strictly forbidden
+            if (matchingArtifact.SessionId != sessionId)
+            {
+                _logger.LogWarning("[VisualPredecessorResolver] Explicit predecessor artifact {ArtifactId} belongs to foreign Session {ArtifactSession}, not target Session {SessionId}. Strict reject.",
+                    matchingArtifact.Id, matchingArtifact.SessionId, sessionId);
+                return null;
+            }
+
+            // Invariant: Quarantined or deleted artifact is strictly forbidden
+            if (matchingArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined
+                || matchingArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted)
+            {
+                _logger.LogWarning("[VisualPredecessorResolver] Explicit predecessor artifact {ArtifactId} is in invalid status {Status}. Strict reject.",
+                    matchingArtifact.Id, matchingArtifact.LifecycleStatus);
+                return null;
+            }
+
+            _logger.LogInformation("[VisualPredecessorResolver] Resolved explicit predecessor by ID for Session {SessionId}: ArtifactId={ArtifactId}, Revision={Revision}",
+                sessionId, matchingArtifact.Id, matchingArtifact.VisualRevision);
+
+            return new VisualPredecessor(matchingArtifact.Id, matchingArtifact.ImageUrl, "SnapshotExplicitId", matchingArtifact.VisualRevision);
+        }
+
+        // 1. Tier 1B: Explicit Predecessor URL from VisualSnapshot
+        if (!string.IsNullOrWhiteSpace(snapshot.PreviousSceneImageUrl))
+        {
+            hasExplicitPredecessor = true;
+            var explicitUrl = snapshot.PreviousSceneImageUrl;
+
             var matchingArtifact = await _dbContext.SceneImages
                 .AsNoTracking()
                 .FirstOrDefaultAsync(img => img.ImageUrl == explicitUrl, ct);
 
             if (matchingArtifact != null)
             {
-                // Invariant: Cross-session predecessor is strictly forbidden
                 if (matchingArtifact.SessionId != sessionId)
                 {
-                    _logger.LogWarning("[VisualPredecessorResolver] Explicit predecessor artifact {ArtifactId} belongs to Session {ArtifactSession}, not target Session {SessionId}. Rejecting.",
-                        matchingArtifact.Id, matchingArtifact.SessionId, sessionId);
+                    _logger.LogWarning("[VisualPredecessorResolver] Explicit predecessor URL belongs to foreign Session {ArtifactSession}. Strict reject.",
+                        matchingArtifact.SessionId);
+                    return null;
                 }
-                // Invariant: Quarantined or deleted artifact is strictly forbidden
-                else if (matchingArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined
-                         || matchingArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted)
+
+                if (matchingArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined
+                    || matchingArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted)
                 {
-                    _logger.LogWarning("[VisualPredecessorResolver] Explicit predecessor artifact {ArtifactId} is in invalid status {Status}. Rejecting.",
+                    _logger.LogWarning("[VisualPredecessorResolver] Explicit predecessor URL artifact {ArtifactId} is in invalid status {Status}. Strict reject.",
                         matchingArtifact.Id, matchingArtifact.LifecycleStatus);
+                    return null;
                 }
-                else
-                {
-                    _logger.LogInformation("[VisualPredecessorResolver] Resolved explicit predecessor from VisualSnapshot for Session {SessionId}: ArtifactId={ArtifactId}",
-                        sessionId, matchingArtifact.Id);
-                    return new VisualPredecessor(matchingArtifact.Id, matchingArtifact.ImageUrl, "SnapshotExplicit", matchingArtifact.VisualRevision);
-                }
+
+                return new VisualPredecessor(matchingArtifact.Id, matchingArtifact.ImageUrl, "SnapshotExplicitUrl", matchingArtifact.VisualRevision);
             }
             else
             {
-                // Non-DB URL (e.g. externally supplied valid image)
-                return new VisualPredecessor(null, explicitUrl, "SnapshotExplicit");
+                // External valid URL supplied without local DB entity
+                return new VisualPredecessor(null, explicitUrl, "SnapshotExplicitUrl");
             }
         }
 
-        // 2. Tier 2: Latest Accepted Current Artifact of the Session (via VisualSessionState or SceneImages)
+        // If an explicit predecessor was specified but failed validation, we strictly returned null above.
+        // We only proceed to Tier 2 & Tier 3 if NO explicit predecessor was requested on the snapshot.
+        if (hasExplicitPredecessor)
+        {
+            return null;
+        }
+
+        // 2. Tier 2: Latest Accepted Current Artifact of the Session (via VisualSessionState)
         var sessionState = await _dbContext.VisualSessionStates
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
@@ -97,23 +146,6 @@ public sealed class VisualPredecessorResolver : IVisualPredecessorResolver
                     sessionId, currentArtifact.Id, sessionState.VisualRevision);
                 return new VisualPredecessor(currentArtifact.Id, currentArtifact.ImageUrl, "CurrentSessionArtifact", sessionState.VisualRevision);
             }
-        }
-
-        // Fallback query directly on SceneImages for active current image
-        var fallbackCurrentArtifact = await _dbContext.SceneImages
-            .AsNoTracking()
-            .Where(img => img.SessionId == sessionId
-                          && img.IsCurrent
-                          && img.LifecycleStatus != ArtifactLifecycleStatus.Quarantined
-                          && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted)
-            .OrderByDescending(img => img.CreatedAt)
-            .FirstOrDefaultAsync(ct);
-
-        if (fallbackCurrentArtifact != null)
-        {
-            _logger.LogInformation("[VisualPredecessorResolver] Resolved fallback active session artifact for Session {SessionId}: ArtifactId={ArtifactId}",
-                sessionId, fallbackCurrentArtifact.Id);
-            return new VisualPredecessor(fallbackCurrentArtifact.Id, fallbackCurrentArtifact.ImageUrl, "CurrentSessionArtifact", fallbackCurrentArtifact.VisualRevision);
         }
 
         // 3. Tier 3: Character Canonical Reference

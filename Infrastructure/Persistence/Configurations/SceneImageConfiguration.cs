@@ -27,6 +27,7 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
         builder.Property(x => x.GenerationFingerprint).HasMaxLength(128);
         builder.Property(x => x.VisualRevision).IsRequired().HasDefaultValue(1);
         builder.Property(x => x.LifecycleStatus).IsRequired().HasDefaultValue(ArtifactLifecycleStatus.Current);
+        builder.Property(x => x.QuarantinedAt).IsRequired(false);
 
         // Predecessor reference to another SceneImage (Self-referencing FK)
         builder.HasOne<SceneImage>()

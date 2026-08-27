@@ -1,0 +1,218 @@
+[
+  {
+    "config": "Config A: Baseline (V2 Production: Slot2 0.15/0.30 same-scene, 0.08/0.20 transition)",
+    "gender_retention": "8/8 (100.0%)",
+    "turns": [
+      {
+        "turn": 1,
+        "is_male": true,
+        "pos_s": 0.25322356820106506,
+        "neg_s": 0.13059760630130768
+      },
+      {
+        "turn": 2,
+        "is_male": true,
+        "pos_s": 0.24546831846237183,
+        "neg_s": 0.1305299997329712
+      },
+      {
+        "turn": 3,
+        "is_male": true,
+        "pos_s": 0.2168789505958557,
+        "neg_s": 0.19840507209300995
+      },
+      {
+        "turn": 4,
+        "is_male": true,
+        "pos_s": 0.2321149706840515,
+        "neg_s": 0.1859612762928009
+      },
+      {
+        "turn": 5,
+        "is_male": true,
+        "pos_s": 0.21877874433994293,
+        "neg_s": 0.19744735956192017
+      },
+      {
+        "turn": 6,
+        "is_male": true,
+        "pos_s": 0.23152035474777222,
+        "neg_s": 0.17544914782047272
+      },
+      {
+        "turn": 7,
+        "is_male": true,
+        "pos_s": 0.22367186844348907,
+        "neg_s": 0.19779513776302338
+      },
+      {
+        "turn": 8,
+        "is_male": true,
+        "pos_s": 0.23712602257728577,
+        "neg_s": 0.15278343856334686
+      }
+    ]
+  },
+  {
+    "config": "Config B: Slot 2 Completely Disabled (Slot 1 Canonical Avatar Only)",
+    "gender_retention": "8/8 (100.0%)",
+    "turns": [
+      {
+        "turn": 1,
+        "is_male": true,
+        "pos_s": 0.2392377257347107,
+        "neg_s": 0.19067315757274628
+      },
+      {
+        "turn": 2,
+        "is_male": true,
+        "pos_s": 0.23955808579921722,
+        "neg_s": 0.12278635054826736
+      },
+      {
+        "turn": 3,
+        "is_male": true,
+        "pos_s": 0.26172128319740295,
+        "neg_s": 0.1272515207529068
+      },
+      {
+        "turn": 4,
+        "is_male": true,
+        "pos_s": 0.23396915197372437,
+        "neg_s": 0.14822794497013092
+      },
+      {
+        "turn": 5,
+        "is_male": true,
+        "pos_s": 0.24034935235977173,
+        "neg_s": 0.16898572444915771
+      },
+      {
+        "turn": 6,
+        "is_male": true,
+        "pos_s": 0.21798178553581238,
+        "neg_s": 0.17972229421138763
+      },
+      {
+        "turn": 7,
+        "is_male": true,
+        "pos_s": 0.23363757133483887,
+        "neg_s": 0.13876351714134216
+      },
+      {
+        "turn": 8,
+        "is_male": true,
+        "pos_s": 0.23712602257728577,
+        "neg_s": 0.15278343856334686
+      }
+    ]
+  },
+  {
+    "config": "Config C: Attenuated Slot 2 (Weight 0.04, EndAt 0.15 across all turns)",
+    "gender_retention": "7/8 (87.5%)",
+    "turns": [
+      {
+        "turn": 1,
+        "is_male": true,
+        "pos_s": 0.2392377257347107,
+        "neg_s": 0.19067315757274628
+      },
+      {
+        "turn": 2,
+        "is_male": true,
+        "pos_s": 0.25106728076934814,
+        "neg_s": 0.1261894404888153
+      },
+      {
+        "turn": 3,
+        "is_male": true,
+        "pos_s": 0.25663843750953674,
+        "neg_s": 0.13199444115161896
+      },
+      {
+        "turn": 4,
+        "is_male": true,
+        "pos_s": 0.2004144787788391,
+        "neg_s": 0.17047147452831268
+      },
+      {
+        "turn": 5,
+        "is_male": true,
+        "pos_s": 0.24534361064434052,
+        "neg_s": 0.18303942680358887
+      },
+      {
+        "turn": 6,
+        "is_male": true,
+        "pos_s": 0.21171508729457855,
+        "neg_s": 0.1814640313386917
+      },
+      {
+        "turn": 7,
+        "is_male": true,
+        "pos_s": 0.2517313063144684,
+        "neg_s": 0.11967438459396362
+      },
+      {
+        "turn": 8,
+        "is_male": false,
+        "pos_s": 0.18587325513362885,
+        "neg_s": 0.19057488441467285
+      }
+    ]
+  },
+  {
+    "config": "Config D: Stronger Anatomical Negative (Anti-Breast + Flat Chest Anchor)",
+    "gender_retention": "8/8 (100.0%)",
+    "turns": [
+      {
+        "turn": 1,
+        "is_male": true,
+        "pos_s": 0.24738402664661407,
+        "neg_s": 0.16037839651107788
+      },
+      {
+        "turn": 2,
+        "is_male": true,
+        "pos_s": 0.24184277653694153,
+        "neg_s": 0.11050298810005188
+      },
+      {
+        "turn": 3,
+        "is_male": true,
+        "pos_s": 0.22239065170288086,
+        "neg_s": 0.14695072174072266
+      },
+      {
+        "turn": 4,
+        "is_male": true,
+        "pos_s": 0.20675228536128998,
+        "neg_s": 0.195988267660141
+      },
+      {
+        "turn": 5,
+        "is_male": true,
+        "pos_s": 0.24630239605903625,
+        "neg_s": 0.14286892116069794
+      },
+      {
+        "turn": 6,
+        "is_male": true,
+        "pos_s": 0.2525036633014679,
+        "neg_s": 0.14620031416416168
+      },
+      {
+        "turn": 7,
+        "is_male": true,
+        "pos_s": 0.22189244627952576,
+        "neg_s": 0.17403122782707214
+      },
+      {
+        "turn": 8,
+        "is_male": true,
+        "pos_s": 0.24259737133979797,
+        "neg_s": 0.1299109309911728
+      }
+    ]
+  }
+]

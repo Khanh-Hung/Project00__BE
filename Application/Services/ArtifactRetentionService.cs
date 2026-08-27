@@ -15,7 +15,7 @@ namespace Application.Services;
 /// - Current active artifacts are protected indefinitely.
 /// - Active predecessors referenced by current artifacts are protected.
 /// - Artifacts linked to in-flight generation jobs are protected.
-/// - Quarantined and orphaned artifacts exceeding TTL are eligible for cleanup.
+/// - Quarantined and orphaned artifacts exceeding TTL based on their lifecycle transition timestamp are eligible for cleanup.
 /// </summary>
 public sealed class ArtifactRetentionService : IArtifactRetentionService
 {
@@ -43,7 +43,12 @@ public sealed class ArtifactRetentionService : IArtifactRetentionService
 
         if (artifact == null)
         {
-            return new ArtifactRetentionEvaluationResult(artifactId, false, "ArtifactNotFound", true);
+            return new ArtifactRetentionEvaluationResult(
+                ArtifactId: artifactId,
+                IsProtected: false,
+                ProtectionReason: "ArtifactNotFound",
+                IsEligibleForCleanup: false
+            );
         }
 
         // 1. Protection Check: Is Current Artifact
@@ -102,10 +107,12 @@ public sealed class ArtifactRetentionService : IArtifactRetentionService
         var quarantineCutoff = now.Subtract(quarantinedTtl);
         var orphanCutoff = now.Subtract(orphanTtl);
 
-        // Fetch candidate IDs for quarantined expired artifacts
+        // Fetch candidate IDs for quarantined expired artifacts based on QuarantinedAt ?? UpdatedAt ?? CreatedAt
         var quarantinedExpiredIds = await _dbContext.SceneImages
             .Where(img => img.LifecycleStatus == ArtifactLifecycleStatus.Quarantined
-                          && img.CreatedAt < quarantineCutoff)
+                          && ((img.QuarantinedAt != null && img.QuarantinedAt.Value < quarantineCutoff)
+                              || (img.QuarantinedAt == null && img.UpdatedAt != null && img.UpdatedAt.Value < quarantineCutoff)
+                              || (img.QuarantinedAt == null && img.UpdatedAt == null && img.CreatedAt < quarantineCutoff)))
             .Select(img => img.Id)
             .ToListAsync(ct);
 
@@ -113,7 +120,8 @@ public sealed class ArtifactRetentionService : IArtifactRetentionService
         var candidateOrphanIds = await _dbContext.SceneImages
             .Where(img => img.LifecycleStatus == ArtifactLifecycleStatus.Historical
                           && !img.IsCurrent
-                          && img.CreatedAt < orphanCutoff)
+                          && ((img.UpdatedAt != null && img.UpdatedAt.Value < orphanCutoff)
+                              || (img.UpdatedAt == null && img.CreatedAt < orphanCutoff)))
             .Select(img => img.Id)
             .ToListAsync(ct);
 

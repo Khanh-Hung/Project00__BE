@@ -4,10 +4,9 @@ using Application.Common;
 using Application.DTOs;
 using Application.Features.Chat.Commands.TriggerTurnSceneImage;
 using Domain.Entities;
-using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
-using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -24,18 +23,23 @@ public sealed class VisualIdempotencyTests
     }
 
     [Fact]
-    public async Task SameRequestId_CalledMultipleTimes_ReturnsExistingJobWithoutDuplicateOutbox()
+    public async Task Concurrent50IdenticalRequests_YieldsExactlyOneJobAndOneOutboxMessage()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        // 1. Setup SQLite in-memory database with persistent connection across threads
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var dbOptions = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
             .Options;
 
-        var db = new ProjectDbContext(options);
-        var unitOfWork = new UnitOfWork(db);
-        var userId = Guid.NewGuid();
-        var authProvider = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };
-        var handler = new TriggerTurnSceneImageGenerationHandler(unitOfWork, authProvider, NullLogger<TriggerTurnSceneImageGenerationHandler>.Instance);
+        // Ensure database schema is created
+        using (var setupDb = new ProjectDbContext(dbOptions))
+        {
+            await setupDb.Database.EnsureCreatedAsync();
+        }
 
+        var userId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
         var characterId = Guid.NewGuid();
@@ -52,109 +56,62 @@ public sealed class VisualIdempotencyTests
             GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L)
         );
 
-        var turn = new CharacterTurn(
-            turnId: turnId,
-            sessionId: sessionId,
-            userId: userId,
-            characterId: characterId,
-            userMessageId: Guid.NewGuid(),
-            assistantMessageId: Guid.NewGuid(),
-            userMessage: "Hello",
-            assistantReply: "Roleplay",
-            mood: "Neutral",
-            moodIntensity: 50,
-            affectionDelta: 0,
-            affectionScore: 0,
-            relationshipStage: "Stranger",
-            visualSnapshotJson: JsonSerializer.Serialize(snapshot)
-        );
-        await db.CharacterTurns.AddAsync(turn);
-        await db.SaveChangesAsync();
+        // Seed initial Turn data
+        using (var seedDb = new ProjectDbContext(dbOptions))
+        {
+            var turn = new CharacterTurn(
+                turnId: turnId,
+                sessionId: sessionId,
+                userId: userId,
+                characterId: characterId,
+                userMessageId: Guid.NewGuid(),
+                assistantMessageId: Guid.NewGuid(),
+                userMessage: "Hello",
+                assistantReply: "Roleplay",
+                mood: "Neutral",
+                moodIntensity: 50,
+                affectionDelta: 0,
+                affectionScore: 0,
+                relationshipStage: "Stranger",
+                visualSnapshotJson: JsonSerializer.Serialize(snapshot)
+            );
+            await seedDb.CharacterTurns.AddAsync(turn);
+            await seedDb.SaveChangesAsync();
+        }
 
-        var command = new TriggerTurnSceneImageGenerationCommand(sessionId, turnId, RequestId: requestId);
+        // 2. Launch 50 concurrent tasks with independent DbContext and UnitOfWork instances
+        int concurrency = 50;
+        var tasks = Enumerable.Range(0, concurrency).Select(async _ =>
+        {
+            await using var db = new ProjectDbContext(dbOptions);
+            var uow = new UnitOfWork(db);
+            var auth = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };
+            var handler = new TriggerTurnSceneImageGenerationHandler(uow, auth, NullLogger<TriggerTurnSceneImageGenerationHandler>.Instance);
 
-        // First call -> enqueues outbox message
-        var result1 = await handler.Handle(command, CancellationToken.None);
-        Assert.Equal(StatusCodes.Status202Accepted, result1.StatusCode);
-        Assert.Equal(requestId, result1.Value!.GenerationRequestId);
+            var command = new TriggerTurnSceneImageGenerationCommand(sessionId, turnId, RequestId: requestId);
+            return await handler.Handle(command, CancellationToken.None);
+        });
 
-        // Pre-create the job in DB as if worker picked it up
-        var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, requestId);
-        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
-        await db.ImageGenerationJobs.AddAsync(job);
-        await db.SaveChangesAsync();
+        var results = await Task.WhenAll(tasks);
 
-        // Second call with same RequestId -> returns existing job without adding new outbox messages
-        var result2 = await handler.Handle(command, CancellationToken.None);
-        Assert.Equal(StatusCodes.Status200OK, result2.StatusCode);
-        Assert.Equal(requestId, result2.Value!.GenerationRequestId);
+        // 3. Verify all 50 requests completed successfully without throwing exceptions
+        Assert.Equal(concurrency, results.Length);
+        foreach (var result in results)
+        {
+            Assert.True(result.IsSuccess);
+            Assert.Equal(requestId, result.Value!.GenerationRequestId);
+        }
 
-        var outboxCount = await db.OutboxMessages.CountAsync(m => m.EventType == OutboxEventTypes.SceneImageGeneration);
-        Assert.Equal(1, outboxCount); // Exactly 1 outbox message created
-    }
+        // 4. Authoritative Database Assertions: EXACTLY 1 Job and EXACTLY 1 Outbox Message!
+        using (var verifyDb = new ProjectDbContext(dbOptions))
+        {
+            var jobCount = await verifyDb.ImageGenerationJobs
+                .CountAsync(j => j.SessionId == sessionId && j.GenerationRequestId == requestId);
+            Assert.Equal(1, jobCount);
 
-    [Fact]
-    public async Task InFlightJob_CollapsesDuplicateRequests()
-    {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        var db = new ProjectDbContext(options);
-        var unitOfWork = new UnitOfWork(db);
-        var userId = Guid.NewGuid();
-        var authProvider = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };
-        var handler = new TriggerTurnSceneImageGenerationHandler(unitOfWork, authProvider, NullLogger<TriggerTurnSceneImageGenerationHandler>.Instance);
-
-        var sessionId = Guid.NewGuid();
-        var turnId = Guid.NewGuid();
-        var characterId = Guid.NewGuid();
-        var existingRequestId = Guid.NewGuid();
-
-        var snapshot = new VisualSnapshot(
-            TurnId: turnId,
-            SessionId: sessionId,
-            CharacterId: characterId,
-            SceneRevision: 1,
-            VisualIdentity: null,
-            SceneState: new SessionSceneState("courtyard", "standing"),
-            TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L)
-        );
-
-        var turn = new CharacterTurn(
-            turnId: turnId,
-            sessionId: sessionId,
-            userId: userId,
-            characterId: characterId,
-            userMessageId: Guid.NewGuid(),
-            assistantMessageId: Guid.NewGuid(),
-            userMessage: "Hello",
-            assistantReply: "Roleplay",
-            mood: "Neutral",
-            moodIntensity: 50,
-            affectionDelta: 0,
-            affectionScore: 0,
-            relationshipStage: "Stranger",
-            visualSnapshotJson: JsonSerializer.Serialize(snapshot)
-        );
-        await db.CharacterTurns.AddAsync(turn);
-
-        // In-flight active job
-        var activeJob = new ImageGenerationJob(sessionId, turnId, characterId, 1, existingRequestId);
-        activeJob.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
-        await db.ImageGenerationJobs.AddAsync(activeJob);
-        await db.SaveChangesAsync();
-
-        // Call without explicit RequestId -> collapses onto existing in-flight job
-        var command = new TriggerTurnSceneImageGenerationCommand(sessionId, turnId, RequestId: null);
-        var result = await handler.Handle(command, CancellationToken.None);
-
-        Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
-        Assert.Equal(existingRequestId, result.Value!.GenerationRequestId);
-
-        // No new outbox message created
-        var outboxCount = await db.OutboxMessages.CountAsync();
-        Assert.Equal(0, outboxCount);
+            var outboxCount = await verifyDb.OutboxMessages
+                .CountAsync(m => m.EventType == OutboxEventTypes.SceneImageGeneration);
+            Assert.Equal(1, outboxCount);
+        }
     }
 }

@@ -26,6 +26,7 @@ public sealed class VisualPredecessorResolverTests
         Guid sessionId,
         Guid turnId,
         Guid characterId,
+        Guid? predecessorImageId = null,
         string? previousUrl = null,
         string? identityRef = null)
     {
@@ -39,12 +40,13 @@ public sealed class VisualPredecessorResolverTests
             TransientState: null,
             GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L),
             IdentityReferenceUrl: identityRef,
-            PreviousSceneImageUrl: previousUrl
+            PreviousSceneImageUrl: previousUrl,
+            PredecessorSceneImageId: predecessorImageId
         );
     }
 
     [Fact]
-    public async Task Tier1_ResolvesExplicitPredecessor_WhenValidInSameSession()
+    public async Task Tier1A_ResolvesExplicitPredecessorById_WhenValidInSameSession()
     {
         var (db, resolver) = CreateContext();
         var sessionId = Guid.NewGuid();
@@ -56,7 +58,7 @@ public sealed class VisualPredecessorResolverTests
             characterId: charId,
             turnId: turnId,
             sceneRevision: 1,
-            imageUrl: "https://cdn.project00.ai/explicit_img.png",
+            imageUrl: "https://cdn.project00.ai/explicit_img_by_id.png",
             prompt: "1girl knight",
             visualRevision: 2,
             lifecycleStatus: ArtifactLifecycleStatus.Historical
@@ -64,18 +66,18 @@ public sealed class VisualPredecessorResolverTests
         await db.SceneImages.AddAsync(artifact);
         await db.SaveChangesAsync();
 
-        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, previousUrl: artifact.ImageUrl);
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, predecessorImageId: artifact.Id);
         var resolved = await resolver.ResolveAsync(sessionId, turnId, snapshot);
 
         Assert.NotNull(resolved);
         Assert.Equal(artifact.Id, resolved.ArtifactId);
-        Assert.Equal("https://cdn.project00.ai/explicit_img.png", resolved.ImageUrl);
-        Assert.Equal("SnapshotExplicit", resolved.Source);
+        Assert.Equal("https://cdn.project00.ai/explicit_img_by_id.png", resolved.ImageUrl);
+        Assert.Equal("SnapshotExplicitId", resolved.Source);
         Assert.Equal(2, resolved.VisualRevision);
     }
 
     [Fact]
-    public async Task Tier1_RejectsCrossSessionExplicitPredecessor_AndFallsBack()
+    public async Task Tier1A_StrictlyRejectsCrossSessionExplicitId_WithoutSilentFallback()
     {
         var (db, resolver) = CreateContext();
         var sessionIdA = Guid.NewGuid();
@@ -83,6 +85,7 @@ public sealed class VisualPredecessorResolverTests
         var turnId = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
+        // Foreign artifact
         var foreignArtifact = new SceneImage(
             sessionId: sessionIdB,
             characterId: charId,
@@ -92,18 +95,34 @@ public sealed class VisualPredecessorResolverTests
             prompt: "1girl knight"
         );
         await db.SceneImages.AddAsync(foreignArtifact);
+
+        // Current artifact in Session A exists
+        var currentArtifactA = new SceneImage(
+            sessionId: sessionIdA,
+            characterId: charId,
+            turnId: turnId,
+            sceneRevision: 1,
+            imageUrl: "https://cdn.project00.ai/current_a.png",
+            prompt: "1girl",
+            isCurrent: true,
+            lifecycleStatus: ArtifactLifecycleStatus.Current
+        );
+        await db.SceneImages.AddAsync(currentArtifactA);
+
+        var stateA = new VisualSessionState(sessionIdA, currentArtifactA.Id, Guid.NewGuid(), visualRevision: 1);
+        await db.VisualSessionStates.AddAsync(stateA);
         await db.SaveChangesAsync();
 
-        var snapshot = CreateTestSnapshot(sessionIdA, turnId, charId, previousUrl: foreignArtifact.ImageUrl, identityRef: "https://cdn.project00.ai/canonical.png");
+        // Snapshot explicitly asks for foreignArtifact.Id
+        var snapshot = CreateTestSnapshot(sessionIdA, turnId, charId, predecessorImageId: foreignArtifact.Id, identityRef: "https://cdn.project00.ai/canonical.png");
         var resolved = await resolver.ResolveAsync(sessionIdA, turnId, snapshot);
 
-        Assert.NotNull(resolved);
-        Assert.Equal("CharacterCanonicalReference", resolved.Source);
-        Assert.Equal("https://cdn.project00.ai/canonical.png", resolved.ImageUrl);
+        // Must strictly return null! NO silent fallback to currentArtifactA or canonical!
+        Assert.Null(resolved);
     }
 
     [Fact]
-    public async Task Tier1_RejectsQuarantinedOrDeletedExplicitPredecessor()
+    public async Task Tier1A_StrictlyRejectsQuarantinedExplicitId_WithoutSilentFallback()
     {
         var (db, resolver) = CreateContext();
         var sessionId = Guid.NewGuid();
@@ -123,15 +142,61 @@ public sealed class VisualPredecessorResolverTests
         await db.SceneImages.AddAsync(quarantinedArtifact);
         await db.SaveChangesAsync();
 
-        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, previousUrl: quarantinedArtifact.ImageUrl, identityRef: "https://cdn.project00.ai/canonical.png");
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, predecessorImageId: quarantinedArtifact.Id, identityRef: "https://cdn.project00.ai/canonical.png");
         var resolved = await resolver.ResolveAsync(sessionId, turnId, snapshot);
 
-        Assert.NotNull(resolved);
-        Assert.Equal("CharacterCanonicalReference", resolved.Source);
+        // Strict rejection: returns null
+        Assert.Null(resolved);
     }
 
     [Fact]
-    public async Task Tier2_ResolvesCurrentSessionArtifact_ViaVisualSessionState()
+    public async Task Tier1A_StrictlyRejectsNonExistentExplicitId_WithoutSilentFallback()
+    {
+        var (db, resolver) = CreateContext();
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        var nonExistentId = Guid.NewGuid();
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, predecessorImageId: nonExistentId, identityRef: "https://cdn.project00.ai/canonical.png");
+        var resolved = await resolver.ResolveAsync(sessionId, turnId, snapshot);
+
+        Assert.Null(resolved);
+    }
+
+    [Fact]
+    public async Task Tier1B_ResolvesExplicitPredecessorByUrl_WhenValid()
+    {
+        var (db, resolver) = CreateContext();
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        var artifact = new SceneImage(
+            sessionId: sessionId,
+            characterId: charId,
+            turnId: turnId,
+            sceneRevision: 1,
+            imageUrl: "https://cdn.project00.ai/explicit_url.png",
+            prompt: "1girl knight",
+            visualRevision: 3,
+            lifecycleStatus: ArtifactLifecycleStatus.Historical
+        );
+        await db.SceneImages.AddAsync(artifact);
+        await db.SaveChangesAsync();
+
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, predecessorImageId: null, previousUrl: artifact.ImageUrl);
+        var resolved = await resolver.ResolveAsync(sessionId, turnId, snapshot);
+
+        Assert.NotNull(resolved);
+        Assert.Equal(artifact.Id, resolved.ArtifactId);
+        Assert.Equal("https://cdn.project00.ai/explicit_url.png", resolved.ImageUrl);
+        Assert.Equal("SnapshotExplicitUrl", resolved.Source);
+        Assert.Equal(3, resolved.VisualRevision);
+    }
+
+    [Fact]
+    public async Task Tier2_ResolvesCurrentSessionArtifact_WhenNoExplicitPredecessorSpecified()
     {
         var (db, resolver) = CreateContext();
         var sessionId = Guid.NewGuid();
@@ -155,7 +220,7 @@ public sealed class VisualPredecessorResolverTests
         await db.VisualSessionStates.AddAsync(state);
         await db.SaveChangesAsync();
 
-        var snapshot = CreateTestSnapshot(sessionId, turnId, charId);
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, predecessorImageId: null, previousUrl: null);
         var resolved = await resolver.ResolveAsync(sessionId, turnId, snapshot);
 
         Assert.NotNull(resolved);
@@ -166,14 +231,14 @@ public sealed class VisualPredecessorResolverTests
     }
 
     [Fact]
-    public async Task Tier3_ResolvesCharacterCanonicalReference_WhenNoSessionArtifactExists()
+    public async Task Tier3_ResolvesCharacterCanonicalReference_WhenNoPredecessorOrSessionArtifact()
     {
         var (db, resolver) = CreateContext();
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
-        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, identityRef: "https://cdn.project00.ai/character_face_crop.png");
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, predecessorImageId: null, previousUrl: null, identityRef: "https://cdn.project00.ai/character_face_crop.png");
         var resolved = await resolver.ResolveAsync(sessionId, turnId, snapshot);
 
         Assert.NotNull(resolved);
@@ -190,7 +255,7 @@ public sealed class VisualPredecessorResolverTests
         var turnId = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
-        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, previousUrl: null, identityRef: null);
+        var snapshot = CreateTestSnapshot(sessionId, turnId, charId, predecessorImageId: null, previousUrl: null, identityRef: null);
         var resolved = await resolver.ResolveAsync(sessionId, turnId, snapshot);
 
         Assert.Null(resolved);

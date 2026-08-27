@@ -41,6 +41,11 @@ public sealed class SceneImage : BaseEntity
     /// </summary>
     public ArtifactLifecycleStatus LifecycleStatus { get; private set; } = ArtifactLifecycleStatus.Current;
 
+    /// <summary>
+    /// Timestamp when this artifact was placed in Quarantine.
+    /// </summary>
+    public DateTime? QuarantinedAt { get; private set; }
+
     private SceneImage() { } // EF Core
 
     public SceneImage(
@@ -61,8 +66,15 @@ public sealed class SceneImage : BaseEntity
         string? provenanceJson = null,
         Guid? predecessorArtifactId = null,
         int visualRevision = 1,
-        ArtifactLifecycleStatus? lifecycleStatus = null)
+        ArtifactLifecycleStatus? lifecycleStatus = null,
+        DateTime? quarantinedAt = null,
+        Guid? id = null)
     {
+        if (id.HasValue && id.Value != Guid.Empty)
+        {
+            Id = id.Value;
+        }
+
         SessionId = sessionId;
         CharacterId = characterId;
         TurnId = turnId;
@@ -81,6 +93,7 @@ public sealed class SceneImage : BaseEntity
         PredecessorArtifactId = predecessorArtifactId;
         VisualRevision = Math.Max(1, visualRevision);
         LifecycleStatus = lifecycleStatus ?? (isCurrent ? ArtifactLifecycleStatus.Current : ArtifactLifecycleStatus.Historical);
+        QuarantinedAt = quarantinedAt;
     }
 
     public void AttachProvenance(GenerationProvenance provenance)
@@ -117,10 +130,11 @@ public sealed class SceneImage : BaseEntity
         Touch();
     }
 
-    public void MarkQuarantined()
+    public void MarkQuarantined(DateTime? quarantinedAt = null)
     {
         IsCurrent = false;
         LifecycleStatus = ArtifactLifecycleStatus.Quarantined;
+        QuarantinedAt = quarantinedAt ?? DateTime.UtcNow;
         Touch();
     }
 
