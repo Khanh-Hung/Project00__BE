@@ -86,4 +86,33 @@ public sealed class CurrentArtifactInvariantTests : IDisposable
         var ex = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         Assert.NotNull(ex);
     }
+
+    [Fact]
+    public void PromoteArtifact_MonotonicallyAdvancesVisualRevision()
+    {
+        var sessionId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var initialArtifactId = Guid.NewGuid();
+        var initialJobId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        var state = new VisualSessionState(sessionId, initialArtifactId, initialJobId, visualRevision: 1, now);
+        Assert.Equal(1, state.VisualRevision);
+
+        // First promotion -> revision becomes 2
+        var art2 = Guid.NewGuid();
+        var job2 = Guid.NewGuid();
+        var rev2 = state.PromoteArtifact(art2, job2, now.AddSeconds(1));
+        Assert.Equal(2, rev2);
+        Assert.Equal(2, state.VisualRevision);
+        Assert.Equal(art2, state.CurrentImageId);
+
+        // Second promotion -> revision becomes 3
+        var art3 = Guid.NewGuid();
+        var job3 = Guid.NewGuid();
+        var rev3 = state.PromoteArtifact(art3, job3, now.AddSeconds(2));
+        Assert.Equal(3, rev3);
+        Assert.Equal(3, state.VisualRevision);
+        Assert.Equal(art3, state.CurrentImageId);
+    }
 }

@@ -132,6 +132,120 @@ public sealed class VisualStateRepairTests
     }
 
     [Fact]
+    public async Task RepairVisualState_WhenSessionStatePointsToDifferentJobAtSameRevision_AbortsRepair()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new VisualStateConsistencyService(db, NullLogger<VisualStateConsistencyService>.Instance);
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        // Job A / Revision 1
+        var jobA = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        jobA.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        var attemptA = new ImageGenerationAttempt(jobA.Id, turnId, 1, 1, 1000L, "{}", "fp-a", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        var artifactA = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/art_a.png", "prompt", generationJobId: jobA.Id, generationAttemptId: attemptA.Id, visualRevision: 1, isCurrent: false, lifecycleStatus: ArtifactLifecycleStatus.Historical);
+        attemptA.AttachAcceptedArtifact(artifactA.Id, DateTime.UtcNow);
+        jobA.AcceptAttempt(attemptA.Id, DateTime.UtcNow, "worker-1", "{}");
+
+        // Seed Job A and Attempt A
+        db.ImageGenerationJobs.Add(jobA);
+        db.ImageGenerationAttempts.Add(attemptA);
+        db.SceneImages.Add(artifactA);
+        await db.SaveChangesAsync();
+
+        // Initial diagnosis identifies Job A / Revision 1 as repairable
+        var diagnosis = await service.ValidateConsistencyAsync(sessionId);
+        Assert.Equal(VisualStateConsistencyStatus.Repairable, diagnosis.Status);
+        Assert.Equal(jobA.Id, diagnosis.ExpectedJobId);
+
+        // Concurrently, Job B is set on VisualSessionState at the same Revision 1
+        var jobB = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        jobB.TryClaim("worker-2", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        var attemptB = new ImageGenerationAttempt(jobB.Id, turnId, 1, 1, 2000L, "{}", "fp-b", GenerationAttemptStatus.Succeeded, claimedBy: "worker-2");
+        var artifactB = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/art_b.png", "prompt", generationJobId: jobB.Id, generationAttemptId: attemptB.Id, visualRevision: 1, isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
+        attemptB.AttachAcceptedArtifact(artifactB.Id, DateTime.UtcNow);
+        jobB.AcceptAttempt(attemptB.Id, DateTime.UtcNow, "worker-2", "{}");
+
+        var sessionState = new VisualSessionState(sessionId, artifactB.Id, jobB.Id, visualRevision: 1);
+        db.ImageGenerationJobs.Add(jobB);
+        db.ImageGenerationAttempts.Add(attemptB);
+        db.SceneImages.Add(artifactB);
+        db.VisualSessionStates.Add(sessionState);
+        await db.SaveChangesAsync();
+
+        // Act & Assert: Service detects state is already healthy pointing to Job B != Job A and does not overwrite with Job A
+        var repairResult = await service.RepairVisualStateAsync(sessionId);
+        Assert.Equal(VisualStateConsistencyStatus.Healthy, repairResult.Status);
+        Assert.Equal(artifactB.Id, repairResult.CurrentArtifactId);
+
+        // Verify session state still points to Job B
+        var finalState = await db.VisualSessionStates.FirstAsync(s => s.SessionId == sessionId);
+        Assert.Equal(jobB.Id, finalState.CurrentGenerationJobId);
+        Assert.Equal(artifactB.Id, finalState.CurrentImageId);
+    }
+
+    [Fact]
+    public async Task RepairVisualState_WhenNewGenerationAcceptedAfterDiagnosis_PreservesNewGenerationAndNeverRollsBack()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new VisualStateConsistencyService(db, NullLogger<VisualStateConsistencyService>.Instance);
+        var sessionId = Guid.NewGuid();
+        var turnId1 = Guid.NewGuid();
+        var turnId2 = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        // 1. Generation A (Revision 1)
+        var jobA = new ImageGenerationJob(sessionId, turnId1, charId, 1);
+        jobA.TryClaim("worker-1", TimeSpan.FromMinutes(2), now);
+        var attemptA = new ImageGenerationAttempt(jobA.Id, turnId1, 1, 1, 1000L, "{}", "fp-a", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        var artifactA = new SceneImage(sessionId, charId, turnId1, 1, "https://cdn.project00.ai/art_a.png", "prompt", generationJobId: jobA.Id, generationAttemptId: attemptA.Id, visualRevision: 1, isCurrent: false, lifecycleStatus: ArtifactLifecycleStatus.Historical);
+        attemptA.AttachAcceptedArtifact(artifactA.Id, now);
+        jobA.AcceptAttempt(attemptA.Id, now, "worker-1", "{}");
+
+        db.ImageGenerationJobs.Add(jobA);
+        db.ImageGenerationAttempts.Add(attemptA);
+        db.SceneImages.Add(artifactA);
+        await db.SaveChangesAsync();
+
+        // 2. Diagnosis A identifies Generation A as repairable target
+        var diagnosisA = await service.ValidateConsistencyAsync(sessionId);
+        Assert.Equal(VisualStateConsistencyStatus.Repairable, diagnosisA.Status);
+        Assert.Equal(artifactA.Id, diagnosisA.ExpectedArtifactId);
+        Assert.Equal(jobA.Id, diagnosisA.ExpectedJobId);
+        Assert.Equal(1, diagnosisA.ExpectedVisualRevision);
+
+        // 3. Concurrently, Generation B completes Turn 2, advances VisualSessionState to Revision 2
+        var jobB = new ImageGenerationJob(sessionId, turnId2, charId, 2);
+        jobB.TryClaim("worker-2", TimeSpan.FromMinutes(2), now);
+        var attemptB = new ImageGenerationAttempt(jobB.Id, turnId2, 2, 1, 2000L, "{}", "fp-b", GenerationAttemptStatus.Succeeded, claimedBy: "worker-2");
+        var artifactB = new SceneImage(sessionId, charId, turnId2, 2, "https://cdn.project00.ai/art_b.png", "prompt", generationJobId: jobB.Id, generationAttemptId: attemptB.Id, visualRevision: 2, isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
+        attemptB.AttachAcceptedArtifact(artifactB.Id, now);
+        jobB.AcceptAttempt(attemptB.Id, now, "worker-2", "{}");
+
+        var sessionStateB = new VisualSessionState(sessionId, artifactB.Id, jobB.Id, visualRevision: 2);
+
+        db.ImageGenerationJobs.Add(jobB);
+        db.ImageGenerationAttempts.Add(attemptB);
+        db.SceneImages.Add(artifactB);
+        db.VisualSessionStates.Add(sessionStateB);
+        await db.SaveChangesAsync();
+
+        // 4. Act: Attempt repair using previous diagnosis A -> Service recognizes state is Healthy at Revision 2 and never rolls back to Revision 1
+        var repairResult = await service.RepairVisualStateAsync(sessionId);
+        Assert.Equal(VisualStateConsistencyStatus.Healthy, repairResult.Status);
+        Assert.Equal(artifactB.Id, repairResult.CurrentArtifactId);
+        Assert.Equal(2, repairResult.ExpectedVisualRevision);
+
+        // 5. Verify VisualSessionState was preserved at Revision 2 with Artifact B
+        var finalState = await db.VisualSessionStates.FirstAsync(s => s.SessionId == sessionId);
+        Assert.Equal(2, finalState.VisualRevision);
+        Assert.Equal(artifactB.Id, finalState.CurrentImageId);
+        Assert.Equal(jobB.Id, finalState.CurrentGenerationJobId);
+    }
+
+    [Fact]
     public async Task RepairVisualState_WhenJobWinnerMismatch_AbortsRepair()
     {
         using var db = CreateInMemoryDb();

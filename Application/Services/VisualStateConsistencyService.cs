@@ -304,15 +304,25 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
         {
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
 
-            // 1. Optimistic concurrency & version fence against newer visual revisions
+            // 1. Optimistic concurrency & version fence against newer visual revisions and job mismatches
             var sessionState = await _dbContext.VisualSessionStates
                 .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
 
-            if (sessionState != null && sessionState.VisualRevision > expectedRevision)
+            if (sessionState != null)
             {
-                await transaction.RollbackAsync(ct);
-                throw new InvalidOperationException(
-                    $"Cannot repair session '{sessionId}': Session state has advanced to a newer VisualRevision ({sessionState.VisualRevision} > {expectedRevision}). Repair aborted to prevent state rollback.");
+                if (sessionState.VisualRevision > expectedRevision)
+                {
+                    await transaction.RollbackAsync(ct);
+                    throw new InvalidOperationException(
+                        $"Cannot repair session '{sessionId}': Session state has advanced to a newer VisualRevision ({sessionState.VisualRevision} > {expectedRevision}). Repair aborted to prevent state rollback.");
+                }
+
+                if (sessionState.CurrentGenerationJobId.HasValue && sessionState.CurrentGenerationJobId.Value != targetJobId && sessionState.VisualRevision >= expectedRevision)
+                {
+                    await transaction.RollbackAsync(ct);
+                    throw new InvalidOperationException(
+                        $"Cannot repair session '{sessionId}': Session state points to a different authoritative job '{sessionState.CurrentGenerationJobId.Value}' at revision {sessionState.VisualRevision} (target job: '{targetJobId}'). Repair aborted to prevent state rollback.");
+                }
             }
 
             // 2. Full bidirectional re-verification of the entire chain inside the transaction
@@ -392,10 +402,19 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
             var sessionState = await _dbContext.VisualSessionStates
                 .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
 
-            if (sessionState != null && sessionState.VisualRevision > expectedRevision)
+            if (sessionState != null)
             {
-                throw new InvalidOperationException(
-                    $"Cannot repair session '{sessionId}': Session state has advanced to a newer VisualRevision ({sessionState.VisualRevision} > {expectedRevision}). Repair aborted to prevent state rollback.");
+                if (sessionState.VisualRevision > expectedRevision)
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot repair session '{sessionId}': Session state has advanced to a newer VisualRevision ({sessionState.VisualRevision} > {expectedRevision}). Repair aborted to prevent state rollback.");
+                }
+
+                if (sessionState.CurrentGenerationJobId.HasValue && sessionState.CurrentGenerationJobId.Value != targetJobId && sessionState.VisualRevision >= expectedRevision)
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot repair session '{sessionId}': Session state points to a different authoritative job '{sessionState.CurrentGenerationJobId.Value}' at revision {sessionState.VisualRevision} (target job: '{targetJobId}'). Repair aborted to prevent state rollback.");
+                }
             }
 
             var job = await _dbContext.ImageGenerationJobs
