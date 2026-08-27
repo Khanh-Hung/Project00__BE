@@ -1,13 +1,11 @@
 using Application.Exceptions;
 using Domain.Enums;
-using Microsoft.EntityFrameworkCore;
-using System.Data.Common;
 
 namespace Application.Common;
 
 /// <summary>
-/// Authoritative classifier mapping infrastructure exceptions to high-level GenerationFailureCategory.
-/// Decouples domain logic from provider-specific HTTP and driver exceptions.
+/// Authoritative classifier mapping application and provider exceptions to high-level GenerationFailureCategory.
+/// Decoupled from concrete database/driver frameworks (Onion architecture compliant).
 /// </summary>
 public static class GenerationFailureClassifier
 {
@@ -21,9 +19,6 @@ public static class GenerationFailureClassifier
         GpuNonTransientException => GenerationFailureCategory.InvalidWorkflow,
         TimeoutException => GenerationFailureCategory.ProviderTimeout,
         HttpRequestException => GenerationFailureCategory.TransientNetwork,
-        DbUpdateConcurrencyException => GenerationFailureCategory.DatabaseTransient,
-        DbUpdateException => GenerationFailureCategory.DatabaseTransient,
-        DbException => GenerationFailureCategory.DatabaseTransient,
         ArgumentException => GenerationFailureCategory.InvalidInput,
         _ => GenerationFailureCategory.Unknown
     };

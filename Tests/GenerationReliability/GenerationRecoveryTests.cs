@@ -481,4 +481,105 @@ public sealed class GenerationRecoveryTests
         Assert.Equal(OutboxStatus.Processing, finalOutbox.Status);
         Assert.Equal("recovery-dispatcher", finalOutbox.ClaimedBy);
     }
+
+    [Fact]
+    public async Task Recovery_CrashAfterClaim_ReclaimsStaleProcessing_AndDownstreamIdempotencyPreventsDuplicateExecution()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var now = DateTime.UtcNow;
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var reqId = Guid.NewGuid();
+
+        var snapshot = new VisualSnapshot(
+            TurnId: turnId,
+            SessionId: sessionId,
+            CharacterId: characterId,
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("scene", "neutral"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault()
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: turnId,
+            CharacterId: characterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: reqId
+        );
+
+        // Simulate a crashed node that claimed the outbox message 3 minutes ago
+        var staleOutbox = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+        staleOutbox.MarkProcessing("crashed-node-1", now.AddMinutes(-3));
+
+        // Simulate downstream Job already completed by a peer worker
+        var completedJob = new ImageGenerationJob(sessionId, turnId, characterId, 1, reqId);
+        completedJob.TryClaim("worker-peer", TimeSpan.FromMinutes(2), now.AddMinutes(-2));
+        var attempt = new ImageGenerationAttempt(
+            generationJobId: completedJob.Id,
+            turnId: turnId,
+            sceneRevision: 1,
+            attemptNumber: 1,
+            derivedSeed: 123,
+            parametersJson: "{}",
+            generationFingerprint: "fp-done",
+            status: GenerationAttemptStatus.Succeeded
+        );
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.OutboxMessages.AddAsync(staleOutbox);
+            await dbSeed.ImageGenerationJobs.AddAsync(completedJob);
+            await dbSeed.ImageGenerationAttempts.AddAsync(attempt);
+            await dbSeed.SaveChangesAsync();
+
+            completedJob.AcceptAttempt(attempt.Id, now.AddMinutes(-1), "worker-peer");
+            await dbSeed.SaveChangesAsync();
+        }
+
+        using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
+
+        // Run recovery: detects stale outbox lease, reclaims to Pending, but respects terminal downstream Job gate
+        using (var dbRecovery = new ProjectDbContext(options))
+        {
+            var recoveryService = new GenerationRecoveryService(
+                dbContext: dbRecovery,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                logger: NullLogger<GenerationRecoveryService>.Instance,
+                retryPolicy: GenerationRetryPolicy.Default,
+                jobQueue: queue
+            );
+
+            await recoveryService.RecoverExpiredJobsAsync(now);
+        }
+
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var reclaimedOutbox = await dbVerify.OutboxMessages.FirstAsync(m => m.Id == staleOutbox.Id);
+            // Outbox was safely reclaimed from stale processing
+            Assert.Equal(OutboxStatus.Pending, reclaimedOutbox.Status);
+            Assert.Null(reclaimedOutbox.ProcessingStartedAt);
+            Assert.Null(reclaimedOutbox.ClaimedBy);
+        }
+
+        // Downstream gate verified completed job -> skipped redundant GPU queue dispatch!
+        Assert.Equal(0, queue.CurrentDepth);
+    }
 }

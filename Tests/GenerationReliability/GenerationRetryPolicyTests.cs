@@ -106,4 +106,17 @@ public sealed class GenerationRetryPolicyTests
         Assert.Equal(delayA1, delayA2); // Exact same seed -> exact same jitter!
         Assert.NotEqual(delayA1, delayB); // Different seed -> different jitter
     }
+
+    [Fact]
+    public void Constructor_ThrowsOnInvalidParameters()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryPolicy(maxRetries: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryPolicy(jitterRatio: -0.1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryPolicy(jitterRatio: 1.5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryPolicy(baseDelay: TimeSpan.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryPolicy(baseDelay: TimeSpan.FromSeconds(-5)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryPolicy(maxDelay: TimeSpan.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryPolicy(maxDelay: TimeSpan.FromSeconds(-10)));
+        Assert.Throws<ArgumentException>(() => new GenerationRetryPolicy(baseDelay: TimeSpan.FromSeconds(10), maxDelay: TimeSpan.FromSeconds(5)));
+    }
 }

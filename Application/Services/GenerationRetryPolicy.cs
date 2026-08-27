@@ -45,9 +45,19 @@ public sealed class GenerationRetryPolicy
         if (jitterRatio < 0.0 || jitterRatio > 1.0)
             throw new ArgumentOutOfRangeException(nameof(jitterRatio), "JitterRatio must be between 0.0 and 1.0.");
 
+        var resolvedBaseDelay = baseDelay ?? TimeSpan.FromSeconds(1);
+        var resolvedMaxDelay = maxDelay ?? TimeSpan.FromSeconds(30);
+
+        if (resolvedBaseDelay <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(baseDelay), "BaseDelay must be greater than zero.");
+        if (resolvedMaxDelay <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(maxDelay), "MaxDelay must be greater than zero.");
+        if (resolvedMaxDelay < resolvedBaseDelay)
+            throw new ArgumentException("MaxDelay must be greater than or equal to BaseDelay.", nameof(maxDelay));
+
         MaxRetries = maxRetries;
-        BaseDelay = baseDelay ?? TimeSpan.FromSeconds(1);
-        MaxDelay = maxDelay ?? TimeSpan.FromSeconds(30);
+        BaseDelay = resolvedBaseDelay;
+        MaxDelay = resolvedMaxDelay;
         JitterRatio = jitterRatio;
         DeterministicMode = deterministicMode;
     }

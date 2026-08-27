@@ -41,7 +41,7 @@ public sealed class FailureClassificationTests
         var exDbConcurrency = new DbUpdateConcurrencyException("Conflict");
 
         Assert.Equal(GenerationFailureCategory.Cancellation, GenerationFailureClassifier.Classify(exCancel));
-        Assert.Equal(GenerationFailureCategory.DatabaseTransient, GenerationFailureClassifier.Classify(exDbConcurrency));
+        Assert.Equal(GenerationFailureCategory.DatabaseTransient, GenerationWorker.ClassifyException(exDbConcurrency));
     }
 
     [Fact]

@@ -200,5 +200,11 @@ public sealed class GenerationWorker : BackgroundService
         }
     }
 
-    public static GenerationFailureCategory ClassifyException(Exception ex) => GenerationFailureClassifier.Classify(ex);
+    public static GenerationFailureCategory ClassifyException(Exception ex) => ex switch
+    {
+        DbUpdateConcurrencyException => GenerationFailureCategory.DatabaseTransient,
+        DbUpdateException => GenerationFailureCategory.DatabaseTransient,
+        System.Data.Common.DbException => GenerationFailureCategory.DatabaseTransient,
+        _ => GenerationFailureClassifier.Classify(ex)
+    };
 }
