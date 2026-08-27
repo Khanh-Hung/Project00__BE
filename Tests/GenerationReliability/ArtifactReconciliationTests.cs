@@ -153,4 +153,87 @@ public sealed class ArtifactReconciliationTests
             Assert.True(verifiedImage.IsCurrent); // Remains validly current
         }
     }
+
+    [Fact]
+    public async Task Acceptance_ConcurrentlyWithReconciliation_PreservesAcceptedCurrentArtifact()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var now = DateTime.UtcNow;
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var reqId = Guid.NewGuid();
+
+        var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, reqId);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), now);
+
+        var attempt = new ImageGenerationAttempt(
+            generationJobId: job.Id,
+            turnId: turnId,
+            sceneRevision: 1,
+            attemptNumber: 1,
+            derivedSeed: 42,
+            parametersJson: "{}",
+            generationFingerprint: "fp_concurrent",
+            status: GenerationAttemptStatus.Succeeded
+        );
+
+        var candidateImage = new SceneImage(
+            sessionId: sessionId,
+            characterId: characterId,
+            turnId: turnId,
+            sceneRevision: 1,
+            imageUrl: "https://cdn.project00.ai/concurrent.png",
+            prompt: "concurrent prompt",
+            generationRequestId: reqId,
+            generationJobId: job.Id,
+            isCurrent: true
+        );
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.ImageGenerationJobs.AddAsync(job);
+            await dbSeed.ImageGenerationAttempts.AddAsync(attempt);
+            await dbSeed.SceneImages.AddAsync(candidateImage);
+            await dbSeed.SaveChangesAsync();
+        }
+
+        // Simulate Worker committing acceptance: job is accepted and completed
+        using (var dbAccept = new ProjectDbContext(options))
+        {
+            var targetJob = await dbAccept.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
+            targetJob.AcceptAttempt(attempt.Id, now, "worker-1");
+            await dbAccept.SaveChangesAsync();
+        }
+
+        // Reconciliation runs concurrently
+        using (var dbReconcile = new ProjectDbContext(options))
+        {
+            var reconciliationService = new ArtifactReconciliationService(
+                dbContext: dbReconcile,
+                dateTimeProvider: new SystemDateTimeProvider(),
+                logger: NullLogger<ArtifactReconciliationService>.Instance
+            );
+
+            var demotedCount = await reconciliationService.ReconcileOrphanArtifactsAsync();
+            Assert.Equal(0, demotedCount); // Reconciliation must NOT demote accepted artifact
+        }
+
+        using (var dbVerify = new ProjectDbContext(options))
+        {
+            var verifiedImage = await dbVerify.SceneImages.FirstAsync(img => img.Id == candidateImage.Id);
+            Assert.True(verifiedImage.IsCurrent); // IsCurrent remains TRUE
+        }
+    }
 }

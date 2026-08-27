@@ -397,4 +397,88 @@ public sealed class GenerationRecoveryTests
 
         Assert.Equal(1, queue.CurrentDepth); // Successfully enqueued once due!
     }
+
+    [Fact]
+    public async Task Recovery_ConcurrentInstances_OnlyOneInstanceClaimsAndEnqueuesOutboxMessage()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using (var dbInit = new ProjectDbContext(options))
+        {
+            await dbInit.Database.EnsureCreatedAsync();
+        }
+
+        var now = DateTime.UtcNow;
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("scene", "neutral"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault()
+        );
+
+        var payload = new SceneImageGenerationOutboxPayload(
+            TurnId: snapshot.TurnId,
+            CharacterId: snapshot.CharacterId,
+            UserId: Guid.NewGuid(),
+            Snapshot: snapshot,
+            GenerationRequestId: Guid.NewGuid()
+        );
+
+        var outboxMessage = new OutboxMessage(
+            eventType: OutboxEventTypes.SceneImageGeneration,
+            payloadJson: JsonSerializer.Serialize(payload)
+        );
+
+        using (var dbSeed = new ProjectDbContext(options))
+        {
+            await dbSeed.OutboxMessages.AddAsync(outboxMessage);
+            await dbSeed.SaveChangesAsync();
+        }
+
+        // Two independent in-memory queues (simulating Instance A and Instance B)
+        using var queueA = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
+        using var queueB = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
+
+        using var dbA = new ProjectDbContext(options);
+        using var dbB = new ProjectDbContext(options);
+
+        var recoveryA = new GenerationRecoveryService(
+            dbContext: dbA,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            logger: NullLogger<GenerationRecoveryService>.Instance,
+            retryPolicy: GenerationRetryPolicy.Default,
+            jobQueue: queueA
+        );
+
+        var recoveryB = new GenerationRecoveryService(
+            dbContext: dbB,
+            dateTimeProvider: new SystemDateTimeProvider(),
+            logger: NullLogger<GenerationRecoveryService>.Instance,
+            retryPolicy: GenerationRetryPolicy.Default,
+            jobQueue: queueB
+        );
+
+        // Run recovery concurrently on Instance A and Instance B
+        await Task.WhenAll(
+            recoveryA.RecoverExpiredJobsAsync(now),
+            recoveryB.RecoverExpiredJobsAsync(now)
+        );
+
+        // Exactly ONE instance must win the claim and enqueue the message
+        Assert.Equal(1, queueA.CurrentDepth + queueB.CurrentDepth);
+
+        using var dbVerify = new ProjectDbContext(options);
+        var finalOutbox = await dbVerify.OutboxMessages.FirstAsync(m => m.Id == outboxMessage.Id);
+        Assert.Equal(OutboxStatus.Processing, finalOutbox.Status);
+        Assert.Equal("recovery-dispatcher", finalOutbox.ClaimedBy);
+    }
 }

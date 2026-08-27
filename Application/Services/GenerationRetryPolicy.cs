@@ -3,8 +3,8 @@ using Domain.Enums;
 namespace Application.Services;
 
 /// <summary>
-/// Authoritative retry and exponential backoff policy for generation failures.
-/// Enforces bounded retries, jittered delays, and failure classification rules.
+/// Authoritative policy defining retry parameters, backoff intervals, jitter calculations,
+/// and retry eligibility per generation failure category.
 /// </summary>
 public sealed class GenerationRetryPolicy
 {
@@ -22,10 +22,13 @@ public sealed class GenerationRetryPolicy
         deterministicMode: false
     );
 
-    public static GenerationRetryPolicy Deterministic(int maxRetries = 3, TimeSpan? baseDelay = null) => new(
+    public static GenerationRetryPolicy Deterministic(
+        int maxRetries = 3,
+        TimeSpan? baseDelay = null,
+        TimeSpan? maxDelay = null) => new(
         maxRetries: maxRetries,
         baseDelay: baseDelay ?? TimeSpan.FromSeconds(1),
-        maxDelay: TimeSpan.FromSeconds(30),
+        maxDelay: maxDelay ?? TimeSpan.FromSeconds(30),
         jitterRatio: 0.0,
         deterministicMode: true
     );
@@ -82,7 +85,7 @@ public sealed class GenerationRetryPolicy
     /// Computes exponential backoff with jitter: delay = min(MaxDelay, BaseDelay * 2^retryCount) +/- jitter.
     /// Semantics:
     /// 1. DeterministicMode == true: Returns exact nominal delay without jitter.
-    /// 2. DeterministicMode == false with deterministicSeed: Calculates reproducible jitter based on seed.
+    /// 2. DeterministicMode == false with deterministicSeed: Calculates reproducible jitter based on 64-bit SplitMix64 PRNG.
     /// 3. DeterministicMode == false with no seed: Calculates pseudo-random jitter.
     /// </summary>
     public TimeSpan CalculateDelay(int retryCount, long? deterministicSeed = null)
@@ -99,8 +102,9 @@ public sealed class GenerationRetryPolicy
         double jitterFactor;
         if (deterministicSeed.HasValue)
         {
-            var random = new Random((int)(deterministicSeed.Value ^ retryCount));
-            jitterFactor = (random.NextDouble() * 2.0 - 1.0) * JitterRatio;
+            ulong combinedSeed = (ulong)deterministicSeed.Value ^ ((ulong)retryCount << 32 | (uint)retryCount);
+            double sample = SplitMix64ToDouble(combinedSeed);
+            jitterFactor = (sample * 2.0 - 1.0) * JitterRatio;
         }
         else
         {
@@ -109,5 +113,17 @@ public sealed class GenerationRetryPolicy
 
         double jitteredSeconds = Math.Max(0.1, cappedSeconds * (1.0 + jitterFactor));
         return TimeSpan.FromSeconds(jitteredSeconds);
+    }
+
+    /// <summary>
+    /// High-entropy 64-bit SplitMix64 pseudo-random generator mapping 64-bit seed state to uniform double in [0, 1).
+    /// </summary>
+    private static double SplitMix64ToDouble(ulong x)
+    {
+        x += 0x9e3779b97f4a7c15;
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111eb;
+        x = x ^ (x >> 31);
+        return (x >> 11) * (1.0 / (1UL << 53));
     }
 }

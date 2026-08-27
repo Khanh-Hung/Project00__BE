@@ -108,8 +108,6 @@ public sealed class GenerationWorker : BackgroundService
         var dbContext = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
         var orchestrator = scope.ServiceProvider.GetRequiredService<IImageGenerationOrchestrator>();
         var dateTimeProvider = scope.ServiceProvider.GetRequiredService<IDateTimeProvider>();
-        var retryPolicy = scope.ServiceProvider.GetService<GenerationRetryPolicy>() ?? GenerationRetryPolicy.Default;
-
         var now = dateTimeProvider.UtcNow;
         var sw = Stopwatch.StartNew();
 
@@ -125,6 +123,20 @@ public sealed class GenerationWorker : BackgroundService
 
             sw.Stop();
             GenerationObservability.ExecutionDurationMs.Record(sw.ElapsedMilliseconds);
+
+            var outboxMsg = await dbContext.OutboxMessages.FirstOrDefaultAsync(m => m.Id == item.OutboxId, ct);
+            if (outboxMsg != null)
+            {
+                if (result.Status == JobExecutionStatus.Completed)
+                {
+                    outboxMsg.MarkCompleted(now);
+                }
+                else if (result.Status == JobExecutionStatus.Deferred)
+                {
+                    outboxMsg.MarkDeferred(now);
+                }
+                await dbContext.SaveChangesAsync(ct);
+            }
 
             if (result.Status == JobExecutionStatus.Completed)
             {
@@ -143,6 +155,31 @@ public sealed class GenerationWorker : BackgroundService
             var category = ClassifyException(ex);
             _logger.LogError(ex, "[GenerationWorkerFailed] RequestId={RequestId} failed with category {Category}: {Message}",
                 item.Payload.GenerationRequestId, category, ex.Message);
+
+            try
+            {
+                var outboxMsg = await dbContext.OutboxMessages.FirstOrDefaultAsync(m => m.Id == item.OutboxId, CancellationToken.None);
+                if (outboxMsg != null)
+                {
+                    if (category == GenerationFailureCategory.Cancellation)
+                    {
+                        outboxMsg.MarkFailed("Job was cancelled", now, isTransient: false);
+                    }
+                    else if (GenerationRetryPolicy.IsRetryable(category))
+                    {
+                        outboxMsg.MarkDeferred(now);
+                    }
+                    else
+                    {
+                        outboxMsg.MarkFailed(ex.Message, now, isTransient: false);
+                    }
+                    await dbContext.SaveChangesAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception outboxEx)
+            {
+                _logger.LogWarning(outboxEx, "[GenerationWorkerOutboxUpdateFailed] Failed to update OutboxMessage {OutboxId} status.", item.OutboxId);
+            }
 
             if (category == GenerationFailureCategory.Cancellation)
             {

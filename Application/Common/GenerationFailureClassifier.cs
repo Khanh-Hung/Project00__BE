@@ -1,5 +1,7 @@
 using Application.Exceptions;
 using Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using System.Data.Common;
 
 namespace Application.Common;
 
@@ -19,9 +21,10 @@ public static class GenerationFailureClassifier
         GpuNonTransientException => GenerationFailureCategory.InvalidWorkflow,
         TimeoutException => GenerationFailureCategory.ProviderTimeout,
         HttpRequestException => GenerationFailureCategory.TransientNetwork,
+        DbUpdateConcurrencyException => GenerationFailureCategory.DatabaseTransient,
+        DbUpdateException => GenerationFailureCategory.DatabaseTransient,
+        DbException => GenerationFailureCategory.DatabaseTransient,
         ArgumentException => GenerationFailureCategory.InvalidInput,
-        InvalidOperationException invEx when invEx.Message.Contains("cancelled", StringComparison.OrdinalIgnoreCase) => GenerationFailureCategory.Cancellation,
-        _ when ex.GetType().Name.Contains("DbUpdate") => GenerationFailureCategory.DatabaseTransient,
         _ => GenerationFailureCategory.Unknown
     };
 }

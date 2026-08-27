@@ -15,7 +15,8 @@ namespace Infrastructure.Services;
 /// <summary>
 /// Authoritative lease crash-recovery and durable re-dispatch service.
 /// Detects abandoned worker leases, fences stale workers via CAS increments,
-/// applies exponential backoff with jitter to retries, and re-dispatches due pending/queued outbox jobs into the in-memory queue.
+/// applies exponential backoff with jitter to retries, and re-dispatches due pending/queued outbox jobs
+/// into the in-memory queue using distributed atomic DB claims.
 /// </summary>
 public sealed class GenerationRecoveryService : IGenerationRecoveryService
 {
@@ -24,6 +25,7 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
     private readonly ILogger<GenerationRecoveryService> _logger;
     private readonly GenerationRetryPolicy _retryPolicy;
     private readonly IGenerationJobQueue? _jobQueue;
+    private readonly TimeSpan _outboxStaleLeaseTimeout = TimeSpan.FromMinutes(2);
 
     public GenerationRecoveryService(
         ProjectDbContext dbContext,
@@ -47,7 +49,41 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
     {
         var now = referenceTime ?? _dateTimeProvider.UtcNow;
 
-        // 1. Query jobs under active processing/evaluating status whose lease has expired without an accepted attempt
+        // 1. Reclaim abandoned outbox processing leases (crashed recovery/worker nodes)
+        var staleCutoff = now - _outboxStaleLeaseTimeout;
+        if (_dbContext.Database.IsRelational())
+        {
+            await _dbContext.OutboxMessages
+                .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration
+                            && m.Status == OutboxStatus.Processing
+                            && m.ProcessingStartedAt != null
+                            && m.ProcessingStartedAt <= staleCutoff)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(m => m.Status, OutboxStatus.Pending)
+                    .SetProperty(m => m.ProcessingStartedAt, (DateTime?)null)
+                    .SetProperty(m => m.ClaimedBy, (string?)null)
+                    .SetProperty(m => m.UpdatedAt, now), ct);
+        }
+        else
+        {
+            var staleOutbox = await _dbContext.OutboxMessages
+                .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration
+                            && m.Status == OutboxStatus.Processing
+                            && m.ProcessingStartedAt != null
+                            && m.ProcessingStartedAt <= staleCutoff)
+                .ToListAsync(ct);
+
+            foreach (var s in staleOutbox)
+            {
+                s.ReclaimStaleProcessing(now);
+            }
+            if (staleOutbox.Count > 0)
+            {
+                await _dbContext.SaveChangesAsync(ct);
+            }
+        }
+
+        // 2. Query jobs under active processing/evaluating status whose lease has expired without an accepted attempt
         var expiredJobs = await _dbContext.ImageGenerationJobs
             .Where(j => (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
                         && j.LeaseUntil.HasValue
@@ -195,7 +231,7 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
             }
         }
 
-        // 2. Durable Re-dispatch: Re-hydrate in-memory queue from pending outbox messages in DB, respecting ImageGenerationJob.NextAttemptAt authoritative schedule
+        // 3. Durable Re-dispatch: Re-hydrate in-memory queue from pending outbox messages in DB, respecting ImageGenerationJob.NextAttemptAt authoritative schedule
         if (_jobQueue != null)
         {
             var dueOutboxMessages = await _dbContext.OutboxMessages
@@ -242,14 +278,71 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
                             }
                         }
 
-                        var workItem = new GenerationWorkItem(payload, outboxMsg.Id, outboxMsg.CreatedAt, Priority: 5);
-                        await _jobQueue.EnqueueAsync(workItem, ct);
+                        // Distributed Atomic DB Claim: Transition Outbox Pending -> Processing
+                        bool isClaimed = false;
+                        if (_dbContext.Database.IsRelational())
+                        {
+                            var rowsClaimed = await _dbContext.OutboxMessages
+                                .Where(m => m.Id == outboxMsg.Id && m.Status == OutboxStatus.Pending)
+                                .ExecuteUpdateAsync(s => s
+                                    .SetProperty(m => m.Status, OutboxStatus.Processing)
+                                    .SetProperty(m => m.ProcessingStartedAt, now)
+                                    .SetProperty(m => m.ClaimedBy, "recovery-dispatcher")
+                                    .SetProperty(m => m.UpdatedAt, now), ct);
+
+                            isClaimed = (rowsClaimed == 1);
+                        }
+                        else
+                        {
+                            if (outboxMsg.Status == OutboxStatus.Pending)
+                            {
+                                outboxMsg.MarkProcessing("recovery-dispatcher", now);
+                                try
+                                {
+                                    await _dbContext.SaveChangesAsync(ct);
+                                    isClaimed = true;
+                                }
+                                catch (DbUpdateConcurrencyException)
+                                {
+                                    isClaimed = false;
+                                }
+                            }
+                        }
+
+                        if (!isClaimed)
+                        {
+                            _logger.LogInformation("[GenerationRecoveryDispatchSkipped] OutboxMessage {Id} already claimed by concurrent instance. Skipping.", outboxMsg.Id);
+                            continue;
+                        }
+
+                        try
+                        {
+                            var workItem = new GenerationWorkItem(payload, outboxMsg.Id, outboxMsg.CreatedAt, Priority: 5);
+                            await _jobQueue.EnqueueAsync(workItem, ct);
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            // Queue full (backpressure) -> Revert claim so other cycles can re-dispatch
+                            if (_dbContext.Database.IsRelational())
+                            {
+                                await _dbContext.OutboxMessages
+                                    .Where(m => m.Id == outboxMsg.Id && m.Status == OutboxStatus.Processing && m.ClaimedBy == "recovery-dispatcher")
+                                    .ExecuteUpdateAsync(s => s
+                                        .SetProperty(m => m.Status, OutboxStatus.Pending)
+                                        .SetProperty(m => m.ProcessingStartedAt, (DateTime?)null)
+                                        .SetProperty(m => m.ClaimedBy, (string?)null)
+                                        .SetProperty(m => m.UpdatedAt, now), ct);
+                            }
+                            else
+                            {
+                                outboxMsg.MarkDeferred(now);
+                                await _dbContext.SaveChangesAsync(ct);
+                            }
+
+                            _logger.LogWarning(ex, "[GenerationRecoveryQueueFull] Queue backpressure reached while re-dispatching OutboxId={OutboxId}. Reverted to Pending.", outboxMsg.Id);
+                            break; // Queue full, leave remaining in DB for next scan cycle
+                        }
                     }
-                }
-                catch (InvalidOperationException ex)
-                {
-                    _logger.LogWarning(ex, "[GenerationRecoveryQueueFull] Queue backpressure reached while re-dispatching OutboxId={OutboxId}.", outboxMsg.Id);
-                    break; // Queue full, leave remaining in DB for next scan cycle
                 }
                 catch (Exception ex)
                 {
