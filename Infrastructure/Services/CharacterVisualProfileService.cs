@@ -28,11 +28,17 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
 
     public async Task<CharacterVisualProfile> CreateProfileAsync(
         Guid characterId,
-        string? hair = null,
-        string? eye = null,
-        string? skin = null,
-        string? body = null,
-        string? features = null,
+        string? eyeColor = null,
+        string? hairColor = null,
+        string? skinTone = null,
+        string? facialFeatures = null,
+        string? permanentMarks = null,
+        string? bodyIdentity = null,
+        string? hairstyle = null,
+        string? currentOutfit = null,
+        string? makeup = null,
+        string? accessories = null,
+        string? temporaryAppearance = null,
         CancellationToken ct = default)
     {
         var existing = await _dbContext.CharacterVisualProfiles
@@ -45,11 +51,17 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
 
         var profile = new CharacterVisualProfile(
             characterId: characterId,
-            hairDescription: hair,
-            eyeDescription: eye,
-            skinDescription: skin,
-            bodyDescription: body,
-            distinguishingFeatures: features,
+            eyeColor: eyeColor,
+            hairColor: hairColor,
+            skinTone: skinTone,
+            facialFeatures: facialFeatures,
+            permanentMarks: permanentMarks,
+            bodyIdentity: bodyIdentity,
+            hairstyle: hairstyle,
+            currentOutfit: currentOutfit,
+            makeup: makeup,
+            accessories: accessories,
+            temporaryAppearance: temporaryAppearance,
             visualVersion: 1,
             now: DateTime.UtcNow
         );
@@ -83,11 +95,11 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
 
     public async Task<CharacterVisualProfile> UpdateAppearanceAsync(
         Guid characterId,
-        string? hair,
-        string? eye,
-        string? skin,
-        string? body,
-        string? features,
+        string? hairstyle = null,
+        string? currentOutfit = null,
+        string? makeup = null,
+        string? accessories = null,
+        string? temporaryAppearance = null,
         CancellationToken ct = default)
     {
         var profile = await _dbContext.CharacterVisualProfiles
@@ -97,13 +109,57 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
 
         if (profile == null)
         {
-            return await CreateProfileAsync(characterId, hair, eye, skin, body, features, ct);
+            return await CreateProfileAsync(
+                characterId: characterId,
+                hairstyle: hairstyle,
+                currentOutfit: currentOutfit,
+                makeup: makeup,
+                accessories: accessories,
+                temporaryAppearance: temporaryAppearance,
+                ct: ct);
         }
 
-        profile.UpdateAppearance(hair, eye, skin, body, features, now);
+        profile.UpdateAppearance(hairstyle, currentOutfit, makeup, accessories, temporaryAppearance, now);
         await _dbContext.SaveChangesAsync(ct);
 
         _logger.LogInformation("[CharacterVisualProfileService] Updated Appearance for CharacterId={CharacterId} (New Version={Version})",
+            characterId, profile.VisualVersion);
+
+        return profile;
+    }
+
+    public async Task<CharacterVisualProfile> RefineCoreIdentityAsync(
+        Guid characterId,
+        string? eyeColor = null,
+        string? hairColor = null,
+        string? skinTone = null,
+        string? facialFeatures = null,
+        string? permanentMarks = null,
+        string? bodyIdentity = null,
+        CancellationToken ct = default)
+    {
+        var profile = await _dbContext.CharacterVisualProfiles
+            .FirstOrDefaultAsync(p => p.CharacterId == characterId, ct);
+
+        var now = DateTime.UtcNow;
+
+        if (profile == null)
+        {
+            return await CreateProfileAsync(
+                characterId: characterId,
+                eyeColor: eyeColor,
+                hairColor: hairColor,
+                skinTone: skinTone,
+                facialFeatures: facialFeatures,
+                permanentMarks: permanentMarks,
+                bodyIdentity: bodyIdentity,
+                ct: ct);
+        }
+
+        profile.RefineCoreIdentity(eyeColor, hairColor, skinTone, facialFeatures, permanentMarks, bodyIdentity, now);
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation("[CharacterVisualProfileService] Refined Core Identity for CharacterId={CharacterId} (New Version={Version})",
             characterId, profile.VisualVersion);
 
         return profile;
@@ -129,11 +185,11 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
         {
             profile = new CharacterVisualProfile(
                 characterId: characterId,
-                primaryReferenceId: referenceId,
-                faceReferenceId: referenceId,
                 visualVersion: 1,
                 now: now
             );
+            profile.SetPrimaryReference(referenceId, now);
+            profile.SetFaceReference(referenceId, now);
             await _dbContext.CharacterVisualProfiles.AddAsync(profile, ct);
         }
         else
@@ -169,10 +225,10 @@ public sealed class CharacterVisualProfileService : ICharacterVisualProfileServi
         {
             profile = new CharacterVisualProfile(
                 characterId: characterId,
-                faceReferenceId: referenceId,
                 visualVersion: 1,
                 now: now
             );
+            profile.SetFaceReference(referenceId, now);
             await _dbContext.CharacterVisualProfiles.AddAsync(profile, ct);
         }
         else

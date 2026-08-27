@@ -44,7 +44,7 @@ public sealed class VisualIdentityConcurrencyIntegrationTests : IDisposable
         await using (var seedDb = new ProjectDbContext(_options))
         {
             var profileService = new CharacterVisualProfileService(seedDb, NullLogger<CharacterVisualProfileService>.Instance);
-            await profileService.CreateProfileAsync(charId, "Silver hair", "Red eyes");
+            await profileService.CreateProfileAsync(charId, eyeColor: "Red", hairColor: "Silver");
 
             for (int i = 0; i < 10; i++)
             {

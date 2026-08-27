@@ -26,9 +26,9 @@ public class CharacterVisualReferenceConfiguration : IEntityTypeConfiguration<Ch
         builder.Property(x => x.PromotedAt).IsRequired(false);
         builder.Property(x => x.ArchivedAt).IsRequired(false);
 
-        // Database invariant: Exactly ONE active primary canonical reference per Character
+        // Database invariant: Exactly ONE active primary canonical reference per Character (Option B: IsCanonical = true AND Status = Active)
         builder.HasIndex(x => x.CharacterId)
-            .HasFilter("\"IsCanonical\" = 1")
+            .HasFilter("\"IsCanonical\" = true AND \"Status\" = 'Active'")
             .IsUnique();
 
         // Idempotency: At most one reference per (CharacterId, ArtifactId)

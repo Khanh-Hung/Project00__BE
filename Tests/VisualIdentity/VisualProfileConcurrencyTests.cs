@@ -70,7 +70,7 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         // 1. Initialize profile at Version 1
         await using (var seedDb = new ProjectDbContext(_options))
         {
-            var profile = new CharacterVisualProfile(charId, "Original Black Hair", "Brown Eyes");
+            var profile = new CharacterVisualProfile(charId, eyeColor: "Brown", hairColor: "Black", hairstyle: "Short", currentOutfit: "Robes");
             seedDb.CharacterVisualProfiles.Add(profile);
             await seedDb.SaveChangesAsync();
         }
@@ -86,11 +86,11 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         Assert.Equal(1, profileB.VisualVersion);
 
         // 3. Worker A updates appearance and commits (Version 1 -> Version 2)
-        profileA.UpdateAppearance("Silver Hair", "Red Eyes", "Pale", "Athletic", "None", DateTime.UtcNow);
+        profileA.UpdateAppearance("Braided Silver Ponytail", "Royal Armor", "Natural", "Earrings", "Glowing", DateTime.UtcNow);
         await dbA.SaveChangesAsync();
 
         // 4. Worker B attempts to update from stale Version 1
-        profileB.UpdateAppearance("Golden Hair", "Blue Eyes", "Tan", "Tall", "None", DateTime.UtcNow);
+        profileB.UpdateAppearance("Golden Waves", "Casual Outfit", "Smokey", "Necklace", "None", DateTime.UtcNow);
 
         // Assert: EF Core optimistic concurrency token (VisualVersion) detects stale update and throws DbUpdateConcurrencyException
         var ex = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => dbB.SaveChangesAsync());
@@ -101,7 +101,7 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         var finalProfile = await verifyDb.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == charId);
 
         Assert.Equal(2, finalProfile.VisualVersion);
-        Assert.Equal("Silver Hair", finalProfile.HairDescription);
-        Assert.Equal("Red Eyes", finalProfile.EyeDescription);
+        Assert.Equal("Braided Silver Ponytail", finalProfile.Hairstyle);
+        Assert.Equal("Royal Armor", finalProfile.CurrentOutfit);
     }
 }

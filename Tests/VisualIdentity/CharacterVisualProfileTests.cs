@@ -34,25 +34,40 @@ public sealed class CharacterVisualProfileTests : IDisposable
     }
 
     [Fact]
-    public void CreateProfile_WithInitialTraits_InitializesAtVersionOne()
+    public void CreateProfile_WithSeparatedTraits_InitializesAtVersionOne()
     {
         var charId = Guid.NewGuid();
         var profile = new CharacterVisualProfile(
             characterId: charId,
-            hairDescription: "Silver hair, medium length",
-            eyeDescription: "Crimson red eyes",
-            skinDescription: "Pale fair skin",
-            bodyDescription: "Slender athletic build",
-            distinguishingFeatures: "Small crescent scar below left eye"
+            eyeColor: "Crimson Red",
+            hairColor: "Silver",
+            skinTone: "Pale Fair",
+            facialFeatures: "Sharp jawline, elegant high cheekbones",
+            permanentMarks: "Small crescent scar below left eye",
+            bodyIdentity: "Slender athletic build, 172cm",
+            hairstyle: "Braided high ponytail",
+            currentOutfit: "Obsidian Battle Armor",
+            makeup: "Minimal natural",
+            accessories: "Silver raven earring",
+            temporaryAppearance: "Light dust on armor"
         );
 
         Assert.Equal(charId, profile.CharacterId);
         Assert.Equal(1, profile.VisualVersion);
-        Assert.Equal("Silver hair, medium length", profile.HairDescription);
-        Assert.Equal("Crimson red eyes", profile.EyeDescription);
-        Assert.Equal("Pale fair skin", profile.SkinDescription);
-        Assert.Equal("Slender athletic build", profile.BodyDescription);
-        Assert.Equal("Small crescent scar below left eye", profile.DistinguishingFeatures);
+
+        // Core Immutable Identity Traits
+        Assert.Equal("Crimson Red", profile.EyeColor);
+        Assert.Equal("Silver", profile.HairColor);
+        Assert.Equal("Pale Fair", profile.SkinTone);
+        Assert.Equal("Sharp jawline, elegant high cheekbones", profile.FacialFeatures);
+        Assert.Equal("Small crescent scar below left eye", profile.PermanentMarks);
+        Assert.Equal("Slender athletic build, 172cm", profile.BodyIdentity);
+
+        // Mutable Appearance Traits
+        Assert.Equal("Braided high ponytail", profile.Hairstyle);
+        Assert.Equal("Obsidian Battle Armor", profile.CurrentOutfit);
+        Assert.Equal("Silver raven earring", profile.Accessories);
+
         Assert.Null(profile.PrimaryReferenceId);
         Assert.Null(profile.FaceReferenceId);
     }
@@ -64,21 +79,66 @@ public sealed class CharacterVisualProfileTests : IDisposable
     }
 
     [Fact]
-    public void UpdateAppearance_MonotonicallyAdvancesVisualVersion()
+    public void UpdateAppearance_ModifiesMutableTraitsOnly_AndAdvancesVisualVersionMonotonically()
     {
         var charId = Guid.NewGuid();
-        var profile = new CharacterVisualProfile(charId, "Black hair", "Brown eyes");
+        var profile = new CharacterVisualProfile(
+            characterId: charId,
+            eyeColor: "Crimson Red",
+            hairColor: "Silver",
+            hairstyle: "High ponytail",
+            currentOutfit: "Battle Armor"
+        );
         Assert.Equal(1, profile.VisualVersion);
 
         var now = DateTime.UtcNow;
-        profile.UpdateAppearance("Midnight blue hair", "Glowing blue eyes", "Pale", "Tall", "None", now);
-        Assert.Equal(2, profile.VisualVersion);
-        Assert.Equal("Midnight blue hair", profile.HairDescription);
-        Assert.Equal("Glowing blue eyes", profile.EyeDescription);
+        profile.UpdateAppearance(
+            hairstyle: "Loose long waves",
+            currentOutfit: "Royal Gala Gown",
+            makeup: "Smokey eye",
+            accessories: "Diamond Tiara",
+            temporaryAppearance: "Perfumed scent, glowing tiara",
+            now: now
+        );
 
-        profile.UpdateAppearance("Golden blonde hair", "Glowing blue eyes", "Pale", "Tall", "None", now.AddSeconds(1));
-        Assert.Equal(3, profile.VisualVersion);
-        Assert.Equal("Golden blonde hair", profile.HairDescription);
+        Assert.Equal(2, profile.VisualVersion);
+
+        // Core Identity unchanged
+        Assert.Equal("Crimson Red", profile.EyeColor);
+        Assert.Equal("Silver", profile.HairColor);
+
+        // Mutable Appearance updated
+        Assert.Equal("Loose long waves", profile.Hairstyle);
+        Assert.Equal("Royal Gala Gown", profile.CurrentOutfit);
+        Assert.Equal("Diamond Tiara", profile.Accessories);
+    }
+
+    [Fact]
+    public void RefineCoreIdentity_ExplicitDomainMethod_AdvancesVisualVersionMonotonically()
+    {
+        var charId = Guid.NewGuid();
+        var profile = new CharacterVisualProfile(
+            characterId: charId,
+            eyeColor: "Blue",
+            hairColor: "Blonde"
+        );
+        Assert.Equal(1, profile.VisualVersion);
+
+        var now = DateTime.UtcNow;
+        profile.RefineCoreIdentity(
+            eyeColor: "Sapphire Blue",
+            hairColor: "Platinum Blonde",
+            skinTone: "Porcelain",
+            facialFeatures: "Elven angular features",
+            permanentMarks: "Runic mark on neck",
+            bodyIdentity: "Graceful tall build",
+            now: now
+        );
+
+        Assert.Equal(2, profile.VisualVersion);
+        Assert.Equal("Sapphire Blue", profile.EyeColor);
+        Assert.Equal("Platinum Blonde", profile.HairColor);
+        Assert.Equal("Runic mark on neck", profile.PermanentMarks);
     }
 
     [Fact]
@@ -122,7 +182,7 @@ public sealed class CharacterVisualProfileTests : IDisposable
         );
         db.CharacterVisualReferences.Add(refB);
 
-        var profileA = new CharacterVisualProfile(charA, "Blonde hair", "Blue eyes");
+        var profileA = new CharacterVisualProfile(charA, eyeColor: "Blue", hairColor: "Blonde");
         db.CharacterVisualProfiles.Add(profileA);
         await db.SaveChangesAsync();
 
@@ -148,7 +208,7 @@ public sealed class CharacterVisualProfileTests : IDisposable
         {
             await using var taskDb = new ProjectDbContext(_options);
             var service = new CharacterVisualProfileService(taskDb, NullLogger<CharacterVisualProfileService>.Instance);
-            return await service.CreateProfileAsync(charId, "Silver hair", "Red eyes");
+            return await service.CreateProfileAsync(charId, eyeColor: "Red", hairColor: "Silver");
         });
 
         var results = await Task.WhenAll(tasks);

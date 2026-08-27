@@ -3,8 +3,8 @@ using Domain.Common;
 namespace Domain.Entities;
 
 /// <summary>
-/// Persistent visual memory / visual evidence recorded from generation workflows.
-/// Maintains historical traceability: what the character has looked like across scenes and profile versions.
+/// Immutable visual evidence ledger capturing generated and validated images of a Character across scene revisions.
+/// Preserves historical lineage for visual memory and style continuity.
 /// </summary>
 public sealed class CharacterVisualMemory : BaseEntity
 {
@@ -15,6 +15,7 @@ public sealed class CharacterVisualMemory : BaseEntity
 
     public string? Context { get; private set; }
     public string? Tags { get; private set; }
+
     public float? QualityScore { get; private set; }
     public float? IdentityScore { get; private set; }
     public float? FeatureScore { get; private set; }
@@ -36,8 +37,23 @@ public sealed class CharacterVisualMemory : BaseEntity
         if (characterId == Guid.Empty)
             throw new ArgumentException("CharacterId cannot be empty.", nameof(characterId));
 
+        if (visualProfileVersion < 1)
+            throw new ArgumentOutOfRangeException(nameof(visualProfileVersion), "VisualProfileVersion must be >= 1.");
+
+        if (sceneRevision < 1)
+            throw new ArgumentOutOfRangeException(nameof(sceneRevision), "SceneRevision must be >= 1.");
+
         if (artifactId == Guid.Empty)
             throw new ArgumentException("ArtifactId cannot be empty.", nameof(artifactId));
+
+        if (qualityScore.HasValue && (qualityScore.Value < 0.0f || qualityScore.Value > 1.0f))
+            throw new ArgumentOutOfRangeException(nameof(qualityScore), "QualityScore must be between 0.0 and 1.0.");
+
+        if (identityScore.HasValue && (identityScore.Value < 0.0f || identityScore.Value > 1.0f))
+            throw new ArgumentOutOfRangeException(nameof(identityScore), "IdentityScore must be between 0.0 and 1.0.");
+
+        if (featureScore.HasValue && (featureScore.Value < 0.0f || featureScore.Value > 1.0f))
+            throw new ArgumentOutOfRangeException(nameof(featureScore), "FeatureScore must be between 0.0 and 1.0.");
 
         Id = Guid.CreateVersion7();
         CharacterId = characterId;

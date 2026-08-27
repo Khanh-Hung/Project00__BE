@@ -52,7 +52,7 @@ public sealed class CanonicalReferenceInvariantTests : IDisposable
         await db.SaveChangesAsync();
 
         var count = await db.CharacterVisualReferences
-            .CountAsync(r => r.CharacterId == charId && r.IsCanonical);
+            .CountAsync(r => r.CharacterId == charId && r.IsCanonical && r.Status == VisualReferenceStatus.Active);
         Assert.Equal(1, count);
     }
 
@@ -83,9 +83,42 @@ public sealed class CanonicalReferenceInvariantTests : IDisposable
 
         db.CharacterVisualReferences.Add(canonical2);
 
-        // Assert: Partial unique index throws DbUpdateException on second active canonical insert
+        // Assert: Partial unique index (CharacterId WHERE IsCanonical = true AND Status = Active) throws DbUpdateException
         var ex = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public async Task ArchivedCanonicalReference_DoesNotBlockNewActiveCanonicalReference()
+    {
+        await using var db = new ProjectDbContext(_options);
+        var charId = Guid.NewGuid();
+
+        var archivedCanonical = new CharacterVisualReference(
+            characterId: charId,
+            referenceUrl: "https://cdn.project00.ai/archived_canon.png",
+            type: VisualReferenceType.Canonical,
+            status: VisualReferenceStatus.Archived,
+            isCanonical: false
+        );
+
+        db.CharacterVisualReferences.Add(archivedCanonical);
+        await db.SaveChangesAsync();
+
+        var newActiveCanonical = new CharacterVisualReference(
+            characterId: charId,
+            referenceUrl: "https://cdn.project00.ai/new_active_canon.png",
+            type: VisualReferenceType.Canonical,
+            status: VisualReferenceStatus.Active,
+            isCanonical: true
+        );
+
+        db.CharacterVisualReferences.Add(newActiveCanonical);
+        await db.SaveChangesAsync(); // Must succeed without constraint violation
+
+        var count = await db.CharacterVisualReferences
+            .CountAsync(r => r.CharacterId == charId && r.IsCanonical && r.Status == VisualReferenceStatus.Active);
+        Assert.Equal(1, count);
     }
 
     [Fact]
@@ -96,37 +129,36 @@ public sealed class CanonicalReferenceInvariantTests : IDisposable
         var referenceService = new CharacterVisualReferenceService(db, profileService, NullLogger<CharacterVisualReferenceService>.Instance);
         var charId = Guid.NewGuid();
 
-        // 1. Register first canonical reference
-        var ref1 = await referenceService.RegisterReferenceAsync(new RegisterVisualReferenceRequest(
+        // 1. Initial canonical reference
+        var initial = await referenceService.RegisterReferenceAsync(new RegisterVisualReferenceRequest(
             CharacterId: charId,
-            ReferenceUrl: "https://cdn.project00.ai/ref1.png",
+            ReferenceUrl: "https://cdn.project00.ai/canon_initial.png",
             IsCanonical: true,
             Type: VisualReferenceType.Canonical
         ));
 
-        // 2. Register second non-canonical reference
-        var ref2 = await referenceService.RegisterReferenceAsync(new RegisterVisualReferenceRequest(
+        // 2. Register secondary reference
+        var secondary = await referenceService.RegisterReferenceAsync(new RegisterVisualReferenceRequest(
             CharacterId: charId,
-            ReferenceUrl: "https://cdn.project00.ai/ref2.png",
+            ReferenceUrl: "https://cdn.project00.ai/canon_promoted.png",
             IsCanonical: false,
             Type: VisualReferenceType.SecondaryCanonical
         ));
 
-        // 3. Promote ref2 to canonical
-        var promoted = await referenceService.PromoteToCanonicalAsync(charId, ref2.Id);
-        Assert.True(promoted.IsCanonical);
+        // 3. Promote secondary to canonical
+        var promoted = await referenceService.PromoteToCanonicalAsync(charId, secondary.Id);
 
-        // 4. Verify in DB: exactly one active canonical exists (ref2), and ref1 was demoted
-        var canonicals = await db.CharacterVisualReferences
+        // Verification: Exactly 1 active canonical reference exists
+        var activeCanonicals = await db.CharacterVisualReferences
             .Where(r => r.CharacterId == charId && r.IsCanonical && r.Type == VisualReferenceType.Canonical && r.Status == VisualReferenceStatus.Active)
             .ToListAsync();
 
-        Assert.Single(canonicals);
-        Assert.Equal(ref2.Id, canonicals[0].Id);
+        Assert.Single(activeCanonicals);
+        Assert.Equal(secondary.Id, activeCanonicals[0].Id);
 
-        var ref1InDb = await db.CharacterVisualReferences.FindAsync(ref1.Id);
-        Assert.NotNull(ref1InDb);
-        Assert.False(ref1InDb.IsCanonical);
-        Assert.Equal(VisualReferenceType.SecondaryCanonical, ref1InDb.Type);
+        // Previous canonical is demoted to SecondaryCanonical
+        var previous = await db.CharacterVisualReferences.FirstAsync(r => r.Id == initial.Id);
+        Assert.False(previous.IsCanonical);
+        Assert.Equal(VisualReferenceType.SecondaryCanonical, previous.Type);
     }
 }

@@ -14,11 +14,20 @@ public class CharacterVisualProfileConfiguration : IEntityTypeConfiguration<Char
         builder.Property(x => x.CharacterId).IsRequired();
         builder.Property(x => x.VisualVersion).IsRequired().HasDefaultValue(1).IsConcurrencyToken();
 
-        builder.Property(x => x.HairDescription).HasMaxLength(1024);
-        builder.Property(x => x.EyeDescription).HasMaxLength(1024);
-        builder.Property(x => x.SkinDescription).HasMaxLength(1024);
-        builder.Property(x => x.BodyDescription).HasMaxLength(1024);
-        builder.Property(x => x.DistinguishingFeatures).HasMaxLength(2048);
+        // Core Immutable Identity Traits
+        builder.Property(x => x.EyeColor).HasMaxLength(1024);
+        builder.Property(x => x.HairColor).HasMaxLength(1024);
+        builder.Property(x => x.SkinTone).HasMaxLength(1024);
+        builder.Property(x => x.FacialFeatures).HasMaxLength(1024);
+        builder.Property(x => x.PermanentMarks).HasMaxLength(1024);
+        builder.Property(x => x.BodyIdentity).HasMaxLength(1024);
+
+        // Mutable Appearance Traits
+        builder.Property(x => x.Hairstyle).HasMaxLength(1024);
+        builder.Property(x => x.CurrentOutfit).HasMaxLength(1024);
+        builder.Property(x => x.Makeup).HasMaxLength(1024);
+        builder.Property(x => x.Accessories).HasMaxLength(1024);
+        builder.Property(x => x.TemporaryAppearance).HasMaxLength(2048);
 
         builder.Property(x => x.PrimaryReferenceId).IsRequired(false);
         builder.Property(x => x.FaceReferenceId).IsRequired(false);

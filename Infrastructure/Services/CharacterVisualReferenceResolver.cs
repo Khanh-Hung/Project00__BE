@@ -28,10 +28,14 @@ public sealed class CharacterVisualReferenceResolver : ICharacterVisualReference
 
         var profileVersion = profile?.VisualVersion ?? 1;
 
-        // 1. Authoritative Canonical Reference Query (Single-row fetch, strictly authoritative)
+        // 1. Authoritative Canonical Reference Query (Single-row fetch, deterministically ordered by Priority, PromotedAt, CreatedAt)
         var canonicalEntity = await _dbContext.CharacterVisualReferences
             .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.CharacterId == characterId && r.IsCanonical && r.Status == VisualReferenceStatus.Active, ct);
+            .Where(r => r.CharacterId == characterId && r.IsCanonical && r.Status == VisualReferenceStatus.Active)
+            .OrderByDescending(r => r.Priority)
+            .ThenByDescending(r => r.PromotedAt)
+            .ThenByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
 
         ResolvedReference? primaryRef = null;
         if (canonicalEntity != null)

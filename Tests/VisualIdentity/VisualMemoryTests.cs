@@ -77,4 +77,33 @@ public sealed class VisualMemoryTests
         var count = await db.CharacterVisualMemories.CountAsync(m => m.CharacterId == charId && m.ArtifactId == artifactId);
         Assert.Equal(1, count);
     }
+
+    [Fact]
+    public void Constructor_WithInvalidInputs_ThrowsAppropriateDomainExceptions()
+    {
+        var charId = Guid.NewGuid();
+        var artId = Guid.NewGuid();
+
+        // Empty CharacterId
+        Assert.Throws<ArgumentException>(() => new CharacterVisualMemory(Guid.Empty, 1, 1, artId));
+
+        // Invalid VisualProfileVersion (< 1)
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterVisualMemory(charId, 0, 1, artId));
+
+        // Invalid SceneRevision (< 1)
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterVisualMemory(charId, 1, 0, artId));
+
+        // Empty ArtifactId
+        Assert.Throws<ArgumentException>(() => new CharacterVisualMemory(charId, 1, 1, Guid.Empty));
+
+        // QualityScore out of range (< 0 or > 1)
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterVisualMemory(charId, 1, 1, artId, qualityScore: -0.1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterVisualMemory(charId, 1, 1, artId, qualityScore: 1.5f));
+
+        // IdentityScore out of range (< 0 or > 1)
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterVisualMemory(charId, 1, 1, artId, identityScore: 1.05f));
+
+        // FeatureScore out of range (< 0 or > 1)
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterVisualMemory(charId, 1, 1, artId, featureScore: -0.01f));
+    }
 }

@@ -3,8 +3,9 @@ using Domain.Common;
 namespace Domain.Entities;
 
 /// <summary>
-/// Authoritative, persistent visual identity profile of a character.
-/// Separates immutable identity traits from mutable appearance traits and guarantees strictly monotonic VisualVersion evolution.
+/// Authoritative, persistent visual profile of a character.
+/// Strictly separates Core Immutable Identity Traits from Mutable Appearance Traits.
+/// Changes to appearance or explicit core identity refinements advance VisualVersion monotonically.
 /// Protected by optimistic concurrency tokens (VisualVersion).
 /// </summary>
 public sealed class CharacterVisualProfile : BaseEntity
@@ -15,24 +16,36 @@ public sealed class CharacterVisualProfile : BaseEntity
     public Guid? PrimaryReferenceId { get; private set; }
     public Guid? FaceReferenceId { get; private set; }
 
-    // Immutable Identity Traits (Core visual invariants)
-    public string? HairDescription { get; private set; }
-    public string? EyeDescription { get; private set; }
-    public string? SkinDescription { get; private set; }
-    public string? BodyDescription { get; private set; }
-    public string? DistinguishingFeatures { get; private set; }
+    // --- Core Immutable Identity Traits (Permanent character invariants) ---
+    public string? EyeColor { get; private set; }
+    public string? HairColor { get; private set; }
+    public string? SkinTone { get; private set; }
+    public string? FacialFeatures { get; private set; }
+    public string? PermanentMarks { get; private set; }
+    public string? BodyIdentity { get; private set; }
+
+    // --- Mutable Appearance Traits (Styling, outfits, temporary scene presentation) ---
+    public string? Hairstyle { get; private set; }
+    public string? CurrentOutfit { get; private set; }
+    public string? Makeup { get; private set; }
+    public string? Accessories { get; private set; }
+    public string? TemporaryAppearance { get; private set; }
 
     private CharacterVisualProfile() { } // EF Core
 
     public CharacterVisualProfile(
         Guid characterId,
-        string? hairDescription = null,
-        string? eyeDescription = null,
-        string? skinDescription = null,
-        string? bodyDescription = null,
-        string? distinguishingFeatures = null,
-        Guid? primaryReferenceId = null,
-        Guid? faceReferenceId = null,
+        string? eyeColor = null,
+        string? hairColor = null,
+        string? skinTone = null,
+        string? facialFeatures = null,
+        string? permanentMarks = null,
+        string? bodyIdentity = null,
+        string? hairstyle = null,
+        string? currentOutfit = null,
+        string? makeup = null,
+        string? accessories = null,
+        string? temporaryAppearance = null,
         int visualVersion = 1,
         DateTime? now = null)
     {
@@ -42,33 +55,66 @@ public sealed class CharacterVisualProfile : BaseEntity
         Id = Guid.CreateVersion7();
         CharacterId = characterId;
         VisualVersion = Math.Max(1, visualVersion);
-        HairDescription = hairDescription;
-        EyeDescription = eyeDescription;
-        SkinDescription = skinDescription;
-        BodyDescription = bodyDescription;
-        DistinguishingFeatures = distinguishingFeatures;
-        PrimaryReferenceId = primaryReferenceId;
-        FaceReferenceId = faceReferenceId;
+
+        // Core Identity
+        EyeColor = eyeColor;
+        HairColor = hairColor;
+        SkinTone = skinTone;
+        FacialFeatures = facialFeatures;
+        PermanentMarks = permanentMarks;
+        BodyIdentity = bodyIdentity;
+
+        // Mutable Appearance
+        Hairstyle = hairstyle;
+        CurrentOutfit = currentOutfit;
+        Makeup = makeup;
+        Accessories = accessories;
+        TemporaryAppearance = temporaryAppearance;
+
         CreatedAt = now ?? DateTime.UtcNow;
         UpdatedAt = now ?? DateTime.UtcNow;
     }
 
     /// <summary>
-    /// Explicitly updates mutable or refined visual appearance traits and advances the visual version monotonically.
+    /// Explicit domain operation to update mutable appearance/styling traits.
+    /// Does not alter core immutable identity traits. Advances VisualVersion monotonically.
     /// </summary>
     public void UpdateAppearance(
-        string? hairDescription,
-        string? eyeDescription,
-        string? skinDescription,
-        string? bodyDescription,
-        string? distinguishingFeatures,
+        string? hairstyle,
+        string? currentOutfit,
+        string? makeup,
+        string? accessories,
+        string? temporaryAppearance,
         DateTime now)
     {
-        HairDescription = hairDescription;
-        EyeDescription = eyeDescription;
-        SkinDescription = skinDescription;
-        BodyDescription = bodyDescription;
-        DistinguishingFeatures = distinguishingFeatures;
+        Hairstyle = hairstyle;
+        CurrentOutfit = currentOutfit;
+        Makeup = makeup;
+        Accessories = accessories;
+        TemporaryAppearance = temporaryAppearance;
+        VisualVersion++;
+        UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Explicit domain operation for authorized core identity refinement (e.g. character evolution or lore expansion).
+    /// Advances VisualVersion monotonically.
+    /// </summary>
+    public void RefineCoreIdentity(
+        string? eyeColor,
+        string? hairColor,
+        string? skinTone,
+        string? facialFeatures,
+        string? permanentMarks,
+        string? bodyIdentity,
+        DateTime now)
+    {
+        EyeColor = eyeColor;
+        HairColor = hairColor;
+        SkinTone = skinTone;
+        FacialFeatures = facialFeatures;
+        PermanentMarks = permanentMarks;
+        BodyIdentity = bodyIdentity;
         VisualVersion++;
         UpdatedAt = now;
     }

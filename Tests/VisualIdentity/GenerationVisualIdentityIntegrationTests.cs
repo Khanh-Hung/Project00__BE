@@ -38,7 +38,7 @@ public sealed class GenerationVisualIdentityIntegrationTests
         var now = DateTime.UtcNow;
 
         // 1. Establish Character & Authoritative Visual Profile
-        var profile = await profileService.CreateProfileAsync(charId, "Silver hair", "Red eyes", "Pale", "Athletic", "Scar");
+        var profile = await profileService.CreateProfileAsync(charId, eyeColor: "Red", hairColor: "Silver", skinTone: "Pale", bodyIdentity: "Athletic", permanentMarks: "Scar");
         Assert.Equal(1, profile.VisualVersion);
 
         // 2. Register Canonical Reference
