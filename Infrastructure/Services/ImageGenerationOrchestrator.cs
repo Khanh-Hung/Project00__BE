@@ -167,6 +167,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
             var claimed = job.TryClaim(workerId, leaseDuration, jobClaimTime);
             if (!claimed)
             {
+                // Defense-in-Depth: Authoritative distributed CAS fence ensuring lease/version fencing,
+                // backoff delay expiration (NextAttemptAt <= jobClaimTime), and exactly-once execution across distributed workers.
                 if (_dbContext.Database.IsRelational())
                 {
                     var expectedVersion = job.Version;

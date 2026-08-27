@@ -104,6 +104,12 @@ public sealed class ImageGenerationJob : BaseEntity
         Touch();
     }
 
+    /// <summary>
+    /// Attempts to acquire execution claim on this job for the specified worker.
+    /// Defense-in-Depth: This domain check protects in-memory entity state transitions,
+    /// while the relational ExecuteUpdateAsync CAS check serves as the authoritative distributed fence across concurrent workers.
+    /// Invariant: Rejects claim if the job is waiting for scheduled retry backoff (NextAttemptAt > now).
+    /// </summary>
     public bool TryClaim(string workerId, TimeSpan leaseDuration, DateTime now)
     {
         if (Status == ImageJobStatus.Completed || Status == ImageJobStatus.Quarantined || (Status == ImageJobStatus.Failed && !IsRetryable))
