@@ -13,17 +13,20 @@ public sealed class VisualStateResolver : IVisualStateResolver
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISceneStateTrackerService? _sceneStateTracker;
     private readonly IVisualGenerationProfileProvider _profileProvider;
+    private readonly ISceneCompositionPipelineService? _sceneCompositionPipeline;
     private readonly ILogger<VisualStateResolver> _logger;
 
     public VisualStateResolver(
         IUnitOfWork unitOfWork,
         ISceneStateTrackerService? sceneStateTracker,
         IVisualGenerationProfileProvider? profileProvider,
+        ISceneCompositionPipelineService? sceneCompositionPipeline = null,
         ILogger<VisualStateResolver>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _sceneStateTracker = sceneStateTracker;
         _profileProvider = profileProvider ?? new VisualGenerationProfileProvider();
+        _sceneCompositionPipeline = sceneCompositionPipeline;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<VisualStateResolver>.Instance;
     }
 
@@ -31,7 +34,7 @@ public sealed class VisualStateResolver : IVisualStateResolver
         IUnitOfWork unitOfWork,
         ISceneStateTrackerService? sceneStateTracker,
         ILogger<VisualStateResolver>? logger = null)
-        : this(unitOfWork, sceneStateTracker, new VisualGenerationProfileProvider(), logger)
+        : this(unitOfWork, sceneStateTracker, new VisualGenerationProfileProvider(), null, logger)
     {
     }
 
@@ -93,6 +96,57 @@ public sealed class VisualStateResolver : IVisualStateResolver
             isTransition: isTransition,
             isColdStart: isColdStart
         );
+
+        // Production Scene Composition Integration
+        if (_sceneCompositionPipeline != null)
+        {
+            try
+            {
+                var intentLocation = !string.IsNullOrWhiteSpace(delta.LocationChange)
+                    ? delta.LocationChange
+                    : (updatedSceneState.CurrentLocation ?? character.WorldDescription ?? "Sanctuary");
+
+                var intentAction = !string.IsNullOrWhiteSpace(delta.ActionChange)
+                    ? delta.ActionChange
+                    : (!string.IsNullOrWhiteSpace(userMessage) ? userMessage : assistantReply);
+
+                var sceneIntent = new SceneIntent(
+                    characterId: character.Id,
+                    locationHint: intentLocation,
+                    actionHint: intentAction,
+                    poseHint: delta.PoseChange,
+                    environmentHint: delta.AtmosphereChange ?? updatedSceneState.Atmosphere,
+                    weatherHint: null,
+                    timeOfDayHint: delta.TimeOfDayChange ?? updatedSceneState.CurrentTimeOfDay,
+                    moodHint: currentMood.ToString(),
+                    outfitHint: delta.OutfitChange ?? updatedSceneState.CurrentOutfit,
+                    objectHints: !string.IsNullOrWhiteSpace(updatedSceneState.HeldItems) ? new[] { updatedSceneState.HeldItems } : null,
+                    sessionId: session.Id,
+                    turnId: turnId
+                );
+
+                var pipelineResult = await _sceneCompositionPipeline.ExecuteAsync(
+                    sceneIntent,
+                    generationProfile,
+                    targetRevision,
+                    ct);
+
+                if (pipelineResult?.SceneSpecification != null)
+                {
+                    var specRepo = _unitOfWork.GetRepository<SceneSpecification>();
+                    await specRepo.AddAsync(pipelineResult.SceneSpecification, ct);
+
+                    if (pipelineResult.VisualSnapshot != null)
+                    {
+                        return (updatedSceneState, transientState, pipelineResult.VisualSnapshot);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to run SceneCompositionPipeline for turn {TurnId}. Falling back to default snapshot.", turnId);
+            }
+        }
 
         string? frozenPreviousSceneImageUrl = null;
         Guid? frozenPredecessorSceneImageId = null;
