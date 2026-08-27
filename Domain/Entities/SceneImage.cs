@@ -7,6 +7,7 @@ namespace Domain.Entities;
 /// <summary>
 /// Immutable visual rendering artifact for a specific generation attempt within a ChatSession.
 /// Key invariant: Unique per (SessionId, GenerationRequestId). Supports multiple generation attempts/regenerations per revision.
+/// PR #29: Contains authoritative reference GenerationAttemptId anchoring the artifact to its generating attempt.
 /// </summary>
 public sealed class SceneImage : BaseEntity
 {
@@ -20,6 +21,12 @@ public sealed class SceneImage : BaseEntity
     public string? PreviousSceneImageUrl { get; private set; }
     public string Prompt { get; private set; } = string.Empty;
     public Guid? GenerationJobId { get; private set; }
+
+    /// <summary>
+    /// Authoritative foreign key directly referencing the ImageGenerationAttempt that generated this artifact.
+    /// </summary>
+    public Guid? GenerationAttemptId { get; private set; }
+
     public string Workflow { get; private set; } = "VisualIdentity";
     public int WorkflowVersion { get; private set; } = 1;
     public bool IsCurrent { get; private set; } = true;
@@ -57,6 +64,7 @@ public sealed class SceneImage : BaseEntity
         string prompt,
         Guid? generationRequestId = null,
         Guid? generationJobId = null,
+        Guid? generationAttemptId = null,
         string? identityReferenceUrl = null,
         string? previousSceneImageUrl = null,
         string workflow = "VisualIdentity",
@@ -81,6 +89,7 @@ public sealed class SceneImage : BaseEntity
         SceneRevision = sceneRevision;
         GenerationRequestId = generationRequestId ?? turnId;
         GenerationJobId = generationJobId;
+        GenerationAttemptId = generationAttemptId;
         ImageUrl = imageUrl;
         Prompt = prompt;
         IdentityReferenceUrl = identityReferenceUrl;

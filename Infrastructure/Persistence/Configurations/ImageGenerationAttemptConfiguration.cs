@@ -23,6 +23,7 @@ public class ImageGenerationAttemptConfiguration : IEntityTypeConfiguration<Imag
         builder.Property(x => x.ProviderJobId).HasMaxLength(256);
         builder.Property(x => x.ClaimedBy).HasMaxLength(128);
         builder.Property(x => x.ErrorMessage).HasMaxLength(2048);
+        builder.Property(x => x.AcceptedArtifactId).IsRequired(false);
 
         // Strict Database-Enforced Invariant: Unique per GenerationFingerprint
         builder.HasIndex(x => x.GenerationFingerprint).IsUnique();
@@ -33,5 +34,11 @@ public class ImageGenerationAttemptConfiguration : IEntityTypeConfiguration<Imag
             .WithMany()
             .HasForeignKey(x => x.GenerationJobId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Authoritative Foreign Key: Direct reference to accepted SceneImage with Restrict behavior to protect audit trail
+        builder.HasOne<SceneImage>()
+            .WithMany()
+            .HasForeignKey(x => x.AcceptedArtifactId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

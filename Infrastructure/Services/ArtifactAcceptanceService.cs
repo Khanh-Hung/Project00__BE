@@ -237,6 +237,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                         prompt: compiledPrompt,
                         generationRequestId: job.GenerationRequestId,
                         generationJobId: job.Id,
+                        generationAttemptId: attemptId,
                         identityReferenceUrl: snapshot.IdentityReferenceUrl,
                         previousSceneImageUrl: resolvedPreviousSceneImageUrl,
                         workflow: workflow,
@@ -252,6 +253,16 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     );
 
                     await _dbContext.SceneImages.AddAsync(artifact, ct);
+                }
+
+                // 4.5. Authoritative Attempt-to-Artifact link attachment
+                if (isIdentityPassed)
+                {
+                    var attemptToUpdate = await _dbContext.ImageGenerationAttempts.FirstOrDefaultAsync(a => a.Id == attemptId, ct);
+                    if (attemptToUpdate != null && attemptToUpdate.Status == GenerationAttemptStatus.Succeeded)
+                    {
+                        attemptToUpdate.AttachAcceptedArtifact(artifact.Id, liveUtc);
+                    }
                 }
 
                 // 5. Outbox Lifecycle Domain Event Persistence in the SAME Relational Transaction
@@ -497,6 +508,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     prompt: compiledPrompt,
                     generationRequestId: job.GenerationRequestId,
                     generationJobId: job.Id,
+                    generationAttemptId: attemptId,
                     identityReferenceUrl: snapshot.IdentityReferenceUrl,
                     previousSceneImageUrl: resolvedPreviousSceneImageUrl,
                     workflow: workflow,
@@ -512,6 +524,15 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                 );
 
                 await _dbContext.SceneImages.AddAsync(artifact, ct);
+            }
+
+            // In-memory Attempt-to-Artifact link attachment
+            if (isIdentityPassed)
+            {
+                if (winningAttempt.Status == GenerationAttemptStatus.Succeeded)
+                {
+                    winningAttempt.AttachAcceptedArtifact(artifact.Id, liveUtc);
+                }
             }
 
             var outboxPayloadJson = isIdentityPassed

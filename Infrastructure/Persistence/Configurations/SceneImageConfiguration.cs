@@ -28,6 +28,7 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
         builder.Property(x => x.VisualRevision).IsRequired().HasDefaultValue(1);
         builder.Property(x => x.LifecycleStatus).IsRequired().HasDefaultValue(ArtifactLifecycleStatus.Current);
         builder.Property(x => x.QuarantinedAt).IsRequired(false);
+        builder.Property(x => x.GenerationAttemptId).IsRequired(false);
 
         // Predecessor reference to another SceneImage (Self-referencing FK)
         builder.HasOne<SceneImage>()
@@ -43,6 +44,11 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
             .HasFilter("\"IsCurrent\" = true")
             .IsUnique();
 
+        // Database invariant: At most ONE active (IsCurrent = true) artifact per (SessionId, VisualRevision)
+        builder.HasIndex(x => new { x.SessionId, x.VisualRevision })
+            .HasFilter("\"IsCurrent\" = true AND \"LifecycleStatus\" != 4")
+            .IsUnique();
+
         builder.HasIndex(x => x.TurnId);
 
         builder.HasIndex(x => x.GenerationFingerprint)
@@ -53,6 +59,12 @@ public class SceneImageConfiguration : IEntityTypeConfiguration<SceneImage>
         builder.HasOne<ImageGenerationJob>()
             .WithMany()
             .HasForeignKey(x => x.GenerationJobId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Referential integrity to ImageGenerationAttempt: RESTRICT to preserve immutable historical provenance
+        builder.HasOne<ImageGenerationAttempt>()
+            .WithMany()
+            .HasForeignKey(x => x.GenerationAttemptId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
