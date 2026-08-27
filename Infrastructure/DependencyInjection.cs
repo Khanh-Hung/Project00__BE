@@ -178,6 +178,12 @@ public static class DependencyInjection
         // PR #29: Artifact Reference Integrity & Visual State Consistency
         services.AddScoped<IVisualStateConsistencyService, Application.Services.VisualStateConsistencyService>();
 
+        // PR #30: Persistent Character Visual Identity & Visual Memory
+        services.AddScoped<ICharacterVisualProfileService, Infrastructure.Services.CharacterVisualProfileService>();
+        services.AddScoped<ICharacterVisualReferenceService, Infrastructure.Services.CharacterVisualReferenceService>();
+        services.AddScoped<ICharacterVisualReferenceResolver, Infrastructure.Services.CharacterVisualReferenceResolver>();
+        services.AddScoped<IVisualEvidenceRecorder, Infrastructure.Services.VisualEvidenceRecorder>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();

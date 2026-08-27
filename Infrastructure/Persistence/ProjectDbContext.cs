@@ -33,6 +33,9 @@ public class ProjectDbContext : DbContext
     public DbSet<ImageGenerationJob> ImageGenerationJobs { get; set; }
     public DbSet<ImageGenerationAttempt> ImageGenerationAttempts { get; set; }
     public DbSet<VisualSessionState> VisualSessionStates { get; set; }
+    public DbSet<CharacterVisualProfile> CharacterVisualProfiles { get; set; }
+    public DbSet<CharacterVisualReference> CharacterVisualReferences { get; set; }
+    public DbSet<CharacterVisualMemory> CharacterVisualMemories { get; set; }
 
     private string NormalizeUserId()
     {
@@ -87,5 +90,15 @@ public class ProjectDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
+
+        // Provider-aware index filter adjustment: PostgreSQL uses boolean literals ("IsCanonical" = true), SQLite uses ("IsCanonical" = 1)
+        var isSqlite = Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true;
+        if (isSqlite)
+        {
+            modelBuilder.Entity<CharacterVisualReference>()
+                .HasIndex(x => x.CharacterId)
+                .HasFilter("\"IsCanonical\" = 1 AND \"Status\" = 'Active'")
+                .IsUnique();
+        }
     }
 }
