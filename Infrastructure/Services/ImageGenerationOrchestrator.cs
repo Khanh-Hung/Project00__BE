@@ -6,9 +6,11 @@ using Application.Enums;
 using Application.Exceptions;
 using Application.Interfaces;
 using Application.Services;
+using Application.Telemetry;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Enums;
+using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -19,6 +21,7 @@ namespace Infrastructure.Services;
 /// <summary>
 /// Authoritative orchestrator coordinating the visual generation pipeline.
 /// Single Responsibility: Orchestrating discrete lifecycle stages across collaborators (P1-1).
+/// Production-Observable: Collects stage timings, enforces retry budget, attaches provenance, and emits metrics.
 /// </summary>
 public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 {
@@ -31,6 +34,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
     private readonly IdentityQualityGuardPolicy _qualityGuardPolicy;
     private readonly IPredecessorLineageResolver _lineageResolver;
     private readonly IArtifactAcceptanceService _acceptanceService;
+    private readonly IGenerationMetrics _metrics;
+    private readonly IGenerationFingerprintService _fingerprintService;
+    private readonly GenerationRetryBudget _retryBudget;
 
     public ImageGenerationOrchestrator(
         ProjectDbContext dbContext,
@@ -41,7 +47,10 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         IIdentityQualityEvaluator qualityEvaluator,
         IdentityQualityGuardPolicy qualityGuardPolicy,
         IPredecessorLineageResolver lineageResolver,
-        IArtifactAcceptanceService acceptanceService)
+        IArtifactAcceptanceService acceptanceService,
+        IGenerationMetrics? metrics = null,
+        IGenerationFingerprintService? fingerprintService = null,
+        GenerationRetryBudget? retryBudget = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
@@ -52,6 +61,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         _qualityGuardPolicy = qualityGuardPolicy ?? throw new ArgumentNullException(nameof(qualityGuardPolicy));
         _lineageResolver = lineageResolver ?? throw new ArgumentNullException(nameof(lineageResolver));
         _acceptanceService = acceptanceService ?? throw new ArgumentNullException(nameof(acceptanceService));
+        _metrics = metrics ?? new Infrastructure.Telemetry.GenerationMetrics(NullLogger<Infrastructure.Telemetry.GenerationMetrics>.Instance);
+        _fingerprintService = fingerprintService ?? new GenerationFingerprintService();
+        _retryBudget = retryBudget ?? GenerationRetryBudget.Default;
     }
 
     public async Task<JobExecutionResult> OrchestrateSceneImageGenerationAsync(
@@ -73,7 +85,12 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         {
             throw new GpuNonTransientException("GenerationRequestId is required and cannot be Guid.Empty.");
         }
-        var stopwatch = Stopwatch.StartNew();
+
+        var totalStopwatch = Stopwatch.StartNew();
+        TimeSpan cumulativeGenLatency = TimeSpan.Zero;
+        TimeSpan cumulativeEvalLatency = TimeSpan.Zero;
+        TimeSpan acceptanceLatency = TimeSpan.Zero;
+
         _logger.LogInformation("[SceneGenerationJobStarted] OutboxId={OutboxId}, SessionId={SessionId}, TurnId={TurnId}, Revision={Revision}, RequestId={RequestId}, WorkerId={WorkerId}",
             outboxId, snapshot.SessionId, snapshot.TurnId, snapshot.SceneRevision, generationRequestId, workerId);
 
@@ -150,69 +167,121 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
             var claimed = job.TryClaim(workerId, leaseDuration, jobClaimTime);
             if (!claimed)
             {
-                _logger.LogInformation("[SceneGenerationLeaseActive] Job is actively leased by worker '{ClaimedBy}' until {LeaseUntil}",
-                    job.ClaimedBy, job.LeaseUntil);
-                return new JobExecutionResult(JobExecutionStatus.Deferred, "Job actively leased by another worker");
-            }
+                // Defense-in-Depth: Authoritative distributed CAS fence ensuring lease/version fencing,
+                // backoff delay expiration (NextAttemptAt <= jobClaimTime), and exactly-once execution across distributed workers.
+                if (_dbContext.Database.IsRelational())
+                {
+                    var expectedVersion = job.Version;
+                    var rowsClaimed = await _dbContext.ImageGenerationJobs
+                        .Where(j => j.Id == job.Id
+                                    && j.Version == expectedVersion
+                                    && (((j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Queued || (j.Status == ImageJobStatus.Failed && j.IsRetryable))
+                                         && (!j.NextAttemptAt.HasValue || j.NextAttemptAt.Value <= jobClaimTime))
+                                        || ((j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
+                                            && (!j.LeaseUntil.HasValue || j.LeaseUntil.Value <= jobClaimTime))))
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(j => j.ClaimedBy, workerId)
+                            .SetProperty(j => j.LeaseUntil, jobClaimTime.Add(leaseDuration))
+                            .SetProperty(j => j.NextAttemptAt, (DateTime?)null)
+                            .SetProperty(j => j.StartedAt, j => j.StartedAt ?? jobClaimTime)
+                            .SetProperty(j => j.Status, ImageJobStatus.Processing)
+                            .SetProperty(j => j.Version, j => j.Version + 1)
+                            .SetProperty(j => j.UpdatedAt, jobClaimTime), ct);
 
-            try
-            {
-                await _dbContext.SaveChangesAsync(ct);
+                    if (rowsClaimed == 0)
+                    {
+                        _logger.LogInformation("[SceneGenerationLeaseContended] JobId={JobId} claimed by concurrent worker. Deferring.", job.Id);
+                        return new JobExecutionResult(JobExecutionStatus.Deferred, "Job under active lease by another worker");
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("[SceneGenerationLeaseContended] JobId={JobId} claimed by concurrent worker {ClaimedBy} until {LeaseUntil:O}.",
+                        job.Id, job.ClaimedBy, job.LeaseUntil);
+                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Job under active lease by another worker");
+                }
             }
-            catch (DbUpdateConcurrencyException ex)
+            else
             {
-                _logger.LogInformation(ex, "[SceneGenerationRacePrevented] Concurrent worker updated lease for SessionId={SessionId}, RequestId={RequestId}",
-                    snapshot.SessionId, generationRequestId);
-                return new JobExecutionResult(JobExecutionStatus.Deferred, "Job lease claimed by concurrent worker");
+                try
+                {
+                    await _dbContext.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    _logger.LogInformation("[SceneGenerationClaimRace] Concurrency conflict claiming JobId={JobId}. Deferring.", job.Id);
+                    return new JobExecutionResult(JobExecutionStatus.Deferred, "Job claim race conflict");
+                }
             }
         }
 
+        var jobStartTime = job.StartedAt ?? jobClaimTime;
+
+        _metrics.RecordGenerationStarted(job.Id, generationRequestId);
+
+        // 4. Quality Evaluation & Progressive Mitigation Loop
+        int maxAttempts = _qualityGuardPolicy.IsActive ? _qualityGuardPolicy.MaxAttempts : 1;
+        int attempt = 1;
+        ImageGenerationResult? genResult = null;
+        ImageGenerationResult? lastSuccessfulGenResult = null;
+        IdentityEvaluationResult? lastEvaluation = null;
+        ImageGenerationAttempt? winningAttemptRecord = null;
+        QualityMitigationAction winningMitigationAction = QualityMitigationAction.Pass;
+        GenerationProfile? winningProfile = snapshot.GenerationProfile;
+        string? lastCompiledPrompt = null;
+        string? lastAttemptFingerprint = null;
+        bool isIdentityPassed = false;
+
         try
         {
-            // 4. Bounded Deterministic Generation & Identity Quality Mitigation Loop
-            int maxAttempts = _qualityGuardPolicy.IsActive
-                ? _qualityGuardPolicy.MaxAttempts
-                : 1;
-
-            int attempt = 1;
-            ImageGenerationResult? genResult = null;
-            IdentityEvaluationResult? lastEvaluation = null;
-            string lastCompiledPrompt = string.Empty;
-            string lastAttemptFingerprint = string.Empty;
-            bool isIdentityPassed = true;
-            long baseSeed = snapshot.GenerationProfile.Seed;
-            ImageGenerationAttempt? winningAttemptRecord = null;
-
             while (attempt <= maxAttempts)
             {
                 genResult = null;
-                QualityMitigationAction mitigation = attempt == 1
-                    ? QualityMitigationAction.Pass
-                    : _qualityGuardPolicy.DecideMitigation(attempt - 1, lastEvaluation!);
+                _metrics.RecordAttemptStarted(job.Id, attempt);
 
-                var (attemptProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
-                    snapshot, mitigation, attempt, baseSeed);
+                var jobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                    ? (_dateTimeProvider.UtcNow - jobStartTime)
+                    : totalStopwatch.Elapsed;
+                var totalElapsed = jobElapsed > totalStopwatch.Elapsed ? jobElapsed : totalStopwatch.Elapsed;
 
-                var attemptSnapshot = snapshot with
+                // Enforce cost and time-bounded retry budget before starting attempt > 1
+                if (attempt > 1)
                 {
-                    GenerationProfile = attemptProfile with { Seed = derivedSeed }
-                };
+                    if (!_retryBudget.CanRetryMitigation(attempt, totalElapsed, out var budgetReason))
+                    {
+                        _logger.LogWarning("[RetryBudgetExhausted] JobId={JobId}, Attempt={Attempt}: {Reason}", job.Id, attempt, budgetReason);
+                        isIdentityPassed = false;
+                        break;
+                    }
+                }
+
+                using var attemptCts = _retryBudget.CreateAttemptCancellationTokenSource(ct, totalElapsed);
+                var attemptCt = attemptCts.Token;
+
+                QualityMitigationAction currentAction = (attempt == 1) ? QualityMitigationAction.Pass : _qualityGuardPolicy.DecideMitigation(attempt - 1, lastEvaluation!);
+                var baseSeed = snapshot.GenerationProfile?.Seed ?? 12345;
+                var (attemptProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(snapshot, currentAction, attempt, baseSeed);
+                var attemptSnapshot = snapshot with { GenerationProfile = attemptProfile };
+                winningMitigationAction = currentAction;
+                winningProfile = attemptProfile;
 
                 lastCompiledPrompt = _visualCompiler.CompileScenePrompt(attemptSnapshot);
                 var compiledNegative = _visualCompiler.CompileNegativePrompt(attemptSnapshot);
 
-                var attemptFingerprint = DeterministicSeedDerivation.ComputeFingerprint(
+                var attemptFingerprint = _fingerprintService.ComputeFingerprint(
                     jobId: job.Id,
-                    snapshotTurnId: snapshot.TurnId,
-                    sceneRevision: snapshot.SceneRevision,
-                    attemptNumber: attempt,
+                    snapshot: attemptSnapshot,
+                    profile: attemptProfile,
                     derivedSeed: derivedSeed,
-                    parametersJson: attemptProfile.ParametersJson ?? string.Empty,
-                    workflow: "VisualIdentity",
-                    workflowVersion: 1,
+                    attemptNumber: attempt,
+                    workflow: workflow,
+                    workflowVersion: workflowVersion,
+                    modelIdentifier: attemptProfile.Model,
                     compiledPrompt: lastCompiledPrompt,
                     compiledNegativePrompt: compiledNegative,
-                    previousReferenceUrl: resolvedPreviousSceneImageUrl);
+                    previousReferenceUrl: resolvedPreviousSceneImageUrl,
+                    mitigationAction: currentAction.ToString()
+                );
                 lastAttemptFingerprint = attemptFingerprint;
 
                 // Check committed artifact by fingerprint
@@ -261,6 +330,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         DurationMs: 0,
                         Seed: derivedSeed
                     );
+                    lastSuccessfulGenResult = genResult;
                     isIdentityPassed = true;
                     break;
                 }
@@ -298,42 +368,34 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                             var rowsAffected = await _dbContext.ImageGenerationAttempts
                                 .Where(a => a.Id == existingAttempt.Id
                                             && a.Status != GenerationAttemptStatus.Succeeded
-                                            && (a.Status != GenerationAttemptStatus.Running
-                                                || a.LeaseUntil == null
-                                                || a.LeaseUntil.Value <= attemptClaimTime
-                                                || a.ClaimedBy == workerId))
+                                            && (!a.LeaseUntil.HasValue || a.LeaseUntil.Value <= attemptClaimTime))
                                 .ExecuteUpdateAsync(s => s
                                     .SetProperty(a => a.ClaimedBy, workerId)
                                     .SetProperty(a => a.StartedAt, attemptClaimTime)
                                     .SetProperty(a => a.LeaseUntil, attemptClaimTime.AddMinutes(2))
-                                    .SetProperty(a => a.Status, GenerationAttemptStatus.Running), ct);
+                                    .SetProperty(a => a.Status, GenerationAttemptStatus.Running)
+                                    .SetProperty(a => a.UpdatedAt, attemptClaimTime), ct);
 
-                            if (rowsAffected != 1)
+                            if (rowsAffected == 0)
                             {
-                                _logger.LogInformation("[SceneGenerationAttemptClaimFailed] Attempt {AttemptId} is actively claimed by another worker. Deferring.", existingAttempt.Id);
-                                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by another worker");
+                                _logger.LogInformation("[SceneGenerationAttemptContended] Attempt {AttemptId} claimed by concurrent worker. Deferring.", existingAttempt.Id);
+                                return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt under active lease by another worker");
                             }
 
-                            existingAttempt.TryClaim(workerId, attemptClaimTime, TimeSpan.FromMinutes(2));
-                            attemptRecord = existingAttempt;
+                            await _dbContext.Entry(existingAttempt).ReloadAsync(ct);
                         }
                         else
                         {
-                            if (!existingAttempt.TryClaim(workerId, attemptClaimTime, TimeSpan.FromMinutes(2)))
+                            var claimed = existingAttempt.TryClaim(workerId, attemptClaimTime, TimeSpan.FromMinutes(2));
+                            if (!claimed)
                             {
-                                return new JobExecutionResult(JobExecutionStatus.Deferred, $"Attempt {attempt} is actively processing by worker {existingAttempt.ClaimedBy}");
+                                _logger.LogInformation("[SceneGenerationAttemptContended] Attempt {AttemptId} claimed by concurrent worker. Deferring.", existingAttempt.Id);
+                                return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt under active lease by another worker");
                             }
-
-                            attemptRecord = existingAttempt;
-                            try
-                            {
-                                await _dbContext.SaveChangesAsync(ct);
-                            }
-                            catch (DbUpdateConcurrencyException)
-                            {
-                                return new JobExecutionResult(JobExecutionStatus.Deferred, "Attempt lease claimed by concurrent worker");
-                            }
+                            await _dbContext.SaveChangesAsync(ct);
                         }
+
+                        attemptRecord = existingAttempt;
                     }
                 }
                 else
@@ -367,10 +429,10 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                 winningAttemptRecord = attemptRecord;
 
-                // Emit GenerationAttemptStarted Outbox lifecycle event (PR25 Observability)
+                // Emit GenerationAttemptStarted Outbox lifecycle event
                 var startedOutbox = new OutboxMessage(
                     eventType: OutboxEventTypes.GenerationAttemptStarted,
-                    payloadJson: System.Text.Json.JsonSerializer.Serialize(new Domain.Events.GenerationAttemptStartedEvent(
+                    payloadJson: JsonSerializer.Serialize(new Domain.Events.GenerationAttemptStartedEvent(
                         JobId: job.Id,
                         AttemptId: attemptRecord.Id,
                         AttemptNumber: attempt,
@@ -399,14 +461,60 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                     try
                     {
-                        genResult = await _imageService.GenerateImageWithResultAsync(imageReq, ct);
+                        var genSw = Stopwatch.StartNew();
+                        genResult = await _imageService.GenerateImageWithResultAsync(imageReq, attemptCt);
+                        genSw.Stop();
+                        cumulativeGenLatency += genSw.Elapsed;
+                        lastSuccessfulGenResult = genResult;
                     }
                     catch (Exception ex)
                     {
                         var failTime = _dateTimeProvider.UtcNow;
                         var category = GenerationFailureClassifier.Classify(ex);
+                        var currentAttempt = Math.Max(attempt, job.AttemptCount);
+                        var attemptJobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                            ? (_dateTimeProvider.UtcNow - jobStartTime)
+                            : totalStopwatch.Elapsed;
+                        var isRetryable = _retryBudget.CanRetryFailure(currentAttempt, attemptJobElapsed, category, out var failBudgetReason);
+
                         attemptRecord.MarkFailed(category, ex.Message, failTime, workerId, failTime);
                         await _dbContext.SaveChangesAsync(ct);
+
+                        if (!isRetryable)
+                        {
+                            _logger.LogError(ex, "[GenerationFailureTerminal] JobId={JobId}, Attempt={Attempt} failed terminally ({Category}: {Message}). Reason={Reason}",
+                                job.Id, attempt, category, ex.Message, failBudgetReason ?? "Non-retryable");
+                            throw new GpuNonTransientException($"Terminal generation failure: {ex.Message} ({failBudgetReason})", innerException: ex);
+                        }
+
+                        var retryDelay = GenerationRetryPolicy.Default.CalculateDelay(job.RetryCount);
+                        var nextAttemptAt = failTime.Add(retryDelay);
+
+                        // Authoritatively schedule retry on ImageGenerationJob in database
+                        if (_dbContext.Database.IsRelational())
+                        {
+                            await _dbContext.ImageGenerationJobs
+                                .Where(j => j.Id == job.Id && j.ClaimedBy == workerId && (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating))
+                                .ExecuteUpdateAsync(s => s
+                                    .SetProperty(j => j.Status, ImageJobStatus.Queued)
+                                    .SetProperty(j => j.RetryCount, j => j.RetryCount + 1)
+                                    .SetProperty(j => j.NextAttemptAt, nextAttemptAt)
+                                    .SetProperty(j => j.FailureReason, ex.Message)
+                                    .SetProperty(j => j.IsRetryable, true)
+                                    .SetProperty(j => j.ClaimedBy, (string?)null)
+                                    .SetProperty(j => j.LeaseUntil, (DateTime?)null)
+                                    .SetProperty(j => j.Version, j => j.Version + 1)
+                                    .SetProperty(j => j.UpdatedAt, failTime), CancellationToken.None);
+                        }
+                        else
+                        {
+                            job.ScheduleRetry(nextAttemptAt, ex.Message, failTime);
+                            await _dbContext.SaveChangesAsync(CancellationToken.None);
+                        }
+
+                        _logger.LogWarning("[GenerationFailureRetryable] JobId={JobId}, Attempt={Attempt} failed ({Category}: {Message}). Scheduled NextAttemptAt={NextAttemptAt:O} (Delay: {DelayMs:F0}ms).",
+                            job.Id, attempt, category, ex.Message, nextAttemptAt, retryDelay.TotalMilliseconds);
+                        _metrics.RecordGenerationRetry(job.Id, attempt, retryDelay);
                         throw;
                     }
 
@@ -431,8 +539,12 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
 
                     attemptRecord.StartEvaluating(workerId, evalStartTime);
-                    lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, ct);
-                    
+
+                    var evalSw = Stopwatch.StartNew();
+                    lastEvaluation = await _qualityEvaluator.EvaluateAsync(genResult.ImageUrl, attemptSnapshot, attemptCt);
+                    evalSw.Stop();
+                    cumulativeEvalLatency += evalSw.Elapsed;
+
                     var evalCompletionTime = _dateTimeProvider.UtcNow;
                     if (attemptRecord.LeaseUntil.HasValue && attemptRecord.LeaseUntil.Value <= evalCompletionTime)
                     {
@@ -447,14 +559,29 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
                     else
                     {
-                        // IdentityStatus.Degraded or IdentityStatus.Failed is an evaluation quality outcome on a successfully generated image.
-                        // The attempt is marked Degraded (not GenerationAttemptStatus.Failed, which is reserved for GPU/execution crashes).
                         attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, evalCompletionTime, workerId, evalCompletionTime);
                     }
 
+                    var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
+                    bool isPassed = (nextAction == QualityMitigationAction.Pass) || (lastEvaluation.Status == IdentityStatus.Passed);
+                    var evalJobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                        ? (_dateTimeProvider.UtcNow - jobStartTime)
+                        : totalStopwatch.Elapsed;
+                    bool willRetry = !isPassed && (nextAction != QualityMitigationAction.RejectDegraded) && (attempt < maxAttempts) && _retryBudget.CanRetryMitigation(attempt + 1, evalJobElapsed, out _);
+
+                    _metrics.RecordIdentityEvaluation(
+                        job.Id,
+                        attemptRecord.Id,
+                        attempt,
+                        lastEvaluation.IdentitySimilarity,
+                        lastEvaluation.FeatureScore,
+                        isPassed,
+                        willRetry,
+                        evalSw.Elapsed);
+
                     var evalOutbox = new OutboxMessage(
                         eventType: OutboxEventTypes.GenerationAttemptEvaluated,
-                        payloadJson: System.Text.Json.JsonSerializer.Serialize(new Domain.Events.GenerationAttemptEvaluatedEvent(
+                        payloadJson: JsonSerializer.Serialize(new Domain.Events.GenerationAttemptEvaluatedEvent(
                             JobId: job.Id,
                             AttemptId: attemptRecord.Id,
                             AttemptNumber: attempt,
@@ -465,8 +592,6 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     );
                     await _dbContext.OutboxMessages.AddAsync(evalOutbox, ct);
                     await _dbContext.SaveChangesAsync(ct);
-
-                    var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
 
                     if (nextAction == QualityMitigationAction.Pass)
                     {
@@ -485,6 +610,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     {
                         _logger.LogWarning("[IdentityGuardDegraded] JobId={JobId}, Attempt={Attempt}/{MaxAttempts} degraded (IdentitySim={IdentitySim:F4}). Escalating to {NextAction}.",
                             job.Id, attempt, maxAttempts, lastEvaluation.IdentitySimilarity, nextAction);
+                        _metrics.RecordGenerationRetry(job.Id, attempt, TimeSpan.Zero);
                         attempt++;
                     }
                 }
@@ -505,26 +631,108 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 }
             }
 
-            // 5. Atomic Acceptance Fencing & Artifact Persistence (P0-1)
-            var acceptanceRequest = new ArtifactAcceptanceRequest(
-                JobId: job.Id,
-                WinningAttemptId: winningAttemptRecord!.Id,
-                Snapshot: snapshot,
-                ImageUrl: genResult!.ImageUrl,
-                CompiledPrompt: lastCompiledPrompt,
-                ResolvedPreviousSceneImageUrl: resolvedPreviousSceneImageUrl,
-                GenerationFingerprint: lastAttemptFingerprint,
-                MetadataJson: genResult.MetadataJson,
-                IsIdentityPassed: isIdentityPassed,
-                WorkerId: workerId,
-                OutboxId: outboxId
+            // 5. Build Comprehensive Provenance Record (PR #27)
+            var nowTime = now != default ? now : _dateTimeProvider.UtcNow;
+            float actualSlot1Weight = 1.0f;
+            float actualSlot2Weight = 0.0f;
+            string actualSlot2Mode = "Disabled";
+
+            if (!string.IsNullOrWhiteSpace(winningProfile?.ParametersJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(winningProfile.ParametersJson);
+                    if (doc.RootElement.TryGetProperty("ipAdapter", out var ipProp) && ipProp.TryGetProperty("weight", out var w1))
+                    {
+                        actualSlot1Weight = (float)w1.GetDouble();
+                    }
+                    if (doc.RootElement.TryGetProperty("sceneContinuity", out var contProp) && contProp.TryGetProperty("weight", out var w2))
+                    {
+                        actualSlot2Weight = (float)w2.GetDouble();
+                        actualSlot2Mode = actualSlot2Weight > 0f ? "SceneStyleContinuity" : "Disabled";
+                    }
+                }
+                catch
+                {
+                    // Fallback to default continuous weights if parameters parsing fails
+                }
+            }
+            else if (snapshot.VisualIdentity != null && resolvedPreviousSceneImageUrl != null)
+            {
+                actualSlot1Weight = 0.60f;
+                actualSlot2Weight = 0.12f;
+                actualSlot2Mode = "SceneStyleContinuity";
+            }
+
+            var provenance = new GenerationProvenance(
+                generationRequestId: generationRequestId,
+                jobId: job.Id,
+                attemptId: winningAttemptRecord!.Id,
+                sceneRevision: snapshot.SceneRevision,
+                derivedSeed: winningAttemptRecord.DerivedSeed,
+                generationFingerprint: lastAttemptFingerprint ?? string.Empty,
+                workflow: winningProfile?.Workflow ?? workflow,
+                workflowVersion: winningProfile?.WorkflowVersion ?? workflowVersion,
+                modelIdentifier: winningProfile?.Model ?? DeterministicSeedDerivation.DefaultModel,
+                slot1Weight: actualSlot1Weight,
+                slot2Weight: actualSlot2Weight,
+                slot2ConditioningMode: actualSlot2Mode,
+                mitigationAction: winningMitigationAction.ToString(),
+                identitySimilarity: winningAttemptRecord.IdentitySimilarity,
+                featureScore: winningAttemptRecord.FeatureScore,
+                identityStatus: isIdentityPassed ? "Passed" : "Quarantined",
+                createdAt: nowTime
             );
 
-            var acceptanceResult = await _acceptanceService.AcceptAttemptAtomicallyAsync(acceptanceRequest, ct);
+            var finalImageUrl = genResult?.ImageUrl ?? lastSuccessfulGenResult?.ImageUrl ?? winningAttemptRecord.ImageUrl ?? string.Empty;
+            var finalMetadataJson = genResult?.MetadataJson ?? lastSuccessfulGenResult?.MetadataJson ?? winningAttemptRecord.ParametersJson;
 
-            stopwatch.Stop();
-            _logger.LogInformation("[SceneGenerationJobFinished] OutboxId={OutboxId}, JobId={JobId}, Revision={Revision}, Attempts={Attempts}/{MaxAttempts}, DurationMs={DurationMs}, Status={Status}",
-                outboxId, job.Id, snapshot.SceneRevision, attempt, maxAttempts, stopwatch.ElapsedMilliseconds, acceptanceResult.Status);
+            // 6. Atomic Acceptance Fencing & Artifact Persistence (P0-1)
+            var acceptanceRequest = new ArtifactAcceptanceRequest(
+                JobId: job.Id,
+                WinningAttemptId: winningAttemptRecord.Id,
+                Snapshot: snapshot,
+                ImageUrl: finalImageUrl,
+                CompiledPrompt: lastCompiledPrompt ?? string.Empty,
+                ResolvedPreviousSceneImageUrl: resolvedPreviousSceneImageUrl,
+                GenerationFingerprint: lastAttemptFingerprint ?? string.Empty,
+                MetadataJson: finalMetadataJson,
+                IsIdentityPassed: isIdentityPassed,
+                WorkerId: workerId,
+                OutboxId: outboxId,
+                Provenance: provenance
+            );
+
+            var acceptSw = Stopwatch.StartNew();
+            var acceptanceResult = await _acceptanceService.AcceptAttemptAtomicallyAsync(acceptanceRequest, ct);
+            acceptSw.Stop();
+            acceptanceLatency = acceptSw.Elapsed;
+
+            totalStopwatch.Stop();
+            var queueLatency = jobClaimTime > job.CreatedAt ? jobClaimTime - job.CreatedAt : TimeSpan.Zero;
+            var timing = new GenerationTiming(
+                QueueLatency: queueLatency,
+                GenerationLatency: cumulativeGenLatency,
+                EvaluationLatency: cumulativeEvalLatency,
+                AcceptanceLatency: acceptanceLatency,
+                TotalLatency: totalStopwatch.Elapsed
+            );
+
+            if (acceptanceResult.Status == JobExecutionStatus.Completed)
+            {
+                if (isIdentityPassed)
+                {
+                    _metrics.RecordGenerationCompleted(job.Id, attempt, timing);
+                }
+                else
+                {
+                    _metrics.RecordGenerationQuarantined(job.Id, attempt, lastEvaluation?.IdentitySimilarity, lastEvaluation?.FeatureScore);
+                    _metrics.RecordTiming(timing);
+                }
+            }
+
+            _logger.LogInformation("[SceneGenerationJobFinished] OutboxId={OutboxId}, JobId={JobId}, Revision={Revision}, Attempts={Attempts}/{MaxAttempts}, TotalMs={TotalMs:F1}, GenMs={GenMs:F1}, EvalMs={EvalMs:F1}, Status={Status}",
+                outboxId, job.Id, snapshot.SceneRevision, attempt, maxAttempts, totalStopwatch.ElapsedMilliseconds, cumulativeGenLatency.TotalMilliseconds, cumulativeEvalLatency.TotalMilliseconds, acceptanceResult.Status);
 
             return acceptanceResult;
         }
@@ -535,8 +743,14 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         }
         catch (GpuNonTransientException ex)
         {
-            _logger.LogError(ex, "[SceneGenerationFatalError] Non-transient failure for JobId={JobId}, OutboxId={OutboxId}: {Message}", job.Id, outboxId, ex.Message);
+            totalStopwatch.Stop();
             var failTime = _dateTimeProvider.UtcNow;
+            var jobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                ? (_dateTimeProvider.UtcNow - jobStartTime)
+                : totalStopwatch.Elapsed;
+            var category = GenerationFailureClassifier.Classify(ex);
+            _metrics.RecordGenerationFailed(job.Id, category, attempt, jobElapsed);
+            _logger.LogError(ex, "[SceneGenerationFatalError] Non-transient failure for JobId={JobId}, OutboxId={OutboxId} ({Category}): {Message}", job.Id, outboxId, category, ex.Message);
             try
             {
                 if (_dbContext.Database.IsRelational())
@@ -571,7 +785,13 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[SceneGenerationTransientError] Transient failure for JobId={JobId}, OutboxId={OutboxId}: {Message}. Releasing lease for retry.", job.Id, outboxId, ex.Message);
+            totalStopwatch.Stop();
+            var category = GenerationFailureClassifier.Classify(ex);
+            var jobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                ? (_dateTimeProvider.UtcNow - jobStartTime)
+                : totalStopwatch.Elapsed;
+            _metrics.RecordGenerationFailed(job.Id, category, attempt, jobElapsed);
+            _logger.LogWarning(ex, "[SceneGenerationTransientError] Transient failure for JobId={JobId}, OutboxId={OutboxId} ({Category}): {Message}. Releasing lease for retry.", job.Id, outboxId, category, ex.Message);
             var failTime = _dateTimeProvider.UtcNow;
             try
             {

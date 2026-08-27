@@ -38,7 +38,7 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
         CancellationToken ct = default)
     {
         var (jobId, winningAttemptId, snapshot, imageUrl, compiledPrompt, resolvedPreviousSceneImageUrl,
-            fingerprint, metadataJson, isIdentityPassed, workerId, outboxId) = request;
+            fingerprint, metadataJson, isIdentityPassed, workerId, outboxId, provenance) = request;
 
         // 1. Authoritative DB Lookup of Job and Winning Attempt
         var job = await _dbContext.ImageGenerationJobs
@@ -163,6 +163,12 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     {
                         existingArtifact.SetCurrent(false);
                     }
+
+                    if (request.Provenance != null)
+                    {
+                        existingArtifact.AttachProvenance(request.Provenance);
+                    }
+
                     artifact = existingArtifact;
                 }
                 else
@@ -188,7 +194,8 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                         workflow: workflow,
                         workflowVersion: workflowVersion,
                         isCurrent: isIdentityPassed,
-                        generationFingerprint: fingerprint
+                        generationFingerprint: fingerprint,
+                        provenanceJson: request.Provenance?.ToJson()
                     );
 
                     await _dbContext.SceneImages.AddAsync(artifact, ct);
@@ -323,10 +330,11 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     }
                     existingArtifact.SetCurrent(true);
                 }
-                else
+                if (request.Provenance != null)
                 {
-                    existingArtifact.SetCurrent(false);
+                    existingArtifact.AttachProvenance(request.Provenance);
                 }
+
                 artifact = existingArtifact;
             }
             else
@@ -357,7 +365,8 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     workflow: workflow,
                     workflowVersion: workflowVersion,
                     isCurrent: isIdentityPassed,
-                    generationFingerprint: fingerprint
+                    generationFingerprint: fingerprint,
+                    provenanceJson: request.Provenance?.ToJson()
                 );
 
                 await _dbContext.SceneImages.AddAsync(artifact, ct);

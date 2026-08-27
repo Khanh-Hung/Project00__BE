@@ -1,15 +1,19 @@
-using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
+using System.Text.Json;
 
 namespace Application.Common;
 
 /// <summary>
-/// Provides pure, deterministic seed derivation and generation attempt fingerprinting.
-/// Guarantees exact reproducibility and idempotency across retry attempts.
+/// Provides pure, deterministic seed derivation and canonical generation attempt fingerprinting.
+/// Guarantees exact reproducibility and idempotency across retry attempts without delimiter collision risk.
 /// </summary>
 public static class DeterministicSeedDerivation
 {
+    public const string DefaultModel = "meinamix_meinaV11.safetensors";
+    public const string DefaultWorkflow = "VisualIdentity";
+    public const int DefaultWorkflowVersion = 1;
+    public const string DefaultMitigationAction = "Pass";
+
     /// <summary>
     /// Derives a deterministic seed for a given attempt number from the base seed.
     /// Attempt 1 returns baseSeed unmodified.
@@ -30,11 +34,11 @@ public static class DeterministicSeedDerivation
     }
 
     /// <summary>
-    /// Computes a unique, canonical, deterministic fingerprint for a generation attempt covering all
+    /// Computes a unique, canonical, collision-safe SHA-256 fingerprint for a generation attempt covering all
     /// authoritative generation request inputs:
-    /// JobId, TurnId, SceneRevision, AttemptNumber, DerivedSeed, Workflow, WorkflowVersion, ParametersJson,
-    /// CompiledPrompt, CompiledNegativePrompt, and PreviousReferenceUrl.
-    /// Used to enforce strict DB-level uniqueness and idempotency across worker retries.
+    /// JobId, TurnId, SceneRevision, AttemptNumber, DerivedSeed, Workflow, WorkflowVersion, ModelIdentifier, ParametersJson,
+    /// CompiledPrompt, CompiledNegativePrompt, PreviousReferenceUrl, and MitigationAction.
+    /// Uses canonical JSON serialization to prevent delimiter collision vulnerabilities.
     /// </summary>
     public static string ComputeFingerprint(
         Guid jobId,
@@ -43,26 +47,33 @@ public static class DeterministicSeedDerivation
         int attemptNumber,
         long derivedSeed,
         string parametersJson,
-        string workflow = "VisualIdentity",
-        int workflowVersion = 1,
+        string workflow = DefaultWorkflow,
+        int workflowVersion = DefaultWorkflowVersion,
         string? compiledPrompt = null,
         string? compiledNegativePrompt = null,
-        string? previousReferenceUrl = null)
+        string? previousReferenceUrl = null,
+        string? modelIdentifier = null,
+        string? mitigationAction = null)
     {
-        var rawKey = string.Join("|",
-            jobId.ToString("N"),
-            snapshotTurnId.ToString("N"),
-            sceneRevision.ToString(CultureInfo.InvariantCulture),
-            attemptNumber.ToString(CultureInfo.InvariantCulture),
-            derivedSeed.ToString(CultureInfo.InvariantCulture),
-            workflow ?? string.Empty,
-            workflowVersion.ToString(CultureInfo.InvariantCulture),
-            parametersJson ?? string.Empty,
-            compiledPrompt ?? string.Empty,
-            compiledNegativePrompt ?? string.Empty,
-            previousReferenceUrl ?? string.Empty);
+        var canonicalPayload = new
+        {
+            jobId = jobId.ToString("D"),
+            snapshotTurnId = snapshotTurnId.ToString("D"),
+            sceneRevision = sceneRevision,
+            attemptNumber = attemptNumber,
+            derivedSeed = derivedSeed,
+            workflow = !string.IsNullOrWhiteSpace(workflow) ? workflow : DefaultWorkflow,
+            workflowVersion = workflowVersion > 0 ? workflowVersion : DefaultWorkflowVersion,
+            modelIdentifier = !string.IsNullOrWhiteSpace(modelIdentifier) ? modelIdentifier : DefaultModel,
+            parametersJson = parametersJson ?? string.Empty,
+            compiledPrompt = compiledPrompt ?? string.Empty,
+            compiledNegativePrompt = compiledNegativePrompt ?? string.Empty,
+            previousReferenceUrl = previousReferenceUrl ?? string.Empty,
+            mitigationAction = !string.IsNullOrWhiteSpace(mitigationAction) ? mitigationAction : DefaultMitigationAction
+        };
 
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
+        var canonicalBytes = JsonSerializer.SerializeToUtf8Bytes(canonicalPayload);
+        var hashBytes = SHA256.HashData(canonicalBytes);
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 }

@@ -59,7 +59,12 @@ public sealed class GenerationRecoveryConcurrencyTests
         {
             var jobForB = await dbWorkerB.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Queued, jobForB.Status);
-            var claimedB = jobForB.TryClaim("worker-B", TimeSpan.FromMinutes(2), now);
+            // Claim before NextAttemptAt arrives is rejected
+            var earlyClaimB = jobForB.TryClaim("worker-B", TimeSpan.FromMinutes(2), now);
+            Assert.False(earlyClaimB);
+
+            // Claim after NextAttemptAt backoff arrives succeeds
+            var claimedB = jobForB.TryClaim("worker-B", TimeSpan.FromMinutes(2), now.AddSeconds(2));
             Assert.True(claimedB);
             await dbWorkerB.SaveChangesAsync();
         }

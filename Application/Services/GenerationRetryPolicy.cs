@@ -5,6 +5,9 @@ namespace Application.Services;
 /// <summary>
 /// Authoritative policy defining retry parameters, backoff intervals, jitter calculations,
 /// and retry eligibility per generation failure category.
+/// Architectural Separation of Concerns:
+/// - GenerationRetryPolicy calculates WHEN an operational retry should occur (exponential delay intervals with jitter).
+/// - GenerationRetryBudget determines IF an attempt can proceed based on global resource limits (max 3 attempts, 90s deadline).
 /// </summary>
 public sealed class GenerationRetryPolicy
 {

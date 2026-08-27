@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Tests.GenerationReliability;
 
+[Collection("NonParallelMetricsCollection")]
 public sealed class GenerationObservabilityTests
 {
     [Fact]
@@ -25,6 +26,9 @@ public sealed class GenerationObservabilityTests
     [Fact]
     public void MeterListener_RecordsEmittedMeasurementsAccurately()
     {
+        var testRunId = Guid.NewGuid().ToString();
+        var testTag = new KeyValuePair<string, object?>("test_run", testRunId);
+
         long observedJobsTotal = 0;
         long observedCompleted = 0;
         long observedRecoveries = 0;
@@ -41,6 +45,17 @@ public sealed class GenerationObservabilityTests
 
         listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
         {
+            bool matches = false;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "test_run" && tag.Value?.ToString() == testRunId)
+                {
+                    matches = true;
+                    break;
+                }
+            }
+            if (!matches) return;
+
             if (instrument.Name == "generation_jobs_total")
                 observedJobsTotal += measurement;
             else if (instrument.Name == "generation_jobs_completed_total")
@@ -51,17 +66,28 @@ public sealed class GenerationObservabilityTests
 
         listener.SetMeasurementEventCallback<double>((instrument, measurement, tags, state) =>
         {
+            bool matches = false;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "test_run" && tag.Value?.ToString() == testRunId)
+                {
+                    matches = true;
+                    break;
+                }
+            }
+            if (!matches) return;
+
             if (instrument.Name == "generation_execution_duration_ms")
                 observedDuration += measurement;
         });
 
         listener.Start();
 
-        // Emit telemetry measurements
-        GenerationObservability.JobsTotal.Add(5);
-        GenerationObservability.JobsCompletedTotal.Add(3);
-        GenerationObservability.RecoveriesTotal.Add(2);
-        GenerationObservability.ExecutionDurationMs.Record(250.0);
+        // Emit telemetry measurements with test tag
+        GenerationObservability.JobsTotal.Add(5, testTag);
+        GenerationObservability.JobsCompletedTotal.Add(3, testTag);
+        GenerationObservability.RecoveriesTotal.Add(2, testTag);
+        GenerationObservability.ExecutionDurationMs.Record(250.0, testTag);
 
         listener.RecordObservableInstruments();
 

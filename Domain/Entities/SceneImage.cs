@@ -1,4 +1,5 @@
 using Domain.Common;
+using Domain.ValueObjects;
 
 namespace Domain.Entities;
 
@@ -22,6 +23,7 @@ public sealed class SceneImage : BaseEntity
     public int WorkflowVersion { get; private set; } = 1;
     public bool IsCurrent { get; private set; } = true;
     public string? GenerationFingerprint { get; private set; }
+    public string? ProvenanceJson { get; private set; }
 
     private SceneImage() { } // EF Core
 
@@ -39,7 +41,8 @@ public sealed class SceneImage : BaseEntity
         string workflow = "VisualIdentity",
         int workflowVersion = 1,
         bool isCurrent = true,
-        string? generationFingerprint = null)
+        string? generationFingerprint = null,
+        string? provenanceJson = null)
     {
         SessionId = sessionId;
         CharacterId = characterId;
@@ -55,7 +58,16 @@ public sealed class SceneImage : BaseEntity
         WorkflowVersion = workflowVersion;
         IsCurrent = isCurrent;
         GenerationFingerprint = generationFingerprint;
+        ProvenanceJson = provenanceJson;
     }
+
+    public void AttachProvenance(GenerationProvenance provenance)
+    {
+        ProvenanceJson = provenance?.ToJson();
+        Touch();
+    }
+
+    public GenerationProvenance? GetProvenance() => GenerationProvenance.FromJson(ProvenanceJson);
 
     public void SetCurrent(bool isCurrent)
     {
