@@ -58,6 +58,11 @@ public sealed class GenerationObservabilityTests
 
         listener.Start();
 
+        long startJobs = observedJobsTotal;
+        long startCompleted = observedCompleted;
+        long startRecoveries = observedRecoveries;
+        double startDuration = observedDuration;
+
         // Emit telemetry measurements
         GenerationObservability.JobsTotal.Add(5);
         GenerationObservability.JobsCompletedTotal.Add(3);
@@ -66,9 +71,9 @@ public sealed class GenerationObservabilityTests
 
         listener.RecordObservableInstruments();
 
-        Assert.True(observedJobsTotal >= 5);
-        Assert.True(observedCompleted >= 3);
-        Assert.True(observedRecoveries >= 2);
-        Assert.True(observedDuration >= 250.0);
+        Assert.Equal(5, observedJobsTotal - startJobs);
+        Assert.Equal(3, observedCompleted - startCompleted);
+        Assert.Equal(2, observedRecoveries - startRecoveries);
+        Assert.Equal(250.0, observedDuration - startDuration);
     }
 }

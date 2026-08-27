@@ -461,13 +461,31 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     {
                         var failTime = _dateTimeProvider.UtcNow;
                         var category = GenerationFailureClassifier.Classify(ex);
+                        var isRetryable = _retryBudget.CanRetryFailure(attempt, totalStopwatch.Elapsed, category, out var failBudgetReason);
+
                         attemptRecord.MarkFailed(category, ex.Message, failTime, workerId, failTime);
                         await _dbContext.SaveChangesAsync(ct);
 
-                        _retryBudget.CanRetryFailure(attempt, totalStopwatch.Elapsed, category, out var failBudgetReason);
-                        _logger.LogError(ex, "[GenerationFailure] JobId={JobId}, Attempt={Attempt} failed ({Category}: {Message}). Reason={Reason}",
-                            job.Id, attempt, category, ex.Message, failBudgetReason ?? "Operational failure");
-                        _metrics.RecordGenerationFailed(job.Id, category, attempt, totalStopwatch.Elapsed);
+                        if (!isRetryable)
+                        {
+                            _logger.LogError(ex, "[GenerationFailureTerminal] JobId={JobId}, Attempt={Attempt} failed terminally ({Category}: {Message}). Reason={Reason}",
+                                job.Id, attempt, category, ex.Message, failBudgetReason ?? "Non-retryable");
+                            _metrics.RecordGenerationFailed(job.Id, category, attempt, totalStopwatch.Elapsed);
+
+                            // Fast-fail job terminally
+                            if (job.Status == ImageJobStatus.Processing || job.Status == ImageJobStatus.Evaluating)
+                            {
+                                job.Fail(ex.Message, isRetryable: false, now: failTime, workerId: workerId);
+                                await _dbContext.SaveChangesAsync(CancellationToken.None);
+                            }
+
+                            throw new GpuNonTransientException($"Terminal generation failure: {ex.Message} ({failBudgetReason})", innerException: ex);
+                        }
+
+                        var retryDelay = GenerationRetryPolicy.Default.CalculateDelay(job.RetryCount);
+                        _logger.LogWarning("[GenerationFailureRetryable] JobId={JobId}, Attempt={Attempt} failed ({Category}: {Message}). Scheduling worker backoff retry (Delay: {DelayMs:F0}ms).",
+                            job.Id, attempt, category, ex.Message, retryDelay.TotalMilliseconds);
+                        _metrics.RecordGenerationRetry(job.Id, attempt, retryDelay);
                         throw;
                     }
 
