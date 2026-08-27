@@ -6,5 +6,6 @@ namespace Application.Features.Chat.Commands.TriggerTurnSceneImage;
 
 public sealed record TriggerTurnSceneImageGenerationCommand(
     Guid SessionId,
-    Guid TurnId
+    Guid TurnId,
+    Guid? RequestId = null
 ) : IRequest<Result<TriggerSceneImageResponse>>;

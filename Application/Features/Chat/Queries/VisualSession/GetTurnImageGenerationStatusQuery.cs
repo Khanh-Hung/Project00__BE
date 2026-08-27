@@ -1,0 +1,196 @@
+using Application.Abstractions.Auth;
+using Application.Abstractions.Responses;
+using Application.DTOs;
+using Domain.Entities;
+using Domain.Enums;
+using Infrastructure.Persistence;
+using MediatR;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Application.Features.Chat.Queries.VisualSession;
+
+public sealed record GetTurnImageGenerationStatusQuery(
+    Guid SessionId,
+    Guid TurnId
+) : IRequest<Result<VisualGenerationStatusResponse>>;
+
+public sealed class GetTurnImageGenerationStatusHandler : IRequestHandler<GetTurnImageGenerationStatusQuery, Result<VisualGenerationStatusResponse>>
+{
+    private readonly ProjectDbContext _dbContext;
+    private readonly ICurrentUserProvider _currentUserProvider;
+    private readonly ILogger<GetTurnImageGenerationStatusHandler> _logger;
+
+    public GetTurnImageGenerationStatusHandler(
+        ProjectDbContext dbContext,
+        ICurrentUserProvider currentUserProvider,
+        ILogger<GetTurnImageGenerationStatusHandler>? logger = null)
+    {
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
+        _logger = logger ?? NullLogger<GetTurnImageGenerationStatusHandler>.Instance;
+    }
+
+    public async Task<Result<VisualGenerationStatusResponse>> Handle(GetTurnImageGenerationStatusQuery request, CancellationToken cancellationToken)
+    {
+        // 1. Resolve Authenticated User & Check Ownership
+        if (string.IsNullOrEmpty(_currentUserProvider.CurrentUserId) || !Guid.TryParse(_currentUserProvider.CurrentUserId, out var currentUserId))
+        {
+            return Result<VisualGenerationStatusResponse>.Failure(
+                StatusCodes.Status401Unauthorized,
+                "Authentication is required to view turn generation status.");
+        }
+
+        var session = await _dbContext.ChatSessions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == request.SessionId, cancellationToken);
+
+        if (session == null)
+        {
+            return Result<VisualGenerationStatusResponse>.Failure(
+                StatusCodes.Status404NotFound,
+                $"Chat session '{request.SessionId}' was not found.");
+        }
+
+        if (session.UserId != currentUserId)
+        {
+            return Result<VisualGenerationStatusResponse>.Failure(
+                StatusCodes.Status403Forbidden,
+                "You do not have permission to access visual generation status for this session.");
+        }
+
+        // 2. Query latest generation job for this turn
+        var latestJob = await _dbContext.ImageGenerationJobs
+            .AsNoTracking()
+            .Where(j => j.SessionId == request.SessionId && j.TurnId == request.TurnId)
+            .OrderByDescending(j => j.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latestJob == null)
+        {
+            return Result<VisualGenerationStatusResponse>.Failure(
+                StatusCodes.Status404NotFound,
+                $"No generation job found for turn '{request.TurnId}' in session '{request.SessionId}'.");
+        }
+
+        // 3. Authoritative Artifact Resolution: AcceptedAttemptId -> Winning Attempt -> Artifact
+        SceneImage? artifact = null;
+
+        if (latestJob.AcceptedAttemptId.HasValue)
+        {
+            var winningAttempt = await _dbContext.ImageGenerationAttempts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == latestJob.AcceptedAttemptId.Value, cancellationToken);
+
+            if (winningAttempt == null)
+            {
+                _logger.LogError("[GetTurnImageGenerationStatus] State divergence detected: Job {JobId} references AcceptedAttemptId {AttemptId} which does not exist in database.",
+                    latestJob.Id, latestJob.AcceptedAttemptId.Value);
+
+                return Result<VisualGenerationStatusResponse>.Failure(
+                    StatusCodes.Status500InternalServerError,
+                    $"State divergence: Winning attempt '{latestJob.AcceptedAttemptId.Value}' was not found in ledger.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(winningAttempt.GenerationFingerprint))
+            {
+                artifact = await _dbContext.SceneImages
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(img => img.SessionId == request.SessionId
+                                                && img.GenerationFingerprint == winningAttempt.GenerationFingerprint
+                                                && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, cancellationToken);
+            }
+
+            if (artifact == null && !string.IsNullOrWhiteSpace(winningAttempt.ImageUrl))
+            {
+                artifact = await _dbContext.SceneImages
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(img => img.SessionId == request.SessionId
+                                                && img.ImageUrl == winningAttempt.ImageUrl
+                                                && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, cancellationToken);
+            }
+
+            if (artifact == null)
+            {
+                _logger.LogError("[GetTurnImageGenerationStatus] State divergence detected: Winning attempt {AttemptId} has no corresponding non-deleted SceneImage artifact.",
+                    winningAttempt.Id);
+
+                return Result<VisualGenerationStatusResponse>.Failure(
+                    StatusCodes.Status500InternalServerError,
+                    $"State divergence: Winning artifact for attempt '{winningAttempt.Id}' was not found in storage.");
+            }
+        }
+        else if (latestJob.Status == ImageJobStatus.Completed)
+        {
+            artifact = await _dbContext.SceneImages
+                .AsNoTracking()
+                .Where(img => img.SessionId == request.SessionId
+                              && img.GenerationJobId == latestJob.Id
+                              && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted)
+                .OrderByDescending(img => img.VisualRevision)
+                .ThenByDescending(img => img.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+        else if (latestJob.Status == ImageJobStatus.Quarantined)
+        {
+            if (latestJob.QuarantinedAttemptId.HasValue)
+            {
+                var quarantinedAttempt = await _dbContext.ImageGenerationAttempts
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(a => a.Id == latestJob.QuarantinedAttemptId.Value, cancellationToken);
+
+                if (quarantinedAttempt != null && !string.IsNullOrWhiteSpace(quarantinedAttempt.GenerationFingerprint))
+                {
+                    artifact = await _dbContext.SceneImages
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(img => img.SessionId == request.SessionId
+                                                    && img.GenerationFingerprint == quarantinedAttempt.GenerationFingerprint
+                                                    && img.LifecycleStatus == ArtifactLifecycleStatus.Quarantined, cancellationToken);
+                }
+            }
+
+            if (artifact == null)
+            {
+                artifact = await _dbContext.SceneImages
+                    .AsNoTracking()
+                    .Where(img => img.SessionId == request.SessionId
+                                  && img.GenerationJobId == latestJob.Id
+                                  && img.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
+                    .OrderByDescending(img => img.CreatedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+        }
+        else
+        {
+            artifact = await _dbContext.SceneImages
+                .AsNoTracking()
+                .Where(img => img.SessionId == request.SessionId
+                              && (img.GenerationJobId == latestJob.Id || img.GenerationRequestId == latestJob.GenerationRequestId))
+                .OrderByDescending(img => img.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        var sessionState = await _dbContext.VisualSessionStates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.SessionId == request.SessionId, cancellationToken);
+
+        var response = new VisualGenerationStatusResponse(
+            JobId: latestJob.Id,
+            GenerationRequestId: latestJob.GenerationRequestId,
+            SessionId: latestJob.SessionId,
+            TurnId: latestJob.TurnId,
+            Status: latestJob.Status.ToString().ToLowerInvariant(),
+            AttemptNumber: latestJob.CurrentAttemptNumber,
+            HasArtifact: artifact != null,
+            ImageUrl: artifact?.ImageUrl,
+            FailureReason: latestJob.FailureReason,
+            IsQuarantined: latestJob.Status == ImageJobStatus.Quarantined || artifact?.LifecycleStatus == ArtifactLifecycleStatus.Quarantined,
+            CompletedAt: latestJob.CompletedAt,
+            VisualRevision: artifact?.VisualRevision ?? sessionState?.VisualRevision
+        );
+
+        return Result<VisualGenerationStatusResponse>.Success(response);
+    }
+}

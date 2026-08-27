@@ -5,9 +5,11 @@ using Application.Abstractions.Responses;
 using Application.Common;
 using Application.DTOs;
 using Domain.Entities;
+using Domain.Enums;
 using Domain.ValueObjects;
 using MediatR;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Application.Features.Chat.Commands.TriggerTurnSceneImage;
@@ -23,9 +25,9 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
         ICurrentUserProvider currentUserProvider,
         ILogger<TriggerTurnSceneImageGenerationHandler> logger)
     {
-        _unitOfWork = unitOfWork;
-        _currentUserProvider = currentUserProvider;
-        _logger = logger;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<Result<TriggerSceneImageResponse>> Handle(TriggerTurnSceneImageGenerationCommand command, CancellationToken cancellationToken)
@@ -52,7 +54,7 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
                 $"Turn '{command.TurnId}' in session '{command.SessionId}' was not found.");
         }
 
-        // 3. Strict Ownership Authorization: Turn.UserId MUST strictly equal CurrentUserId (No Guid.Empty bypass)
+        // 3. Strict Ownership Authorization: Turn.UserId MUST strictly equal CurrentUserId
         if (turn.UserId != currentUserId)
         {
             return Result<TriggerSceneImageResponse>.Failure(
@@ -60,7 +62,7 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
                 "You do not have permission to generate images for this turn.");
         }
 
-        // 3. Ensure VisualSnapshot was frozen and preserved on the turn
+        // 4. Ensure VisualSnapshot was frozen and preserved on the turn
         if (string.IsNullOrWhiteSpace(turn.VisualSnapshotJson))
         {
             return Result<TriggerSceneImageResponse>.Failure(
@@ -88,7 +90,7 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
                 "Visual snapshot is invalid or empty for this turn.");
         }
 
-        // 4. Validate Snapshot Identity Invariant (TurnId, SessionId, CharacterId must strictly match Turn entity)
+        // 5. Validate Snapshot Identity Invariant (TurnId, SessionId, CharacterId must strictly match Turn entity)
         if (snapshot.TurnId != turn.TurnId || snapshot.SessionId != turn.SessionId || snapshot.CharacterId != turn.CharacterId)
         {
             _logger.LogError(
@@ -100,16 +102,85 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
                 "Frozen visual snapshot identity does not match turn metadata.");
         }
 
-        // 5. Generate a NEW GenerationRequestId (guaranteeing unique identity for regenerations)
-        var generationRequestId = Guid.NewGuid();
+        var jobRepo = _unitOfWork.GetRepository<ImageGenerationJob>();
+        Guid targetRequestId;
 
-        // 6. Enqueue Outbox Message with the FROZEN VisualSnapshot
+        // 6. Fast-path Idempotency & In-flight Deduplication
+        if (command.RequestId.HasValue)
+        {
+            // Explicit RequestId provided: Idempotent lookup by (SessionId, TurnId, RequestId)
+            targetRequestId = command.RequestId.Value;
+            var existingJob = await jobRepo.GetAsync(
+                j => j.SessionId == command.SessionId && j.TurnId == command.TurnId && j.GenerationRequestId == targetRequestId,
+                cancellationToken);
+
+            if (existingJob != null)
+            {
+                var existingStatus = (existingJob.Status == ImageJobStatus.Pending || existingJob.Status == ImageJobStatus.Queued)
+                    ? "queued"
+                    : existingJob.Status.ToString().ToLowerInvariant();
+
+                _logger.LogInformation("Idempotent generation request fast-path hit: SessionId={SessionId}, TurnId={TurnId}, RequestId={RequestId}, Status={Status}",
+                    command.SessionId, command.TurnId, targetRequestId, existingStatus);
+
+                return Result<TriggerSceneImageResponse>.Success(new TriggerSceneImageResponse(
+                    GenerationRequestId: targetRequestId,
+                    TurnId: command.TurnId,
+                    Status: existingStatus
+                ), StatusCodes.Status200OK);
+            }
+        }
+        else
+        {
+            // RequestId == null: Lookup active in-flight job for this turn to collapse duplicate generation requests
+            var activeJob = await jobRepo.GetAsync(
+                j => j.SessionId == command.SessionId
+                     && j.TurnId == command.TurnId
+                     && (j.Status == ImageJobStatus.Pending
+                         || j.Status == ImageJobStatus.Queued
+                         || j.Status == ImageJobStatus.Processing
+                         || j.Status == ImageJobStatus.Evaluating),
+                cancellationToken);
+
+            if (activeJob != null)
+            {
+                var activeStatus = (activeJob.Status == ImageJobStatus.Pending || activeJob.Status == ImageJobStatus.Queued)
+                    ? "queued"
+                    : activeJob.Status.ToString().ToLowerInvariant();
+
+                _logger.LogInformation("Collapsing duplicate in-flight generation request: SessionId={SessionId}, TurnId={TurnId}, ExistingRequestId={RequestId}, Status={Status}",
+                    command.SessionId, command.TurnId, activeJob.GenerationRequestId, activeStatus);
+
+                return Result<TriggerSceneImageResponse>.Success(new TriggerSceneImageResponse(
+                    GenerationRequestId: activeJob.GenerationRequestId,
+                    TurnId: command.TurnId,
+                    Status: activeStatus
+                ), StatusCodes.Status202Accepted);
+            }
+
+            targetRequestId = Guid.NewGuid();
+        }
+
+        // 7. Atomic Idempotency Fence: Create Pending ImageGenerationJob and Outbox Message together
         var scenePayload = new SceneImageGenerationOutboxPayload(
             TurnId: turn.TurnId,
             CharacterId: turn.CharacterId,
             UserId: turn.UserId,
             Snapshot: snapshot,
-            GenerationRequestId: generationRequestId
+            GenerationRequestId: targetRequestId
+        );
+
+        var newJob = new ImageGenerationJob(
+            sessionId: turn.SessionId,
+            turnId: turn.TurnId,
+            characterId: turn.CharacterId,
+            sceneRevision: snapshot.SceneRevision,
+            generationRequestId: targetRequestId,
+            userId: turn.UserId,
+            provider: "ComfyUI",
+            workflow: snapshot.GenerationProfile?.Workflow ?? "VisualIdentity",
+            workflowVersion: snapshot.GenerationProfile?.WorkflowVersion ?? 1,
+            generationMetadataJson: JsonSerializer.Serialize(scenePayload)
         );
 
         var outboxRepo = _unitOfWork.GetRepository<OutboxMessage>();
@@ -118,15 +189,43 @@ public sealed class TriggerTurnSceneImageGenerationHandler : IRequestHandler<Tri
             payloadJson: JsonSerializer.Serialize(scenePayload)
         );
 
+        await jobRepo.AddAsync(newJob, cancellationToken);
         await outboxRepo.AddAsync(outboxMessage, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "[TriggerTurnSceneImageGenerationHandler] Concurrency collision on GenerationRequestId {RequestId}. Reloading existing job.", targetRequestId);
+
+            var reloadedJob = await jobRepo.GetAsync(
+                j => j.SessionId == command.SessionId && j.GenerationRequestId == targetRequestId,
+                cancellationToken);
+
+            if (reloadedJob != null)
+            {
+                var reloadedStatus = (reloadedJob.Status == ImageJobStatus.Pending || reloadedJob.Status == ImageJobStatus.Queued)
+                    ? "queued"
+                    : reloadedJob.Status.ToString().ToLowerInvariant();
+
+                return Result<TriggerSceneImageResponse>.Success(new TriggerSceneImageResponse(
+                    GenerationRequestId: targetRequestId,
+                    TurnId: command.TurnId,
+                    Status: reloadedStatus
+                ), StatusCodes.Status200OK);
+            }
+
+            throw;
+        }
 
         _logger.LogInformation("Enqueued async scene image generation: SessionId={SessionId}, TurnId={TurnId}, GenerationRequestId={GenerationRequestId}",
-            command.SessionId, command.TurnId, generationRequestId);
+            command.SessionId, command.TurnId, targetRequestId);
 
-        // 6. Return 202 Accepted with response DTO
+        // 8. Return 202 Accepted with response DTO
         var response = new TriggerSceneImageResponse(
-            GenerationRequestId: generationRequestId,
+            GenerationRequestId: targetRequestId,
             TurnId: command.TurnId,
             Status: "queued"
         );

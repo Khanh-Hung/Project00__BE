@@ -338,7 +338,13 @@ public sealed class UserTriggeredTurnImageGenerationTests
         Assert.True(result1.IsSuccess);
         var req1 = result1.Value!.GenerationRequestId;
 
-        // Second Generation (Regenerate on the same turn)
+        // Complete the first job so it is no longer in-flight
+        var firstJob = await db.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == req1);
+        firstJob.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        firstJob.AcceptAttempt(Guid.NewGuid(), DateTime.UtcNow, "worker-1", "{}");
+        await db.SaveChangesAsync();
+
+        // Second Generation (Regenerate on the same turn after previous completed)
         var result2 = await handler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turnId), CancellationToken.None);
         Assert.True(result2.IsSuccess);
         var req2 = result2.Value!.GenerationRequestId;
@@ -842,8 +848,8 @@ public sealed class UserTriggeredTurnImageGenerationTests
             await seedDb.SaveChangesAsync();
         }
 
-        // 100 concurrent trigger requests on the same turn (e.g. rapid user clicks / regenerations)
-        // Each request uses an independent ProjectDbContext + UnitOfWork pointing to the same shared in-memory database
+        // 100 concurrent trigger requests on the SAME turn without RequestId (rapid user clicks)
+        // System must collapse duplicate in-flight requests into the single active generation
         const int requestCount = 100;
         var tasks = Enumerable.Range(0, requestCount).Select(async _ =>
         {
@@ -871,22 +877,100 @@ public sealed class UserTriggeredTurnImageGenerationTests
             Assert.Equal("queued", r.Value.Status);
         });
 
-        // Assert all 100 GenerationRequestIds are unique (Zero collisions)
-        var generatedIds = results.Select(r => r.Value!.GenerationRequestId).ToList();
-        Assert.Equal(requestCount, generatedIds.Distinct().Count());
+        // Assert all 100 requests collapsed into the SAME single in-flight GenerationRequestId
+        var generatedIds = results.Select(r => r.Value!.GenerationRequestId).Distinct().ToList();
+        Assert.Single(generatedIds);
 
-        // Assert all 100 Outbox messages exist in database via a fresh verification DbContext
+        // Assert EXACTLY 1 Outbox message and 1 ImageGenerationJob exist in database
         await using (var verifyDb = new ProjectDbContext(options))
         {
             var outboxMessages = await verifyDb.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration).ToListAsync();
-            Assert.Equal(requestCount, outboxMessages.Count);
+            Assert.Single(outboxMessages);
 
-            var outboxRequestIds = outboxMessages
-                .Select(m => JsonSerializer.Deserialize<SceneImageGenerationOutboxPayload>(m.PayloadJson)!.GenerationRequestId)
-                .ToList();
+            var jobCount = await verifyDb.ImageGenerationJobs.CountAsync(j => j.SessionId == sessionId && j.TurnId == turnId);
+            Assert.Equal(1, jobCount);
+        }
+    }
 
-            Assert.Equal(requestCount, outboxRequestIds.Distinct().Count());
-            Assert.Equal(generatedIds.OrderBy(g => g), outboxRequestIds.OrderBy(g => g));
+    [Fact]
+    public async Task Test20_ConcurrentGenerateRequests_AcrossDistinctTurns_ProduceUniqueGenerationRequestIds()
+    {
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        var userId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        const int turnCount = 50;
+
+        var turns = Enumerable.Range(0, turnCount).Select(i =>
+        {
+            var tid = Guid.NewGuid();
+            var snap = new VisualSnapshot(
+                TurnId: tid,
+                SessionId: sessionId,
+                CharacterId: Guid.NewGuid(),
+                SceneRevision: 1,
+                VisualIdentity: null,
+                SceneState: new SessionSceneState("courtyard", "standing"),
+                TransientState: null,
+                GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L + i)
+            );
+
+            return new CharacterTurn(
+                turnId: tid,
+                sessionId: sessionId,
+                userId: userId,
+                characterId: snap.CharacterId,
+                userMessageId: Guid.NewGuid(),
+                assistantMessageId: Guid.NewGuid(),
+                userMessage: $"Msg {i}",
+                assistantReply: "Reply",
+                mood: "Neutral",
+                moodIntensity: 50,
+                affectionDelta: 0,
+                affectionScore: 0,
+                relationshipStage: "Stranger",
+                visualSnapshotJson: JsonSerializer.Serialize(snap)
+            );
+        }).ToList();
+
+        using (var seedDb = new ProjectDbContext(options))
+        {
+            await seedDb.CharacterTurns.AddRangeAsync(turns);
+            await seedDb.SaveChangesAsync();
+        }
+
+        var tasks = turns.Select(async turn =>
+        {
+            await using var taskDb = new ProjectDbContext(options);
+            var taskUow = new UnitOfWork(taskDb);
+            var taskUserProvider = new FakeUserProvider(userId.ToString());
+            var taskHandler = new TriggerTurnSceneImageGenerationHandler(
+                taskUow,
+                taskUserProvider,
+                NullLogger<TriggerTurnSceneImageGenerationHandler>.Instance
+            );
+
+            return await taskHandler.Handle(new TriggerTurnSceneImageGenerationCommand(sessionId, turn.TurnId), CancellationToken.None);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        Assert.All(results, r =>
+        {
+            Assert.True(r.IsSuccess);
+            Assert.Equal(StatusCodes.Status202Accepted, r.StatusCode);
+            Assert.Equal("queued", r.Value!.Status);
+        });
+
+        var generatedIds = results.Select(r => r.Value!.GenerationRequestId).ToList();
+        Assert.Equal(turnCount, generatedIds.Distinct().Count());
+
+        await using (var verifyDb = new ProjectDbContext(options))
+        {
+            var outboxMessages = await verifyDb.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration).ToListAsync();
+            Assert.Equal(turnCount, outboxMessages.Count);
         }
     }
 }
