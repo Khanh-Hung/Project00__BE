@@ -46,6 +46,7 @@ public sealed class VisualStateRepairTests
         var diagnosis = await service.ValidateConsistencyAsync(sessionId);
         Assert.Equal(VisualStateConsistencyStatus.Repairable, diagnosis.Status);
         Assert.Equal(artifact.Id, diagnosis.ExpectedArtifactId);
+        Assert.Equal(job.Id, diagnosis.ExpectedJobId);
 
         // 2. Act: Execute deterministic repair
         var repairResult = await service.RepairVisualStateAsync(sessionId);
@@ -81,6 +82,111 @@ public sealed class VisualStateRepairTests
         await db.SaveChangesAsync();
 
         // Act & Assert: Service refuses to guess/repair corrupted lineage
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RepairVisualStateAsync(sessionId));
+        Assert.Contains("Corrupted", ex.Message);
+    }
+
+    [Fact]
+    public async Task RepairVisualState_WhenSessionStateAdvancedToNewerRevision_AbortsRepairToPreventStateRollback()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new VisualStateConsistencyService(db, NullLogger<VisualStateConsistencyService>.Instance);
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        // Job 1 / Revision 1
+        var job1 = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        job1.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+        var attempt1 = new ImageGenerationAttempt(job1.Id, turnId, 1, 1, 1000L, "{}", "fp-rev1", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        var artifact1 = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/art1.png", "prompt", generationJobId: job1.Id, generationAttemptId: attempt1.Id, visualRevision: 1, isCurrent: false, lifecycleStatus: ArtifactLifecycleStatus.Historical);
+        attempt1.AttachAcceptedArtifact(artifact1.Id, DateTime.UtcNow);
+        job1.AcceptAttempt(attempt1.Id, DateTime.UtcNow, "worker-1", "{}");
+
+        // Seed DB without VisualSessionState initially
+        db.ImageGenerationJobs.Add(job1);
+        db.ImageGenerationAttempts.Add(attempt1);
+        db.SceneImages.Add(artifact1);
+        await db.SaveChangesAsync();
+
+        // 1. Initial diagnosis identifies Revision 1 as repairable
+        var diagnosis = await service.ValidateConsistencyAsync(sessionId);
+        Assert.Equal(VisualStateConsistencyStatus.Repairable, diagnosis.Status);
+        Assert.Equal(1, diagnosis.ExpectedVisualRevision);
+
+        // 2. Concurrently, a generation worker completes Revision 2 and advances VisualSessionState
+        var newerArtifactId = Guid.NewGuid();
+        var newerJobId = Guid.NewGuid();
+        var advancedState = new VisualSessionState(sessionId, newerArtifactId, newerJobId, visualRevision: 2);
+        db.VisualSessionStates.Add(advancedState);
+        await db.SaveChangesAsync();
+
+        // 3. Act & Assert: Service refuses to repair / overwrite the newer revision
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RepairVisualStateAsync(sessionId));
+        Assert.NotNull(ex);
+
+        // 4. Verify session state was not rolled back to Revision 1
+        var finalState = await db.VisualSessionStates.FirstAsync(s => s.SessionId == sessionId);
+        Assert.Equal(2, finalState.VisualRevision);
+        Assert.Equal(newerArtifactId, finalState.CurrentImageId);
+    }
+
+    [Fact]
+    public async Task RepairVisualState_WhenJobWinnerMismatch_AbortsRepair()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new VisualStateConsistencyService(db, NullLogger<VisualStateConsistencyService>.Instance);
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        var job = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+
+        var attemptWinner = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-winner", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        var attemptLoser = new ImageGenerationAttempt(job.Id, turnId, 1, 2, 2000L, "{}", "fp-loser", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+
+        var artifactLoser = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/art_loser.png", "prompt", generationJobId: job.Id, generationAttemptId: attemptLoser.Id, visualRevision: 1, isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
+        attemptLoser.AttachAcceptedArtifact(artifactLoser.Id, DateTime.UtcNow);
+
+        // Job accepted attemptWinner, but attemptLoser attached artifactLoser
+        job.AcceptAttempt(attemptWinner.Id, DateTime.UtcNow, "worker-1", "{}");
+
+        db.ImageGenerationJobs.Add(job);
+        db.ImageGenerationAttempts.AddRange(attemptWinner, attemptLoser);
+        db.SceneImages.Add(artifactLoser);
+        await db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RepairVisualStateAsync(sessionId));
+        Assert.Contains("Corrupted", ex.Message);
+    }
+
+    [Fact]
+    public async Task RepairVisualState_WhenArtifactLineageForkDetected_AbortsRepair()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new VisualStateConsistencyService(db, NullLogger<VisualStateConsistencyService>.Instance);
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        var job = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+
+        var attemptA = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-a", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        var attemptB = new ImageGenerationAttempt(job.Id, turnId, 1, 2, 2000L, "{}", "fp-b", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+
+        // Lineage fork: Artifact says GenerationAttemptId = Attempt B, but Attempt A says AcceptedArtifactId = Artifact
+        var artifact = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/art.png", "prompt", generationJobId: job.Id, generationAttemptId: attemptB.Id, visualRevision: 1, isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
+
+        attemptA.AttachAcceptedArtifact(artifact.Id, DateTime.UtcNow);
+        job.AcceptAttempt(attemptA.Id, DateTime.UtcNow, "worker-1", "{}");
+
+        db.ImageGenerationJobs.Add(job);
+        db.ImageGenerationAttempts.AddRange(attemptA, attemptB);
+        db.SceneImages.Add(artifact);
+        await db.SaveChangesAsync();
+
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RepairVisualStateAsync(sessionId));
         Assert.Contains("Corrupted", ex.Message);
     }

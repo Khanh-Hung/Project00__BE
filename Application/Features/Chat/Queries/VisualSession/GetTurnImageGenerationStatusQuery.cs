@@ -162,26 +162,10 @@ public sealed class GetTurnImageGenerationStatusHandler : IRequestHandler<GetTur
                                                 && img.GenerationAttemptId == latestJob.QuarantinedAttemptId.Value
                                                 && img.LifecycleStatus == ArtifactLifecycleStatus.Quarantined, cancellationToken);
             }
-
-            if (artifact == null)
-            {
-                artifact = await _dbContext.SceneImages
-                    .AsNoTracking()
-                    .Where(img => img.SessionId == request.SessionId
-                                  && img.GenerationJobId == latestJob.Id
-                                  && img.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
-                    .OrderByDescending(img => img.Id)
-                    .FirstOrDefaultAsync(cancellationToken);
-            }
         }
         else
         {
-            artifact = await _dbContext.SceneImages
-                .AsNoTracking()
-                .Where(img => img.SessionId == request.SessionId
-                              && (img.GenerationJobId == latestJob.Id || img.GenerationRequestId == latestJob.GenerationRequestId))
-                .OrderByDescending(img => img.Id)
-                .FirstOrDefaultAsync(cancellationToken);
+            artifact = null;
         }
 
         var sessionState = await _dbContext.VisualSessionStates

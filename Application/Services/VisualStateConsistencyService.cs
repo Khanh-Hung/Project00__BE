@@ -78,14 +78,15 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Completed job '{authoritativeJob.Id}' has no recorded AcceptedAttemptId."
+                Reason: $"Completed job '{authoritativeJob.Id}' has no recorded AcceptedAttemptId.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
         // 4. Traverse Authoritative Attempt Ledger: Job.AcceptedAttemptId -> Winning Attempt
         var winningAttempt = await _dbContext.ImageGenerationAttempts
             .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.Id == authoritativeJob.AcceptedAttemptId.Value, ct);
+            .FirstOrDefaultAsync(a => a.Id == authoritativeJob.AcceptedAttemptId.Value && a.GenerationJobId == authoritativeJob.Id, ct);
 
         if (winningAttempt == null)
         {
@@ -94,7 +95,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Job '{authoritativeJob.Id}' references AcceptedAttemptId '{authoritativeJob.AcceptedAttemptId.Value}' which does not exist in ledger."
+                Reason: $"Job '{authoritativeJob.Id}' references AcceptedAttemptId '{authoritativeJob.AcceptedAttemptId.Value}' which does not exist in ledger.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -105,7 +107,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Winning attempt '{winningAttempt.Id}' is in non-succeeded status '{winningAttempt.Status}'."
+                Reason: $"Winning attempt '{winningAttempt.Id}' is in non-succeeded status '{winningAttempt.Status}'.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -116,7 +119,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Winning attempt '{winningAttempt.Id}' has null AcceptedArtifactId."
+                Reason: $"Winning attempt '{winningAttempt.Id}' has null AcceptedArtifactId.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -132,7 +136,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"AcceptedArtifactId '{winningAttempt.AcceptedArtifactId.Value}' does not exist in database storage."
+                Reason: $"AcceptedArtifactId '{winningAttempt.AcceptedArtifactId.Value}' does not exist in database storage.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -144,7 +149,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' belongs to foreign session '{authoritativeArtifact.SessionId}'."
+                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' belongs to foreign session '{authoritativeArtifact.SessionId}'.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -155,7 +161,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Lineage fork detected: Artifact '{authoritativeArtifact.Id}' has GenerationAttemptId '{authoritativeArtifact.GenerationAttemptId}' vs Attempt '{winningAttempt.Id}'."
+                Reason: $"Lineage fork detected: Artifact '{authoritativeArtifact.Id}' has GenerationAttemptId '{authoritativeArtifact.GenerationAttemptId}' vs Attempt '{winningAttempt.Id}'.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -166,7 +173,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Lineage fork detected: Artifact '{authoritativeArtifact.Id}' has GenerationJobId '{authoritativeArtifact.GenerationJobId}' vs Job '{authoritativeJob.Id}'."
+                Reason: $"Lineage fork detected: Artifact '{authoritativeArtifact.Id}' has GenerationJobId '{authoritativeArtifact.GenerationJobId}' vs Job '{authoritativeJob.Id}'.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -177,7 +185,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' has lifecycle status Deleted."
+                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' has lifecycle status Deleted.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -188,7 +197,8 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState?.CurrentImageId,
                 ExpectedArtifactId: null,
-                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' has lifecycle status Quarantined."
+                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' has lifecycle status Quarantined.",
+                ExpectedJobId: authoritativeJob.Id
             );
         }
 
@@ -200,7 +210,9 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: null,
                 ExpectedArtifactId: authoritativeArtifact.Id,
-                Reason: "VisualSessionState entity is missing, but full authoritative accepted artifact chain exists."
+                Reason: "VisualSessionState entity is missing, but full authoritative accepted artifact chain exists.",
+                ExpectedJobId: authoritativeJob.Id,
+                ExpectedVisualRevision: authoritativeArtifact.VisualRevision
             );
         }
 
@@ -211,7 +223,9 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: null,
                 ExpectedArtifactId: authoritativeArtifact.Id,
-                Reason: "VisualSessionState has null pointer, but full authoritative accepted artifact chain exists."
+                Reason: "VisualSessionState has null pointer, but full authoritative accepted artifact chain exists.",
+                ExpectedJobId: authoritativeJob.Id,
+                ExpectedVisualRevision: authoritativeArtifact.VisualRevision
             );
         }
 
@@ -222,7 +236,9 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState.CurrentImageId.Value,
                 ExpectedArtifactId: authoritativeArtifact.Id,
-                Reason: $"VisualSessionState points to artifact '{sessionState.CurrentImageId.Value}' but authoritative attempt ledger points to '{authoritativeArtifact.Id}'."
+                Reason: $"VisualSessionState points to artifact '{sessionState.CurrentImageId.Value}' but authoritative attempt ledger points to '{authoritativeArtifact.Id}'.",
+                ExpectedJobId: authoritativeJob.Id,
+                ExpectedVisualRevision: authoritativeArtifact.VisualRevision
             );
         }
 
@@ -233,7 +249,9 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState.CurrentImageId.Value,
                 ExpectedArtifactId: authoritativeArtifact.Id,
-                Reason: $"VisualRevision mismatch: Artifact revision {authoritativeArtifact.VisualRevision} vs SessionState revision {sessionState.VisualRevision}."
+                Reason: $"VisualRevision mismatch: Artifact revision {authoritativeArtifact.VisualRevision} vs SessionState revision {sessionState.VisualRevision}.",
+                ExpectedJobId: authoritativeJob.Id,
+                ExpectedVisualRevision: authoritativeArtifact.VisualRevision
             );
         }
 
@@ -244,7 +262,9 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: sessionState.CurrentImageId.Value,
                 ExpectedArtifactId: authoritativeArtifact.Id,
-                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' is not marked as IsCurrent = true (Status: {authoritativeArtifact.LifecycleStatus})."
+                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' is not marked as IsCurrent = true (Status: {authoritativeArtifact.LifecycleStatus}).",
+                ExpectedJobId: authoritativeJob.Id,
+                ExpectedVisualRevision: authoritativeArtifact.VisualRevision
             );
         }
 
@@ -254,7 +274,9 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
             SessionId: sessionId,
             CurrentArtifactId: authoritativeArtifact.Id,
             ExpectedArtifactId: authoritativeArtifact.Id,
-            Reason: "Visual session state and bidirectional lineage are fully consistent."
+            Reason: "Visual session state and bidirectional lineage are fully consistent.",
+            ExpectedJobId: authoritativeJob.Id,
+            ExpectedVisualRevision: authoritativeArtifact.VisualRevision
         );
     }
 
@@ -267,45 +289,68 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
             return diagnosis;
         }
 
-        if (diagnosis.Status != VisualStateConsistencyStatus.Repairable || !diagnosis.ExpectedArtifactId.HasValue)
+        if (diagnosis.Status != VisualStateConsistencyStatus.Repairable || !diagnosis.ExpectedArtifactId.HasValue || !diagnosis.ExpectedJobId.HasValue)
         {
             throw new InvalidOperationException(
                 $"Cannot repair visual state for session '{sessionId}': State is {diagnosis.Status} ({diagnosis.Reason}). Full authoritative provenance chain required.");
         }
 
+        var targetJobId = diagnosis.ExpectedJobId.Value;
         var targetArtifactId = diagnosis.ExpectedArtifactId.Value;
+        var expectedRevision = diagnosis.ExpectedVisualRevision ?? 1;
         var now = DateTime.UtcNow;
 
         if (_dbContext.Database.IsRelational())
         {
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
 
-            // Re-verify authoritative chain inside transaction boundary
-            var targetArtifact = await _dbContext.SceneImages
-                .FirstOrDefaultAsync(img => img.Id == targetArtifactId && img.SessionId == sessionId, ct);
+            // 1. Optimistic concurrency & version fence against newer visual revisions
+            var sessionState = await _dbContext.VisualSessionStates
+                .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
 
-            if (targetArtifact == null || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
+            if (sessionState != null && sessionState.VisualRevision > expectedRevision)
             {
                 await transaction.RollbackAsync(ct);
-                throw new InvalidOperationException($"Cannot repair session {sessionId}: Target artifact '{targetArtifactId}' is invalid or missing.");
+                throw new InvalidOperationException(
+                    $"Cannot repair session '{sessionId}': Session state has advanced to a newer VisualRevision ({sessionState.VisualRevision} > {expectedRevision}). Repair aborted to prevent state rollback.");
             }
 
-            if (!targetArtifact.GenerationAttemptId.HasValue)
+            // 2. Full bidirectional re-verification of the entire chain inside the transaction
+            var job = await _dbContext.ImageGenerationJobs
+                .FirstOrDefaultAsync(j => j.Id == targetJobId && j.SessionId == sessionId, ct);
+
+            if (job == null || job.Status != ImageJobStatus.Completed || !job.AcceptedAttemptId.HasValue)
             {
                 await transaction.RollbackAsync(ct);
-                throw new InvalidOperationException($"Cannot repair session {sessionId}: Target artifact '{targetArtifactId}' has no GenerationAttemptId.");
+                throw new InvalidOperationException(
+                    $"Cannot repair session '{sessionId}': Authoritative job '{targetJobId}' is invalid or missing accepted attempt.");
             }
 
             var attempt = await _dbContext.ImageGenerationAttempts
-                .FirstOrDefaultAsync(a => a.Id == targetArtifact.GenerationAttemptId.Value, ct);
+                .FirstOrDefaultAsync(a => a.Id == job.AcceptedAttemptId.Value && a.GenerationJobId == job.Id, ct);
 
-            if (attempt == null || attempt.Status != GenerationAttemptStatus.Succeeded || attempt.AcceptedArtifactId != targetArtifact.Id)
+            if (attempt == null || attempt.Status != GenerationAttemptStatus.Succeeded || attempt.AcceptedArtifactId != targetArtifactId)
             {
                 await transaction.RollbackAsync(ct);
-                throw new InvalidOperationException($"Cannot repair session {sessionId}: Winning attempt verification failed for artifact '{targetArtifactId}'.");
+                throw new InvalidOperationException(
+                    $"Cannot repair session '{sessionId}': Winning attempt verification failed for job '{job.Id}'.");
             }
 
-            // Demote other current artifacts atomically
+            var targetArtifact = await _dbContext.SceneImages
+                .FirstOrDefaultAsync(img => img.Id == targetArtifactId && img.SessionId == sessionId, ct);
+
+            if (targetArtifact == null
+                || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted
+                || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined
+                || targetArtifact.GenerationAttemptId != attempt.Id
+                || (targetArtifact.GenerationJobId.HasValue && targetArtifact.GenerationJobId.Value != job.Id))
+            {
+                await transaction.RollbackAsync(ct);
+                throw new InvalidOperationException(
+                    $"Cannot repair session '{sessionId}': Target artifact '{targetArtifactId}' lineage verification failed.");
+            }
+
+            // 3. Demote other current artifacts atomically
             await _dbContext.SceneImages
                 .Where(img => img.SessionId == sessionId && img.IsCurrent && img.Id != targetArtifactId)
                 .ExecuteUpdateAsync(s => s
@@ -315,42 +360,73 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
 
             targetArtifact.SetCurrent(true);
 
-            var sessionState = await _dbContext.VisualSessionStates
-                .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
-
             if (sessionState != null)
             {
-                sessionState.RestoreCurrent(targetArtifact.Id, targetArtifact.GenerationJobId ?? Guid.Empty, targetArtifact.VisualRevision, now);
+                sessionState.RestoreCurrent(targetArtifact.Id, job.Id, targetArtifact.VisualRevision, now);
             }
             else
             {
-                sessionState = new VisualSessionState(sessionId, targetArtifact.Id, targetArtifact.GenerationJobId, targetArtifact.VisualRevision, now);
+                sessionState = new VisualSessionState(sessionId, targetArtifact.Id, job.Id, targetArtifact.VisualRevision, now);
                 await _dbContext.VisualSessionStates.AddAsync(sessionState, ct);
             }
 
             await _dbContext.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
-            _logger.LogInformation("[VisualStateConsistencyService] Atomically repaired VisualSessionState for SessionId={SessionId} to ArtifactId={ArtifactId}",
-                sessionId, targetArtifact.Id);
+            _logger.LogInformation("[VisualStateConsistencyService] Atomically repaired VisualSessionState for SessionId={SessionId} to ArtifactId={ArtifactId} (Revision={Revision})",
+                sessionId, targetArtifact.Id, targetArtifact.VisualRevision);
 
             return new ArtifactConsistencyResult(
                 Status: VisualStateConsistencyStatus.Healthy,
                 SessionId: sessionId,
                 CurrentArtifactId: targetArtifact.Id,
                 ExpectedArtifactId: targetArtifact.Id,
-                Reason: "Visual state was deterministically repaired from authoritative attempt ledger."
+                Reason: "Visual state was deterministically repaired from authoritative attempt ledger.",
+                ExpectedJobId: job.Id,
+                ExpectedVisualRevision: targetArtifact.VisualRevision
             );
         }
         else
         {
             // In-memory test harness path
+            var sessionState = await _dbContext.VisualSessionStates
+                .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
+
+            if (sessionState != null && sessionState.VisualRevision > expectedRevision)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot repair session '{sessionId}': Session state has advanced to a newer VisualRevision ({sessionState.VisualRevision} > {expectedRevision}). Repair aborted to prevent state rollback.");
+            }
+
+            var job = await _dbContext.ImageGenerationJobs
+                .FirstOrDefaultAsync(j => j.Id == targetJobId && j.SessionId == sessionId, ct);
+
+            if (job == null || job.Status != ImageJobStatus.Completed || !job.AcceptedAttemptId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot repair session '{sessionId}': Authoritative job '{targetJobId}' is invalid or missing accepted attempt.");
+            }
+
+            var attempt = await _dbContext.ImageGenerationAttempts
+                .FirstOrDefaultAsync(a => a.Id == job.AcceptedAttemptId.Value && a.GenerationJobId == job.Id, ct);
+
+            if (attempt == null || attempt.Status != GenerationAttemptStatus.Succeeded || attempt.AcceptedArtifactId != targetArtifactId)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot repair session '{sessionId}': Winning attempt verification failed for job '{job.Id}'.");
+            }
+
             var targetArtifact = await _dbContext.SceneImages
                 .FirstOrDefaultAsync(img => img.Id == targetArtifactId && img.SessionId == sessionId, ct);
 
-            if (targetArtifact == null || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
+            if (targetArtifact == null
+                || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted
+                || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined
+                || targetArtifact.GenerationAttemptId != attempt.Id
+                || (targetArtifact.GenerationJobId.HasValue && targetArtifact.GenerationJobId.Value != job.Id))
             {
-                throw new InvalidOperationException($"Cannot repair session {sessionId}: Target artifact '{targetArtifactId}' is invalid or missing.");
+                throw new InvalidOperationException(
+                    $"Cannot repair session '{sessionId}': Target artifact '{targetArtifactId}' lineage verification failed.");
             }
 
             var otherCurrent = await _dbContext.SceneImages
@@ -364,16 +440,13 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
 
             targetArtifact.SetCurrent(true);
 
-            var sessionState = await _dbContext.VisualSessionStates
-                .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
-
             if (sessionState != null)
             {
-                sessionState.RestoreCurrent(targetArtifact.Id, targetArtifact.GenerationJobId ?? Guid.Empty, targetArtifact.VisualRevision, now);
+                sessionState.RestoreCurrent(targetArtifact.Id, job.Id, targetArtifact.VisualRevision, now);
             }
             else
             {
-                sessionState = new VisualSessionState(sessionId, targetArtifact.Id, targetArtifact.GenerationJobId, targetArtifact.VisualRevision, now);
+                sessionState = new VisualSessionState(sessionId, targetArtifact.Id, job.Id, targetArtifact.VisualRevision, now);
                 await _dbContext.VisualSessionStates.AddAsync(sessionState, ct);
             }
 
@@ -384,7 +457,9 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 SessionId: sessionId,
                 CurrentArtifactId: targetArtifact.Id,
                 ExpectedArtifactId: targetArtifact.Id,
-                Reason: "Visual state was deterministically repaired from authoritative attempt ledger."
+                Reason: "Visual state was deterministically repaired from authoritative attempt ledger.",
+                ExpectedJobId: job.Id,
+                ExpectedVisualRevision: targetArtifact.VisualRevision
             );
         }
     }
