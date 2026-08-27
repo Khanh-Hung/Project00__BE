@@ -24,7 +24,7 @@ public sealed record GenerationProvenance
     public string GenerationFingerprint { get; init; } = string.Empty;
     public string Workflow { get; init; } = "VisualIdentity";
     public int WorkflowVersion { get; init; } = 1;
-    public string ModelIdentifier { get; init; } = "meinamix_meinaV11.safetensors";
+    public string ModelIdentifier { get; init; } = "Unknown";
     public float Slot1Weight { get; init; } = 1.0f;
     public float Slot2Weight { get; init; } = 0.0f;
     public string Slot2ConditioningMode { get; init; } = "Disabled";
@@ -48,7 +48,7 @@ public sealed record GenerationProvenance
         string generationFingerprint,
         string workflow = "VisualIdentity",
         int workflowVersion = 1,
-        string modelIdentifier = "meinamix_meinaV11.safetensors",
+        string modelIdentifier = "Unknown",
         float slot1Weight = 1.0f,
         float slot2Weight = 0.0f,
         string slot2ConditioningMode = "Disabled",
@@ -66,7 +66,7 @@ public sealed record GenerationProvenance
         GenerationFingerprint = generationFingerprint ?? string.Empty;
         Workflow = workflow ?? "VisualIdentity";
         WorkflowVersion = workflowVersion;
-        ModelIdentifier = modelIdentifier ?? "meinamix_meinaV11.safetensors";
+        ModelIdentifier = !string.IsNullOrWhiteSpace(modelIdentifier) ? modelIdentifier : "Unknown";
         Slot1Weight = slot1Weight;
         Slot2Weight = slot2Weight;
         Slot2ConditioningMode = slot2ConditioningMode ?? "Disabled";

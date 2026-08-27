@@ -300,4 +300,88 @@ public sealed class GenerationTerminalFailureIntegrationTests
         var updatedMsg = await db.OutboxMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
         Assert.Equal(OutboxStatus.Failed, updatedMsg.Status);
     }
+
+    [Fact]
+    public async Task ConcurrentWorkerAndRecoveryScan_DuringRetryBackoff_GuaranteesZeroEarlyDispatch_AndSingleRetryIncrement()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (scopeFactory, db, imageService) = CreateTestContext(dbName);
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+
+        var genRequestId = Guid.NewGuid();
+        var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, genRequestId));
+        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
+        await db.OutboxMessages.AddAsync(msg);
+        await db.SaveChangesAsync();
+
+        var t0 = DateTime.UtcNow;
+
+        // 1. First execution: Provider fails transiently on Worker A at t0
+        int callCount = 0;
+        imageService.Handler = (req, ct) =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                throw new GpuTransientException("Temporary GPU unavailable", 503);
+            }
+            return Task.FromResult("https://cdn.project00.ai/recovered_image.png");
+        };
+
+        var processor = new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance);
+        var pass1 = await processor.ProcessPendingOutboxMessagesAsync(referenceTime: t0);
+        Assert.True(pass1 >= 1);
+
+        // Verify state after Worker A failure:
+        // Job is Queued with RetryCount = 1, and NextAttemptAt in the future (e.g. t0 + 1s to 2s)
+        var jobAfterFail = await db.ImageGenerationJobs.AsNoTracking().FirstAsync(j => j.TurnId == turnId);
+        Assert.Equal(ImageJobStatus.Queued, jobAfterFail.Status);
+        Assert.Equal(1, jobAfterFail.RetryCount);
+        Assert.True(jobAfterFail.IsRetryable);
+        Assert.NotNull(jobAfterFail.NextAttemptAt);
+        Assert.Null(jobAfterFail.ClaimedBy);
+        var scheduledNextAttempt = jobAfterFail.NextAttemptAt.Value;
+
+        // 2. Concurrency Attack / Early Recovery Scan:
+        // Worker B, Outbox polling, and Recovery Scanner attempt to claim BEFORE scheduledNextAttempt (at t0 + 100ms)
+        var earlyTime = t0.AddMilliseconds(100);
+        // (a) Outbox polling at earlyTime -> must not dispatch SceneImageGeneration early
+        await processor.ProcessPendingOutboxMessagesAsync(referenceTime: earlyTime);
+        var pendingSceneAtEarlyTime = await db.OutboxMessages.AsNoTracking()
+            .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration && m.Status == OutboxStatus.Pending && m.NextRetryAt <= earlyTime)
+            .ToListAsync();
+        Assert.Empty(pendingSceneAtEarlyTime);
+
+        // (b) Direct concurrent worker claim at earlyTime -> must return false (fenced by NextAttemptAt)
+        var directClaimAttempt = jobAfterFail.TryClaim("worker-B", TimeSpan.FromMinutes(1), earlyTime);
+        Assert.False(directClaimAttempt);
+
+        // (c) Verify DB state remains strictly untouched (no double increment, status still Queued)
+        var jobMidway = await db.ImageGenerationJobs.AsNoTracking().FirstAsync(j => j.TurnId == turnId);
+        Assert.Equal(ImageJobStatus.Queued, jobMidway.Status);
+        Assert.Equal(1, jobMidway.RetryCount);
+        Assert.Null(jobMidway.ClaimedBy);
+
+        // 3. Due Time Arrival: Clock reaches past both job NextAttemptAt and outbox NextRetryAt
+        var outboxAfterFail = await db.OutboxMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+        var dueTime = (outboxAfterFail.NextRetryAt.HasValue && outboxAfterFail.NextRetryAt.Value > scheduledNextAttempt
+            ? outboxAfterFail.NextRetryAt.Value
+            : scheduledNextAttempt).AddSeconds(1);
+
+        // Outbox polling at dueTime -> picks up the message, claims the job, and completes successfully
+        var duePass = await processor.ProcessPendingOutboxMessagesAsync(referenceTime: dueTime);
+        Assert.True(duePass >= 1);
+
+        // 4. Assert Final Invariants:
+        // Job is Completed, RetryCount is exactly 1 (0 double increments), 0 concurrent conflicts
+        var completedJob = await db.ImageGenerationJobs.AsNoTracking().FirstAsync(j => j.TurnId == turnId);
+        Assert.Equal(ImageJobStatus.Completed, completedJob.Status);
+        Assert.Equal(1, completedJob.RetryCount);
+        Assert.NotNull(completedJob.CompletedAt);
+
+        var finalMsg = await db.OutboxMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+        Assert.Equal(OutboxStatus.Completed, finalMsg.Status);
+    }
 }

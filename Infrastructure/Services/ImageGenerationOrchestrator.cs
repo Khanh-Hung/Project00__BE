@@ -173,14 +173,15 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     var rowsClaimed = await _dbContext.ImageGenerationJobs
                         .Where(j => j.Id == job.Id
                                     && j.Version == expectedVersion
-                                    && (j.Status == ImageJobStatus.Pending
-                                        || j.Status == ImageJobStatus.Queued
+                                    && (((j.Status == ImageJobStatus.Pending || j.Status == ImageJobStatus.Queued || (j.Status == ImageJobStatus.Failed && j.IsRetryable))
+                                         && (!j.NextAttemptAt.HasValue || j.NextAttemptAt.Value <= jobClaimTime))
                                         || ((j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating)
                                             && (!j.LeaseUntil.HasValue || j.LeaseUntil.Value <= jobClaimTime))))
                         .ExecuteUpdateAsync(s => s
                             .SetProperty(j => j.ClaimedBy, workerId)
                             .SetProperty(j => j.LeaseUntil, jobClaimTime.Add(leaseDuration))
-                            .SetProperty(j => j.StartedAt, jobClaimTime)
+                            .SetProperty(j => j.NextAttemptAt, (DateTime?)null)
+                            .SetProperty(j => j.StartedAt, j => j.StartedAt ?? jobClaimTime)
                             .SetProperty(j => j.Status, ImageJobStatus.Processing)
                             .SetProperty(j => j.Version, j => j.Version + 1)
                             .SetProperty(j => j.UpdatedAt, jobClaimTime), ct);

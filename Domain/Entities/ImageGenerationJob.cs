@@ -111,6 +111,12 @@ public sealed class ImageGenerationJob : BaseEntity
             return false;
         }
 
+        // Invariant: If job is waiting for scheduled retry backoff (NextAttemptAt > now), reject claim
+        if (NextAttemptAt.HasValue && NextAttemptAt.Value > now)
+        {
+            return false;
+        }
+
         // Allow claim if Pending/Queued, or if Processing/Evaluating but lease has expired, or retryable failure
         if (Status == ImageJobStatus.Pending || 
             Status == ImageJobStatus.Queued ||
@@ -121,6 +127,7 @@ public sealed class ImageGenerationJob : BaseEntity
             ClaimedBy = workerId;
             LeaseUntil = now.Add(leaseDuration);
             StartedAt ??= now;
+            NextAttemptAt = null;
             FailureReason = null;
             IsRetryable = false;
             CompletedAt = null;
