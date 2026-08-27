@@ -84,4 +84,63 @@ public sealed class VisualStateRepairTests
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RepairVisualStateAsync(sessionId));
         Assert.Contains("Corrupted", ex.Message);
     }
+
+    [Fact]
+    public async Task RepairVisualState_ConcurrentRepairs_PreserveConsistentCurrentArtifact()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        var job = new ImageGenerationJob(sessionId, turnId, charId, 1);
+        job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
+
+        var attempt = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-conc-repair", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        var artifact = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/art_conc.png", "prompt", generationJobId: job.Id, generationAttemptId: attempt.Id, visualRevision: 1, isCurrent: false, lifecycleStatus: ArtifactLifecycleStatus.Historical);
+
+        attempt.AttachAcceptedArtifact(artifact.Id, DateTime.UtcNow);
+        job.AcceptAttempt(attempt.Id, DateTime.UtcNow, "worker-1", "{}");
+
+        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseInMemoryDatabase(dbName)
+            .Options;
+
+        using (var seedDb = new ProjectDbContext(options))
+        {
+            seedDb.ImageGenerationJobs.Add(job);
+            seedDb.ImageGenerationAttempts.Add(attempt);
+            seedDb.SceneImages.Add(artifact);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // 5 concurrent repair workers executing RepairVisualStateAsync
+        const int workerCount = 5;
+        var tasks = Enumerable.Range(0, workerCount).Select(async _ =>
+        {
+            using var workerDb = new ProjectDbContext(options);
+            var workerService = new VisualStateConsistencyService(workerDb, NullLogger<VisualStateConsistencyService>.Instance);
+            return await workerService.RepairVisualStateAsync(sessionId);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        Assert.All(results, r =>
+        {
+            Assert.Equal(VisualStateConsistencyStatus.Healthy, r.Status);
+            Assert.Equal(artifact.Id, r.CurrentArtifactId);
+        });
+
+        // Verification on DB state
+        using (var verifyDb = new ProjectDbContext(options))
+        {
+            var currentArtifacts = await verifyDb.SceneImages.Where(img => img.SessionId == sessionId && img.IsCurrent).ToListAsync();
+            Assert.Single(currentArtifacts);
+            Assert.Equal(artifact.Id, currentArtifacts[0].Id);
+
+            var sessionState = await verifyDb.VisualSessionStates.FirstAsync(s => s.SessionId == sessionId);
+            Assert.Equal(artifact.Id, sessionState.CurrentImageId);
+            Assert.Equal(1, sessionState.VisualRevision);
+        }
+    }
 }

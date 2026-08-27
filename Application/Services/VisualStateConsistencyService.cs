@@ -27,256 +27,234 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
 
-        // 1. Session state does not exist in database
+        // 1. Resolve Authoritative Completed Job (Revision-based, not CreatedAt heuristic)
+        ImageGenerationJob? authoritativeJob = null;
+
+        if (sessionState?.CurrentGenerationJobId.HasValue == true)
+        {
+            authoritativeJob = await _dbContext.ImageGenerationJobs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(j => j.Id == sessionState.CurrentGenerationJobId.Value && j.SessionId == sessionId, ct);
+        }
+
+        if (authoritativeJob == null)
+        {
+            authoritativeJob = await _dbContext.ImageGenerationJobs
+                .AsNoTracking()
+                .Where(j => j.SessionId == sessionId && j.Status == ImageJobStatus.Completed && j.AcceptedAttemptId.HasValue)
+                .OrderByDescending(j => j.SceneRevision)
+                .ThenByDescending(j => j.Id)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        // 2. Case: No completed generation job exists
+        if (authoritativeJob == null)
+        {
+            if (sessionState == null || !sessionState.CurrentImageId.HasValue)
+            {
+                return new ArtifactConsistencyResult(
+                    Status: VisualStateConsistencyStatus.Healthy,
+                    SessionId: sessionId,
+                    CurrentArtifactId: null,
+                    ExpectedArtifactId: null,
+                    Reason: "Empty session with no completed visual generation jobs."
+                );
+            }
+
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: "VisualSessionState references an artifact, but no completed generation job exists for this session."
+            );
+        }
+
+        // 3. Validate Authoritative Job Invariants
+        if (authoritativeJob.Status != ImageJobStatus.Completed || !authoritativeJob.AcceptedAttemptId.HasValue)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Completed job '{authoritativeJob.Id}' has no recorded AcceptedAttemptId."
+            );
+        }
+
+        // 4. Traverse Authoritative Attempt Ledger: Job.AcceptedAttemptId -> Winning Attempt
+        var winningAttempt = await _dbContext.ImageGenerationAttempts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == authoritativeJob.AcceptedAttemptId.Value, ct);
+
+        if (winningAttempt == null)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Job '{authoritativeJob.Id}' references AcceptedAttemptId '{authoritativeJob.AcceptedAttemptId.Value}' which does not exist in ledger."
+            );
+        }
+
+        if (winningAttempt.Status != GenerationAttemptStatus.Succeeded)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Winning attempt '{winningAttempt.Id}' is in non-succeeded status '{winningAttempt.Status}'."
+            );
+        }
+
+        if (!winningAttempt.AcceptedArtifactId.HasValue)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Winning attempt '{winningAttempt.Id}' has null AcceptedArtifactId."
+            );
+        }
+
+        // 5. Direct FK Traversal: Attempt.AcceptedArtifactId -> SceneImage.Id (Zero heuristic fallback)
+        var authoritativeArtifact = await _dbContext.SceneImages
+            .AsNoTracking()
+            .FirstOrDefaultAsync(img => img.Id == winningAttempt.AcceptedArtifactId.Value, ct);
+
+        if (authoritativeArtifact == null)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"AcceptedArtifactId '{winningAttempt.AcceptedArtifactId.Value}' does not exist in database storage."
+            );
+        }
+
+        // 6. Full Bidirectional Lineage Verification
+        if (authoritativeArtifact.SessionId != sessionId)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' belongs to foreign session '{authoritativeArtifact.SessionId}'."
+            );
+        }
+
+        if (authoritativeArtifact.GenerationAttemptId != winningAttempt.Id)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Lineage fork detected: Artifact '{authoritativeArtifact.Id}' has GenerationAttemptId '{authoritativeArtifact.GenerationAttemptId}' vs Attempt '{winningAttempt.Id}'."
+            );
+        }
+
+        if (authoritativeArtifact.GenerationJobId.HasValue && authoritativeArtifact.GenerationJobId.Value != authoritativeJob.Id)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Lineage fork detected: Artifact '{authoritativeArtifact.Id}' has GenerationJobId '{authoritativeArtifact.GenerationJobId}' vs Job '{authoritativeJob.Id}'."
+            );
+        }
+
+        if (authoritativeArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' has lifecycle status Deleted."
+            );
+        }
+
+        if (authoritativeArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState?.CurrentImageId,
+                ExpectedArtifactId: null,
+                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' has lifecycle status Quarantined."
+            );
+        }
+
+        // 7. Session State Lineage Alignment Evaluation
         if (sessionState == null)
         {
-            var latestCompletedJob = await _dbContext.ImageGenerationJobs
-                .AsNoTracking()
-                .Where(j => j.SessionId == sessionId && j.Status == ImageJobStatus.Completed && j.AcceptedAttemptId.HasValue)
-                .OrderByDescending(j => j.CreatedAt)
-                .FirstOrDefaultAsync(ct);
-
-            if (latestCompletedJob == null)
-            {
-                // Clean empty session, no generation jobs yet
-                return new ArtifactConsistencyResult(
-                    Status: VisualStateConsistencyStatus.Healthy,
-                    SessionId: sessionId,
-                    CurrentArtifactId: null,
-                    ExpectedArtifactId: null,
-                    Reason: "Empty session with no visual generation jobs."
-                );
-            }
-
-            var winningAttempt = await _dbContext.ImageGenerationAttempts
-                .AsNoTracking()
-                .FirstOrDefaultAsync(a => a.Id == latestCompletedJob.AcceptedAttemptId!.Value, ct);
-
-            SceneImage? authoritativeArtifact = null;
-            if (winningAttempt?.AcceptedArtifactId.HasValue == true)
-            {
-                authoritativeArtifact = await _dbContext.SceneImages
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(img => img.Id == winningAttempt.AcceptedArtifactId.Value && img.SessionId == sessionId && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, ct);
-            }
-
-            if (authoritativeArtifact == null && winningAttempt != null && !string.IsNullOrWhiteSpace(winningAttempt.GenerationFingerprint))
-            {
-                authoritativeArtifact = await _dbContext.SceneImages
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(img => img.SessionId == sessionId && img.GenerationFingerprint == winningAttempt.GenerationFingerprint && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, ct);
-            }
-
-            if (authoritativeArtifact != null)
-            {
-                return new ArtifactConsistencyResult(
-                    Status: VisualStateConsistencyStatus.Repairable,
-                    SessionId: sessionId,
-                    CurrentArtifactId: null,
-                    ExpectedArtifactId: authoritativeArtifact.Id,
-                    Reason: "VisualSessionState entity is missing, but authoritative accepted artifact exists in ledger."
-                );
-            }
-
             return new ArtifactConsistencyResult(
-                Status: VisualStateConsistencyStatus.Corrupted,
+                Status: VisualStateConsistencyStatus.Repairable,
                 SessionId: sessionId,
                 CurrentArtifactId: null,
-                ExpectedArtifactId: null,
-                Reason: "VisualSessionState entity is missing and completed job has no resolvable artifact."
+                ExpectedArtifactId: authoritativeArtifact.Id,
+                Reason: "VisualSessionState entity is missing, but full authoritative accepted artifact chain exists."
             );
         }
 
-        // 2. Session state exists, but CurrentImageId is NULL
         if (!sessionState.CurrentImageId.HasValue)
         {
-            var latestCompletedJob = await _dbContext.ImageGenerationJobs
-                .AsNoTracking()
-                .Where(j => j.SessionId == sessionId && j.Status == ImageJobStatus.Completed && j.AcceptedAttemptId.HasValue)
-                .OrderByDescending(j => j.CreatedAt)
-                .FirstOrDefaultAsync(ct);
-
-            if (latestCompletedJob == null)
-            {
-                return new ArtifactConsistencyResult(
-                    Status: VisualStateConsistencyStatus.Healthy,
-                    SessionId: sessionId,
-                    CurrentArtifactId: null,
-                    ExpectedArtifactId: null,
-                    Reason: "Session state has no current image and no completed generation jobs exist."
-                );
-            }
-
-            var winningAttempt = await _dbContext.ImageGenerationAttempts
-                .AsNoTracking()
-                .FirstOrDefaultAsync(a => a.Id == latestCompletedJob.AcceptedAttemptId!.Value, ct);
-
-            SceneImage? authoritativeArtifact = null;
-            if (winningAttempt?.AcceptedArtifactId.HasValue == true)
-            {
-                authoritativeArtifact = await _dbContext.SceneImages
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(img => img.Id == winningAttempt.AcceptedArtifactId.Value && img.SessionId == sessionId && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, ct);
-            }
-
-            if (authoritativeArtifact != null)
-            {
-                return new ArtifactConsistencyResult(
-                    Status: VisualStateConsistencyStatus.Repairable,
-                    SessionId: sessionId,
-                    CurrentArtifactId: null,
-                    ExpectedArtifactId: authoritativeArtifact.Id,
-                    Reason: "VisualSessionState has null pointer, but authoritative accepted artifact exists in ledger."
-                );
-            }
-
             return new ArtifactConsistencyResult(
-                Status: VisualStateConsistencyStatus.Inconsistent,
+                Status: VisualStateConsistencyStatus.Repairable,
                 SessionId: sessionId,
                 CurrentArtifactId: null,
-                ExpectedArtifactId: null,
-                Reason: "VisualSessionState has null pointer despite completed jobs."
+                ExpectedArtifactId: authoritativeArtifact.Id,
+                Reason: "VisualSessionState has null pointer, but full authoritative accepted artifact chain exists."
             );
         }
 
-        // 3. Session state has a non-null CurrentImageId
-        var currentArtifactId = sessionState.CurrentImageId.Value;
-        var artifact = await _dbContext.SceneImages
-            .AsNoTracking()
-            .FirstOrDefaultAsync(img => img.Id == currentArtifactId, ct);
-
-        if (artifact == null)
-        {
-            // Try to see if authoritative attempt exists to allow repair
-            var latestCompletedJob = await _dbContext.ImageGenerationJobs
-                .AsNoTracking()
-                .Where(j => j.SessionId == sessionId && j.Status == ImageJobStatus.Completed && j.AcceptedAttemptId.HasValue)
-                .OrderByDescending(j => j.CreatedAt)
-                .FirstOrDefaultAsync(ct);
-
-            if (latestCompletedJob != null)
-            {
-                var winningAttempt = await _dbContext.ImageGenerationAttempts
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(a => a.Id == latestCompletedJob.AcceptedAttemptId!.Value, ct);
-
-                if (winningAttempt?.AcceptedArtifactId.HasValue == true)
-                {
-                    var altArtifact = await _dbContext.SceneImages
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(img => img.Id == winningAttempt.AcceptedArtifactId.Value && img.SessionId == sessionId && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted, ct);
-
-                    if (altArtifact != null)
-                    {
-                        return new ArtifactConsistencyResult(
-                            Status: VisualStateConsistencyStatus.Repairable,
-                            SessionId: sessionId,
-                            CurrentArtifactId: currentArtifactId,
-                            ExpectedArtifactId: altArtifact.Id,
-                            Reason: "Current artifact ID missing in storage, but authoritative artifact exists on winning attempt."
-                        );
-                    }
-                }
-            }
-
-            return new ArtifactConsistencyResult(
-                Status: VisualStateConsistencyStatus.Corrupted,
-                SessionId: sessionId,
-                CurrentArtifactId: currentArtifactId,
-                ExpectedArtifactId: null,
-                Reason: $"Current artifact '{currentArtifactId}' does not exist in database storage."
-            );
-        }
-
-        // 4. Invariant checks on the resolved artifact
-        if (artifact.SessionId != sessionId)
+        if (sessionState.CurrentImageId.Value != authoritativeArtifact.Id)
         {
             return new ArtifactConsistencyResult(
                 Status: VisualStateConsistencyStatus.Corrupted,
                 SessionId: sessionId,
-                CurrentArtifactId: currentArtifactId,
-                ExpectedArtifactId: null,
-                Reason: $"Current artifact '{currentArtifactId}' belongs to foreign session '{artifact.SessionId}'."
+                CurrentArtifactId: sessionState.CurrentImageId.Value,
+                ExpectedArtifactId: authoritativeArtifact.Id,
+                Reason: $"VisualSessionState points to artifact '{sessionState.CurrentImageId.Value}' but authoritative attempt ledger points to '{authoritativeArtifact.Id}'."
             );
         }
 
-        if (artifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted)
+        if (authoritativeArtifact.VisualRevision != sessionState.VisualRevision)
+        {
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Corrupted,
+                SessionId: sessionId,
+                CurrentArtifactId: sessionState.CurrentImageId.Value,
+                ExpectedArtifactId: authoritativeArtifact.Id,
+                Reason: $"VisualRevision mismatch: Artifact revision {authoritativeArtifact.VisualRevision} vs SessionState revision {sessionState.VisualRevision}."
+            );
+        }
+
+        if (!authoritativeArtifact.IsCurrent || authoritativeArtifact.LifecycleStatus != ArtifactLifecycleStatus.Current)
         {
             return new ArtifactConsistencyResult(
                 Status: VisualStateConsistencyStatus.Inconsistent,
                 SessionId: sessionId,
-                CurrentArtifactId: currentArtifactId,
-                ExpectedArtifactId: null,
-                Reason: $"Current artifact '{currentArtifactId}' has lifecycle status Deleted."
+                CurrentArtifactId: sessionState.CurrentImageId.Value,
+                ExpectedArtifactId: authoritativeArtifact.Id,
+                Reason: $"Authoritative artifact '{authoritativeArtifact.Id}' is not marked as IsCurrent = true (Status: {authoritativeArtifact.LifecycleStatus})."
             );
         }
 
-        if (artifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
-        {
-            return new ArtifactConsistencyResult(
-                Status: VisualStateConsistencyStatus.Corrupted,
-                SessionId: sessionId,
-                CurrentArtifactId: currentArtifactId,
-                ExpectedArtifactId: null,
-                Reason: $"Current artifact '{currentArtifactId}' has lifecycle status Quarantined and cannot be current."
-            );
-        }
-
-        if (!artifact.IsCurrent || artifact.LifecycleStatus != ArtifactLifecycleStatus.Current)
-        {
-            return new ArtifactConsistencyResult(
-                Status: VisualStateConsistencyStatus.Inconsistent,
-                SessionId: sessionId,
-                CurrentArtifactId: currentArtifactId,
-                ExpectedArtifactId: currentArtifactId,
-                Reason: $"Current artifact '{currentArtifactId}' is not marked as IsCurrent = true (Status: {artifact.LifecycleStatus})."
-            );
-        }
-
-        if (artifact.VisualRevision != sessionState.VisualRevision)
-        {
-            return new ArtifactConsistencyResult(
-                Status: VisualStateConsistencyStatus.Corrupted,
-                SessionId: sessionId,
-                CurrentArtifactId: currentArtifactId,
-                ExpectedArtifactId: null,
-                Reason: $"VisualRevision mismatch: Artifact revision {artifact.VisualRevision} vs SessionState revision {sessionState.VisualRevision}."
-            );
-        }
-
-        // 5. Lineage check against authoritative attempt if job is referenced
-        if (sessionState.CurrentGenerationJobId.HasValue)
-        {
-            var job = await _dbContext.ImageGenerationJobs
-                .AsNoTracking()
-                .FirstOrDefaultAsync(j => j.Id == sessionState.CurrentGenerationJobId.Value, ct);
-
-            if (job != null && job.AcceptedAttemptId.HasValue)
-            {
-                var attempt = await _dbContext.ImageGenerationAttempts
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(a => a.Id == job.AcceptedAttemptId.Value, ct);
-
-                if (attempt != null && attempt.AcceptedArtifactId.HasValue && attempt.AcceptedArtifactId.Value != artifact.Id)
-                {
-                    return new ArtifactConsistencyResult(
-                        Status: VisualStateConsistencyStatus.Corrupted,
-                        SessionId: sessionId,
-                        CurrentArtifactId: currentArtifactId,
-                        ExpectedArtifactId: attempt.AcceptedArtifactId.Value,
-                        Reason: $"Job accepted attempt points to artifact '{attempt.AcceptedArtifactId.Value}' but session state points to '{artifact.Id}'."
-                    );
-                }
-            }
-        }
-
-        // 6. Perfect lineage alignment
+        // 8. Perfect lineage and state alignment
         return new ArtifactConsistencyResult(
             Status: VisualStateConsistencyStatus.Healthy,
             SessionId: sessionId,
-            CurrentArtifactId: currentArtifactId,
-            ExpectedArtifactId: currentArtifactId,
-            Reason: "Visual session state and lineage are fully consistent."
+            CurrentArtifactId: authoritativeArtifact.Id,
+            ExpectedArtifactId: authoritativeArtifact.Id,
+            Reason: "Visual session state and bidirectional lineage are fully consistent."
         );
     }
 
@@ -289,18 +267,92 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
             return diagnosis;
         }
 
-        if (diagnosis.Status == VisualStateConsistencyStatus.Repairable && diagnosis.ExpectedArtifactId.HasValue)
+        if (diagnosis.Status != VisualStateConsistencyStatus.Repairable || !diagnosis.ExpectedArtifactId.HasValue)
         {
-            var targetArtifactId = diagnosis.ExpectedArtifactId.Value;
+            throw new InvalidOperationException(
+                $"Cannot repair visual state for session '{sessionId}': State is {diagnosis.Status} ({diagnosis.Reason}). Full authoritative provenance chain required.");
+        }
+
+        var targetArtifactId = diagnosis.ExpectedArtifactId.Value;
+        var now = DateTime.UtcNow;
+
+        if (_dbContext.Database.IsRelational())
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
+
+            // Re-verify authoritative chain inside transaction boundary
             var targetArtifact = await _dbContext.SceneImages
                 .FirstOrDefaultAsync(img => img.Id == targetArtifactId && img.SessionId == sessionId, ct);
 
-            if (targetArtifact == null)
+            if (targetArtifact == null || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
             {
-                throw new InvalidOperationException($"Cannot repair session {sessionId}: Expected artifact '{targetArtifactId}' not found.");
+                await transaction.RollbackAsync(ct);
+                throw new InvalidOperationException($"Cannot repair session {sessionId}: Target artifact '{targetArtifactId}' is invalid or missing.");
             }
 
-            // Demote other current artifacts
+            if (!targetArtifact.GenerationAttemptId.HasValue)
+            {
+                await transaction.RollbackAsync(ct);
+                throw new InvalidOperationException($"Cannot repair session {sessionId}: Target artifact '{targetArtifactId}' has no GenerationAttemptId.");
+            }
+
+            var attempt = await _dbContext.ImageGenerationAttempts
+                .FirstOrDefaultAsync(a => a.Id == targetArtifact.GenerationAttemptId.Value, ct);
+
+            if (attempt == null || attempt.Status != GenerationAttemptStatus.Succeeded || attempt.AcceptedArtifactId != targetArtifact.Id)
+            {
+                await transaction.RollbackAsync(ct);
+                throw new InvalidOperationException($"Cannot repair session {sessionId}: Winning attempt verification failed for artifact '{targetArtifactId}'.");
+            }
+
+            // Demote other current artifacts atomically
+            await _dbContext.SceneImages
+                .Where(img => img.SessionId == sessionId && img.IsCurrent && img.Id != targetArtifactId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(img => img.IsCurrent, false)
+                    .SetProperty(img => img.LifecycleStatus, ArtifactLifecycleStatus.Historical)
+                    .SetProperty(img => img.UpdatedAt, now), ct);
+
+            targetArtifact.SetCurrent(true);
+
+            var sessionState = await _dbContext.VisualSessionStates
+                .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
+
+            if (sessionState != null)
+            {
+                sessionState.RestoreCurrent(targetArtifact.Id, targetArtifact.GenerationJobId ?? Guid.Empty, targetArtifact.VisualRevision, now);
+            }
+            else
+            {
+                sessionState = new VisualSessionState(sessionId, targetArtifact.Id, targetArtifact.GenerationJobId, targetArtifact.VisualRevision, now);
+                await _dbContext.VisualSessionStates.AddAsync(sessionState, ct);
+            }
+
+            await _dbContext.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+
+            _logger.LogInformation("[VisualStateConsistencyService] Atomically repaired VisualSessionState for SessionId={SessionId} to ArtifactId={ArtifactId}",
+                sessionId, targetArtifact.Id);
+
+            return new ArtifactConsistencyResult(
+                Status: VisualStateConsistencyStatus.Healthy,
+                SessionId: sessionId,
+                CurrentArtifactId: targetArtifact.Id,
+                ExpectedArtifactId: targetArtifact.Id,
+                Reason: "Visual state was deterministically repaired from authoritative attempt ledger."
+            );
+        }
+        else
+        {
+            // In-memory test harness path
+            var targetArtifact = await _dbContext.SceneImages
+                .FirstOrDefaultAsync(img => img.Id == targetArtifactId && img.SessionId == sessionId, ct);
+
+            if (targetArtifact == null || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Deleted || targetArtifact.LifecycleStatus == ArtifactLifecycleStatus.Quarantined)
+            {
+                throw new InvalidOperationException($"Cannot repair session {sessionId}: Target artifact '{targetArtifactId}' is invalid or missing.");
+            }
+
             var otherCurrent = await _dbContext.SceneImages
                 .Where(img => img.SessionId == sessionId && img.IsCurrent && img.Id != targetArtifactId)
                 .ToListAsync(ct);
@@ -315,7 +367,6 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
             var sessionState = await _dbContext.VisualSessionStates
                 .FirstOrDefaultAsync(s => s.SessionId == sessionId, ct);
 
-            var now = DateTime.UtcNow;
             if (sessionState != null)
             {
                 sessionState.RestoreCurrent(targetArtifact.Id, targetArtifact.GenerationJobId ?? Guid.Empty, targetArtifact.VisualRevision, now);
@@ -328,9 +379,6 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
 
             await _dbContext.SaveChangesAsync(ct);
 
-            _logger.LogInformation("[VisualStateConsistencyService] Deterministically repaired VisualSessionState for SessionId={SessionId} to ArtifactId={ArtifactId}",
-                sessionId, targetArtifact.Id);
-
             return new ArtifactConsistencyResult(
                 Status: VisualStateConsistencyStatus.Healthy,
                 SessionId: sessionId,
@@ -339,37 +387,5 @@ public sealed class VisualStateConsistencyService : IVisualStateConsistencyServi
                 Reason: "Visual state was deterministically repaired from authoritative attempt ledger."
             );
         }
-
-        if (diagnosis.Status == VisualStateConsistencyStatus.Inconsistent && diagnosis.CurrentArtifactId.HasValue)
-        {
-            var targetArtifactId = diagnosis.CurrentArtifactId.Value;
-            var targetArtifact = await _dbContext.SceneImages
-                .FirstOrDefaultAsync(img => img.Id == targetArtifactId && img.SessionId == sessionId, ct);
-
-            if (targetArtifact != null && targetArtifact.LifecycleStatus != ArtifactLifecycleStatus.Deleted && targetArtifact.LifecycleStatus != ArtifactLifecycleStatus.Quarantined)
-            {
-                var otherCurrent = await _dbContext.SceneImages
-                    .Where(img => img.SessionId == sessionId && img.IsCurrent && img.Id != targetArtifactId)
-                    .ToListAsync(ct);
-
-                foreach (var img in otherCurrent)
-                {
-                    img.DemoteCurrent();
-                }
-
-                targetArtifact.SetCurrent(true);
-                await _dbContext.SaveChangesAsync(ct);
-
-                return new ArtifactConsistencyResult(
-                    Status: VisualStateConsistencyStatus.Healthy,
-                    SessionId: sessionId,
-                    CurrentArtifactId: targetArtifact.Id,
-                    ExpectedArtifactId: targetArtifact.Id,
-                    Reason: "Current artifact flag was repaired."
-                );
-            }
-        }
-
-        throw new InvalidOperationException($"Cannot repair visual state for session '{sessionId}': State is {diagnosis.Status} ({diagnosis.Reason}). Explicit manual reconciliation required.");
     }
 }

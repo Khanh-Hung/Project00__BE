@@ -119,11 +119,11 @@ public sealed class ArtifactLifecycleConsistencyIntegrationTests
         Assert.Equal(VisualStateConsistencyStatus.Healthy, diagnosis.Status);
         Assert.Equal(artifact.Id, diagnosis.CurrentArtifactId);
 
-        // 6. Simulate artifact soft-delete -> Verify diagnosis detects Inconsistent without silent guessing
+        // 6. Simulate artifact soft-delete -> Verify diagnosis detects Corrupted without silent guessing
         artifact.MarkDeleted();
         await db.SaveChangesAsync();
 
         var postDeleteDiagnosis = await consistencyService.ValidateConsistencyAsync(sessionId);
-        Assert.Equal(VisualStateConsistencyStatus.Inconsistent, postDeleteDiagnosis.Status);
+        Assert.Equal(VisualStateConsistencyStatus.Corrupted, postDeleteDiagnosis.Status);
     }
 }

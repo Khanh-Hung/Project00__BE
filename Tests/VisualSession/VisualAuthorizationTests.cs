@@ -1,9 +1,12 @@
 using Application.Abstractions.Auth;
+using Application.Abstractions.Responses;
+using Application.DTOs;
 using Application.Features.Chat.Queries.VisualSession;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -16,11 +19,9 @@ public sealed class VisualAuthorizationTests
     private sealed class FakeCurrentUserProvider : ICurrentUserProvider
     {
         public string? CurrentUserId { get; set; }
-        public string? Username => "testuser";
-        public string? Email => "test@project00.ai";
     }
 
-    private static (ProjectDbContext Db, Guid OwnerUserId, Guid ForeignUserId, Guid SessionId, Guid TurnId) SetupContext()
+    private static (ProjectDbContext db, Guid ownerUserId, Guid foreignUserId, Guid sessionId, Guid turnId) SetupContext()
     {
         var options = new DbContextOptionsBuilder<ProjectDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -41,7 +42,6 @@ public sealed class VisualAuthorizationTests
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
 
         var attempt = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-auth-setup", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
-        job.AcceptAttempt(attempt.Id, DateTime.UtcNow, "worker-1", "{}");
 
         // Create SceneImage
         var artifact = new SceneImage(
@@ -52,18 +52,21 @@ public sealed class VisualAuthorizationTests
             imageUrl: "https://cdn.project00.ai/scene.png",
             prompt: "1girl",
             generationJobId: job.Id,
+            generationAttemptId: attempt.Id,
             generationFingerprint: "fp-auth-setup",
             visualRevision: 1,
             isCurrent: true,
             lifecycleStatus: ArtifactLifecycleStatus.Current
         );
-        db.SceneImages.Add(artifact);
+        attempt.AttachAcceptedArtifact(artifact.Id, DateTime.UtcNow);
+        job.AcceptAttempt(attempt.Id, DateTime.UtcNow, "worker-1", "{}");
 
         var state = new VisualSessionState(sessionId, artifact.Id, job.Id, visualRevision: 1);
         db.VisualSessionStates.Add(state);
 
         db.ImageGenerationJobs.Add(job);
         db.ImageGenerationAttempts.Add(attempt);
+        db.SceneImages.Add(artifact);
 
         db.SaveChanges();
 
@@ -80,7 +83,8 @@ public sealed class VisualAuthorizationTests
         var handlerOwner = new GetCurrentVisualStateHandler(db, authOwner, NullLogger<GetCurrentVisualStateHandler>.Instance);
         var resOwner = await handlerOwner.Handle(new GetCurrentVisualStateQuery(sessionId), CancellationToken.None);
         Assert.True(resOwner.IsSuccess);
-        Assert.Equal("https://cdn.project00.ai/scene.png", resOwner.Value!.ImageUrl);
+        Assert.NotNull(resOwner.Value);
+        Assert.Equal("https://cdn.project00.ai/scene.png", resOwner.Value.ImageUrl);
 
         // 2. Foreign User -> 403 Forbidden
         var authForeign = new FakeCurrentUserProvider { CurrentUserId = foreignId.ToString() };
@@ -187,12 +191,13 @@ public sealed class VisualAuthorizationTests
 
         // Attempt 1: Failed / degraded
         var attempt1 = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-attempt-1", GenerationAttemptStatus.Degraded, claimedBy: "worker-1");
-        var artifact1 = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/attempt1.png", "prompt 1", generationJobId: job.Id, generationFingerprint: "fp-attempt-1", isCurrent: false, lifecycleStatus: ArtifactLifecycleStatus.Historical);
+        var artifact1 = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/attempt1.png", "prompt 1", generationJobId: job.Id, generationAttemptId: attempt1.Id, generationFingerprint: "fp-attempt-1", isCurrent: false, lifecycleStatus: ArtifactLifecycleStatus.Historical);
 
         // Attempt 2: Winning / Succeeded attempt
         var attempt2 = new ImageGenerationAttempt(job.Id, turnId, 1, 2, 2000L, "{}", "fp-attempt-2", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
-        var artifact2 = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/attempt2_winning.png", "prompt 2", generationJobId: job.Id, generationFingerprint: "fp-attempt-2", isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
+        var artifact2 = new SceneImage(sessionId, charId, turnId, 1, "https://cdn.project00.ai/attempt2_winning.png", "prompt 2", generationJobId: job.Id, generationAttemptId: attempt2.Id, generationFingerprint: "fp-attempt-2", visualRevision: 1, isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
 
+        attempt2.AttachAcceptedArtifact(artifact2.Id, DateTime.UtcNow);
         job.AcceptAttempt(attempt2.Id, DateTime.UtcNow, "worker-1", "{}");
 
         db.ImageGenerationJobs.Add(job);
@@ -264,12 +269,13 @@ public sealed class VisualAuthorizationTests
         var job = new ImageGenerationJob(sessionId, turnId, charId, 1);
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
 
-        var winningAttempt = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-winning-missing-art", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
-        job.AcceptAttempt(winningAttempt.Id, DateTime.UtcNow, "worker-1", "{}");
+        var attempt = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-missing-art", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
+        attempt.AttachAcceptedArtifact(Guid.NewGuid(), DateTime.UtcNow); // Non-existent artifact ID
+
+        job.AcceptAttempt(attempt.Id, DateTime.UtcNow, "worker-1", "{}");
 
         db.ImageGenerationJobs.Add(job);
-        db.ImageGenerationAttempts.Add(winningAttempt);
-        // Note: SceneImages is intentionally empty to simulate artifact divergence / corruption
+        db.ImageGenerationAttempts.Add(attempt);
         await db.SaveChangesAsync();
 
         var authProvider = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };
