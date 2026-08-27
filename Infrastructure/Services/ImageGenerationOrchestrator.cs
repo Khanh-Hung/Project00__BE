@@ -212,6 +212,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
             }
         }
 
+        var jobStartTime = job.StartedAt ?? jobClaimTime;
+
         _metrics.RecordGenerationStarted(job.Id, generationRequestId);
 
         // 4. Quality Evaluation & Progressive Mitigation Loop
@@ -234,10 +236,15 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 genResult = null;
                 _metrics.RecordAttemptStarted(job.Id, attempt);
 
+                var jobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                    ? (_dateTimeProvider.UtcNow - jobStartTime)
+                    : totalStopwatch.Elapsed;
+                var totalElapsed = jobElapsed > totalStopwatch.Elapsed ? jobElapsed : totalStopwatch.Elapsed;
+
                 // Enforce cost and time-bounded retry budget before starting attempt > 1
                 if (attempt > 1)
                 {
-                    if (!_retryBudget.CanRetryMitigation(attempt, totalStopwatch.Elapsed, out var budgetReason))
+                    if (!_retryBudget.CanRetryMitigation(attempt, totalElapsed, out var budgetReason))
                     {
                         _logger.LogWarning("[RetryBudgetExhausted] JobId={JobId}, Attempt={Attempt}: {Reason}", job.Id, attempt, budgetReason);
                         isIdentityPassed = false;
@@ -245,7 +252,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     }
                 }
 
-                using var attemptCts = _retryBudget.CreateAttemptCancellationTokenSource(ct, totalStopwatch.Elapsed);
+                using var attemptCts = _retryBudget.CreateAttemptCancellationTokenSource(ct, totalElapsed);
                 var attemptCt = attemptCts.Token;
 
                 QualityMitigationAction currentAction = (attempt == 1) ? QualityMitigationAction.Pass : _qualityGuardPolicy.DecideMitigation(attempt - 1, lastEvaluation!);
@@ -266,7 +273,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     attemptNumber: attempt,
                     workflow: workflow,
                     workflowVersion: workflowVersion,
-                    modelIdentifier: snapshot.GenerationProfile?.Model,
+                    modelIdentifier: attemptProfile.Model,
                     compiledPrompt: lastCompiledPrompt,
                     compiledNegativePrompt: compiledNegative,
                     previousReferenceUrl: resolvedPreviousSceneImageUrl,
@@ -462,7 +469,10 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         var failTime = _dateTimeProvider.UtcNow;
                         var category = GenerationFailureClassifier.Classify(ex);
                         var currentAttempt = Math.Max(attempt, job.AttemptCount);
-                        var isRetryable = _retryBudget.CanRetryFailure(currentAttempt, totalStopwatch.Elapsed, category, out var failBudgetReason);
+                        var attemptJobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                            ? (_dateTimeProvider.UtcNow - jobStartTime)
+                            : totalStopwatch.Elapsed;
+                        var isRetryable = _retryBudget.CanRetryFailure(currentAttempt, attemptJobElapsed, category, out var failBudgetReason);
 
                         attemptRecord.MarkFailed(category, ex.Message, failTime, workerId, failTime);
                         await _dbContext.SaveChangesAsync(ct);
@@ -475,8 +485,32 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         }
 
                         var retryDelay = GenerationRetryPolicy.Default.CalculateDelay(job.RetryCount);
-                        _logger.LogWarning("[GenerationFailureRetryable] JobId={JobId}, Attempt={Attempt} failed ({Category}: {Message}). Scheduling worker backoff retry (Delay: {DelayMs:F0}ms).",
-                            job.Id, attempt, category, ex.Message, retryDelay.TotalMilliseconds);
+                        var nextAttemptAt = failTime.Add(retryDelay);
+
+                        // Authoritatively schedule retry on ImageGenerationJob in database
+                        if (_dbContext.Database.IsRelational())
+                        {
+                            await _dbContext.ImageGenerationJobs
+                                .Where(j => j.Id == job.Id && j.ClaimedBy == workerId && (j.Status == ImageJobStatus.Processing || j.Status == ImageJobStatus.Evaluating))
+                                .ExecuteUpdateAsync(s => s
+                                    .SetProperty(j => j.Status, ImageJobStatus.Queued)
+                                    .SetProperty(j => j.RetryCount, j => j.RetryCount + 1)
+                                    .SetProperty(j => j.NextAttemptAt, nextAttemptAt)
+                                    .SetProperty(j => j.FailureReason, ex.Message)
+                                    .SetProperty(j => j.IsRetryable, true)
+                                    .SetProperty(j => j.ClaimedBy, (string?)null)
+                                    .SetProperty(j => j.LeaseUntil, (DateTime?)null)
+                                    .SetProperty(j => j.Version, j => j.Version + 1)
+                                    .SetProperty(j => j.UpdatedAt, failTime), CancellationToken.None);
+                        }
+                        else
+                        {
+                            job.ScheduleRetry(nextAttemptAt, ex.Message, failTime);
+                            await _dbContext.SaveChangesAsync(CancellationToken.None);
+                        }
+
+                        _logger.LogWarning("[GenerationFailureRetryable] JobId={JobId}, Attempt={Attempt} failed ({Category}: {Message}). Scheduled NextAttemptAt={NextAttemptAt:O} (Delay: {DelayMs:F0}ms).",
+                            job.Id, attempt, category, ex.Message, nextAttemptAt, retryDelay.TotalMilliseconds);
                         _metrics.RecordGenerationRetry(job.Id, attempt, retryDelay);
                         throw;
                     }
@@ -527,7 +561,10 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                     var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
                     bool isPassed = (nextAction == QualityMitigationAction.Pass) || (lastEvaluation.Status == IdentityStatus.Passed);
-                    bool willRetry = !isPassed && (nextAction != QualityMitigationAction.RejectDegraded) && (attempt < maxAttempts) && _retryBudget.CanRetryMitigation(attempt + 1, totalStopwatch.Elapsed, out _);
+                    var evalJobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                        ? (_dateTimeProvider.UtcNow - jobStartTime)
+                        : totalStopwatch.Elapsed;
+                    bool willRetry = !isPassed && (nextAction != QualityMitigationAction.RejectDegraded) && (attempt < maxAttempts) && _retryBudget.CanRetryMitigation(attempt + 1, evalJobElapsed, out _);
 
                     _metrics.RecordIdentityEvaluation(
                         job.Id,
@@ -591,8 +628,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 }
             }
 
-            // 5. Formulate Provenance Record from Actual Winning Attempt Profile
-            var nowTime = _dateTimeProvider.UtcNow;
+            // 5. Build Comprehensive Provenance Record (PR #27)
+            var nowTime = now != default ? now : _dateTimeProvider.UtcNow;
             float actualSlot1Weight = 1.0f;
             float actualSlot2Weight = 0.0f;
             string actualSlot2Mode = "Disabled";
@@ -631,9 +668,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 sceneRevision: snapshot.SceneRevision,
                 derivedSeed: winningAttemptRecord.DerivedSeed,
                 generationFingerprint: lastAttemptFingerprint ?? string.Empty,
-                workflow: workflow,
-                workflowVersion: workflowVersion,
-                modelIdentifier: snapshot.GenerationProfile?.Model ?? "ComfyUI/SDXL",
+                workflow: winningProfile?.Workflow ?? workflow,
+                workflowVersion: winningProfile?.WorkflowVersion ?? workflowVersion,
+                modelIdentifier: winningProfile?.Model ?? DeterministicSeedDerivation.DefaultModel,
                 slot1Weight: actualSlot1Weight,
                 slot2Weight: actualSlot2Weight,
                 slot2ConditioningMode: actualSlot2Mode,
@@ -704,9 +741,13 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         catch (GpuNonTransientException ex)
         {
             totalStopwatch.Stop();
-            _metrics.RecordGenerationFailed(job.Id, GenerationFailureCategory.InvalidWorkflow, attempt, totalStopwatch.Elapsed);
-            _logger.LogError(ex, "[SceneGenerationFatalError] Non-transient failure for JobId={JobId}, OutboxId={OutboxId}: {Message}", job.Id, outboxId, ex.Message);
             var failTime = _dateTimeProvider.UtcNow;
+            var jobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                ? (_dateTimeProvider.UtcNow - jobStartTime)
+                : totalStopwatch.Elapsed;
+            var category = GenerationFailureClassifier.Classify(ex);
+            _metrics.RecordGenerationFailed(job.Id, category, attempt, jobElapsed);
+            _logger.LogError(ex, "[SceneGenerationFatalError] Non-transient failure for JobId={JobId}, OutboxId={OutboxId} ({Category}): {Message}", job.Id, outboxId, category, ex.Message);
             try
             {
                 if (_dbContext.Database.IsRelational())
@@ -743,8 +784,11 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         {
             totalStopwatch.Stop();
             var category = GenerationFailureClassifier.Classify(ex);
-            _metrics.RecordGenerationFailed(job.Id, category, attempt, totalStopwatch.Elapsed);
-            _logger.LogWarning(ex, "[SceneGenerationTransientError] Transient failure for JobId={JobId}, OutboxId={OutboxId}: {Message}. Releasing lease for retry.", job.Id, outboxId, ex.Message);
+            var jobElapsed = (_dateTimeProvider.UtcNow >= jobStartTime)
+                ? (_dateTimeProvider.UtcNow - jobStartTime)
+                : totalStopwatch.Elapsed;
+            _metrics.RecordGenerationFailed(job.Id, category, attempt, jobElapsed);
+            _logger.LogWarning(ex, "[SceneGenerationTransientError] Transient failure for JobId={JobId}, OutboxId={OutboxId} ({Category}): {Message}. Releasing lease for retry.", job.Id, outboxId, category, ex.Message);
             var failTime = _dateTimeProvider.UtcNow;
             try
             {

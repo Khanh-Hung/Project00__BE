@@ -351,11 +351,11 @@ public sealed class ArtifactLifecycleIntegrationTests
                 GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
             );
 
-            // Seed expired job in DB (expired 8 minutes ago)
+            // Seed expired job in DB (expired lease within 90s budget)
             var now = DateTime.UtcNow;
-            var expiredTime = now.AddMinutes(-10);
+            var expiredTime = now.AddSeconds(-30);
             var jobInit = new ImageGenerationJob(sessionIdInit, turnIdInit, characterIdInit, 1, requestIdInit);
-            jobInit.TryClaim("old-crashed-worker", TimeSpan.FromMinutes(2), expiredTime);
+            jobInit.TryClaim("old-crashed-worker", TimeSpan.FromSeconds(10), expiredTime);
             await dbInit.ImageGenerationJobs.AddAsync(jobInit);
 
             // Compute attempt 1 fingerprint
@@ -376,7 +376,7 @@ public sealed class ArtifactLifecycleIntegrationTests
                 status: GenerationAttemptStatus.Running,
                 claimedBy: "old-crashed-worker",
                 startedAt: expiredTime,
-                leaseUntil: expiredTime.AddMinutes(2)
+                leaseUntil: expiredTime.AddSeconds(10)
             );
             await dbInit.ImageGenerationAttempts.AddAsync(attemptInit);
             await dbInit.SaveChangesAsync();

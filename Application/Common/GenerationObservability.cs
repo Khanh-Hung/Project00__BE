@@ -70,7 +70,8 @@ public static class GenerationObservability
         description: "Total number of identity guard evaluations leading to frame quarantine");
 
     // Backward-compatibility alias
-    public static readonly Counter<long> IdentityGuardTriggerTotal = IdentityEvaluationTotal;
+    [Obsolete("Use IdentityGuardRetryTotal (when mitigation triggers) or IdentityEvaluationTotal (for all evaluations) explicitly.")]
+    public static readonly Counter<long> IdentityGuardTriggerTotal = IdentityGuardRetryTotal;
 
     // Granular Stage Latency Histograms (ms)
     public static readonly Histogram<double> QueueLatencyMs = s_meter.CreateHistogram<double>(

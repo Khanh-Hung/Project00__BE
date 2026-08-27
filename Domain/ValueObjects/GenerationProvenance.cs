@@ -7,7 +7,7 @@ namespace Domain.ValueObjects;
 /// Immutable audit and provenance record tracking the exact generation parameters,
 /// conditioning configuration, seed derivation, and quality evaluation results that produced a SceneImage artifact.
 /// Note: CreatedAt represents audit metadata capturing when the artifact was produced by the orchestrator,
-/// and is not an input to deterministic seed derivation or uniqueness fingerprinting.
+/// explicitly supplied from the orchestrator clock provider, and is not an input to deterministic seed derivation or uniqueness fingerprinting.
 /// </summary>
 public sealed record GenerationProvenance
 {
@@ -24,7 +24,7 @@ public sealed record GenerationProvenance
     public string GenerationFingerprint { get; init; } = string.Empty;
     public string Workflow { get; init; } = "VisualIdentity";
     public int WorkflowVersion { get; init; } = 1;
-    public string ModelIdentifier { get; init; } = "ComfyUI/SDXL";
+    public string ModelIdentifier { get; init; } = "meinamix_meinaV11.safetensors";
     public float Slot1Weight { get; init; } = 1.0f;
     public float Slot2Weight { get; init; } = 0.0f;
     public string Slot2ConditioningMode { get; init; } = "Disabled";
@@ -48,7 +48,7 @@ public sealed record GenerationProvenance
         string generationFingerprint,
         string workflow = "VisualIdentity",
         int workflowVersion = 1,
-        string modelIdentifier = "ComfyUI/SDXL",
+        string modelIdentifier = "meinamix_meinaV11.safetensors",
         float slot1Weight = 1.0f,
         float slot2Weight = 0.0f,
         string slot2ConditioningMode = "Disabled",
@@ -66,7 +66,7 @@ public sealed record GenerationProvenance
         GenerationFingerprint = generationFingerprint ?? string.Empty;
         Workflow = workflow ?? "VisualIdentity";
         WorkflowVersion = workflowVersion;
-        ModelIdentifier = modelIdentifier ?? "ComfyUI/SDXL";
+        ModelIdentifier = modelIdentifier ?? "meinamix_meinaV11.safetensors";
         Slot1Weight = slot1Weight;
         Slot2Weight = slot2Weight;
         Slot2ConditioningMode = slot2ConditioningMode ?? "Disabled";
@@ -74,7 +74,7 @@ public sealed record GenerationProvenance
         IdentitySimilarity = identitySimilarity;
         FeatureScore = featureScore;
         IdentityStatus = identityStatus ?? "Passed";
-        CreatedAt = createdAt != default ? createdAt : DateTime.UtcNow;
+        CreatedAt = createdAt;
     }
 
     public string ToJson() => JsonSerializer.Serialize(this, s_jsonOptions);

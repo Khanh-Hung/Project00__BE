@@ -16,6 +16,7 @@ using Xunit;
 
 namespace Tests.GenerationProduction;
 
+[Collection("NonParallelMetricsCollection")]
 public sealed class GenerationTerminalFailureIntegrationTests
 {
     private sealed class MockImageService : IImageGenerationService
@@ -216,5 +217,87 @@ public sealed class GenerationTerminalFailureIntegrationTests
             .Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration && m.Status == OutboxStatus.Pending)
             .ToListAsync();
         Assert.Empty(pendingSceneMessages);
+    }
+
+    [Fact]
+    public async Task CanRetryFailure_True_WhenTransientFailureWithinBudget_PersistsJobQueued_WithAuthoritativeNextAttemptAt_AndWorkerSchedulesOutboxRetry()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (scopeFactory, db, imageService) = CreateTestContext(dbName);
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+
+        var genRequestId = Guid.NewGuid();
+        var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, genRequestId));
+        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
+        await db.OutboxMessages.AddAsync(msg);
+        await db.SaveChangesAsync();
+
+        // 1. Configure image service to throw a transient error (e.g. 500), within budget (attempt = 1)
+        imageService.Handler = (req, ct) => throw new GpuTransientException("Transient 500 error", 500);
+
+        var processor = new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance);
+        var processed = await processor.ProcessPendingOutboxMessagesAsync();
+
+        Assert.True(processed >= 1);
+
+        // 2. Assert OutboxMessage state: Scheduled for retry (Pending with NextRetryAt in future)
+        var updatedMsg = await db.OutboxMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+        Assert.Equal(OutboxStatus.Pending, updatedMsg.Status);
+        Assert.Equal(1, updatedMsg.RetryCount);
+        Assert.NotNull(updatedMsg.NextRetryAt);
+        Assert.True(updatedMsg.NextRetryAt > DateTime.UtcNow.AddMilliseconds(-100));
+
+        // 3. Assert ImageGenerationJob state: Queued with authoritative NextAttemptAt and IsRetryable = true
+        var job = await db.ImageGenerationJobs.AsNoTracking().FirstOrDefaultAsync(j => j.TurnId == turnId);
+        Assert.NotNull(job);
+        Assert.Equal(ImageJobStatus.Queued, job.Status);
+        Assert.True(job.IsRetryable);
+        Assert.Equal(1, job.RetryCount);
+        Assert.NotNull(job.NextAttemptAt);
+        Assert.Null(job.ClaimedBy); // Released for next worker pickup
+        Assert.Null(job.LeaseUntil);
+    }
+
+    [Fact]
+    public async Task RetryBudget_MultiDispatch_EnforcesGlobal90sDeadline_AndTerminatesWhenPersistedStartedAtExceeds90s()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var (scopeFactory, db, imageService) = CreateTestContext(dbName);
+        var sessionId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+
+        var genRequestId = Guid.NewGuid();
+        var snapshot = CreateSnapshot(sessionId, turnId, revision: 1);
+        var payload = JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(turnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, genRequestId));
+        var msg = new OutboxMessage(OutboxEventTypes.SceneImageGeneration, payload);
+        await db.OutboxMessages.AddAsync(msg);
+
+        // Pre-seed job with StartedAt set to 95 seconds ago (exceeding the 90s global budget across previous dispatches)
+        var past95s = DateTime.UtcNow.AddSeconds(-95);
+        var existingJob = new ImageGenerationJob(sessionId, turnId, snapshot.CharacterId, sceneRevision: 1, generationRequestId: genRequestId, outboxMessageId: msg.Id);
+        existingJob.TryClaim("old-worker", TimeSpan.FromMinutes(1), past95s);
+        // Expire lease
+        await db.ImageGenerationJobs.AddAsync(existingJob);
+        await db.SaveChangesAsync();
+
+        // Configure image service to throw transient error
+        imageService.Handler = (req, ct) => throw new GpuTransientException("Transient 500 error", 500);
+
+        var processor = new OutboxProcessorBackgroundService(scopeFactory, NullLogger<OutboxProcessorBackgroundService>.Instance);
+        var processed = await processor.ProcessPendingOutboxMessagesAsync();
+
+        Assert.True(processed >= 1);
+
+        // Assert job terminated because global wall-clock exceeded 90s
+        var reloadedJob = await db.ImageGenerationJobs.AsNoTracking().FirstAsync(j => j.Id == existingJob.Id);
+        Assert.Equal(ImageJobStatus.Failed, reloadedJob.Status);
+        Assert.False(reloadedJob.IsRetryable);
+        Assert.NotNull(reloadedJob.CompletedAt);
+
+        // Outbox fast-failed
+        var updatedMsg = await db.OutboxMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+        Assert.Equal(OutboxStatus.Failed, updatedMsg.Status);
     }
 }

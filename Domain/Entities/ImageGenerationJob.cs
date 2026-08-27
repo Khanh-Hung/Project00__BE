@@ -120,7 +120,7 @@ public sealed class ImageGenerationJob : BaseEntity
             Status = ImageJobStatus.Processing;
             ClaimedBy = workerId;
             LeaseUntil = now.Add(leaseDuration);
-            StartedAt = now;
+            StartedAt ??= now;
             FailureReason = null;
             IsRetryable = false;
             CompletedAt = null;

@@ -55,6 +55,7 @@ public sealed class ArtifactProvenanceTests
         Assert.Equal(0.884f, deserialized.IdentitySimilarity);
         Assert.Equal(0.725f, deserialized.FeatureScore);
         Assert.Equal("Passed", deserialized.IdentityStatus);
+        Assert.Equal(now, deserialized.CreatedAt);
     }
 
     [Fact]
