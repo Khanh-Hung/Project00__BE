@@ -25,6 +25,7 @@ public interface IGenerationMetrics
         float identitySimilarity,
         float featureScore,
         bool passed,
+        bool willRetry,
         TimeSpan duration);
 
     void RecordTiming(GenerationTiming timing);

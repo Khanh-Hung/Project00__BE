@@ -1,6 +1,7 @@
 {
   "benchmark_stage": "Stage 1: Synthetic Latency Simulation",
   "mode": "Synthetic Simulation (Monte Carlo)",
+  "notice": "PR #27 does not claim real GPU performance validation (requires dedicated worker cluster)",
   "total_requests": 100,
   "summary": {
     "queue_latency_ms": {

@@ -5,11 +5,12 @@ namespace Application.Services;
 /// <summary>
 /// Authoritative cost and time-bounded retry budget manager.
 /// Enforces hard limits: Maximum 3 attempts, bounded total generation duration,
-/// and prevents infinite/recursive retries while respecting PR24 quality thresholds.
+/// and enforces hard execution deadlines across generation attempts using linked cancellation tokens.
 /// </summary>
 public sealed class GenerationRetryBudget
 {
     public const int MaxAllowedAttempts = 3;
+    public static readonly TimeSpan MinAttemptRemainingTime = TimeSpan.FromMilliseconds(500);
 
     public int MaxAttempts { get; }
     public TimeSpan MaxTotalGenerationTime { get; }
@@ -35,6 +36,35 @@ public sealed class GenerationRetryBudget
     }
 
     /// <summary>
+    /// Computes the exact remaining duration before the total generation deadline is exceeded.
+    /// </summary>
+    public TimeSpan GetRemainingTime(TimeSpan elapsedTotalTime)
+    {
+        if (elapsedTotalTime >= MaxTotalGenerationTime)
+            return TimeSpan.Zero;
+
+        return MaxTotalGenerationTime - elapsedTotalTime;
+    }
+
+    /// <summary>
+    /// Creates a linked CancellationTokenSource configured with a hard deadline based on remaining total budget.
+    /// </summary>
+    public CancellationTokenSource CreateAttemptCancellationTokenSource(CancellationToken parentToken, TimeSpan elapsedTotalTime)
+    {
+        var remaining = GetRemainingTime(elapsedTotalTime);
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
+        if (remaining > TimeSpan.Zero)
+        {
+            cts.CancelAfter(remaining);
+        }
+        else
+        {
+            cts.Cancel();
+        }
+        return cts;
+    }
+
+    /// <summary>
     /// Evaluates if an operational failure from a completed attempt can schedule a subsequent retry attempt.
     /// </summary>
     public bool CanRetryFailure(
@@ -55,9 +85,10 @@ public sealed class GenerationRetryBudget
             return false;
         }
 
-        if (elapsedTotalTime >= MaxTotalGenerationTime)
+        var remaining = GetRemainingTime(elapsedTotalTime);
+        if (remaining < MinAttemptRemainingTime)
         {
-            budgetExhaustionReason = $"Maximum generation duration budget of {MaxTotalGenerationTime.TotalSeconds:F1}s exceeded ({elapsedTotalTime.TotalSeconds:F1}s elapsed)";
+            budgetExhaustionReason = $"Insufficient remaining generation duration ({remaining.TotalMilliseconds:F0}ms remaining, min required {MinAttemptRemainingTime.TotalMilliseconds:F0}ms)";
             return false;
         }
 
@@ -79,9 +110,10 @@ public sealed class GenerationRetryBudget
             return false;
         }
 
-        if (elapsedTotalTime >= MaxTotalGenerationTime)
+        var remaining = GetRemainingTime(elapsedTotalTime);
+        if (remaining < MinAttemptRemainingTime)
         {
-            budgetExhaustionReason = $"Maximum generation duration budget of {MaxTotalGenerationTime.TotalSeconds:F1}s exceeded ({elapsedTotalTime.TotalSeconds:F1}s elapsed)";
+            budgetExhaustionReason = $"Insufficient remaining generation duration ({remaining.TotalMilliseconds:F0}ms remaining, min required {MinAttemptRemainingTime.TotalMilliseconds:F0}ms)";
             return false;
         }
 

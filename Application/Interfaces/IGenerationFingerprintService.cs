@@ -5,7 +5,7 @@ namespace Application.Interfaces;
 /// <summary>
 /// Authoritative service computing unique, canonical, deterministic fingerprints for visual generation attempts.
 /// Strict invariant: Independent of timestamps, worker IDs, and random GUIDs.
-/// Identical logical generation inputs always produce identical fingerprints.
+/// Identical logical generation inputs always produce identical fingerprints without delimiter collisions.
 /// </summary>
 public interface IGenerationFingerprintService
 {
@@ -17,7 +17,7 @@ public interface IGenerationFingerprintService
         int attemptNumber,
         string workflow = "VisualIdentity",
         int workflowVersion = 1,
-        string modelIdentifier = "ComfyUI/SDXL",
+        string? modelIdentifier = null,
         string? compiledPrompt = null,
         string? compiledNegativePrompt = null,
         string? previousReferenceUrl = null,

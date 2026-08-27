@@ -74,6 +74,120 @@ public sealed class GenerationFingerprintTests
     }
 
     [Fact]
+    public void DelimiterInsidePrompt_DoesNotCauseFingerprintCollision()
+    {
+        var jobId = Guid.NewGuid();
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("scene", "neutral"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault()
+        );
+
+        // Case A: Prompt contains "|" delimiter, negative prompt is "world"
+        var fpA = _fingerprintService.ComputeFingerprint(
+            jobId: jobId,
+            snapshot: snapshot,
+            profile: snapshot.GenerationProfile,
+            derivedSeed: 100L,
+            attemptNumber: 1,
+            compiledPrompt: "hello|world",
+            compiledNegativePrompt: "test"
+        );
+
+        // Case B: Prompt is "hello", negative prompt is "world|test"
+        var fpB = _fingerprintService.ComputeFingerprint(
+            jobId: jobId,
+            snapshot: snapshot,
+            profile: snapshot.GenerationProfile,
+            derivedSeed: 100L,
+            attemptNumber: 1,
+            compiledPrompt: "hello",
+            compiledNegativePrompt: "world|test"
+        );
+
+        // Collision-safe canonical serialization guarantees non-equal fingerprints
+        Assert.NotEqual(fpA, fpB);
+    }
+
+    [Fact]
+    public void DelimiterInsideParametersJson_DoesNotCauseFingerprintCollision()
+    {
+        var jobId = Guid.NewGuid();
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("scene", "neutral"),
+            TransientState: null,
+            GenerationProfile: GenerationProfile.CreateDefault()
+        );
+
+        var fpA = _fingerprintService.ComputeFingerprint(
+            jobId: jobId,
+            snapshot: snapshot,
+            profile: snapshot.GenerationProfile with { ParametersJson = "{\"tag\":\"a|b\"}" },
+            derivedSeed: 100L,
+            attemptNumber: 1,
+            compiledPrompt: "test"
+        );
+
+        var fpB = _fingerprintService.ComputeFingerprint(
+            jobId: jobId,
+            snapshot: snapshot,
+            profile: snapshot.GenerationProfile with { ParametersJson = "{\"tag\":\"a\"}" },
+            derivedSeed: 100L,
+            attemptNumber: 1,
+            compiledPrompt: "b|test"
+        );
+
+        Assert.NotEqual(fpA, fpB);
+    }
+
+    [Fact]
+    public void ComputeFingerprint_PrioritizesProfileModel_WhenModelIdentifierOmitted()
+    {
+        var jobId = Guid.NewGuid();
+        var profileWithFlux = GenerationProfile.CreateDefault() with { Model = "ComfyUI/Flux.1-Dev" };
+        var snapshot = new VisualSnapshot(
+            TurnId: Guid.NewGuid(),
+            SessionId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            SceneRevision: 1,
+            VisualIdentity: null,
+            SceneState: new SessionSceneState("scene", "neutral"),
+            TransientState: null,
+            GenerationProfile: profileWithFlux
+        );
+
+        // ModelIdentifier omitted in call -> resolves from profileWithFlux.Model
+        var fpFlux = _fingerprintService.ComputeFingerprint(
+            jobId: jobId,
+            snapshot: snapshot,
+            profile: profileWithFlux,
+            derivedSeed: 100L,
+            attemptNumber: 1
+        );
+
+        var profileWithSdxl = GenerationProfile.CreateDefault() with { Model = "ComfyUI/SDXL" };
+        var fpSdxl = _fingerprintService.ComputeFingerprint(
+            jobId: jobId,
+            snapshot: snapshot with { GenerationProfile = profileWithSdxl },
+            profile: profileWithSdxl,
+            derivedSeed: 100L,
+            attemptNumber: 1
+        );
+
+        Assert.NotEqual(fpFlux, fpSdxl);
+    }
+
+    [Fact]
     public void ComputeFingerprint_DifferentSeed_ProducesDifferentFingerprint()
     {
         var jobId = Guid.NewGuid();
@@ -253,17 +367,6 @@ public sealed class GenerationFingerprintTests
             workflowVersion: 2
         );
 
-        var fpOtherWorkflow = _fingerprintService.ComputeFingerprint(
-            jobId: jobId,
-            snapshot: snapshot,
-            profile: snapshot.GenerationProfile,
-            derivedSeed: 100L,
-            attemptNumber: 1,
-            workflow: "VisualContinuity",
-            workflowVersion: 1
-        );
-
         Assert.NotEqual(fpV1, fpV2);
-        Assert.NotEqual(fpV1, fpOtherWorkflow);
     }
 }

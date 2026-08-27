@@ -74,18 +74,23 @@ public sealed class GenerationMetrics : IGenerationMetrics
         float identitySimilarity,
         float featureScore,
         bool passed,
+        bool willRetry,
         TimeSpan duration)
     {
-        GenerationObservability.IdentityGuardTriggerTotal.Add(1);
+        GenerationObservability.IdentityEvaluationTotal.Add(1);
         GenerationObservability.EvaluationLatencyMs.Record(duration.TotalMilliseconds);
 
         if (passed && attemptNumber > 1)
         {
             GenerationObservability.IdentityGuardRecoveryTotal.Add(1);
         }
+        else if (!passed && willRetry)
+        {
+            GenerationObservability.IdentityGuardRetryTotal.Add(1);
+        }
 
-        _logger.LogInformation("[IdentityEvaluated] JobId={JobId}, AttemptId={AttemptId}, AttemptNumber={AttemptNumber}, Similarity={Similarity:F4}, FeatureScore={FeatureScore:F4}, Passed={Passed}, DurationMs={DurationMs:F1}",
-            jobId, attemptId, attemptNumber, identitySimilarity, featureScore, passed, duration.TotalMilliseconds);
+        _logger.LogInformation("[IdentityEvaluated] JobId={JobId}, AttemptId={AttemptId}, AttemptNumber={AttemptNumber}, Similarity={Similarity:F4}, FeatureScore={FeatureScore:F4}, Passed={Passed}, WillRetry={WillRetry}, DurationMs={DurationMs:F1}",
+            jobId, attemptId, attemptNumber, identitySimilarity, featureScore, passed, willRetry, duration.TotalMilliseconds);
     }
 
     public void RecordTiming(GenerationTiming timing)

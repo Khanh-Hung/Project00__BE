@@ -262,7 +262,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     attemptNumber: attempt,
                     workflow: workflow,
                     workflowVersion: workflowVersion,
-                    modelIdentifier: "ComfyUI/SDXL",
+                    modelIdentifier: snapshot.GenerationProfile?.Model ?? "ComfyUI/SDXL",
                     compiledPrompt: lastCompiledPrompt,
                     compiledNegativePrompt: compiledNegative,
                     previousReferenceUrl: resolvedPreviousSceneImageUrl,
@@ -506,13 +506,18 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         attemptRecord.MarkDegraded(genResult.ImageUrl, genResult.ProviderJobId, lastEvaluation.IdentitySimilarity, lastEvaluation.FeatureScore, evalCompletionTime, workerId, evalCompletionTime);
                     }
 
+                    var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
+                    bool isPassed = (nextAction == QualityMitigationAction.Pass) || (lastEvaluation.Status == IdentityStatus.Passed);
+                    bool willRetry = !isPassed && (nextAction != QualityMitigationAction.RejectDegraded) && (attempt < maxAttempts) && _retryBudget.CanRetryMitigation(attempt + 1, totalStopwatch.Elapsed, out _);
+
                     _metrics.RecordIdentityEvaluation(
                         job.Id,
                         attemptRecord.Id,
                         attempt,
                         lastEvaluation.IdentitySimilarity,
                         lastEvaluation.FeatureScore,
-                        lastEvaluation.Status == IdentityStatus.Passed,
+                        isPassed,
+                        willRetry,
                         evalSw.Elapsed);
 
                     var evalOutbox = new OutboxMessage(
@@ -528,8 +533,6 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     );
                     await _dbContext.OutboxMessages.AddAsync(evalOutbox, ct);
                     await _dbContext.SaveChangesAsync(ct);
-
-                    var nextAction = _qualityGuardPolicy.DecideMitigation(attempt, lastEvaluation);
 
                     if (nextAction == QualityMitigationAction.Pass)
                     {

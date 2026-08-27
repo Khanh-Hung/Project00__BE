@@ -8,7 +8,8 @@ namespace Application.Services;
 /// Authoritative deterministic fingerprint implementation.
 /// Covers: VisualSnapshot, GenerationProfile, DerivedSeed, AttemptNumber, WorkflowVersion, ModelIdentifier,
 /// ConditioningConfiguration, Prompts, and MitigationAction.
-/// Guarantees that identical inputs produce identical fingerprints regardless of machine, worker, or time.
+/// Guarantees that identical inputs produce identical fingerprints regardless of machine, worker, or time,
+/// and uses canonical JSON serialization to prevent delimiter collisions.
 /// </summary>
 public sealed class GenerationFingerprintService : IGenerationFingerprintService
 {
@@ -20,7 +21,7 @@ public sealed class GenerationFingerprintService : IGenerationFingerprintService
         int attemptNumber,
         string workflow = "VisualIdentity",
         int workflowVersion = 1,
-        string modelIdentifier = "ComfyUI/SDXL",
+        string? modelIdentifier = null,
         string? compiledPrompt = null,
         string? compiledNegativePrompt = null,
         string? previousReferenceUrl = null,
@@ -29,7 +30,10 @@ public sealed class GenerationFingerprintService : IGenerationFingerprintService
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(profile);
 
-        var resolvedModel = !string.IsNullOrWhiteSpace(modelIdentifier) ? modelIdentifier : (profile.Model ?? "ComfyUI/SDXL");
+        var resolvedModel = !string.IsNullOrWhiteSpace(modelIdentifier)
+            ? modelIdentifier
+            : (!string.IsNullOrWhiteSpace(profile.Model) ? profile.Model : "ComfyUI/SDXL");
+
         var resolvedMitigation = mitigationAction ?? "Pass";
 
         return ComputeRawFingerprint(

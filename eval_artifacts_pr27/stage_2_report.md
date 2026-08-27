@@ -2,6 +2,7 @@
 
 > [!NOTE]
 > **Mode**: Synthetic Fault Simulation (Monte Carlo)
+> **Notice**: PR #27 does not claim real GPU performance validation (which requires live dedicated ComfyUI worker nodes).
 > This report models progressive mitigation recovery and quarantine behavior across 100 requests.
 
 - **Total Requests**: 100

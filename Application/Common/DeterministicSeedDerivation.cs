@@ -1,12 +1,11 @@
-using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
+using System.Text.Json;
 
 namespace Application.Common;
 
 /// <summary>
-/// Provides pure, deterministic seed derivation and generation attempt fingerprinting.
-/// Guarantees exact reproducibility and idempotency across retry attempts.
+/// Provides pure, deterministic seed derivation and canonical generation attempt fingerprinting.
+/// Guarantees exact reproducibility and idempotency across retry attempts without delimiter collision risk.
 /// </summary>
 public static class DeterministicSeedDerivation
 {
@@ -30,11 +29,11 @@ public static class DeterministicSeedDerivation
     }
 
     /// <summary>
-    /// Computes a unique, canonical, deterministic fingerprint for a generation attempt covering all
+    /// Computes a unique, canonical, collision-safe SHA-256 fingerprint for a generation attempt covering all
     /// authoritative generation request inputs:
     /// JobId, TurnId, SceneRevision, AttemptNumber, DerivedSeed, Workflow, WorkflowVersion, ModelIdentifier, ParametersJson,
     /// CompiledPrompt, CompiledNegativePrompt, PreviousReferenceUrl, and MitigationAction.
-    /// Used to enforce strict DB-level uniqueness and idempotency across worker retries.
+    /// Uses canonical JSON serialization to prevent delimiter collision vulnerabilities.
     /// </summary>
     public static string ComputeFingerprint(
         Guid jobId,
@@ -51,22 +50,25 @@ public static class DeterministicSeedDerivation
         string? modelIdentifier = null,
         string? mitigationAction = null)
     {
-        var rawKey = string.Join("|",
-            jobId.ToString("N"),
-            snapshotTurnId.ToString("N"),
-            sceneRevision.ToString(CultureInfo.InvariantCulture),
-            attemptNumber.ToString(CultureInfo.InvariantCulture),
-            derivedSeed.ToString(CultureInfo.InvariantCulture),
-            workflow ?? string.Empty,
-            workflowVersion.ToString(CultureInfo.InvariantCulture),
-            modelIdentifier ?? "ComfyUI/SDXL",
-            parametersJson ?? string.Empty,
-            compiledPrompt ?? string.Empty,
-            compiledNegativePrompt ?? string.Empty,
-            previousReferenceUrl ?? string.Empty,
-            mitigationAction ?? "Pass");
+        var canonicalPayload = new
+        {
+            jobId = jobId.ToString("D"),
+            snapshotTurnId = snapshotTurnId.ToString("D"),
+            sceneRevision = sceneRevision,
+            attemptNumber = attemptNumber,
+            derivedSeed = derivedSeed,
+            workflow = workflow ?? "VisualIdentity",
+            workflowVersion = workflowVersion,
+            modelIdentifier = modelIdentifier ?? "meinamix_meinaV11.safetensors",
+            parametersJson = parametersJson ?? string.Empty,
+            compiledPrompt = compiledPrompt ?? string.Empty,
+            compiledNegativePrompt = compiledNegativePrompt ?? string.Empty,
+            previousReferenceUrl = previousReferenceUrl ?? string.Empty,
+            mitigationAction = mitigationAction ?? "Pass"
+        };
 
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
+        var canonicalBytes = JsonSerializer.SerializeToUtf8Bytes(canonicalPayload);
+        var hashBytes = SHA256.HashData(canonicalBytes);
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 }

@@ -67,7 +67,41 @@ public sealed class GenerationRetryBudgetTests
         );
 
         Assert.False(allowed);
-        Assert.Contains("exceeded", reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Insufficient remaining", reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RetryBudget_DoesNotStartAttemptWhenRemainingBudgetIsInsufficient()
+    {
+        // 90s total budget, elapsed 89.6s -> remaining 0.4s (< min 0.5s buffer)
+        var budget = new GenerationRetryBudget(maxAttempts: 3, maxTotalGenerationTime: TimeSpan.FromSeconds(90));
+
+        var allowed = budget.CanRetryMitigation(
+            targetAttemptNumber: 2,
+            elapsedTotalTime: TimeSpan.FromSeconds(89.6),
+            out var reason
+        );
+
+        Assert.False(allowed);
+        Assert.Contains("Insufficient remaining generation duration", reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RetryBudget_TotalExecutionNeverExceedsConfiguredDeadline()
+    {
+        var budget = new GenerationRetryBudget(maxAttempts: 3, maxTotalGenerationTime: TimeSpan.FromSeconds(90));
+
+        // When elapsed is 80s, remaining time is exactly 10s
+        var remaining = budget.GetRemainingTime(TimeSpan.FromSeconds(80));
+        Assert.Equal(TimeSpan.FromSeconds(10), remaining);
+
+        // Linked token will be scheduled to cancel after remaining duration
+        using var cts = budget.CreateAttemptCancellationTokenSource(CancellationToken.None, TimeSpan.FromSeconds(80));
+        Assert.False(cts.IsCancellationRequested);
+
+        // When elapsed reaches or exceeds deadline, token is canceled immediately
+        using var expiredCts = budget.CreateAttemptCancellationTokenSource(CancellationToken.None, TimeSpan.FromSeconds(90.5));
+        Assert.True(expiredCts.IsCancellationRequested);
     }
 
     [Fact]
@@ -81,8 +115,8 @@ public sealed class GenerationRetryBudgetTests
         Assert.False(budget.CanRetryMitigation(4, TimeSpan.FromSeconds(40), out var reasonAttempt));
         Assert.Contains("exceeds", reasonAttempt, StringComparison.OrdinalIgnoreCase);
 
-        Assert.False(budget.CanRetryMitigation(2, TimeSpan.FromSeconds(65), out var reasonTime));
-        Assert.Contains("exceeded", reasonTime, StringComparison.OrdinalIgnoreCase);
+        Assert.False(budget.CanRetryMitigation(2, TimeSpan.FromSeconds(59.8), out var reasonTime));
+        Assert.Contains("Insufficient remaining", reasonTime, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

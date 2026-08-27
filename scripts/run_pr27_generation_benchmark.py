@@ -1,14 +1,20 @@
 """
 PR #27 Visual Generation Productionization, Observability & Performance Benchmark Runner
 
-Supports two distinct execution modes:
-  Mode A: Synthetic Simulation (--mode synthetic)
-          Statistical Monte Carlo simulation modeling stage latency percentiles and fault recovery.
-          Explicitly labeled as simulation; does not claim GPU hardware execution.
+Taxonomy & Execution Modes:
+  Stage 1: Synthetic Latency Simulation (--mode synthetic)
+           Statistical Monte Carlo simulation modeling stage latency percentiles.
+           Explicitly labeled as simulation; does not claim GPU hardware execution.
 
-  Mode B: Real Benchmark (--mode real)
-          Executes actual pipeline / SQLite / concurrency workers and live telemetry.
-          Enforces and asserts genuine database invariants (exactly 1 AcceptedAttemptId, 1 IsCurrent).
+  Stage 2: Synthetic Fault Simulation (--mode synthetic)
+           Statistical Monte Carlo simulation modeling retry mitigations, recovery and quarantine.
+           Explicitly labeled as simulation; does not claim GPU hardware execution.
+
+  Stage 3: Real Local Harness & Concurrency Validation (--mode real)
+           Executes actual pipeline / SQLite / concurrency workers with isolated DbContexts.
+           Enforces and asserts genuine database invariants (exactly 1 AcceptedAttemptId, 1 IsCurrent, 0 duplicates).
+
+Notice: PR #27 does not claim real GPU performance validation (which requires live dedicated ComfyUI worker nodes).
 
 Outputs:
   - eval_artifacts_pr27/stage_1_matrix.json
@@ -52,13 +58,14 @@ def calculate_percentiles(values):
     }
 
 # =====================================================================
-# MODE A: SYNTHETIC SIMULATION
+# STAGE 1 & 2: SYNTHETIC SIMULATION
 # =====================================================================
 
 def run_synthetic_stage_1(num_requests=100):
     print(f"================================================================", flush=True)
     print(f"📊 Running PR #27 Stage 1: Synthetic Latency Simulation ({num_requests} requests)", flush=True)
     print(f"   [Notice: Statistical Monte Carlo distribution simulation]", flush=True)
+    print(f"   [Notice: PR #27 does not claim real GPU performance validation]", flush=True)
     print(f"================================================================", flush=True)
 
     np.random.seed(42)
@@ -111,6 +118,7 @@ def run_synthetic_stage_1(num_requests=100):
     matrix = {
         "benchmark_stage": "Stage 1: Synthetic Latency Simulation",
         "mode": "Synthetic Simulation (Monte Carlo)",
+        "notice": "PR #27 does not claim real GPU performance validation (requires dedicated worker cluster)",
         "total_requests": num_requests,
         "summary": {
             "queue_latency_ms": calculate_percentiles(queue_latencies),
@@ -134,6 +142,7 @@ def run_synthetic_stage_1(num_requests=100):
         f.write("# PR #27 Stage 1 Benchmark Report: Synthetic Latency Simulation\n\n")
         f.write("> [!NOTE]\n")
         f.write("> **Mode**: Synthetic Statistical Simulation (Monte Carlo)\n")
+        f.write("> **Notice**: PR #27 does not claim real GPU performance validation (which requires live dedicated ComfyUI worker nodes).\n")
         f.write("> This report models the theoretical distribution of discrete pipeline latency phases across 100 requests.\n\n")
         f.write(f"- **Total Requests**: {num_requests}\n")
         f.write(f"- **Success Rate**: 100.0%\n")
@@ -144,9 +153,9 @@ def run_synthetic_stage_1(num_requests=100):
         f.write("|---|---|---|---|---|---|---|---|\n")
         for stage_key, label in [
             ("queue_latency_ms", "Queue Latency"),
-            ("generation_latency_ms", "Generation Latency (GPU)"),
-            ("evaluation_latency_ms", "Evaluation Latency (CLIP)"),
-            ("acceptance_latency_ms", "Acceptance Latency (CAS)"),
+            ("generation_latency_ms", "Generation Latency (Simulated Provider)"),
+            ("evaluation_latency_ms", "Evaluation Latency (Simulated CLIP)"),
+            ("acceptance_latency_ms", "Acceptance Latency (CAS Transaction)"),
             ("total_latency_ms", "Total End-to-End Latency")
         ]:
             s = matrix["summary"][stage_key]
@@ -160,6 +169,7 @@ def run_synthetic_stage_2(num_requests=100):
     print(f"\n================================================================", flush=True)
     print(f"📊 Running PR #27 Stage 2: Synthetic Fault Simulation ({num_requests} requests)", flush=True)
     print(f"   [Notice: Statistical Monte Carlo fault recovery simulation]", flush=True)
+    print(f"   [Notice: PR #27 does not claim real GPU performance validation]", flush=True)
     print(f"================================================================", flush=True)
 
     np.random.seed(1337)
@@ -226,6 +236,7 @@ def run_synthetic_stage_2(num_requests=100):
     matrix = {
         "benchmark_stage": "Stage 2: Synthetic Fault Simulation",
         "mode": "Synthetic Simulation (Monte Carlo)",
+        "notice": "PR #27 does not claim real GPU performance validation (requires dedicated worker cluster)",
         "total_requests": num_requests,
         "summary": {
             "total_completed": total_completed,
@@ -247,6 +258,7 @@ def run_synthetic_stage_2(num_requests=100):
         f.write("# PR #27 Stage 2 Benchmark Report: Synthetic Fault Simulation\n\n")
         f.write("> [!NOTE]\n")
         f.write("> **Mode**: Synthetic Fault Simulation (Monte Carlo)\n")
+        f.write("> **Notice**: PR #27 does not claim real GPU performance validation (which requires live dedicated ComfyUI worker nodes).\n")
         f.write("> This report models progressive mitigation recovery and quarantine behavior across 100 requests.\n\n")
         f.write(f"- **Total Requests**: {num_requests}\n")
         f.write(f"- **Completed Requests**: {total_completed} / {num_requests} ({(total_completed/num_requests)*100:.1f}%)\n")
@@ -265,12 +277,12 @@ def run_synthetic_stage_2(num_requests=100):
     return matrix
 
 # =====================================================================
-# MODE B: REAL BENCHMARK (DOTNET / SQLITE / CONCURRENCY RUNNER)
+# STAGE 3: REAL LOCAL HARNESS & CONCURRENCY VALIDATION
 # =====================================================================
 
 def run_real_benchmark():
     print(f"================================================================", flush=True)
-    print(f"🚀 Running PR #27 Real Benchmark via .NET Test Harness", flush=True)
+    print(f"🚀 Running PR #27 Stage 3: Real Local Harness & Concurrency Validation via .NET", flush=True)
     print(f"================================================================", flush=True)
 
     cmd = ["dotnet", "test", os.path.join(BASE_DIR, "Tests", "Project.Tests.csproj"), "--filter", "Tests.GenerationProduction", "-f", "net10.0"]
