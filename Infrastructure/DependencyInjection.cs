@@ -184,6 +184,16 @@ public static class DependencyInjection
         services.AddScoped<ICharacterVisualReferenceResolver, Infrastructure.Services.CharacterVisualReferenceResolver>();
         services.AddScoped<IVisualEvidenceRecorder, Infrastructure.Services.VisualEvidenceRecorder>();
 
+        // PR #31: Scene Composition & Generation Context
+        services.AddScoped<ICharacterVisualProfileReader, Infrastructure.Services.Scene.CharacterVisualProfileReader>();
+        services.AddScoped<IVisualMemoryReader, Infrastructure.Services.Scene.VisualMemoryReader>();
+        services.AddScoped<ICanonicalReferenceReader, Infrastructure.Services.Scene.CanonicalReferenceReader>();
+        services.AddScoped<IPreviousSceneReader, Infrastructure.Services.Scene.PreviousSceneReader>();
+        services.AddScoped<ISceneComposer, Application.Services.SceneComposer>();
+        services.AddScoped<IVisualContextResolver, Application.Services.VisualContextResolver>();
+        services.AddScoped<IScenePromptComposer, Application.Services.ScenePromptComposer>();
+        services.AddScoped<Application.Services.SceneGenerationRequestMapper>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
