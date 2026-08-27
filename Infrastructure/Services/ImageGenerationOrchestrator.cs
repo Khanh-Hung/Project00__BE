@@ -461,7 +461,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     {
                         var failTime = _dateTimeProvider.UtcNow;
                         var category = GenerationFailureClassifier.Classify(ex);
-                        var isRetryable = _retryBudget.CanRetryFailure(attempt, totalStopwatch.Elapsed, category, out var failBudgetReason);
+                        var currentAttempt = Math.Max(attempt, job.AttemptCount);
+                        var isRetryable = _retryBudget.CanRetryFailure(currentAttempt, totalStopwatch.Elapsed, category, out var failBudgetReason);
 
                         attemptRecord.MarkFailed(category, ex.Message, failTime, workerId, failTime);
                         await _dbContext.SaveChangesAsync(ct);
