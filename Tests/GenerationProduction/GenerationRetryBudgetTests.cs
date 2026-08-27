@@ -1,0 +1,95 @@
+using Application.Services;
+using Domain.Enums;
+using Xunit;
+
+namespace Tests.GenerationProduction;
+
+public sealed class GenerationRetryBudgetTests
+{
+    [Fact]
+    public void RetryBudget_AllowsRetryWithinBudget()
+    {
+        var budget = new GenerationRetryBudget(maxAttempts: 3, maxTotalGenerationTime: TimeSpan.FromSeconds(90));
+
+        var allowed = budget.CanRetryFailure(
+            currentAttemptNumber: 1,
+            elapsedTotalTime: TimeSpan.FromSeconds(15),
+            category: GenerationFailureCategory.ProviderTimeout,
+            out var reason
+        );
+
+        Assert.True(allowed);
+        Assert.Null(reason);
+    }
+
+    [Fact]
+    public void RetryBudget_RejectsNonRetryableFailureCategory()
+    {
+        var budget = GenerationRetryBudget.Default;
+
+        var allowed = budget.CanRetryFailure(
+            currentAttemptNumber: 1,
+            elapsedTotalTime: TimeSpan.FromSeconds(10),
+            category: GenerationFailureCategory.InvalidWorkflow,
+            out var reason
+        );
+
+        Assert.False(allowed);
+        Assert.Contains("non-retryable", reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RetryBudget_RejectsWhenMaxAttemptsExhausted()
+    {
+        var budget = new GenerationRetryBudget(maxAttempts: 3);
+
+        var allowed = budget.CanRetryFailure(
+            currentAttemptNumber: 3,
+            elapsedTotalTime: TimeSpan.FromSeconds(20),
+            category: GenerationFailureCategory.GpuFailure,
+            out var reason
+        );
+
+        Assert.False(allowed);
+        Assert.Contains("exhausted", reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RetryBudget_RejectsWhenMaxTotalTimeExhausted()
+    {
+        var budget = new GenerationRetryBudget(maxAttempts: 3, maxTotalGenerationTime: TimeSpan.FromSeconds(30));
+
+        var allowed = budget.CanRetryFailure(
+            currentAttemptNumber: 2,
+            elapsedTotalTime: TimeSpan.FromSeconds(35),
+            category: GenerationFailureCategory.ProviderTimeout,
+            out var reason
+        );
+
+        Assert.False(allowed);
+        Assert.Contains("exceeded", reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RetryBudget_CanRetryMitigation_RespectsMaxAttemptsAndTime()
+    {
+        var budget = new GenerationRetryBudget(maxAttempts: 3, maxTotalGenerationTime: TimeSpan.FromSeconds(60));
+
+        Assert.True(budget.CanRetryMitigation(1, TimeSpan.FromSeconds(10), out _));
+        Assert.True(budget.CanRetryMitigation(2, TimeSpan.FromSeconds(20), out _));
+        Assert.True(budget.CanRetryMitigation(3, TimeSpan.FromSeconds(30), out _));
+        Assert.False(budget.CanRetryMitigation(4, TimeSpan.FromSeconds(40), out var reasonAttempt));
+        Assert.Contains("exceeds", reasonAttempt, StringComparison.OrdinalIgnoreCase);
+
+        Assert.False(budget.CanRetryMitigation(2, TimeSpan.FromSeconds(65), out var reasonTime));
+        Assert.Contains("exceeded", reasonTime, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RetryBudget_Constructor_ValidatesArguments()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryBudget(maxAttempts: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryBudget(maxAttempts: 15));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GenerationRetryBudget(maxAttempts: 3, maxTotalGenerationTime: TimeSpan.Zero));
+    }
+}

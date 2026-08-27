@@ -16,12 +16,13 @@ public sealed record ArtifactAcceptanceRequest(
     string? MetadataJson,
     bool IsIdentityPassed,
     string WorkerId,
-    Guid OutboxId
+    Guid OutboxId,
+    GenerationProvenance? Provenance = null
 );
 
 /// <summary>
 /// Service responsible for the atomic compare-and-swap acceptance fencing,
-/// artifact lineage promotion/demotion, and outbox event persistence in a single transactional boundary (P0-1).
+/// artifact lineage promotion/demotion, provenance attachment, and outbox event persistence in a single transactional boundary (P0-1).
 /// </summary>
 public interface IArtifactAcceptanceService
 {

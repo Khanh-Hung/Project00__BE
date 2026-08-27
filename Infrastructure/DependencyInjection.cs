@@ -164,6 +164,11 @@ public static class DependencyInjection
         services.AddHostedService<GenerationRecoveryHostedService>();
         services.AddHostedService<ArtifactReconciliationHostedService>();
 
+        // PR #27: Visual Generation Productionization, Observability & Performance
+        services.AddSingleton<IGenerationFingerprintService, Application.Services.GenerationFingerprintService>();
+        services.AddSingleton(Application.Services.GenerationRetryBudget.Default);
+        services.AddSingleton<IGenerationMetrics, Infrastructure.Telemetry.GenerationMetrics>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
