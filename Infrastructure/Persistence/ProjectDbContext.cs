@@ -33,6 +33,9 @@ public class ProjectDbContext : DbContext
     public DbSet<ImageGenerationJob> ImageGenerationJobs { get; set; }
     public DbSet<ImageGenerationAttempt> ImageGenerationAttempts { get; set; }
     public DbSet<VisualSessionState> VisualSessionStates { get; set; }
+    public DbSet<CharacterVisualProfile> CharacterVisualProfiles { get; set; }
+    public DbSet<CharacterVisualReference> CharacterVisualReferences { get; set; }
+    public DbSet<CharacterVisualMemory> CharacterVisualMemories { get; set; }
 
     private string NormalizeUserId()
     {

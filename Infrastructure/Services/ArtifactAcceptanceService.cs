@@ -263,6 +263,22 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                     {
                         attemptToUpdate.AttachAcceptedArtifact(artifact.Id, liveUtc);
                     }
+
+                    // PR #30: Record Visual Evidence / Memory in the same transaction
+                    var profile = await _dbContext.CharacterVisualProfiles.FirstOrDefaultAsync(p => p.CharacterId == snapshot.CharacterId, ct);
+                    var visualMemory = new CharacterVisualMemory(
+                        characterId: snapshot.CharacterId,
+                        visualProfileVersion: profile?.VisualVersion ?? 1,
+                        sceneRevision: snapshot.SceneRevision,
+                        artifactId: artifact.Id,
+                        context: snapshot.SceneState != null ? $"{snapshot.SceneState.CurrentLocation} - {snapshot.SceneState.CurrentOutfit}" : null,
+                        tags: null,
+                        qualityScore: null,
+                        identityScore: winningAttempt?.IdentitySimilarity,
+                        featureScore: winningAttempt?.FeatureScore,
+                        now: liveUtc
+                    );
+                    await _dbContext.CharacterVisualMemories.AddAsync(visualMemory, ct);
                 }
 
                 // 5. Outbox Lifecycle Domain Event Persistence in the SAME Relational Transaction
@@ -533,6 +549,22 @@ public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
                 {
                     winningAttempt.AttachAcceptedArtifact(artifact.Id, liveUtc);
                 }
+
+                // PR #30: Record Visual Evidence / Memory in the in-memory store
+                var profile = await _dbContext.CharacterVisualProfiles.FirstOrDefaultAsync(p => p.CharacterId == snapshot.CharacterId, ct);
+                var visualMemory = new CharacterVisualMemory(
+                    characterId: snapshot.CharacterId,
+                    visualProfileVersion: profile?.VisualVersion ?? 1,
+                    sceneRevision: snapshot.SceneRevision,
+                    artifactId: artifact.Id,
+                    context: snapshot.SceneState != null ? $"{snapshot.SceneState.CurrentLocation} - {snapshot.SceneState.CurrentOutfit}" : null,
+                    tags: null,
+                    qualityScore: null,
+                    identityScore: winningAttempt?.IdentitySimilarity,
+                    featureScore: winningAttempt?.FeatureScore,
+                    now: liveUtc
+                );
+                await _dbContext.CharacterVisualMemories.AddAsync(visualMemory, ct);
             }
 
             var outboxPayloadJson = isIdentityPassed
