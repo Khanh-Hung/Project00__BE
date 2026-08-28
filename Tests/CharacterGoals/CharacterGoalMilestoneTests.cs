@@ -70,6 +70,107 @@ public sealed class CharacterGoalMilestoneTests
         Assert.Equal(100, goal.CurrentValue);
     }
 
+    [Fact]
+    public void MilestoneProgression_TwoStepContribution_CompletesExactTargetsWithoutOvershoot()
+    {
+        var goal = new CharacterGoal(Guid.NewGuid(), "Master Swordsmanship", CharacterGoalType.SkillDevelopment, 100);
+        var m1 = goal.AddMilestone("Basic Katas", 1, 40);
+        var m2 = goal.AddMilestone("Sparring Tournaments", 2, 60);
+
+        // Step 1: Progress 50
+        // m1 needs 40, takes 40, completes (40/40).
+        // m2 receives remaining 10, becomes Active (10/60).
+        goal.RecordProgress(50);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m1.Status);
+        Assert.Equal(40, m1.CurrentValue);
+        Assert.Equal(CharacterGoalMilestoneStatus.Active, m2.Status);
+        Assert.Equal(10, m2.CurrentValue);
+        Assert.Equal(CharacterGoalStatus.Active, goal.Status);
+        Assert.Equal(0.5f, goal.Progress);
+        Assert.Equal(50, goal.CurrentValue);
+
+        // Step 2: Progress 50
+        // m2 needs 50 (60 - 10), takes 50, completes (60/60).
+        // Goal completes (100/100).
+        goal.RecordProgress(50);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m2.Status);
+        Assert.Equal(60, m2.CurrentValue);
+        Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
+        Assert.Equal(1.0f, goal.Progress);
+        Assert.Equal(100, goal.CurrentValue);
+    }
+
+    [Fact]
+    public void MilestoneProgression_SingleShotOneHundredContribution_CompletesAllThreeMilestonesExactlyWithoutOvershoot()
+    {
+        var goal = new CharacterGoal(Guid.NewGuid(), "Build Citadel", CharacterGoalType.Creative, 100);
+        var m1 = goal.AddMilestone("Survey & Foundations", 1, 30);
+        var m2 = goal.AddMilestone("Outer Walls & Towers", 2, 30);
+        var m3 = goal.AddMilestone("Grand Keep & Throne", 3, 40);
+
+        // Single shot 100 contribution
+        goal.RecordProgress(100);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m1.Status);
+        Assert.Equal(30, m1.CurrentValue);
+        Assert.NotNull(m1.CompletedAt);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m2.Status);
+        Assert.Equal(30, m2.CurrentValue);
+        Assert.NotNull(m2.CompletedAt);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m3.Status);
+        Assert.Equal(40, m3.CurrentValue);
+        Assert.NotNull(m3.CompletedAt);
+
+        Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
+        Assert.Equal(1.0f, goal.Progress);
+        Assert.Equal(100, goal.CurrentValue);
+    }
+
+    [Fact]
+    public void MilestoneProgression_SingleShotTwoMilestones_NoOffByOneOrFloatingPointArtifacts()
+    {
+        var goal = new CharacterGoal(Guid.NewGuid(), "Language Mastery", CharacterGoalType.SkillDevelopment, 100);
+        var m1 = goal.AddMilestone("Grammar & Vocabulary", 1, 60);
+        var m2 = goal.AddMilestone("Fluent Speech & Translation", 2, 40);
+
+        // Single shot 100 contribution
+        goal.RecordProgress(100);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m1.Status);
+        Assert.Equal(60, m1.CurrentValue);
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m2.Status);
+        Assert.Equal(40, m2.CurrentValue);
+        Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
+        Assert.Equal(1.0f, goal.Progress);
+        Assert.Equal(100, goal.CurrentValue);
+    }
+
+    [Fact]
+    public void MilestoneProgression_PartialMilestonesConfigured_CompletesMilestonesNaturallyWhenGoalReachesTarget()
+    {
+        // Total milestones = 80, Goal Target = 100
+        var goal = new CharacterGoal(Guid.NewGuid(), "Expedition", CharacterGoalType.Exploration, 100);
+        var m1 = goal.AddMilestone("Phase 1: Jungle", 1, 40);
+        var m2 = goal.AddMilestone("Phase 2: Mountains", 2, 40);
+
+        // Progress 100: M1 takes 40, completes. M2 takes 40, completes. Remaining 20 finishes the goal.
+        goal.RecordProgress(100);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m1.Status);
+        Assert.Equal(40, m1.CurrentValue);
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m2.Status);
+        Assert.Equal(40, m2.CurrentValue);
+
+        Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
+        Assert.Equal(1.0f, goal.Progress);
+        Assert.Equal(100, goal.CurrentValue);
+        Assert.DoesNotContain(goal.Milestones, m => m.Status == CharacterGoalMilestoneStatus.Active);
+    }
+
     [Theory]
     [InlineData(-10)]
     [InlineData(0)]
