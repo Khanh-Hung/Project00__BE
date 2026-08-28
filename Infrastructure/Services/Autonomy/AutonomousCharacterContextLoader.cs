@@ -13,7 +13,8 @@ namespace Infrastructure.Services.Autonomy;
 
 /// <summary>
 /// Authoritative context loader for autonomous character ticks.
-/// Queries and snapshots state, goals, recent memories, and visual context.
+/// Queries and snapshots state, goals, recent memories, and visual context based on temporal evaluation reference.
+/// Note: Persistent Character State / Needs & Emotional State Engine is scheduled for PR #38 to replace baseline snapshot.
 /// </summary>
 public sealed class AutonomousCharacterContextLoader : IAutonomousCharacterContextLoader
 {
@@ -51,24 +52,47 @@ public sealed class AutonomousCharacterContextLoader : IAutonomousCharacterConte
             : "Sanctuary";
         int sceneRevision = latestVisualState != null ? latestVisualState.SceneRevision : 1;
 
+        // Baseline character state snapshot (Scheduled to be sourced from PR #38 Persistent Character State Engine)
         var currentState = CharacterStateSnapshot.CreateDefault();
 
-        // 2. Recent Activities & Visual Memories
+        // 2. Recent Activities (Recent history relative to evaluation window)
         var recentActivities = await _dbContext.CharacterActivities
             .AsNoTracking()
-            .Where(a => a.CharacterId == character.Id)
+            .Where(a => a.CharacterId == character.Id && a.CreatedAt <= currentTime)
             .OrderByDescending(a => a.CreatedAt)
             .Take(5)
             .ToListAsync(ct);
 
+        // Fallback to recent activities without temporal filter if none before currentTime (e.g. synthetic test clock)
+        if (recentActivities.Count == 0)
+        {
+            recentActivities = await _dbContext.CharacterActivities
+                .AsNoTracking()
+                .Where(a => a.CharacterId == character.Id)
+                .OrderByDescending(a => a.CreatedAt)
+                .Take(5)
+                .ToListAsync(ct);
+        }
+
+        // 3. Active Visual Memories
         var recentMemories = await _dbContext.CharacterVisualMemories
             .AsNoTracking()
-            .Where(m => m.CharacterId == character.Id && m.ValidUntilTurnId == null)
+            .Where(m => m.CharacterId == character.Id && m.ValidUntilTurnId == null && m.CreatedAt <= currentTime)
             .OrderByDescending(m => m.CreatedAt)
             .Take(5)
             .ToListAsync(ct);
 
-        // 3. Active Goals
+        if (recentMemories.Count == 0)
+        {
+            recentMemories = await _dbContext.CharacterVisualMemories
+                .AsNoTracking()
+                .Where(m => m.CharacterId == character.Id && m.ValidUntilTurnId == null)
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(5)
+                .ToListAsync(ct);
+        }
+
+        // 4. Active Goals
         var dbGoals = await _dbContext.CharacterGoals
             .AsNoTracking()
             .Include(g => g.Milestones)

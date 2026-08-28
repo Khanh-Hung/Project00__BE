@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Autonomy;
+using Application.Contracts.Autonomy;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -198,6 +198,110 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
             Assert.True(res3.Success);
             Assert.True(res3.IsDuplicateSuppressed);
             Assert.Null(res3.Tick);
+        }
+    }
+
+    [Fact]
+    public async Task TenConcurrentRetryWorkers_AttemptingSameFailedTick_AllowsExactlyOneWinnerAndNineSuppressed_WithExactDBState()
+    {
+        var charId = Guid.NewGuid();
+        var character = new Character("Valerius", "Scholar and Arcane Researcher", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
+        var goal = new CharacterGoal(charId, "Master Alchemical Research", CharacterGoalType.SkillDevelopment, 100);
+        var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Great alchemical research discovery!");
+        var timeBucket = "2026-08-28T23:30";
+
+        // Step 1: Pre-populate a Failed tick in the database
+        var initialFailedTick = CharacterAutonomyTick.Create(
+            characterId: charId,
+            executionId: Guid.NewGuid(),
+            timeBucket: timeBucket,
+            startedAt: DateTime.UtcNow.AddMinutes(-5),
+            worldEventId: worldEvent.Id
+        );
+        initialFailedTick.Fail(DateTime.UtcNow.AddMinutes(-4), "Simulated transient DB connection fault");
+
+        using (var db = new ProjectDbContext(_options))
+        {
+            await db.Characters.AddAsync(character);
+            await db.CharacterGoals.AddAsync(goal);
+            await db.CharacterWorldEvents.AddAsync(worldEvent);
+            await db.CharacterAutonomyTicks.AddAsync(initialFailedTick);
+            await db.SaveChangesAsync();
+        }
+
+        // Step 2: 10 concurrent workers simultaneously attempt to retry the Failed tick with distinct ExecutionIds
+        var workerExecutionIds = Enumerable.Range(1, 10).Select(_ => Guid.NewGuid()).ToList();
+
+        var tasks = workerExecutionIds.Select(async execId =>
+        {
+            await using var workerDb = new ProjectDbContext(_options);
+            var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
+            var fakePipeline = new FakeSceneCompositionPipelineService();
+            var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(workerDb, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
+            var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
+            var activityExecService = new ActivityExecutionService(workerDb, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(workerDb, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+
+            var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
+                workerDb,
+                contextLoader,
+                decisionService,
+                activityExecService,
+                reactionService,
+                NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
+            );
+
+            var request = new AutonomyTickRequest(
+                CharacterId: charId,
+                ExecutionId: execId,
+                TimeBucket: timeBucket,
+                CurrentTime: new DateTime(2026, 8, 28, 14, 0, 0, DateTimeKind.Utc),
+                WorldEventId: worldEvent.Id
+            );
+
+            return await orchestrator.ExecuteTickAsync(request);
+        }).ToList();
+
+        var results = await Task.WhenAll(tasks);
+
+        int winners = results.Count(r => r.Success && !r.IsDuplicateSuppressed);
+        int suppressed = results.Count(r => r.Success && r.IsDuplicateSuppressed);
+
+        Assert.Equal(1, winners);
+        Assert.Equal(9, suppressed);
+
+        var winningResult = results.First(r => r.Success && !r.IsDuplicateSuppressed);
+        Assert.NotNull(winningResult.Tick);
+        Assert.Equal(AutonomyTickStatus.Completed, winningResult.Tick.Status);
+
+        // Step 3: Strict Invariant Assertions on Final Database State
+        using (var db = new ProjectDbContext(_options))
+        {
+            // 1. Exactly 1 row in CharacterAutonomyTicks, status Completed, winner's ExecutionId, incremented Version
+            var dbTick = await db.CharacterAutonomyTicks.FirstAsync(t => t.CharacterId == charId && t.TimeBucket == timeBucket);
+            Assert.Equal(AutonomyTickStatus.Completed, dbTick.Status);
+            Assert.Equal(winningResult.ExecutionId, dbTick.ExecutionId);
+            Assert.Equal(4, dbTick.Version); // 1 (create) + 1 (fail) + 1 (reclaim) + 1 (complete)
+            Assert.NotNull(dbTick.CompletedAt);
+            Assert.Null(dbTick.FailedAt);
+            Assert.Null(dbTick.ErrorMessage);
+
+            // 2. Exactly 1 Activity row
+            var activityCount = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId);
+            Assert.Equal(1, activityCount);
+
+            // 3. Exactly 1 Reaction row
+            var reactionCount = await db.CharacterWorldEventReactions.CountAsync(r => r.CharacterId == charId);
+            Assert.Equal(1, reactionCount);
+
+            // 4. Exactly 1 SceneSpecification row
+            var specCount = await db.SceneSpecifications.CountAsync(s => s.CharacterId == charId);
+            Assert.Equal(1, specCount);
+
+            // 5. Exactly 1 Goal contribution (30 from reaction + 2 from activity = 32.0, NOT multiplied by 10)
+            var dbGoal = await db.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
+            Assert.Equal(32.0, dbGoal.CurrentValue);
         }
     }
 
