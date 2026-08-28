@@ -1,4 +1,4 @@
-﻿using Domain.Common;
+using Domain.Common;
 using Domain.Enums;
 
 namespace Domain.Entities;
@@ -20,6 +20,7 @@ public sealed class CharacterActivity : BaseEntity
     public DateTime? CompletedAt { get; private set; }
     public bool ShouldCreateVisualMoment { get; private set; }
     public Guid? SceneIntentId { get; private set; }
+    public Guid? GoalId { get; private set; }
     public string TimeBucket { get; private set; }
     public string DecisionFingerprint { get; private set; }
     public string? Reason { get; private set; }
@@ -46,6 +47,7 @@ public sealed class CharacterActivity : BaseEntity
         DateTime? startedAt = null,
         DateTime? completedAt = null,
         Guid? sceneIntentId = null,
+        Guid? goalId = null,
         CharacterActivityStatus status = CharacterActivityStatus.Scheduled,
         uint version = 1,
         DateTime? now = null,
@@ -80,9 +82,20 @@ public sealed class CharacterActivity : BaseEntity
         StartedAt = startedAt;
         CompletedAt = completedAt;
         SceneIntentId = sceneIntentId;
+        GoalId = goalId;
         Status = status;
         Version = version;
         CreatedAt = now ?? DateTime.UtcNow;
+    }
+
+    public void LinkGoal(Guid goalId)
+    {
+        if (goalId == Guid.Empty)
+            throw new ArgumentException("GoalId cannot be empty.", nameof(goalId));
+
+        GoalId = goalId;
+        Version++;
+        Touch();
     }
 
     public void Start(DateTime? startedAt = null)

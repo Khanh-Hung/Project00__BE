@@ -1,4 +1,4 @@
-﻿using Domain.Enums;
+using Domain.Enums;
 
 namespace Application.Contracts.Activities;
 
@@ -17,5 +17,9 @@ public sealed record CharacterActivityCandidate(
     string? PoseHint = null,
     string? OutfitHint = null,
     string? EnvironmentHint = null,
-    string DecisionFingerprint = ""
+    string DecisionFingerprint = "",
+    Guid? GoalId = null,
+    string? GoalTitle = null,
+    float? GoalRelevance = null,
+    string? GoalReason = null
 );

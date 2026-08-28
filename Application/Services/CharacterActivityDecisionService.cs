@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Application.Contracts.Activities;
+using Application.Contracts.Goals;
 using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
@@ -33,6 +34,48 @@ public sealed class CharacterActivityDecisionService : ICharacterActivityDecisio
         // 1. Determine eligible candidate pool based on Time of Day, Location & Context
         var pool = GenerateCandidatePool(request);
 
+        // 1.1 Apply Goal Relevance Scoring & Ranking if active goals exist
+        if (request.Goals != null && request.Goals.Count > 0)
+        {
+            var activeGoals = request.Goals.Where(g => g.Status == CharacterGoalStatus.Active).ToList();
+            if (activeGoals.Count > 0)
+            {
+                foreach (var opt in pool)
+                {
+                    // Find highest matching goal for this activity candidate
+                    var bestGoalMatch = activeGoals
+                        .Select(g => new
+                        {
+                            Goal = g,
+                            Relevance = GoalActivityRelevancePolicy.Evaluate(g.Title, g.Description, g.GoalType, opt.Type),
+                            PriorityWeight = (int)g.Priority
+                        })
+                        .Where(x => x.Relevance.Score > 0.05f)
+                        .OrderByDescending(x => x.PriorityWeight)
+                        .ThenByDescending(x => x.Relevance.Score)
+                        .ThenBy(x => x.Goal.GoalId)
+                        .FirstOrDefault();
+
+                    if (bestGoalMatch != null)
+                    {
+                        int priorityMultiplier = bestGoalMatch.Goal.Priority switch
+                        {
+                            CharacterGoalPriority.Critical => 20,
+                            CharacterGoalPriority.High => 8,
+                            CharacterGoalPriority.Normal => 4,
+                            _ => 1
+                        };
+                        int goalBoost = (int)(bestGoalMatch.Relevance.Score * priorityMultiplier * 100);
+                        opt.Weight += goalBoost;
+                        opt.GoalId = bestGoalMatch.Goal.GoalId;
+                        opt.GoalTitle = bestGoalMatch.Goal.Title;
+                        opt.GoalRelevance = bestGoalMatch.Relevance.Score;
+                        opt.GoalReason = bestGoalMatch.Relevance.Reason;
+                    }
+                }
+            }
+        }
+
         // 2. Filter pool by Cooldown and Anti-Repetition Policies
         var eligibleCandidates = new List<CandidateOption>();
         foreach (var opt in pool)
@@ -53,12 +96,12 @@ public sealed class CharacterActivityDecisionService : ICharacterActivityDecisio
         if (eligibleCandidates.Count == 0)
         {
             eligibleCandidates.Add(new CandidateOption(
-                Type: CharacterActivityType.Idle,
-                Location: request.CurrentLocation,
-                Weight: 10,
-                ActionHint: "resting quietly in place",
-                PoseHint: "standing or seated relaxed",
-                Reason: "Cooldown constraints active; character taking a quiet break."
+                type: CharacterActivityType.Idle,
+                location: request.CurrentLocation,
+                weight: 10,
+                actionHint: "resting quietly in place",
+                poseHint: "standing or seated relaxed",
+                reason: "Cooldown constraints active; character taking a quiet break."
             ));
         }
 
@@ -105,10 +148,14 @@ public sealed class CharacterActivityDecisionService : ICharacterActivityDecisio
                  .Append(request.SceneRevision);
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fpBuilder.ToString()))).ToLowerInvariant();
 
+        var finalReason = selected.GoalId.HasValue && !string.IsNullOrWhiteSpace(selected.GoalReason)
+            ? $"{selected.Reason} | [Goal: {selected.GoalTitle}] {selected.GoalReason}"
+            : selected.Reason;
+
         var candidate = new CharacterActivityCandidate(
             ActivityType: selected.Type,
             Location: selected.Location,
-            Reason: selected.Reason,
+            Reason: finalReason,
             Priority: visualDecision.Priority,
             DurationMinutes: selected.DurationMinutes,
             ShouldCreateVisualMoment: visualDecision.ShouldGenerate,
@@ -117,32 +164,69 @@ public sealed class CharacterActivityDecisionService : ICharacterActivityDecisio
             PoseHint: selected.PoseHint,
             OutfitHint: null,
             EnvironmentHint: null,
-            DecisionFingerprint: fingerprint
+            DecisionFingerprint: fingerprint,
+            GoalId: selected.GoalId,
+            GoalTitle: selected.GoalTitle,
+            GoalRelevance: selected.GoalRelevance,
+            GoalReason: selected.GoalReason
         );
 
         _logger.LogInformation(
-            "[CharacterActivityDecisionService] Evaluated activity for CharacterId={CharacterId}, Type={Type}, Location='{Location}', VisualMoment={ShouldGenerate}, Fingerprint={Fingerprint}",
-            charId, candidate.ActivityType, candidate.Location, candidate.ShouldCreateVisualMoment, fingerprint);
+            "[CharacterActivityDecisionService] Evaluated activity for CharacterId={CharacterId}, Type={Type}, Location='{Location}', VisualMoment={ShouldGenerate}, GoalId={GoalId}, Fingerprint={Fingerprint}",
+            charId, candidate.ActivityType, candidate.Location, candidate.ShouldCreateVisualMoment, candidate.GoalId, fingerprint);
 
         return Task.FromResult<CharacterActivityCandidate?>(candidate);
     }
 
-    private sealed record CandidateOption(
-        CharacterActivityType Type,
-        string Location,
-        int Weight,
-        string ActionHint,
-        string PoseHint,
-        string Reason,
-        int DurationMinutes = 30
-    );
+    private sealed class CandidateOption
+    {
+        public CharacterActivityType Type { get; set; }
+        public string Location { get; set; }
+        public int Weight { get; set; }
+        public string ActionHint { get; set; }
+        public string PoseHint { get; set; }
+        public string Reason { get; set; }
+        public int DurationMinutes { get; set; }
+        public Guid? GoalId { get; set; }
+        public string? GoalTitle { get; set; }
+        public float? GoalRelevance { get; set; }
+        public string? GoalReason { get; set; }
+
+        public CandidateOption(
+            CharacterActivityType type,
+            string location,
+            int weight,
+            string actionHint,
+            string poseHint,
+            string reason,
+            int durationMinutes = 30,
+            Guid? goalId = null,
+            string? goalTitle = null,
+            float? goalRelevance = null,
+            string? goalReason = null)
+        {
+            Type = type;
+            Location = location;
+            Weight = weight;
+            ActionHint = actionHint;
+            PoseHint = poseHint;
+            Reason = reason;
+            DurationMinutes = durationMinutes;
+            GoalId = goalId;
+            GoalTitle = goalTitle;
+            GoalRelevance = goalRelevance;
+            GoalReason = goalReason;
+        }
+    }
 
     private static List<CandidateOption> GenerateCandidatePool(CharacterActivityDecisionRequest req)
     {
         var pool = new List<CandidateOption>();
         int hour = req.CurrentTime.Hour;
         var pPrompt = (req.PersonalityPrompt ?? "").ToLowerInvariant();
-        var goals = (req.ActiveGoals != null ? string.Join(" ", req.ActiveGoals) : "").ToLowerInvariant();
+        var goalText = (req.Goals != null ? string.Join(" ", req.Goals.Select(g => g.Title + " " + g.GoalType + " " + (g.Description ?? ""))) : "") + " " +
+                       (req.ActiveGoals != null ? string.Join(" ", req.ActiveGoals) : "");
+        var goals = goalText.ToLowerInvariant();
         var world = (req.WorldDescription ?? "").ToLowerInvariant();
         var loc = req.CurrentLocation;
 
