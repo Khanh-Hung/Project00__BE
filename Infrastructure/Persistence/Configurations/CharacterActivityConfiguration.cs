@@ -22,7 +22,7 @@ public class CharacterActivityConfiguration : IEntityTypeConfiguration<Character
 
         // Unique constraint: Exactly one autonomous activity per character per time bucket
         builder.HasIndex(x => new { x.CharacterId, x.TimeBucket })
-            .HasFilter("\"Source\" = 'Autonomous' OR \"Source\" = 1")
+            .HasFilter("\"Source\" = 'Autonomous'")
             .IsUnique();
 
         builder.HasIndex(x => new { x.CharacterId, x.Status });

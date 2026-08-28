@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Application.Contracts.Activities;
 using Application.Interfaces;
 using Application.Services;
@@ -19,17 +20,20 @@ public sealed class CharacterActivityScheduler
     private readonly ProjectDbContext _dbContext;
     private readonly ICharacterActivityDecisionService _decisionService;
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
+    private readonly ISceneVisualStateReader _visualStateReader;
     private readonly ILogger<CharacterActivityScheduler> _logger;
 
     public CharacterActivityScheduler(
         ProjectDbContext dbContext,
         ICharacterActivityDecisionService decisionService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
+        ISceneVisualStateReader visualStateReader,
         ILogger<CharacterActivityScheduler> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _decisionService = decisionService ?? throw new ArgumentNullException(nameof(decisionService));
         _sceneCompositionPipeline = sceneCompositionPipeline ?? throw new ArgumentNullException(nameof(sceneCompositionPipeline));
+        _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -85,7 +89,7 @@ public sealed class CharacterActivityScheduler
         string timeBucket,
         CancellationToken ct = default)
     {
-        // 1. Fetch character context for decision
+        // 1. Fetch character context, authoritative visual state, and memory
         var recentActivities = await _dbContext.CharacterActivities
             .AsNoTracking()
             .Where(a => a.CharacterId == character.Id)
@@ -100,20 +104,40 @@ public sealed class CharacterActivityScheduler
             .Take(5)
             .ToListAsync(ct);
 
-        var currentLocation = character.WorldDescription ?? "Sanctuary";
+        // Authoritative current visual state & location resolution
+        var latestVisualState = await _visualStateReader.GetLatestByCharacterIdAsync(character.Id, ct);
+        var currentVisualState = latestVisualState?.CharacterState;
+        var currentLocation = !string.IsNullOrWhiteSpace(latestVisualState?.Location) 
+            ? latestVisualState.Location 
+            : "Sanctuary";
+        int sceneRevision = latestVisualState != null ? latestVisualState.SceneRevision : 1;
+
+        // Parse Active Goals from character milestones if present
+        IReadOnlyList<string>? activeGoals = null;
+        if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
+        {
+            try
+            {
+                activeGoals = JsonSerializer.Deserialize<List<string>>(character.CustomMilestonesJson);
+            }
+            catch
+            {
+                activeGoals = new[] { character.CustomMilestonesJson.Trim() };
+            }
+        }
 
         var decisionRequest = new CharacterActivityDecisionRequest(
             CharacterId: character.Id,
             CurrentTime: now,
             CurrentLocation: currentLocation,
             TimeBucket: timeBucket,
-            CurrentVisualState: null,
+            CurrentVisualState: currentVisualState,
             RecentActivities: recentActivities,
             RecentVisualMemories: recentMemories,
             PersonalityPrompt: character.PersonalityPrompt,
             WorldDescription: character.WorldDescription,
-            ActiveGoals: null,
-            SceneRevision: 1
+            ActiveGoals: activeGoals,
+            SceneRevision: sceneRevision
         );
 
         // 2. Decide next activity candidate
@@ -141,7 +165,7 @@ public sealed class CharacterActivityScheduler
             now: now
         );
 
-        // 4. Persist with Distributed Concurrency Guard
+        // 4. Persist with Distributed Concurrency Guard (Suppress ONLY unique constraint duplicates)
         try
         {
             await _dbContext.CharacterActivities.AddAsync(activity, ct);
@@ -149,9 +173,17 @@ public sealed class CharacterActivityScheduler
         }
         catch (DbUpdateException ex)
         {
-            _logger.LogInformation(ex, "[CharacterActivityScheduler] Idempotent duplicate suppressed for CharacterId={CharacterId}, TimeBucket={TimeBucket}",
+            if (IsUniqueConstraintViolation(ex))
+            {
+                _logger.LogInformation(ex, "[CharacterActivityScheduler] Idempotent duplicate suppressed for CharacterId={CharacterId}, TimeBucket={TimeBucket}",
+                    character.Id, timeBucket);
+                return false;
+            }
+
+            // Real database failure (connection loss, foreign key, NOT NULL, schema error) -> propagate!
+            _logger.LogError(ex, "[CharacterActivityScheduler] Non-duplicate database failure saving activity for CharacterId={CharacterId}, TimeBucket={TimeBucket}",
                 character.Id, timeBucket);
-            return false;
+            throw;
         }
 
         // 5. If Visual Moment Accepted -> Map to SceneIntent and execute Scene Composition Pipeline
@@ -162,17 +194,17 @@ public sealed class CharacterActivityScheduler
                 var sceneIntent = CharacterActivitySceneIntentMapper.MapToSceneIntent(
                     activity: activity,
                     candidate: candidate,
-                    currentVisualState: null,
+                    currentVisualState: currentVisualState,
                     sessionId: null,
-                    turnId: activity.Id
+                    turnId: null
                 );
 
-                activity.LinkSceneIntent(activity.Id);
+                activity.LinkSceneIntent(sceneIntent.Id);
 
                 var pipelineResult = await _sceneCompositionPipeline.ExecuteAsync(
                     intent: sceneIntent,
                     generationProfile: GenerationProfile.CreateDefault(),
-                    sceneRevision: 1,
+                    sceneRevision: sceneRevision,
                     ct: ct
                 );
 
@@ -190,6 +222,43 @@ public sealed class CharacterActivityScheduler
         }
 
         return true;
+    }
+
+    public static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        var msg = ex.InnerException?.Message ?? ex.Message;
+
+        // PostgreSQL error code 23505 = unique_violation, or index name IX_CharacterActivities_CharacterId_TimeBucket
+        if (msg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("unique constraint", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("IX_CharacterActivities_CharacterId_TimeBucket", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var inner = ex.InnerException;
+        while (inner != null)
+        {
+            var sqlStateProp = inner.GetType().GetProperty("SqlState");
+            if (sqlStateProp != null)
+            {
+                var sqlState = sqlStateProp.GetValue(inner)?.ToString();
+                if (sqlState == "23505") return true;
+            }
+
+            var sqliteErrProp = inner.GetType().GetProperty("SqliteErrorCode");
+            if (sqliteErrProp != null)
+            {
+                var errCode = sqliteErrProp.GetValue(inner);
+                if (errCode is int code && code == 19) return true;
+            }
+
+            inner = inner.InnerException;
+        }
+
+        return false;
     }
 
     public static string GetTimeBucket(DateTime time)

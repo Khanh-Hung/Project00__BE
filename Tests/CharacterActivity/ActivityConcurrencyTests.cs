@@ -2,6 +2,7 @@
 using Domain.Entities;
 using Infrastructure.BackgroundJobs;
 using Infrastructure.Persistence;
+using Infrastructure.Services.Scene;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -57,8 +58,9 @@ public sealed class ActivityConcurrencyTests : IDisposable
         var tasks = Enumerable.Range(1, 10).Select(async workerId =>
         {
             await using var workerDb = new ProjectDbContext(_options);
+            var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
-                workerDb, decisionService, fakePipeline, NullLogger<CharacterActivityScheduler>.Instance);
+                workerDb, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
 
             return await scheduler.ProcessCharacterAsync(character, testTime, timeBucket);
         }).ToList();

@@ -1,4 +1,5 @@
-﻿using Application.Services;
+﻿using System.Text.Json;
+using Application.Services;
 using Domain.Entities;
 using Infrastructure.BackgroundJobs;
 using Infrastructure.Persistence;
@@ -11,12 +12,12 @@ using Xunit;
 
 namespace Tests.CharacterActivities;
 
-public sealed class VisualMomentIntegrationTests : IDisposable
+public sealed class AuthoritativeStateSchedulerIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly DbContextOptions<ProjectDbContext> _options;
 
-    public VisualMomentIntegrationTests()
+    public AuthoritativeStateSchedulerIntegrationTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
@@ -35,24 +36,62 @@ public sealed class VisualMomentIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task VisualMomentActivity_ExecutesSceneCompositionPipeline_AndPersistsSceneSpecification()
+    public async Task Scheduler_LoadsAuthoritativeCurrentVisualState_Location_AndSceneRevision()
     {
         var charId = Guid.NewGuid();
-        var character = new Character("Seraphina", "Princess", "http://avatar.png", "morning routine and grooming in palace", "Hello", "Anime", worldDescription: "Sunken Palace")
+        var character = new Character(
+            name: "Valerius",
+            title: "Alchemist",
+            avatarUrl: "http://avatar.png",
+            personalityPrompt: "morning routine getting ready",
+            greeting: "Hello",
+            category: "Anime",
+            customMilestonesJson: JsonSerializer.Serialize(new[] { "Synthesize Philosopher Stone" }),
+            worldDescription: "A massive continent of floating islands" // NOT the location!
+        )
         {
             Id = charId
         };
 
+        // Seed Authoritative SceneVisualState at Revision 5 in "Crystal Conservatory" with "Royal Alchemist Robe"
+        var charVisualState = new CharacterVisualState(
+            characterId: charId,
+            location: "Crystal Conservatory",
+            sceneRevision: 5,
+            outfit: "Royal Alchemist Robe",
+            hairstyle: "Braided Silver Ponytail"
+        );
+
+        var sceneVisualState = new SceneVisualState(
+            sessionId: Guid.NewGuid(),
+            characterId: charId,
+            location: "Crystal Conservatory",
+            characterState: charVisualState,
+            sceneRevision: 5,
+            sceneKey: "crystal_conservatory"
+        );
+
+        var stateJson = JsonSerializer.Serialize(sceneVisualState);
+        var stateRecord = new SceneVisualStateRecord(
+            sessionId: sceneVisualState.SessionId,
+            characterId: charId,
+            sceneKey: "crystal_conservatory",
+            sceneRevision: 5,
+            stateJson: stateJson,
+            fingerprint: sceneVisualState.Fingerprint,
+            version: 1
+        );
+
         using (var db = new ProjectDbContext(_options))
         {
             await db.Characters.AddAsync(character);
+            await db.SceneVisualStates.AddAsync(stateRecord);
             await db.SaveChangesAsync();
         }
 
         var decisionService = new CharacterActivityDecisionService(NullLogger<CharacterActivityDecisionService>.Instance);
         var fakePipeline = new FakeSceneCompositionPipelineService();
 
-        // Morning time (07:00) triggers GettingReady -> VisualMoment = true
         var morningTime = new DateTime(2026, 8, 28, 7, 0, 0, DateTimeKind.Utc);
         var timeBucket = CharacterActivityScheduler.GetTimeBucket(morningTime);
 
@@ -66,18 +105,19 @@ public sealed class VisualMomentIntegrationTests : IDisposable
             Assert.True(result);
         }
 
-        // Verify Activity and SceneSpecification in DB
+        // Verify: Activity took authoritative location "Crystal Conservatory" rather than worldDescription
         using (var db = new ProjectDbContext(_options))
         {
             var activity = await db.CharacterActivities.FirstOrDefaultAsync(a => a.CharacterId == charId);
             Assert.NotNull(activity);
+            Assert.Equal("Crystal Conservatory", activity.Location);
             Assert.True(activity.ShouldCreateVisualMoment);
             Assert.NotNull(activity.SceneIntentId);
-            Assert.NotEqual(activity.Id, activity.SceneIntentId.Value); // Genuine SceneIntent ID, not duplicate of Activity ID!
 
             var sceneSpec = await db.SceneSpecifications.FirstOrDefaultAsync(s => s.CharacterId == charId);
             Assert.NotNull(sceneSpec);
-            Assert.Equal("Sanctuary", sceneSpec.Location);
+            Assert.Equal("Crystal Conservatory", sceneSpec.Location);
+            Assert.Equal(5, sceneSpec.SceneRevision); // Inherited authoritative revision 5!
         }
     }
 }

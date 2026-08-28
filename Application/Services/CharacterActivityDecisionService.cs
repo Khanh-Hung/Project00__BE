@@ -22,6 +22,7 @@ public sealed class CharacterActivityDecisionService : ICharacterActivityDecisio
         CharacterActivityDecisionRequest request,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(request, nameof(request));
 
         var charId = request.CharacterId;
@@ -165,12 +166,18 @@ public sealed class CharacterActivityDecisionService : ICharacterActivityDecisio
         else if (hour >= 6 && hour < 9)
         {
             // Morning
-            int readyWeight = isGettingReady ? 80 : 40;
-            pool.Add(new CandidateOption(CharacterActivityType.GettingReady, loc, readyWeight, "preparing attire and grooming for the day", "standing in front of a mirror", "Morning routine preparation", 30));
-            pool.Add(new CandidateOption(CharacterActivityType.Eating, loc, 30, "having a light breakfast", "seated at breakfast table", "Morning meal", 30));
-            if (isAdventurer)
+            if (isGettingReady)
             {
-                pool.Add(new CandidateOption(CharacterActivityType.Exercising, loc, 30, "morning physical conditioning and sword practice", "mid-motion dynamic athletic pose", "Morning physical drill", 45));
+                pool.Add(new CandidateOption(CharacterActivityType.GettingReady, loc, 100, "preparing attire and grooming for the day", "standing in front of a mirror", "Morning routine preparation", 30));
+            }
+            else
+            {
+                pool.Add(new CandidateOption(CharacterActivityType.GettingReady, loc, 40, "preparing attire and grooming for the day", "standing in front of a mirror", "Morning routine preparation", 30));
+                pool.Add(new CandidateOption(CharacterActivityType.Eating, loc, 30, "having a light breakfast", "seated at breakfast table", "Morning meal", 30));
+                if (isAdventurer)
+                {
+                    pool.Add(new CandidateOption(CharacterActivityType.Exercising, loc, 30, "morning physical conditioning and sword practice", "mid-motion dynamic athletic pose", "Morning physical drill", 45));
+                }
             }
         }
         else if (hour >= 9 && hour < 12)

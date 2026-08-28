@@ -47,7 +47,7 @@ namespace Project.Infrastructure.Persistence.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_CharacterActivities_CharacterId_CreatedAt",
                 table: "CharacterActivities",
-                column: "CharacterId");
+                columns: new[] { "CharacterId", "CreatedAt" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_CharacterActivities_CharacterId_Status",
@@ -59,7 +59,7 @@ namespace Project.Infrastructure.Persistence.Migrations
                 table: "CharacterActivities",
                 columns: new[] { "CharacterId", "TimeBucket" },
                 unique: true,
-                filter: "\"Source\" = 'Autonomous' OR \"Source\" = '1'");
+                filter: "\"Source\" = 'Autonomous'");
 
             migrationBuilder.CreateIndex(
                 name: "IX_CharacterActivities_SceneIntentId",

@@ -7,6 +7,7 @@
 /// </summary>
 public sealed class SceneIntent
 {
+    public Guid Id { get; private set; }
     public Guid CharacterId { get; private set; }
     public Guid? SessionId { get; private set; }
     public Guid? TurnId { get; private set; }
@@ -43,7 +44,8 @@ public sealed class SceneIntent
         string? outfitHint = null,
         string? hairstyleHint = null,
         IEnumerable<string>? objectHints = null,
-        IEnumerable<string>? atmosphereHints = null)
+        IEnumerable<string>? atmosphereHints = null,
+        Guid? id = null)
     {
         if (characterId == Guid.Empty)
             throw new ArgumentException("CharacterId cannot be empty.", nameof(characterId));
@@ -54,6 +56,7 @@ public sealed class SceneIntent
         if (string.IsNullOrWhiteSpace(actionHint))
             throw new ArgumentException("ActionHint cannot be empty.", nameof(actionHint));
 
+        Id = id ?? Guid.CreateVersion7();
         CharacterId = characterId;
         LocationHint = locationHint.Trim();
         ActionHint = actionHint.Trim();

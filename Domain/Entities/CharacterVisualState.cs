@@ -47,8 +47,8 @@ public sealed class CharacterVisualState
         int? validUntilRevision = null,
         float confidence = 1.0f,
         uint version = 1,
-        Guid? id = null,
-        DateTime? createdAt = null)
+        Guid id = default,
+        DateTime createdAt = default)
     {
         if (characterId == Guid.Empty)
             throw new ArgumentException("CharacterId cannot be empty.", nameof(characterId));
@@ -62,7 +62,7 @@ public sealed class CharacterVisualState
         if (confidence < 0.0f || confidence > 1.0f)
             throw new ArgumentOutOfRangeException(nameof(confidence), "Confidence must be between 0.0 and 1.0.");
 
-        Id = id ?? Guid.CreateVersion7();
+        Id = id != Guid.Empty ? id : Guid.CreateVersion7();
         CharacterId = characterId;
         Location = location.Trim();
         SceneRevision = sceneRevision;
@@ -81,7 +81,7 @@ public sealed class CharacterVisualState
         ValidUntilRevision = validUntilRevision;
         Confidence = confidence;
         Version = version;
-        CreatedAt = createdAt ?? DateTime.UtcNow;
+        CreatedAt = createdAt != default ? createdAt : DateTime.UtcNow;
     }
 
     public void EvolveOutfit(string newOutfit, Guid turnId, int revision)

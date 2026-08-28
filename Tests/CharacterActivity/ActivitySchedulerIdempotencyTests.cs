@@ -2,6 +2,7 @@
 using Domain.Entities;
 using Infrastructure.BackgroundJobs;
 using Infrastructure.Persistence;
+using Infrastructure.Services.Scene;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -56,8 +57,9 @@ public sealed class ActivitySchedulerIdempotencyTests : IDisposable
         // Run 1
         using (var db = new ProjectDbContext(_options))
         {
+            var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
-                db, decisionService, fakePipeline, NullLogger<CharacterActivityScheduler>.Instance);
+                db, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
 
             var processed = await scheduler.ExecuteCycleAsync(currentTime: testTime);
             Assert.Equal(1, processed);
@@ -66,8 +68,9 @@ public sealed class ActivitySchedulerIdempotencyTests : IDisposable
         // Run 2 (Same time bucket)
         using (var db = new ProjectDbContext(_options))
         {
+            var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
-                db, decisionService, fakePipeline, NullLogger<CharacterActivityScheduler>.Instance);
+                db, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
 
             var processed = await scheduler.ExecuteCycleAsync(currentTime: testTime);
             Assert.Equal(0, processed); // Already processed for this time bucket
