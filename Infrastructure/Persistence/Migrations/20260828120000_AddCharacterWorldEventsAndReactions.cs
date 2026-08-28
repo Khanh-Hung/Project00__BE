@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -113,11 +113,20 @@ namespace Project.Infrastructure.Persistence.Migrations
                 name: "IX_CharacterWorldEventReactions_ExecutionId",
                 table: "CharacterWorldEventReactions",
                 column: "ExecutionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SceneSpecifications_CharacterId_SceneRevision",
+                table: "SceneSpecifications",
+                columns: new[] { "CharacterId", "SceneRevision" });
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_SceneSpecifications_CharacterId_SceneRevision",
+                table: "SceneSpecifications");
+
             migrationBuilder.DropTable(name: "CharacterWorldEventReactions");
             migrationBuilder.DropTable(name: "CharacterWorldEvents");
         }

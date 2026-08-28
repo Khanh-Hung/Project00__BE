@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Reactions;
@@ -67,5 +67,38 @@ public sealed class PostgresWorldEventConstraintTests : IDisposable
             // Invariant verification: IsUniqueConstraintViolation identifies constraint correctly
             Assert.True(CharacterReactionExecutionService.IsUniqueConstraintViolation(ex));
         }
+    }
+
+    [Fact]
+    public void SceneSpecifications_HasCompositeIndexOn_CharacterId_And_SceneRevision()
+    {
+        using var db = new ProjectDbContext(_options);
+        var entityType = db.Model.FindEntityType(typeof(SceneSpecification));
+        Assert.NotNull(entityType);
+
+        var indexes = entityType.GetIndexes();
+        var compositeIndex = indexes.FirstOrDefault(idx =>
+            idx.Properties.Count == 2 &&
+            idx.Properties.Any(p => p.Name == "CharacterId") &&
+            idx.Properties.Any(p => p.Name == "SceneRevision"));
+
+        Assert.NotNull(compositeIndex);
+    }
+
+    [Fact]
+    public void CharacterWorldEventReactions_HasUniqueIndexOn_WorldEventId_And_CharacterId()
+    {
+        using var db = new ProjectDbContext(_options);
+        var entityType = db.Model.FindEntityType(typeof(CharacterWorldEventReaction));
+        Assert.NotNull(entityType);
+
+        var indexes = entityType.GetIndexes();
+        var uniqueIndex = indexes.FirstOrDefault(idx =>
+            idx.IsUnique &&
+            idx.Properties.Count == 2 &&
+            idx.Properties.Any(p => p.Name == "WorldEventId") &&
+            idx.Properties.Any(p => p.Name == "CharacterId"));
+
+        Assert.NotNull(uniqueIndex);
     }
 }
