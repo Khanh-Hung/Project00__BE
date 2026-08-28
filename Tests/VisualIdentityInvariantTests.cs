@@ -1073,10 +1073,14 @@ public sealed class VisualIdentityInvariantTests
         var configRoot = new ConfigurationBuilder().Add(configSource).Build();
 
         var profileProvider = new VisualGenerationProfileProvider(configRoot);
+        var db1 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var uow1 = new UnitOfWork(db1);
+        var pipeline1 = SceneCompositionTestHelper.CreatePipeline(db1);
         var resolver = new VisualStateResolver(
-            unitOfWork: null!,
+            unitOfWork: uow1,
             sceneStateTracker: null,
             profileProvider: profileProvider,
+            sceneCompositionPipeline: pipeline1,
             logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<VisualStateResolver>.Instance
         );
 
@@ -1118,10 +1122,14 @@ public sealed class VisualIdentityInvariantTests
         };
         var newConfigRoot = new ConfigurationBuilder().AddInMemoryCollection(newConfigDict).Build();
         var newProfileProvider = new VisualGenerationProfileProvider(newConfigRoot);
+        var db2 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var uow2 = new UnitOfWork(db2);
+        var pipeline2 = SceneCompositionTestHelper.CreatePipeline(db2);
         var newResolver = new VisualStateResolver(
-            unitOfWork: null!,
+            unitOfWork: uow2,
             sceneStateTracker: null,
             profileProvider: newProfileProvider,
+            sceneCompositionPipeline: pipeline2,
             logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<VisualStateResolver>.Instance
         );
 
@@ -1158,10 +1166,14 @@ public sealed class VisualIdentityInvariantTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
 
         var profileProvider = new VisualGenerationProfileProvider(configuration);
+        var db3 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var uow3 = new UnitOfWork(db3);
+        var pipeline3 = SceneCompositionTestHelper.CreatePipeline(db3);
         var resolver = new VisualStateResolver(
-            unitOfWork: null!,
+            unitOfWork: uow3,
             sceneStateTracker: null,
             profileProvider: profileProvider,
+            sceneCompositionPipeline: pipeline3,
             logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<VisualStateResolver>.Instance
         );
 

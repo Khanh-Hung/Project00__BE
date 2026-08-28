@@ -21,11 +21,11 @@ public sealed class SceneCompositionContextFactory : ISceneCompositionContextFac
         IPreviousSceneReader previousSceneReader,
         ILogger<SceneCompositionContextFactory> logger)
     {
-        _profileReader = profileReader;
-        _canonicalReader = canonicalReader;
-        _memoryReader = memoryReader;
-        _previousSceneReader = previousSceneReader;
-        _logger = logger;
+        _profileReader = profileReader ?? throw new ArgumentNullException(nameof(profileReader));
+        _canonicalReader = canonicalReader ?? throw new ArgumentNullException(nameof(canonicalReader));
+        _memoryReader = memoryReader ?? throw new ArgumentNullException(nameof(memoryReader));
+        _previousSceneReader = previousSceneReader ?? throw new ArgumentNullException(nameof(previousSceneReader));
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SceneCompositionContextFactory>.Instance;
     }
 
     public async Task<SceneCompositionContext> CreateContextAsync(
@@ -36,21 +36,14 @@ public sealed class SceneCompositionContextFactory : ISceneCompositionContextFac
         string? locationContext = null,
         CancellationToken ct = default)
     {
-        var profileTask = _profileReader.GetProfileByCharacterIdAsync(characterId, ct);
-        var canonicalTask = _canonicalReader.GetActiveCanonicalReferenceAsync(characterId, ct);
-        var memoriesTask = _memoryReader.GetRelevantMemoriesAsync(characterId, locationContext, maxResults: 3, ct);
-        var latestMemoryTask = _memoryReader.GetLatestMemoryAsync(characterId, ct);
-        var prevSceneTask = sessionId.HasValue
-            ? _previousSceneReader.GetLatestSceneBySessionAsync(sessionId.Value, ct)
-            : Task.FromResult<SceneSpecification?>(null);
-
-        await Task.WhenAll(profileTask, canonicalTask, memoriesTask, latestMemoryTask, prevSceneTask);
-
-        var profile = await profileTask;
-        var canonical = await canonicalTask;
-        var memories = await memoriesTask;
-        var predecessorMemory = await latestMemoryTask;
-        var previousScene = await prevSceneTask;
+        // Execute sequential queries to preserve DbContext thread-safety under shared scoped lifetimes
+        var profile = await _profileReader.GetProfileByCharacterIdAsync(characterId, ct);
+        var canonical = await _canonicalReader.GetActiveCanonicalReferenceAsync(characterId, ct);
+        var memories = await _memoryReader.GetRelevantMemoriesAsync(characterId, locationContext, maxResults: 3, ct);
+        var predecessorMemory = await _memoryReader.GetLatestMemoryAsync(characterId, ct);
+        var previousScene = sessionId.HasValue
+            ? await _previousSceneReader.GetLatestSceneBySessionAsync(sessionId.Value, ct)
+            : null;
 
         var transitionType = SceneContinuityPolicy.EvaluateTransition(
             previousLocation: previousScene?.Location,
@@ -61,7 +54,7 @@ public sealed class SceneCompositionContextFactory : ISceneCompositionContextFac
 
         _logger.LogInformation(
             "[SceneCompositionContextFactory] Created context for CharacterId={CharacterId}, SessionId={SessionId}, TurnId={TurnId}, Canonical={HasCanonical}, MemoriesCount={MemoriesCount}",
-            characterId, sessionId, turnId, canonical != null, memories.Count);
+            characterId, sessionId, turnId, canonical != null, memories?.Count ?? 0);
 
         return new SceneCompositionContext(
             CharacterId: characterId,
@@ -72,7 +65,7 @@ public sealed class SceneCompositionContextFactory : ISceneCompositionContextFac
             PreviousAcceptedVisualMemory: predecessorMemory,
             CharacterVisualProfile: profile,
             CanonicalVisualReference: canonical,
-            RelevantVisualMemories: memories,
+            RelevantVisualMemories: memories ?? (IReadOnlyList<CharacterVisualMemory>)Array.Empty<CharacterVisualMemory>(),
             TransitionType: transitionType
         );
     }
