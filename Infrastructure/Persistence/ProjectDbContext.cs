@@ -21,7 +21,6 @@ public class ProjectDbContext : DbContext
     public DbSet<Character> Characters { get; set; }
     public DbSet<ChatSession> ChatSessions { get; set; }
     public DbSet<ChatMessage> ChatMessages { get; set; }
-    public DbSet<User> Users { get; set; }
     public DbSet<CharacterMemory> CharacterMemories { get; set; }
     public DbSet<CharacterRelationship> CharacterRelationships { get; set; }
     public DbSet<CharacterTurn> CharacterTurns { get; set; }
@@ -98,7 +97,8 @@ public class ProjectDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
+        modelBuilder.Ignore<User>(); // Managed exclusively by IdentityDbContext
+        modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly(), type => type != typeof(Configurations.UserConfiguration));
 
         // Provider-aware index filter adjustment: PostgreSQL uses boolean literals ("IsCanonical" = true), SQLite uses ("IsCanonical" = 1)
         var isSqlite = Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true;

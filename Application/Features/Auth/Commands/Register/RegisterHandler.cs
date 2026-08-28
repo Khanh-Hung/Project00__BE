@@ -1,4 +1,4 @@
-using Application.Abstractions.Data;
+﻿using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Application.Interfaces;
@@ -10,12 +10,12 @@ namespace Application.Features.Auth.Commands.Register;
 
 public sealed class RegisterHandler : IRequestHandler<RegisterCommand, Result<AuthResponse>>
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
 
     public RegisterHandler(
-        IUnitOfWork unitOfWork,
+        IIdentityUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator)
     {

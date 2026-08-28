@@ -1,4 +1,4 @@
-using Application.Abstractions.Data;
+﻿using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Domain.Entities;
@@ -9,9 +9,9 @@ namespace Application.Features.Auth.Queries.GetCurrentUser;
 
 public sealed class GetCurrentUserHandler : IRequestHandler<GetCurrentUserQuery, Result<UserDto>>
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _unitOfWork;
 
-    public GetCurrentUserHandler(IUnitOfWork unitOfWork)
+    public GetCurrentUserHandler(IIdentityUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
     }

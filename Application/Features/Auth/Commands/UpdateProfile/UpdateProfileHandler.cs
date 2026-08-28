@@ -1,4 +1,4 @@
-using Application.Abstractions.Data;
+﻿using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
 using Domain.Entities;
@@ -9,9 +9,9 @@ namespace Application.Features.Auth.Commands.UpdateProfile;
 
 public sealed class UpdateProfileHandler : IRequestHandler<UpdateProfileCommand, Result<UserDto>>
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _unitOfWork;
 
-    public UpdateProfileHandler(IUnitOfWork unitOfWork)
+    public UpdateProfileHandler(IIdentityUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
     }

@@ -15,8 +15,21 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        // 1. Add EF Core DbContext with PostgreSQL
         var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var identityConnectionString = configuration.GetConnectionString("IdentityConnection");
+
+        services.AddDbContext<IdentityDbContext>(options =>
+        {
+            if (!string.IsNullOrWhiteSpace(identityConnectionString))
+            {
+                options.UseNpgsql(identityConnectionString);
+            }
+            else
+            {
+                options.UseInMemoryDatabase("IdentityDb");
+            }
+            options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+        });
 
         services.AddDbContext<ProjectDbContext>(options =>
         {
@@ -35,6 +48,7 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddScoped<Application.Abstractions.Auth.ICurrentUserProvider, CurrentUserProvider>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<Application.Abstractions.Data.IIdentityUnitOfWork, IdentityUnitOfWork>();
 
         // 3. Add Auth Services (Hasher & JWT) and DateTime Provider
         services.AddSingleton<Domain.Common.DateTimes.IDateTimeProvider, Domain.Common.DateTimes.SystemDateTimeProvider>();

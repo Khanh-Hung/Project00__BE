@@ -1,6 +1,7 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using Domain.Common;
 using Domain.Common.DateTimes;
+using Domain.Enums;
 
 namespace Domain.Entities;
 
@@ -11,6 +12,8 @@ public class User : BaseEntity
     public string UserName { get; private set; } = string.Empty;
     public string DisplayName { get; private set; } = string.Empty;
     public string AvatarUrl { get; private set; } = string.Empty;
+    public UserRole Role { get; private set; }
+    public bool IsEmailVerified { get; private set; }
     public DateTime? LastUserNameChangedAt { get; private set; }
 
     private User() { } // EF Core
@@ -20,13 +23,17 @@ public class User : BaseEntity
         string passwordHash,
         string userName,
         string? displayName = null,
-        string? avatarUrl = null)
+        string? avatarUrl = null,
+        UserRole role = UserRole.User,
+        bool isEmailVerified = false)
     {
         Email = email.Trim().ToLowerInvariant();
         PasswordHash = passwordHash;
         UserName = NormalizeUserName(userName);
         DisplayName = displayName?.Trim() ?? string.Empty;
         AvatarUrl = avatarUrl?.Trim() ?? string.Empty;
+        Role = role;
+        IsEmailVerified = isEmailVerified;
     }
 
     public static string NormalizeUserName(string raw)
@@ -42,6 +49,18 @@ public class User : BaseEntity
     {
         DisplayName = displayName?.Trim() ?? string.Empty;
         AvatarUrl = avatarUrl?.Trim() ?? string.Empty;
+        Touch();
+    }
+
+    public void VerifyEmail()
+    {
+        IsEmailVerified = true;
+        Touch();
+    }
+
+    public void UpdateRole(UserRole newRole)
+    {
+        Role = newRole;
         Touch();
     }
 

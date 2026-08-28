@@ -1,4 +1,4 @@
-using Domain.Entities;
+﻿using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -14,5 +14,9 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.HasIndex(u => u.Email).IsUnique();
         builder.Property(u => u.UserName).IsRequired().HasMaxLength(128);
         builder.Property(u => u.PasswordHash).IsRequired();
+        builder.Property(u => u.DisplayName).HasMaxLength(100);
+        builder.Property(u => u.AvatarUrl).HasMaxLength(500);
+        builder.Property(u => u.Role).HasConversion<string>().HasMaxLength(50).HasDefaultValue(Domain.Enums.UserRole.User);
+        builder.Property(u => u.IsEmailVerified).IsRequired().HasDefaultValue(false);
     }
 }

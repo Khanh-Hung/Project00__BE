@@ -1,16 +1,15 @@
 ﻿using System.Linq.Expressions;
 using Application.Abstractions.Data;
 using Domain.Common;
-using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Persistence.Repositories;
 
-public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEntity : BaseEntity
+public class IdentityGenericRepository<TEntity> : IGenericRepository<TEntity> where TEntity : BaseEntity
 {
-    protected readonly ProjectDbContext DbContext;
+    protected readonly IdentityDbContext DbContext;
 
-    public GenericRepository(ProjectDbContext dbContext)
+    public IdentityGenericRepository(IdentityDbContext dbContext)
     {
         DbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     }
