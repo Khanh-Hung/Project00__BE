@@ -198,7 +198,13 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
             {
                 var latestVisualState = await _visualStateReader.GetLatestByCharacterIdAsync(character.Id, ct);
                 var currentVisualState = latestVisualState?.CharacterState ?? request.CurrentVisualState;
-                int sceneRevision = latestVisualState != null ? latestVisualState.SceneRevision : request.SceneRevision;
+                int baseRevision = latestVisualState != null ? latestVisualState.SceneRevision : request.SceneRevision;
+
+                var maxExistingRevision = await _dbContext.SceneSpecifications
+                    .Where(s => s.CharacterId == character.Id)
+                    .Select(s => (int?)s.SceneRevision)
+                    .MaxAsync(ct) ?? 0;
+                int sceneRevision = Math.Max(baseRevision, maxExistingRevision + 1);
 
                 var candidate = new CharacterActivityCandidate(
                     ActivityType: reaction.ActivityIntentType ?? CharacterActivityType.Socializing,

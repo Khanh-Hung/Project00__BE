@@ -79,19 +79,33 @@ public static class CharacterReactionPolicy
                     : (worldEvent.EventType == CharacterWorldEventType.RelationshipChanged
                         ? ReactionPriority.RelationshipAffecting
                         : ReactionPriority.SocialEvent);
-                moodDelta = +20;
-                stressDelta = -15;
-                confidenceDelta = +15;
-                socialNeedDelta = -20;
-                relationshipDelta = +5;
-                newMood = CharacterMood.Happy;
-                moodIntensityDelta = +15;
-                reactionReason = "Warmed by positive social engagement and affirmation.";
-                shouldTriggerVisual = true;
-                visualPriority = ActivityPriority.Normal;
-                actionHint = "smiling warmly in response";
-                poseHint = "open and welcoming posture";
-                envHint = "bright and pleasant ambience";
+
+                if (perception.EmotionalValence == EmotionalValence.Positive)
+                {
+                    moodDelta = +20;
+                    stressDelta = -15;
+                    confidenceDelta = +15;
+                    socialNeedDelta = -20;
+                    relationshipDelta = +5;
+                    newMood = CharacterMood.Happy;
+                    moodIntensityDelta = +15;
+                    reactionReason = "Warmed by positive social engagement and affirmation.";
+                    shouldTriggerVisual = true;
+                    visualPriority = ActivityPriority.Normal;
+                    actionHint = "smiling warmly in response";
+                    poseHint = "open and welcoming posture";
+                    envHint = "bright and pleasant ambience";
+                }
+                else
+                {
+                    // Casual neutral communication
+                    moodDelta = +5;
+                    stressDelta = -5;
+                    confidenceDelta = +5;
+                    socialNeedDelta = -10;
+                    relationshipDelta = +1;
+                    reactionReason = "Participated in casual conversation.";
+                }
                 break;
 
             case PerceptionType.NegativeSocialFeedback:
@@ -153,9 +167,15 @@ public static class CharacterReactionPolicy
                 break;
         }
 
-        // Memory candidate generation (significance filtering: only High/Critical salience or strong valence)
+        // Memory candidate generation with strict anti-spam filtering
         MemoryCandidate? memoryCandidate = null;
-        if (perception.Salience >= EventSalience.High || perception.EmotionalValence != EmotionalValence.Neutral && perception.Relevance >= 0.75f)
+        bool isRoutineOrAmbient = perception.PerceptionType == PerceptionType.EnvironmentalChange ||
+                                 perception.PerceptionType == PerceptionType.SystemNotice ||
+                                 perception.PerceptionType == PerceptionType.RoutineActivityOutcome;
+
+        if (!isRoutineOrAmbient &&
+            (perception.Salience >= EventSalience.High ||
+             (perception.EmotionalValence != EmotionalValence.Neutral && perception.Relevance >= 0.75f)))
         {
             int importance = perception.Salience switch
             {
@@ -188,9 +208,9 @@ public static class CharacterReactionPolicy
             );
         }
 
-        // Goal impact generation
+        // Goal impact generation (strictly positive meaningful interactions or milestone events)
         GoalImpactCandidate? goalImpact = null;
-        if (goals != null && goals.Count > 0 && perception.EmotionalValence == EmotionalValence.Positive)
+        if (goals != null && goals.Count > 0 && perception.EmotionalValence == EmotionalValence.Positive && !isRoutineOrAmbient)
         {
             var activeGoal = goals.FirstOrDefault(g => g.Status == CharacterGoalStatus.Active);
             if (activeGoal != null)

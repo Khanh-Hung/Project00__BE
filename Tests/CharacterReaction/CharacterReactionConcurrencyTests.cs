@@ -83,18 +83,32 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
     }
 
     [Fact]
-    public async Task TenConcurrentWorkers_ProcessingSameWorldEvent_AllowsExactlyOneWinnerAndNineSuppressed()
+    public async Task TenConcurrentWorkers_ProcessingSameWorldEvent_AllowsExactlyOneWinnerAndNineSuppressed_WithZeroDuplicateSideEffects()
     {
         var charId = Guid.NewGuid();
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
-        var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Your new artwork is wonderful!");
+        var goal = new CharacterGoal(charId, "Master Landscape Art", CharacterGoalType.SkillDevelopment, 100);
+        var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Your new artwork exhibition is magnificent!");
 
         using (var db = new ProjectDbContext(_options))
         {
             await db.Characters.AddAsync(character);
+            await db.CharacterGoals.AddAsync(goal);
             await db.CharacterWorldEvents.AddAsync(worldEvent);
             await db.SaveChangesAsync();
         }
+
+        var goalSnapshot = new GoalSnapshot(
+            GoalId: goal.Id,
+            CharacterId: charId,
+            Title: goal.Title,
+            GoalType: goal.GoalType,
+            Priority: goal.Priority,
+            Status: goal.Status,
+            Progress: goal.Progress,
+            CurrentValue: goal.CurrentValue,
+            TargetValue: goal.TargetValue
+        );
 
         var sharedExecutionId = Guid.NewGuid();
         var request = new ReactionExecutionRequest(
@@ -102,7 +116,9 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
             Character: character,
             ExecutionId: sharedExecutionId,
             CurrentTime: DateTime.UtcNow,
-            CurrentState: CharacterStateSnapshot.CreateDefault()
+            CurrentState: CharacterStateSnapshot.CreateDefault(),
+            CurrentVisualState: new CharacterVisualState(charId, "Art Studio", sceneRevision: 1),
+            CurrentGoals: new[] { goalSnapshot }
         );
 
         var tasks = Enumerable.Range(1, 10).Select(async _ =>
@@ -125,7 +141,11 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
         Assert.Equal(1, winners);
         Assert.Equal(9, suppressed);
 
-        // Assert Database Invariants: Exactly 1 row in CharacterWorldEventReactions and 1 Memory
+        // Assert Strict Database Invariants:
+        // 1. Exactly 1 row in CharacterWorldEventReactions
+        // 2. Exactly 1 row in CharacterMemories
+        // 3. Exactly 1 Goal contribution applied (CurrentValue > 0, not multiplied by 10)
+        // 4. Exactly 1 SceneSpecification generated
         using (var db = new ProjectDbContext(_options))
         {
             var count = await db.CharacterWorldEventReactions.CountAsync(r => r.CharacterId == charId && r.WorldEventId == worldEvent.Id);
@@ -133,6 +153,12 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
 
             var memCount = await db.CharacterMemories.CountAsync(m => m.CharacterId == charId);
             Assert.Equal(1, memCount);
+
+            var dbGoal = await db.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
+            Assert.Equal(2.0, dbGoal.CurrentValue); // 2.0 single contribution, NOT 20.0
+
+            var specCount = await db.SceneSpecifications.CountAsync(s => s.CharacterId == charId);
+            Assert.Equal(1, specCount);
         }
     }
 }

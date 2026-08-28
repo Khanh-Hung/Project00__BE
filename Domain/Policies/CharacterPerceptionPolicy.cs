@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
 
@@ -10,6 +10,28 @@ namespace Domain.Policies;
 /// </summary>
 public static class CharacterPerceptionPolicy
 {
+    private static readonly string[] UrgentKeywords = new[]
+    {
+        "danger", "warning", "help", "urgent", "attack", "emergency", "hazard", "threat",
+        "khẩn cấp", "nguy hiểm", "cứu", "cháy", "bão", "tai nạn"
+    };
+
+    private static readonly string[] NegativeKeywords = new[]
+    {
+        "hate", "bad", "angry", "reject", "ugly", "disappoint", "useless", "fail", "stupid",
+        "fool", "annoy", "worst", "liar", "ghét", "thất vọng", "tệ", "xấu", "vô dụng",
+        "lừa dối", "chán", "bỏ rơi", "cút", "ngu"
+    };
+
+    private static readonly string[] PositiveKeywords = new[]
+    {
+        "love", "great", "good", "awesome", "beautiful", "thanks", "thank you", "proud",
+        "amazing", "wonderful", "friend", "success", "successful", "magnificent", "excellent",
+        "perfect", "brilliant", "splendid", "superb", "congratulations", "congrats", "joy",
+        "happy", "khen", "yêu", "thích", "tốt", "đẹp", "tuyệt", "cảm ơn", "tự hào",
+        "quý mến", "thành công", "chúc mừng", "xuất sắc"
+    };
+
     public static CharacterPerception EvaluatePerception(
         CharacterWorldEvent worldEvent,
         CharacterStateSnapshot state,
@@ -32,49 +54,25 @@ public static class CharacterPerceptionPolicy
         switch (worldEvent.EventType)
         {
             case CharacterWorldEventType.UserMessage:
-                perceptionType = PerceptionType.PositiveSocialFeedback;
-                if (!string.IsNullOrWhiteSpace(worldEvent.PayloadJson))
-                {
-                    var payloadLower = worldEvent.PayloadJson.ToLowerInvariant();
-                    if (payloadLower.Contains("danger") || payloadLower.Contains("warning") || payloadLower.Contains("help") || payloadLower.Contains("urgent"))
-                    {
-                        perceptionType = PerceptionType.UrgentWarning;
-                        salience = EventSalience.Critical;
-                        valence = EmotionalValence.Negative;
-                        relevance = 1.0f;
-                        isRelevant = true;
-                        reason = "Direct urgent user message demanding immediate attention.";
-                        break;
-                    }
-                    if (payloadLower.Contains("bad") || payloadLower.Contains("angry") || payloadLower.Contains("hate") || payloadLower.Contains("reject") || payloadLower.Contains("ugly"))
-                    {
-                        perceptionType = PerceptionType.NegativeSocialFeedback;
-                        salience = EventSalience.High;
-                        valence = EmotionalValence.Negative;
-                        relevance = 0.95f;
-                        isRelevant = true;
-                        reason = "Direct critical user feedback perceived.";
-                        break;
-                    }
-                }
-
-                salience = isSleeping ? EventSalience.High : EventSalience.Critical;
-                valence = EmotionalValence.Positive;
-                relevance = 1.0f;
-                isRelevant = true;
-                reason = "Direct user interaction received by character.";
+                (perceptionType, salience, valence, relevance, isRelevant, reason) = ClassifyUserMessage(worldEvent.PayloadJson, isSleeping);
                 break;
 
             case CharacterWorldEventType.RelationshipChanged:
-                salience = EventSalience.High;
+                salience = isSleeping ? EventSalience.Medium : EventSalience.High;
                 relevance = 0.9f;
                 isRelevant = true;
                 perceptionType = PerceptionType.PositiveSocialFeedback;
                 valence = EmotionalValence.Positive;
-                if (!string.IsNullOrWhiteSpace(worldEvent.PayloadJson) && worldEvent.PayloadJson.Contains("decay", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(worldEvent.PayloadJson))
                 {
-                    perceptionType = PerceptionType.NegativeSocialFeedback;
-                    valence = EmotionalValence.Negative;
+                    var payloadLower = worldEvent.PayloadJson.ToLowerInvariant();
+                    if (payloadLower.Contains("decay") || payloadLower.Contains("downgrade") ||
+                        payloadLower.Contains("decrease") || payloadLower.Contains("break") ||
+                        payloadLower.Contains("giảm") || payloadLower.Contains("rạn nứt"))
+                    {
+                        perceptionType = PerceptionType.NegativeSocialFeedback;
+                        valence = EmotionalValence.Negative;
+                    }
                 }
                 reason = "Interpersonal relationship shift perceived in social circle.";
                 break;
@@ -97,39 +95,50 @@ public static class CharacterPerceptionPolicy
                 valence = EmotionalValence.Positive;
                 relevance = 0.7f;
                 isRelevant = !isSleeping;
-                reason = "Scheduled daily activity completed successfully.";
+                reason = isSleeping ? "Activity completion ignored during sleep." : "Scheduled daily activity completed successfully.";
                 break;
 
             case CharacterWorldEventType.SocialInteraction:
-                perceptionType = PerceptionType.PositiveSocialFeedback;
-                salience = EventSalience.High;
-                valence = EmotionalValence.Positive;
-                relevance = 0.85f;
-                isRelevant = true;
-                reason = "Social encounter occurred in shared environment.";
+                if (!string.IsNullOrWhiteSpace(worldEvent.PayloadJson) && ContainsAny(worldEvent.PayloadJson, NegativeKeywords))
+                {
+                    perceptionType = PerceptionType.NegativeSocialFeedback;
+                    salience = isSleeping ? EventSalience.Medium : EventSalience.High;
+                    valence = EmotionalValence.Negative;
+                    relevance = 0.85f;
+                    isRelevant = !isSleeping;
+                    reason = "Unfavorable social dispute occurred.";
+                }
+                else
+                {
+                    perceptionType = PerceptionType.PositiveSocialFeedback;
+                    salience = isSleeping ? EventSalience.Medium : EventSalience.High;
+                    valence = EmotionalValence.Positive;
+                    relevance = 0.85f;
+                    isRelevant = !isSleeping;
+                    reason = "Social encounter occurred in shared environment.";
+                }
                 break;
 
             case CharacterWorldEventType.ExternalWorldEvent:
                 if (!string.IsNullOrWhiteSpace(worldEvent.PayloadJson) &&
-                    (worldEvent.PayloadJson.Contains("disaster", StringComparison.OrdinalIgnoreCase) ||
-                     worldEvent.PayloadJson.Contains("danger", StringComparison.OrdinalIgnoreCase) ||
-                     worldEvent.PayloadJson.Contains("attack", StringComparison.OrdinalIgnoreCase)))
+                    (ContainsAny(worldEvent.PayloadJson, UrgentKeywords) ||
+                     worldEvent.PayloadJson.Contains("disaster", StringComparison.OrdinalIgnoreCase)))
                 {
                     perceptionType = PerceptionType.UrgentWarning;
                     salience = EventSalience.Critical;
                     valence = EmotionalValence.Negative;
                     relevance = 1.0f;
                     isRelevant = true;
-                    reason = "Critical external world hazard perceived.";
+                    reason = "Critical external world hazard perceived (wakes character if asleep).";
                 }
                 else
                 {
                     perceptionType = PerceptionType.EnvironmentalChange;
                     salience = isSleeping ? EventSalience.Low : EventSalience.Medium;
                     valence = EmotionalValence.Neutral;
-                    relevance = isSleeping ? 0.1f : 0.5f;
+                    relevance = isSleeping ? 0.0f : 0.5f;
                     isRelevant = !isSleeping;
-                    reason = "Atmospheric or environmental shift noticed in surroundings.";
+                    reason = isSleeping ? "Environmental shift unnoticed during deep rest." : "Atmospheric or environmental shift noticed in surroundings.";
                 }
                 break;
 
@@ -163,5 +172,84 @@ public static class CharacterPerceptionPolicy
             IsRelevant: isRelevant,
             Reason: reason
         );
+    }
+
+    private static (PerceptionType type, EventSalience salience, EmotionalValence valence, float relevance, bool isRelevant, string reason) ClassifyUserMessage(
+        string? payload,
+        bool isSleeping)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return (
+                PerceptionType.PositiveSocialFeedback,
+                isSleeping ? EventSalience.Low : EventSalience.Medium,
+                EmotionalValence.Neutral,
+                isSleeping ? 0.0f : 0.5f,
+                !isSleeping,
+                isSleeping ? "Empty message ignored while sleeping." : "Empty or neutral communication received."
+            );
+        }
+
+        // 1. Check Urgent/Hazard cues
+        if (ContainsAny(payload, UrgentKeywords))
+        {
+            return (
+                PerceptionType.UrgentWarning,
+                EventSalience.Critical,
+                EmotionalValence.Negative,
+                1.0f,
+                true,
+                "Direct urgent user message demanding immediate attention (wakes sleeping character)."
+            );
+        }
+
+        // 2. Check Negative/Criticism/Insult cues
+        if (ContainsAny(payload, NegativeKeywords))
+        {
+            return (
+                PerceptionType.NegativeSocialFeedback,
+                isSleeping ? EventSalience.High : EventSalience.Critical,
+                EmotionalValence.Negative,
+                0.95f,
+                true,
+                "Direct critical or hurtful user feedback perceived."
+            );
+        }
+
+        // 3. Check Positive/Praise/Affection cues
+        if (ContainsAny(payload, PositiveKeywords))
+        {
+            return (
+                PerceptionType.PositiveSocialFeedback,
+                isSleeping ? EventSalience.High : EventSalience.Critical,
+                EmotionalValence.Positive,
+                1.0f,
+                true,
+                "Warm positive user interaction received by character."
+            );
+        }
+
+        // 4. Neutral / casual chatter
+        return (
+            PerceptionType.PositiveSocialFeedback,
+            isSleeping ? EventSalience.Low : EventSalience.Medium,
+            EmotionalValence.Neutral,
+            isSleeping ? 0.0f : 0.8f,
+            !isSleeping,
+            isSleeping ? "Casual conversation unnoticed during sleep." : "Direct conversational user interaction."
+        );
+    }
+
+    private static bool ContainsAny(string text, string[] keywords)
+    {
+        var lower = text.ToLowerInvariant();
+        for (int i = 0; i < keywords.Length; i++)
+        {
+            if (lower.Contains(keywords[i]))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }
