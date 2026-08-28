@@ -212,6 +212,9 @@ public static class DependencyInjection
         services.AddScoped<IAutonomousDecisionService, Application.Services.AutonomousDecisionService>();
         services.AddScoped<IActivityExecutionService, Infrastructure.Services.Autonomous.ActivityExecutionService>();
 
+        // PR #36: Character World Event & Reaction System
+        services.AddScoped<ICharacterReactionExecutionService, Infrastructure.Services.Reactions.CharacterReactionExecutionService>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
