@@ -21,11 +21,13 @@ public sealed class VisualMemoryReader : IVisualMemoryReader
         int maxResults = 3,
         CancellationToken ct = default)
     {
-        // Enforce Artifact Lifecycle Invariant: Only memories linked to usable artifacts (Current or Historical) are eligible.
-        // Quarantined (3) and Deleted (4) artifacts are strictly excluded from visual conditioning context.
+        // Enforce Artifact Lifecycle & Temporal Validity Invariant:
+        // 1. Only memories linked to usable artifacts (Current or Historical) are eligible. Quarantined and Deleted are excluded.
+        // 2. Only active valid memories (ValidUntilTurnId == null) are eligible; superseded/invalidated memories are strictly excluded.
         var query = from memory in _dbContext.CharacterVisualMemories.AsNoTracking()
                     join img in _dbContext.SceneImages.AsNoTracking() on memory.ArtifactId equals img.Id
                     where memory.CharacterId == characterId
+                          && memory.ValidUntilTurnId == null
                           && img.LifecycleStatus != ArtifactLifecycleStatus.Quarantined
                           && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted
                     select memory;
@@ -53,6 +55,7 @@ public sealed class VisualMemoryReader : IVisualMemoryReader
         return await (from memory in _dbContext.CharacterVisualMemories.AsNoTracking()
                       join img in _dbContext.SceneImages.AsNoTracking() on memory.ArtifactId equals img.Id
                       where memory.CharacterId == characterId
+                            && memory.ValidUntilTurnId == null
                             && img.LifecycleStatus != ArtifactLifecycleStatus.Quarantined
                             && img.LifecycleStatus != ArtifactLifecycleStatus.Deleted
                       orderby memory.CreatedAt descending

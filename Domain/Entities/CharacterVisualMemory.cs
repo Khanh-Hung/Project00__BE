@@ -1,10 +1,10 @@
-using Domain.Common;
+﻿using Domain.Common;
 
 namespace Domain.Entities;
 
 /// <summary>
 /// Immutable visual evidence ledger capturing generated and validated images of a Character across scene revisions.
-/// Preserves historical lineage for visual memory and style continuity.
+/// Preserves historical lineage for visual memory, temporal validity, and style continuity.
 /// </summary>
 public sealed class CharacterVisualMemory : BaseEntity
 {
@@ -20,6 +20,11 @@ public sealed class CharacterVisualMemory : BaseEntity
     public float? IdentityScore { get; private set; }
     public float? FeatureScore { get; private set; }
 
+    public Guid? SourceTurnId { get; private set; }
+    public Guid? ValidFromTurnId { get; private set; }
+    public Guid? ValidUntilTurnId { get; private set; }
+    public float Confidence { get; private set; } = 1.0f;
+
     private CharacterVisualMemory() { } // EF Core
 
     public CharacterVisualMemory(
@@ -32,6 +37,10 @@ public sealed class CharacterVisualMemory : BaseEntity
         float? qualityScore = null,
         float? identityScore = null,
         float? featureScore = null,
+        Guid? sourceTurnId = null,
+        Guid? validFromTurnId = null,
+        Guid? validUntilTurnId = null,
+        float confidence = 1.0f,
         DateTime? now = null)
     {
         if (characterId == Guid.Empty)
@@ -55,6 +64,9 @@ public sealed class CharacterVisualMemory : BaseEntity
         if (featureScore.HasValue && (featureScore.Value < 0.0f || featureScore.Value > 1.0f))
             throw new ArgumentOutOfRangeException(nameof(featureScore), "FeatureScore must be between 0.0 and 1.0.");
 
+        if (confidence < 0.0f || confidence > 1.0f)
+            throw new ArgumentOutOfRangeException(nameof(confidence), "Confidence must be between 0.0 and 1.0.");
+
         Id = Guid.CreateVersion7();
         CharacterId = characterId;
         VisualProfileVersion = visualProfileVersion;
@@ -65,6 +77,22 @@ public sealed class CharacterVisualMemory : BaseEntity
         QualityScore = qualityScore;
         IdentityScore = identityScore;
         FeatureScore = featureScore;
+        SourceTurnId = sourceTurnId;
+        ValidFromTurnId = validFromTurnId ?? sourceTurnId;
+        ValidUntilTurnId = validUntilTurnId;
+        Confidence = confidence;
         CreatedAt = now ?? DateTime.UtcNow;
+    }
+
+    public void Invalidate(Guid supersededByTurnId)
+    {
+        ValidUntilTurnId = supersededByTurnId;
+        Touch();
+    }
+
+    public bool IsActiveForTurn(Guid? turnId)
+    {
+        if (ValidUntilTurnId.HasValue) return false;
+        return true;
     }
 }
