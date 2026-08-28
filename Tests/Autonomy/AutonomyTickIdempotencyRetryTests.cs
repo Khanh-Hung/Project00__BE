@@ -72,16 +72,17 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
             var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
             var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 db,
+                contextLoader,
                 decisionService,
                 activityExecService,
                 reactionService,
-                stateReader,
                 NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
             );
 
@@ -102,16 +103,17 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
             var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
             var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 db,
+                contextLoader,
                 decisionService,
                 activityExecService,
                 reactionService,
-                stateReader,
                 NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
             );
 
@@ -141,7 +143,7 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
             Assert.Equal(1, memCount);
 
             var dbGoal = await db.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
-            Assert.True(dbGoal.CurrentValue > 0);
+            Assert.Equal(32.0, dbGoal.CurrentValue); // Exact 32.0 invariant!
 
             var specCount = await db.SceneSpecifications.CountAsync(s => s.CharacterId == charId);
             Assert.Equal(1, specCount);

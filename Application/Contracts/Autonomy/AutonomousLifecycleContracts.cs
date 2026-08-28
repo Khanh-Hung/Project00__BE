@@ -1,6 +1,8 @@
 ﻿using Application.Contracts.Autonomous;
+using Application.Contracts.Goals;
 using Application.Contracts.Reactions;
 using Domain.Entities;
+using Domain.ValueObjects;
 
 namespace Application.Contracts.Autonomy;
 
@@ -14,6 +16,22 @@ public sealed record AutonomyTickRequest(
     DateTime CurrentTime,
     Guid? WorldEventId = null,
     string? CorrelationId = null
+);
+
+/// <summary>
+/// Loaded domain context required for perception, reaction, autonomous decision, and activity execution.
+/// </summary>
+public sealed record AutonomousCharacterContext(
+    Character Character,
+    CharacterVisualState? CurrentVisualState,
+    string CurrentLocation,
+    int SceneRevision,
+    CharacterStateSnapshot CurrentState,
+    IReadOnlyList<CharacterActivity> RecentActivities,
+    IReadOnlyList<CharacterVisualMemory> RecentVisualMemories,
+    IReadOnlyList<CharacterGoalSnapshot> GoalSnapshots,
+    IReadOnlyList<GoalSnapshot> GoalSnapshotsForReaction,
+    IReadOnlyList<string>? ActiveGoals
 );
 
 /// <summary>

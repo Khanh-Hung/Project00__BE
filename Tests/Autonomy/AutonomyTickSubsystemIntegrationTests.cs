@@ -60,16 +60,17 @@ public sealed class AutonomyTickSubsystemIntegrationTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService(); // Authoritative scene pipeline stub, no direct ComfyUI
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
             var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
             var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 db,
+                contextLoader,
                 decisionService,
                 activityExecService,
                 reactionService,
-                stateReader,
                 NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
             );
 
@@ -88,9 +89,9 @@ public sealed class AutonomyTickSubsystemIntegrationTests : IDisposable
             Assert.NotNull(result.ActivityResult);
             Assert.True(result.ActivityResult.Success);
 
-            // Verify Goal was progressed through GoalProgressService
+            // Verify Goal was progressed through GoalProgressService: 30.0 (Reaction) + 2.0 (Activity) = 32.0
             var dbGoal = await db.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
-            Assert.True(dbGoal.CurrentValue > 0);
+            Assert.Equal(32.0, dbGoal.CurrentValue); // Exact 32.0 contribution!
 
             // Verify SceneSpecification was persisted via ISceneCompositionPipelineService
             var spec = await db.SceneSpecifications.FirstOrDefaultAsync(s => s.CharacterId == charId);

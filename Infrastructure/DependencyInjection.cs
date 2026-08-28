@@ -216,6 +216,7 @@ public static class DependencyInjection
         services.AddScoped<ICharacterReactionExecutionService, Infrastructure.Services.Reactions.CharacterReactionExecutionService>();
 
         // PR #37: Autonomous Character Lifecycle Orchestrator
+        services.AddScoped<IAutonomousCharacterContextLoader, Infrastructure.Services.Autonomy.AutonomousCharacterContextLoader>();
         services.AddScoped<IAutonomousCharacterLifecycleOrchestrator, Infrastructure.Services.Autonomy.AutonomousCharacterLifecycleOrchestrator>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)

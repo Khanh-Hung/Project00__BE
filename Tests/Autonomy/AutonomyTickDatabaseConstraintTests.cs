@@ -40,15 +40,13 @@ public sealed class AutonomyTickDatabaseConstraintTests : IDisposable
         var tick1 = CharacterAutonomyTick.Create(
             characterId: charId,
             executionId: Guid.NewGuid(),
-            timeBucket: timeBucket,
-            status: AutonomyTickStatus.Running
+            timeBucket: timeBucket
         );
 
         var tick2 = CharacterAutonomyTick.Create(
             characterId: charId,
             executionId: Guid.NewGuid(),
-            timeBucket: timeBucket,
-            status: AutonomyTickStatus.Running
+            timeBucket: timeBucket
         );
 
         using (var db = new ProjectDbContext(_options))

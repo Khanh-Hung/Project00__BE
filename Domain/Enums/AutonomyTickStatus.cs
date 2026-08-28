@@ -5,8 +5,7 @@
 /// </summary>
 public enum AutonomyTickStatus
 {
-    Pending,
-    Running,
-    Completed,
-    Failed
+    Running = 1,
+    Completed = 2,
+    Failed = 3
 }

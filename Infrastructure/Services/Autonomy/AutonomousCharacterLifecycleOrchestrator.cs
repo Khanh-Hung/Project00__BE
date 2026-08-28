@@ -1,13 +1,10 @@
-using System.Text.Json;
-using Application.Contracts.Activities;
+﻿using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
 using Application.Contracts.Autonomy;
-using Application.Contracts.Goals;
 using Application.Contracts.Reactions;
 using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
-using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -17,30 +14,30 @@ namespace Infrastructure.Services.Autonomy;
 /// <summary>
 /// Authoritative, thin orchestrator coordinating the autonomous lifecycle tick of a character.
 /// Flow: Atomic Tick Claim -> Context Load -> World Event Reaction (if any) -> Autonomous Decision -> Activity Execution -> Completion.
-/// Implements database-authoritative idempotency on (CharacterId, TimeBucket).
+/// Implements database-authoritative idempotency on (CharacterId, TimeBucket) with controlled retry for Failed ticks.
 /// </summary>
 public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharacterLifecycleOrchestrator
 {
     private readonly ProjectDbContext _dbContext;
+    private readonly IAutonomousCharacterContextLoader _contextLoader;
     private readonly IAutonomousDecisionService _decisionService;
     private readonly IActivityExecutionService _activityExecutionService;
     private readonly ICharacterReactionExecutionService _reactionService;
-    private readonly ISceneVisualStateReader _visualStateReader;
     private readonly ILogger<AutonomousCharacterLifecycleOrchestrator> _logger;
 
     public AutonomousCharacterLifecycleOrchestrator(
         ProjectDbContext dbContext,
+        IAutonomousCharacterContextLoader contextLoader,
         IAutonomousDecisionService decisionService,
         IActivityExecutionService activityExecutionService,
         ICharacterReactionExecutionService reactionService,
-        ISceneVisualStateReader visualStateReader,
         ILogger<AutonomousCharacterLifecycleOrchestrator> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _contextLoader = contextLoader ?? throw new ArgumentNullException(nameof(contextLoader));
         _decisionService = decisionService ?? throw new ArgumentNullException(nameof(decisionService));
         _activityExecutionService = activityExecutionService ?? throw new ArgumentNullException(nameof(activityExecutionService));
         _reactionService = reactionService ?? throw new ArgumentNullException(nameof(reactionService));
-        _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -70,7 +67,6 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
             characterId: request.CharacterId,
             executionId: request.ExecutionId,
             timeBucket: request.TimeBucket,
-            status: AutonomyTickStatus.Running,
             startedAt: now,
             worldEventId: request.WorldEventId,
             correlationId: request.CorrelationId
@@ -83,19 +79,53 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
         }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
-            _logger.LogInformation(
-                "[AutonomousCharacterLifecycleOrchestrator] Duplicate tick suppressed by DB unique constraint for CharacterId={CharacterId}, TimeBucket={TimeBucket}, ExecutionId={ExecutionId}",
-                request.CharacterId, request.TimeBucket, request.ExecutionId);
+            // Detach the failed insert from EF Core ChangeTracker so it doesn't conflict with subsequent operations
+            _dbContext.Entry(tick).State = EntityState.Detached;
 
-            return new AutonomyTickResult(
-                Success: true,
-                IsDuplicateSuppressed: true,
-                ExecutionId: request.ExecutionId,
-                Tick: null,
-                ReactionResult: null,
-                ActivityResult: null,
-                Message: "Idempotent duplicate tick suppressed by database unique constraint."
-            );
+            // Unique violation on (CharacterId, TimeBucket): Check if existing tick is Failed (eligible for controlled retry) or Completed/Running (suppressed)
+            var existingTick = await _dbContext.CharacterAutonomyTicks
+                .FirstOrDefaultAsync(t => t.CharacterId == request.CharacterId && t.TimeBucket == request.TimeBucket.Trim(), ct);
+
+            if (existingTick == null || existingTick.Status != AutonomyTickStatus.Failed)
+            {
+                _logger.LogInformation(
+                    "[AutonomousCharacterLifecycleOrchestrator] Duplicate tick suppressed for CharacterId={CharacterId}, TimeBucket={TimeBucket}, ExecutionId={ExecutionId}",
+                    request.CharacterId, request.TimeBucket, request.ExecutionId);
+
+                return new AutonomyTickResult(
+                    Success: true,
+                    IsDuplicateSuppressed: true,
+                    ExecutionId: request.ExecutionId,
+                    Tick: null,
+                    ReactionResult: null,
+                    ActivityResult: null,
+                    Message: "Idempotent duplicate tick suppressed by database unique constraint."
+                );
+            }
+
+            // Controlled Retry: Atomic re-acquisition of Failed tick using optimistic concurrency token (Version)
+            try
+            {
+                existingTick.ReclaimForRetry(request.ExecutionId, now, request.WorldEventId, request.CorrelationId);
+                await _dbContext.SaveChangesAsync(ct);
+                tick = existingTick;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _logger.LogInformation(
+                    "[AutonomousCharacterLifecycleOrchestrator] Concurrent retry claim lost for CharacterId={CharacterId}, TimeBucket={TimeBucket}",
+                    request.CharacterId, request.TimeBucket);
+
+                return new AutonomyTickResult(
+                    Success: true,
+                    IsDuplicateSuppressed: true,
+                    ExecutionId: request.ExecutionId,
+                    Tick: null,
+                    ReactionResult: null,
+                    ActivityResult: null,
+                    Message: "Concurrent retry claim suppressed."
+                );
+            }
         }
 
         ReactionExecutionResult? reactionResult = null;
@@ -103,9 +133,9 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
 
         try
         {
-            // 2. Load Character Context
-            var character = await _dbContext.Characters.FindAsync(new object?[] { request.CharacterId }, ct);
-            if (character == null)
+            // 2. Load Domain Context via IAutonomousCharacterContextLoader
+            var context = await _contextLoader.LoadContextAsync(request.CharacterId, now, ct);
+            if (context == null)
             {
                 tick.Fail(DateTime.UtcNow, $"Character with ID {request.CharacterId} not found.");
                 await _dbContext.SaveChangesAsync(ct);
@@ -120,89 +150,9 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
                 );
             }
 
-            // 3. Load Authoritative Visual State and Location
-            var latestVisualState = await _visualStateReader.GetLatestByCharacterIdAsync(character.Id, ct);
-            var currentVisualState = latestVisualState?.CharacterState;
-            var currentLocation = !string.IsNullOrWhiteSpace(latestVisualState?.Location)
-                ? latestVisualState.Location
-                : "Sanctuary";
-            int sceneRevision = latestVisualState != null ? latestVisualState.SceneRevision : 1;
+            var currentState = context.CurrentState;
 
-            var currentState = CharacterStateSnapshot.CreateDefault();
-
-            // 4. Load Recent Activities, Visual Memories, and Goals
-            var recentActivities = await _dbContext.CharacterActivities
-                .AsNoTracking()
-                .Where(a => a.CharacterId == character.Id)
-                .OrderByDescending(a => a.CreatedAt)
-                .Take(5)
-                .ToListAsync(ct);
-
-            var recentMemories = await _dbContext.CharacterVisualMemories
-                .AsNoTracking()
-                .Where(m => m.CharacterId == character.Id && m.ValidUntilTurnId == null)
-                .OrderByDescending(m => m.CreatedAt)
-                .Take(5)
-                .ToListAsync(ct);
-
-            var dbGoals = await _dbContext.CharacterGoals
-                .AsNoTracking()
-                .Include(g => g.Milestones)
-                .Where(g => g.CharacterId == character.Id && g.Status == CharacterGoalStatus.Active)
-                .OrderByDescending(g => g.Priority)
-                .ThenByDescending(g => g.CreatedAt)
-                .ToListAsync(ct);
-
-            var goalSnapshots = dbGoals.Select(g =>
-            {
-                var activeM = g.Milestones.FirstOrDefault(m => m.Status == CharacterGoalMilestoneStatus.Active);
-                float mProg = activeM != null && activeM.TargetValue > 0 ? (float)(activeM.CurrentValue / activeM.TargetValue) : 0f;
-                return new CharacterGoalSnapshot(
-                    GoalId: g.Id,
-                    CharacterId: g.CharacterId,
-                    Title: g.Title,
-                    GoalType: g.GoalType,
-                    Priority: g.Priority,
-                    Status: g.Status,
-                    Progress: g.Progress,
-                    CurrentValue: g.CurrentValue,
-                    TargetValue: g.TargetValue,
-                    CurrentMilestone: activeM?.Title,
-                    MilestoneProgress: mProg,
-                    Description: g.Description
-                );
-            }).ToList();
-
-            var goalSnapshotsForReaction = dbGoals.Select(g => new Domain.ValueObjects.GoalSnapshot(
-                GoalId: g.Id,
-                CharacterId: g.CharacterId,
-                Title: g.Title,
-                GoalType: g.GoalType,
-                Priority: g.Priority,
-                Status: g.Status,
-                Progress: g.Progress,
-                CurrentValue: g.CurrentValue,
-                TargetValue: g.TargetValue
-            )).ToList();
-
-            IReadOnlyList<string>? activeGoals = null;
-            if (goalSnapshots.Count > 0)
-            {
-                activeGoals = goalSnapshots.Select(g => g.Title).ToList();
-            }
-            else if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
-            {
-                try
-                {
-                    activeGoals = JsonSerializer.Deserialize<List<string>>(character.CustomMilestonesJson);
-                }
-                catch
-                {
-                    activeGoals = new[] { character.CustomMilestonesJson.Trim() };
-                }
-            }
-
-            // 5. Evaluate World Event Reaction (if provided)
+            // 3. World Event Reaction (if provided)
             if (request.WorldEventId.HasValue)
             {
                 var worldEvent = await _dbContext.CharacterWorldEvents.FindAsync(new object?[] { request.WorldEventId.Value }, ct);
@@ -210,13 +160,13 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
                 {
                     var reactionRequest = new ReactionExecutionRequest(
                         WorldEvent: worldEvent,
-                        Character: character,
+                        Character: context.Character,
                         ExecutionId: request.ExecutionId,
                         CurrentTime: now,
                         CurrentState: currentState,
-                        CurrentVisualState: currentVisualState,
-                        CurrentGoals: goalSnapshotsForReaction,
-                        SceneRevision: sceneRevision
+                        CurrentVisualState: context.CurrentVisualState,
+                        CurrentGoals: context.GoalSnapshotsForReaction,
+                        SceneRevision: context.SceneRevision
                     );
 
                     reactionResult = await _reactionService.ExecuteReactionAsync(reactionRequest, ct);
@@ -231,43 +181,43 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
                 }
             }
 
-            // 6. Autonomous Decision
+            // 4. Autonomous Decision
             var decisionRequest = new AutonomousDecisionRequest(
-                CharacterId: character.Id,
+                CharacterId: context.Character.Id,
                 CurrentTime: now,
-                CurrentLocation: currentLocation,
+                CurrentLocation: context.CurrentLocation,
                 TimeBucket: request.TimeBucket,
-                CurrentVisualState: currentVisualState,
+                CurrentVisualState: context.CurrentVisualState,
                 StateSnapshot: currentState,
-                RecentActivities: recentActivities,
-                RecentVisualMemories: recentMemories,
-                PersonalityPrompt: character.PersonalityPrompt,
-                WorldDescription: character.WorldDescription,
-                ActiveGoals: activeGoals,
-                Goals: goalSnapshots,
-                SceneRevision: sceneRevision
+                RecentActivities: context.RecentActivities,
+                RecentVisualMemories: context.RecentVisualMemories,
+                PersonalityPrompt: context.Character.PersonalityPrompt,
+                WorldDescription: context.Character.WorldDescription,
+                ActiveGoals: context.ActiveGoals,
+                Goals: context.GoalSnapshots,
+                SceneRevision: context.SceneRevision
             );
 
             var decision = await _decisionService.DecideNextActionAsync(decisionRequest, ct);
 
-            // 7. Execute Activity (if decided)
+            // 5. Execute Activity (if decided)
             if (decision.Action == AutonomousDecisionAction.PerformActivity && decision.Candidate != null)
             {
                 var executionRequest = new ActivityExecutionRequest(
-                    Character: character,
+                    Character: context.Character,
                     Candidate: decision.Candidate,
                     CurrentTime: now,
                     TimeBucket: request.TimeBucket,
                     ExecutionId: request.ExecutionId,
-                    CurrentVisualState: currentVisualState,
+                    CurrentVisualState: context.CurrentVisualState,
                     CurrentState: currentState,
-                    SceneRevision: sceneRevision
+                    SceneRevision: context.SceneRevision
                 );
 
                 activityResult = await _activityExecutionService.ExecuteActivityAsync(executionRequest, ct);
             }
 
-            // 8. Complete Tick Atomically
+            // 6. Complete Tick Atomically
             tick.Complete(
                 completedAt: DateTime.UtcNow,
                 activityId: activityResult?.Activity?.Id,
@@ -278,8 +228,8 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
             await _dbContext.SaveChangesAsync(ct);
 
             _logger.LogInformation(
-                "[AutonomousCharacterLifecycleOrchestrator] Successfully completed tick for CharacterId={CharacterId}, TimeBucket={TimeBucket}, ExecutionId={ExecutionId}, ActivityId={ActivityId}",
-                character.Id, request.TimeBucket, request.ExecutionId, activityResult?.Activity?.Id);
+                "[AutonomousCharacterLifecycleOrchestrator] Successfully completed tick for CharacterId={CharacterId}, TimeBucket={TimeBucket}, ExecutionId={ExecutionId}",
+                context.Character.Id, request.TimeBucket, request.ExecutionId);
 
             return new AutonomyTickResult(
                 Success: true,

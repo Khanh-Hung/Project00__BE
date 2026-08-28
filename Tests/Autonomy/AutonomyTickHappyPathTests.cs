@@ -2,7 +2,6 @@
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
-using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Autonomous;
 using Infrastructure.Services.Autonomy;
@@ -61,16 +60,17 @@ public sealed class AutonomyTickHappyPathTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
             var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
             var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 db,
+                contextLoader,
                 decisionService,
                 activityExecService,
                 reactionService,
-                stateReader,
                 NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
             );
 
@@ -79,7 +79,7 @@ public sealed class AutonomyTickHappyPathTests : IDisposable
                 CharacterId: charId,
                 ExecutionId: executionId,
                 TimeBucket: "2026-08-28T14:00",
-                CurrentTime: DateTime.UtcNow,
+                CurrentTime: new DateTime(2026, 8, 28, 14, 0, 0, DateTimeKind.Utc),
                 WorldEventId: worldEvent.Id,
                 CorrelationId: "corr-happy-001"
             );

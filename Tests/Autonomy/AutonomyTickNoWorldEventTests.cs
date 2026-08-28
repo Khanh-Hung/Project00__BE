@@ -58,16 +58,17 @@ public sealed class AutonomyTickNoWorldEventTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
             var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
             var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 db,
+                contextLoader,
                 decisionService,
                 activityExecService,
                 reactionService,
-                stateReader,
                 NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
             );
 

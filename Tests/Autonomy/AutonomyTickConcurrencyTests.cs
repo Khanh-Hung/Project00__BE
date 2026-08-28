@@ -53,28 +53,29 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
 
         var timeBucket = "2026-08-28T15:00";
 
-        var tasks = Enumerable.Range(1, 2).Select(async _ =>
+        var tasks = Enumerable.Range(1, 2).Select(async i =>
         {
             await using var workerDb = new ProjectDbContext(_options);
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(workerDb, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
             var activityExecService = new ActivityExecutionService(workerDb, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
             var reactionService = new CharacterReactionExecutionService(workerDb, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 workerDb,
+                contextLoader,
                 decisionService,
                 activityExecService,
                 reactionService,
-                stateReader,
                 NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
             );
 
             var request = new AutonomyTickRequest(
                 CharacterId: charId,
-                ExecutionId: Guid.NewGuid(),
+                ExecutionId: Guid.NewGuid(), // Distinct ExecutionId per worker
                 TimeBucket: timeBucket,
                 CurrentTime: DateTime.UtcNow
             );
@@ -89,6 +90,50 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
 
         Assert.Equal(1, winners);
         Assert.Equal(1, suppressed);
+    }
+
+    [Fact]
+    public async Task TwoDifferentTimeBuckets_ExecuteAsTwoIndependentTicks()
+    {
+        var charId = Guid.NewGuid();
+        var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
+
+        using (var db = new ProjectDbContext(_options))
+        {
+            await db.Characters.AddAsync(character);
+            await db.SaveChangesAsync();
+        }
+
+        using (var db = new ProjectDbContext(_options))
+        {
+            var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
+            var fakePipeline = new FakeSceneCompositionPipelineService();
+            var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
+            var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
+            var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+
+            var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
+                db,
+                contextLoader,
+                decisionService,
+                activityExecService,
+                reactionService,
+                NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
+            );
+
+            var res1 = await orchestrator.ExecuteTickAsync(new AutonomyTickRequest(charId, Guid.NewGuid(), "2026-08-28T09:00", DateTime.UtcNow));
+            var res2 = await orchestrator.ExecuteTickAsync(new AutonomyTickRequest(charId, Guid.NewGuid(), "2026-08-28T10:00", DateTime.UtcNow));
+
+            Assert.True(res1.Success);
+            Assert.False(res1.IsDuplicateSuppressed);
+            Assert.True(res2.Success);
+            Assert.False(res2.IsDuplicateSuppressed);
+
+            var totalTicks = await db.CharacterAutonomyTicks.CountAsync(t => t.CharacterId == charId);
+            Assert.Equal(2, totalTicks);
+        }
     }
 
     [Fact]
@@ -116,16 +161,17 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(workerDb, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
             var activityExecService = new ActivityExecutionService(workerDb, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
             var reactionService = new CharacterReactionExecutionService(workerDb, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 workerDb,
+                contextLoader,
                 decisionService,
                 activityExecService,
                 reactionService,
-                stateReader,
                 NullLogger<AutonomousCharacterLifecycleOrchestrator>.Instance
             );
 
@@ -153,7 +199,7 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
         // 2. Exactly 1 row in CharacterWorldEventReactions
         // 3. Exactly 1 row in CharacterActivities
         // 4. Exactly 1 row in CharacterMemories
-        // 5. Goal contribution applied exactly once for winner tick (not multiplied by 10)
+        // 5. Goal contribution applied exactly once: 30.0 (Reaction) + 2.0 (Activity) = 32.0 (NOT multiplied by 10)
         // 6. Exactly 1 SceneSpecification generated (1 from reaction in the single winning tick, NOT 10 for 10 workers)
         using (var db = new ProjectDbContext(_options))
         {
@@ -170,7 +216,7 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
             Assert.Equal(1, memoryCount);
 
             var dbGoal = await db.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
-            Assert.True(dbGoal.CurrentValue > 0);
+            Assert.Equal(32.0, dbGoal.CurrentValue); // Exact 32.0 invariant!
 
             var specCount = await db.SceneSpecifications.CountAsync(s => s.CharacterId == charId);
             Assert.Equal(1, specCount);
