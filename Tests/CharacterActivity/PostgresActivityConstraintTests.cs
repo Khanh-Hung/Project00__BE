@@ -1,4 +1,4 @@
-﻿using Application.Services;
+using Application.Services;
 using Domain.Entities;
 using Infrastructure.BackgroundJobs;
 using Infrastructure.Persistence;
@@ -80,5 +80,26 @@ public sealed class PostgresActivityConstraintTests : IDisposable
 
         // Must rethrow the non-unique DbUpdateException / SqliteException
         await Assert.ThrowsAnyAsync<Exception>(() => scheduler.ProcessCharacterAsync(character, testTime, timeBucket));
+    }
+
+    [Fact]
+    public void ModelMetadata_VerifiesPartialUniqueIndex_AndCompositeIndex()
+    {
+        using var db = new ProjectDbContext(_options);
+        var entityType = db.Model.FindEntityType(typeof(CharacterActivity));
+        Assert.NotNull(entityType);
+
+        // 1. Verify Unique Partial Index on (CharacterId, TimeBucket) with filter
+        var timeBucketIndex = entityType.GetIndexes()
+            .FirstOrDefault(i => i.Properties.Select(p => p.Name).SequenceEqual(new[] { "CharacterId", "TimeBucket" }));
+        Assert.NotNull(timeBucketIndex);
+        Assert.True(timeBucketIndex.IsUnique);
+        Assert.Equal("\"Source\" = 'Autonomous'", timeBucketIndex.GetFilter());
+
+        // 2. Verify Composite Index on (CharacterId, CreatedAt)
+        var createdAtIndex = entityType.GetIndexes()
+            .FirstOrDefault(i => i.Properties.Select(p => p.Name).SequenceEqual(new[] { "CharacterId", "CreatedAt" }));
+        Assert.NotNull(createdAtIndex);
+        Assert.Equal(2, createdAtIndex.Properties.Count);
     }
 }

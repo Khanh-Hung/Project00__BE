@@ -226,26 +226,31 @@ public sealed class CharacterActivityScheduler
 
     public static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
-        var msg = ex.InnerException?.Message ?? ex.Message;
-
-        // PostgreSQL error code 23505 = unique_violation, or index name IX_CharacterActivities_CharacterId_TimeBucket
-        if (msg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("unique constraint", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("IX_CharacterActivities_CharacterId_TimeBucket", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
         var inner = ex.InnerException;
         while (inner != null)
         {
+            // 1. Direct Typed Npgsql PostgresException Check
+            if (inner is Npgsql.PostgresException pg)
+            {
+                if (pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation)
+                {
+                    if (string.IsNullOrWhiteSpace(pg.ConstraintName) ||
+                        pg.ConstraintName.Contains("CharacterActivities", StringComparison.OrdinalIgnoreCase) ||
+                        pg.ConstraintName.Contains("TimeBucket", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
             var sqlStateProp = inner.GetType().GetProperty("SqlState");
             if (sqlStateProp != null)
             {
                 var sqlState = sqlStateProp.GetValue(inner)?.ToString();
-                if (sqlState == "23505") return true;
+                if (sqlState == Npgsql.PostgresErrorCodes.UniqueViolation || sqlState == "23505")
+                {
+                    return true;
+                }
             }
 
             var sqliteErrProp = inner.GetType().GetProperty("SqliteErrorCode");
@@ -256,6 +261,16 @@ public sealed class CharacterActivityScheduler
             }
 
             inner = inner.InnerException;
+        }
+
+        var msg = (ex.InnerException?.Message ?? "") + " " + (ex.Message ?? "");
+        if (msg.Contains("IX_CharacterActivities_CharacterId_TimeBucket", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("UNIQUE constraint failed: CharacterActivities.CharacterId, CharacterActivities.TimeBucket", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("unique constraint", StringComparison.OrdinalIgnoreCase) ||
+            (msg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) && msg.Contains("TimeBucket", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
         }
 
         return false;

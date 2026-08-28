@@ -183,7 +183,11 @@ public sealed class CharacterActivityDecisionService : ICharacterActivityDecisio
         else if (hour >= 9 && hour < 12)
         {
             // Forenoon
-            if (isAdventurer || isGoalExplore)
+            if (isGoalExplore)
+            {
+                pool.Add(new CandidateOption(CharacterActivityType.Exploring, loc, 100, "scouting and surveying the surroundings", "standing attentively observing the area", "Morning exploration goal", 60));
+            }
+            else if (isAdventurer)
             {
                 pool.Add(new CandidateOption(CharacterActivityType.Exploring, loc, 80, "scouting and surveying the surroundings", "standing attentively observing the area", "Morning exploration", 60));
                 pool.Add(new CandidateOption(CharacterActivityType.Walking, loc, 20, "surveying territory", "walking actively", "Territory patrol", 45));
