@@ -18,18 +18,18 @@ namespace Tests.SceneComposition;
 public sealed class SceneToGenerationIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public SceneToGenerationIntegrationTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -42,7 +42,7 @@ public sealed class SceneToGenerationIntegrationTests : IDisposable
     [Fact]
     public async Task FullFlow_ChatIntent_ToSceneComposition_ToGenerationPipeline_ExecutesSuccessfully()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var dateTimeProvider = new SystemDateTimeProvider();
 
         // 1. Setup Architecture Services & Readers

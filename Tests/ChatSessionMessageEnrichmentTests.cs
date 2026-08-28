@@ -44,11 +44,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_EnrichesAssistantMessagesWithTurnIdAndCompletedSceneImage()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -111,11 +111,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenJobProcessing_EnrichesMessageWithProcessingStatus()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -168,11 +168,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenRegenerating_EnrichesMessageWithInFlightJobStatusAndPreviousImage()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -240,11 +240,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenRegenerationJobFails_PreservesPreviousCurrentImage()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -312,11 +312,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenTurnHasActiveAndFailedJobs_PrioritizesActiveJobOverFailedJob()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -377,11 +377,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenTurnHasFailedAndProcessingJobs_PrioritizesProcessingJobOverFailedJob()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -441,11 +441,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenTurnHasExpiredLeaseProcessingJobAndCurrentImage_PreservesCurrentImageAndMarksCompleted()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -517,11 +517,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenTurnHasExpiredLeaseProcessingJobAndNoCurrentImage_MarksFailed()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -578,11 +578,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenTurnHasProcessingJobWithLeaseUntilEqualToNow_IsTreatedAsStaleAndMarksFailed()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());
@@ -639,11 +639,11 @@ public sealed class ChatSessionMessageEnrichmentTests
     [Fact]
     public async Task GetChatSession_WhenTurnHasCancelledJob_EnrichesMessageWithCancelledStatus()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var userProvider = new FakeUserProvider(userId.ToString());

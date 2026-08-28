@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Services;
 using Domain.Entities;
 using Infrastructure.BackgroundJobs;
@@ -15,18 +15,18 @@ namespace Tests.CharacterActivities;
 public sealed class AuthoritativeStateSchedulerIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public AuthoritativeStateSchedulerIntegrationTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -82,7 +82,7 @@ public sealed class AuthoritativeStateSchedulerIntegrationTests : IDisposable
             version: 1
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SceneVisualStates.AddAsync(stateRecord);
@@ -95,7 +95,7 @@ public sealed class AuthoritativeStateSchedulerIntegrationTests : IDisposable
         var morningTime = new DateTime(2026, 8, 28, 7, 0, 0, DateTimeKind.Utc);
         var timeBucket = CharacterActivityScheduler.GetTimeBucket(morningTime);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
@@ -106,7 +106,7 @@ public sealed class AuthoritativeStateSchedulerIntegrationTests : IDisposable
         }
 
         // Verify: Activity took authoritative location "Crystal Conservatory" rather than worldDescription
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var activity = await db.CharacterActivities.FirstOrDefaultAsync(a => a.CharacterId == charId);
             Assert.NotNull(activity);

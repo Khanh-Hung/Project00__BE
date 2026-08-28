@@ -22,10 +22,10 @@ public sealed class ArtifactLifecycleIntegrationTests
     [Fact]
     public async Task ImageGenerationJobHandler_WhenAttemptDegraded_RetriesAndRecoversOnAttempt2()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
 
         var compiler = new FakePromptCompiler("1man knight", "1girl");
         var imageService = new FakeImageService();
@@ -97,10 +97,10 @@ public sealed class ArtifactLifecycleIntegrationTests
     [Fact]
     public async Task ImageGenerationJobHandler_WhenAllAttemptsExhausted_QuarantinesFrameFromContinuity()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
 
         var compiler = new FakePromptCompiler("1man knight", "1girl");
         var imageService = new FakeImageService();
@@ -186,10 +186,10 @@ public sealed class ArtifactLifecycleIntegrationTests
     [Fact]
     public async Task ImageGenerationJobHandler_CrashRecovery_ReusesDurableAttemptLedgerWithoutCallingGpu()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
 
         var compiler = new FakePromptCompiler("1man knight", "1girl");
         var imageService = new FakeImageService();
@@ -293,11 +293,11 @@ public sealed class ArtifactLifecycleIntegrationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
 
@@ -326,11 +326,11 @@ public sealed class ArtifactLifecycleIntegrationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
 
@@ -387,7 +387,7 @@ public sealed class ArtifactLifecycleIntegrationTests
         var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
-        using var dbQuery = new ProjectDbContext(options);
+        using var dbQuery = new CoreDbContext(options);
         var existingJob = await dbQuery.ImageGenerationJobs.FirstAsync();
         var existingSnapshot = new VisualSnapshot(
             TurnId: existingJob.TurnId,
@@ -408,8 +408,8 @@ public sealed class ArtifactLifecycleIntegrationTests
             GenerationRequestId: existingJob.GenerationRequestId
         );
 
-        using var db1 = new ProjectDbContext(options);
-        using var db2 = new ProjectDbContext(options);
+        using var db1 = new CoreDbContext(options);
+        using var db2 = new CoreDbContext(options);
 
         var handler1 = new ImageGenerationJobHandler(
             dbContext: db1,
@@ -446,7 +446,7 @@ public sealed class ArtifactLifecycleIntegrationTests
         Assert.Contains(results, r => r.Status == JobExecutionStatus.Completed);
 
         // Assert exactly 1 SceneImage artifact exists in DB
-        using var verifyDb = new ProjectDbContext(options);
+        using var verifyDb = new CoreDbContext(options);
         var artifacts = await verifyDb.SceneImages.ToListAsync();
         Assert.Single(artifacts);
         Assert.True(artifacts[0].IsCurrent);
@@ -463,11 +463,11 @@ public sealed class ArtifactLifecycleIntegrationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
 
@@ -491,10 +491,10 @@ public sealed class ArtifactLifecycleIntegrationTests
     [Fact]
     public async Task ImageGenerationJobHandler_WhenAttemptIsRunningUnderActiveLeaseByAnotherWorker_DefersExecutionWithoutGpuCall()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
 
         var compiler = new FakePromptCompiler("1man knight", "1girl");
         var imageService = new FakeImageService();
@@ -569,10 +569,10 @@ public sealed class ArtifactLifecycleIntegrationTests
     [Fact]
     public void ImageGenerationJobHandler_Constructor_WhenEvaluatorNull_ThrowsArgumentNullException()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        using var db = new ProjectDbContext(options);
+        using var db = new CoreDbContext(options);
 
         Assert.Throws<ArgumentNullException>(() => new ImageGenerationJobHandler(
             dbContext: db,
@@ -587,10 +587,10 @@ public sealed class ArtifactLifecycleIntegrationTests
     [Fact]
     public async Task PredecessorLineageResolver_OnlyResolvesFromAcceptedCurrentArtifacts()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
 
         var resolver = new PredecessorLineageResolver(db, NullLogger<PredecessorLineageResolver>.Instance);
 
@@ -630,10 +630,10 @@ public sealed class ArtifactLifecycleIntegrationTests
     [Fact]
     public async Task IdentityStatus_Failed_AcrossMaxAttempts_QuarantinesJob_PreservesPredecessor_EmitsGenerationJobQuarantined()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
 
         var compiler = new FakePromptCompiler("1man knight", "1girl");
         var imageService = new FakeImageService();
@@ -726,7 +726,7 @@ public sealed class ArtifactLifecycleIntegrationTests
     {
         var services = new ServiceCollection();
         var dbName = Guid.NewGuid().ToString();
-        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddDbContext<CoreDbContext>(o => o.UseInMemoryDatabase(dbName));
         services.AddLogging();
         services.AddSingleton<IVoicePromptCompiler>(new MockVoiceCompiler());
         services.AddSingleton<IVisualPromptCompiler>(new FakePromptCompiler("1man knight", "1girl"));
@@ -742,7 +742,7 @@ public sealed class ArtifactLifecycleIntegrationTests
 
         using (var scope = scopeFactory.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var acceptedOutbox = new OutboxMessage(
                 eventType: OutboxEventTypes.GenerationJobAccepted,
                 payloadJson: "{\"JobId\":\"" + Guid.NewGuid() + "\"}"
@@ -766,7 +766,7 @@ public sealed class ArtifactLifecycleIntegrationTests
 
         using (var scope = scopeFactory.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var messages = await db.OutboxMessages.ToListAsync();
             Assert.All(messages, m => Assert.Equal(OutboxStatus.Completed, m.Status));
         }
@@ -778,11 +778,11 @@ public sealed class ArtifactLifecycleIntegrationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -831,7 +831,7 @@ public sealed class ArtifactLifecycleIntegrationTests
         );
 
         // Pre-condition: An existing committed artifact with this exact fingerprint already exists in DB from a prior request
-        using (var dbPre = new ProjectDbContext(options))
+        using (var dbPre = new CoreDbContext(options))
         {
             var preJob = new ImageGenerationJob(sessionId, turnId, characterId, 1, priorReqId) { Id = priorJobId };
             await dbPre.ImageGenerationJobs.AddRangeAsync(preJob, jobInstance);
@@ -857,7 +857,7 @@ public sealed class ArtifactLifecycleIntegrationTests
         var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
-        using (var dbWorker = new ProjectDbContext(options))
+        using (var dbWorker = new CoreDbContext(options))
         {
             var timeProvider = new SystemDateTimeProvider();
             var handler = new ImageGenerationJobHandler(
@@ -878,7 +878,7 @@ public sealed class ArtifactLifecycleIntegrationTests
         Assert.Equal(0, countingImageService.CallCount);
 
         // Assert 2: Job state machine invariants - Completed with valid non-null AcceptedAttemptId belonging to this Job
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var job = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.GenerationRequestId == genReqId);
             Assert.Equal(ImageJobStatus.Completed, job.Status);
@@ -909,11 +909,11 @@ public sealed class ArtifactLifecycleIntegrationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -946,7 +946,7 @@ public sealed class ArtifactLifecycleIntegrationTests
         var jobInstance = new ImageGenerationJob(sessionId, turnId, characterId, 1, genReqId);
 
         // Pre-condition: SceneImage already committed for this exact request
-        using (var dbPre = new ProjectDbContext(options))
+        using (var dbPre = new CoreDbContext(options))
         {
             await dbPre.ImageGenerationJobs.AddAsync(jobInstance);
 
@@ -970,7 +970,7 @@ public sealed class ArtifactLifecycleIntegrationTests
         var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
-        using (var dbWorker = new ProjectDbContext(options))
+        using (var dbWorker = new CoreDbContext(options))
         {
             var timeProvider = new SystemDateTimeProvider();
             var handler = new ImageGenerationJobHandler(
@@ -989,7 +989,7 @@ public sealed class ArtifactLifecycleIntegrationTests
 
         Assert.Equal(0, countingImageService.CallCount);
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var images = await dbVerify.SceneImages.Where(img => img.GenerationRequestId == genReqId).ToListAsync();
             Assert.Single(images);

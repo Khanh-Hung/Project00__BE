@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Autonomy;
+using Application.Contracts.Autonomy;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -19,18 +19,18 @@ namespace Tests.Autonomy;
 public sealed class AutonomyTickCorrelationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public AutonomyTickCorrelationTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -48,13 +48,13 @@ public sealed class AutonomyTickCorrelationTests : IDisposable
         var correlationId = "corr-lifecycle-777";
         var timeBucket = "2026-08-28T20:00";
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SaveChangesAsync();
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();

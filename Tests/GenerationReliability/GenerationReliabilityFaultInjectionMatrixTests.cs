@@ -62,11 +62,11 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
-        using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
+        var options = new DbContextOptionsBuilder<CoreDbContext>().UseSqlite(connection).Options;
+        using (var db = new CoreDbContext(options)) await db.Database.EnsureCreatedAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Default);
         services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => Task.FromResult(new JobExecutionResult(JobExecutionStatus.Completed))));
@@ -85,11 +85,11 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
-        using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
+        var options = new DbContextOptionsBuilder<CoreDbContext>().UseSqlite(connection).Options;
+        using (var db = new CoreDbContext(options)) await db.Database.EnsureCreatedAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Deterministic(maxRetries: 3));
         services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => throw new GpuTransientException("Timeout", 408)));
@@ -108,11 +108,11 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
-        using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
+        var options = new DbContextOptionsBuilder<CoreDbContext>().UseSqlite(connection).Options;
+        using (var db = new CoreDbContext(options)) await db.Database.EnsureCreatedAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Default);
         services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => throw new GpuNonTransientException("Invalid syntax", 400)));
@@ -151,11 +151,11 @@ public sealed class GenerationReliabilityFaultInjectionMatrixTests
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>().UseSqlite(connection).Options;
-        using (var db = new ProjectDbContext(options)) await db.Database.EnsureCreatedAsync();
+        var options = new DbContextOptionsBuilder<CoreDbContext>().UseSqlite(connection).Options;
+        using (var db = new CoreDbContext(options)) await db.Database.EnsureCreatedAsync();
 
         var services = new ServiceCollection();
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Default);
         services.AddScoped<IImageGenerationOrchestrator>(_ => new ConfigurableOrchestrator(p => throw new OperationCanceledException()));

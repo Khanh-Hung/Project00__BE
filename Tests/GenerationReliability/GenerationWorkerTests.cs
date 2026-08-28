@@ -72,18 +72,18 @@ public sealed class GenerationWorkerTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
 
         var trackingOrchestrator = new TrackingOrchestrator();
         var services = new ServiceCollection();
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Default);
         services.AddScoped<IImageGenerationOrchestrator>(_ => trackingOrchestrator);
@@ -118,17 +118,17 @@ public sealed class GenerationWorkerTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
 
         var services = new ServiceCollection();
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Deterministic(maxRetries: 3, baseDelay: TimeSpan.FromSeconds(2)));
         services.AddScoped<IImageGenerationOrchestrator>(_ => new TrackingOrchestrator(new GpuTransientException("Timeout", 408)));
@@ -153,17 +153,17 @@ public sealed class GenerationWorkerTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
 
         var services = new ServiceCollection();
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddSingleton(GenerationRetryPolicy.Deterministic(maxRetries: 3));
         services.AddScoped<IImageGenerationOrchestrator>(_ => new TrackingOrchestrator(new GpuNonTransientException("Invalid node syntax", 400)));

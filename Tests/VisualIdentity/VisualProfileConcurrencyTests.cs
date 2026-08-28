@@ -11,18 +11,18 @@ namespace Tests.VisualIdentity;
 public sealed class VisualProfileConcurrencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public VisualProfileConcurrencyTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -35,7 +35,7 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
     [Fact]
     public async Task SequentialProfileUpdates_StrictlyAdvanceVisualVersionMonotonically()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var service = new CharacterVisualProfileService(db, NullLogger<CharacterVisualProfileService>.Instance);
         var charId = Guid.NewGuid();
 
@@ -68,7 +68,7 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         var charId = Guid.NewGuid();
 
         // 1. Initialize profile and advance sequentially to Version 5
-        await using (var seedDb = new ProjectDbContext(_options))
+        await using (var seedDb = new CoreDbContext(_options))
         {
             var profile = new CharacterVisualProfile(
                 characterId: charId,
@@ -82,8 +82,8 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         }
 
         // 2. Worker A and Worker B load profile concurrently at Version 5
-        await using var dbA = new ProjectDbContext(_options);
-        await using var dbB = new ProjectDbContext(_options);
+        await using var dbA = new CoreDbContext(_options);
+        await using var dbB = new CoreDbContext(_options);
 
         var profileA = await dbA.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == charId);
         var profileB = await dbB.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == charId);
@@ -117,7 +117,7 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         Assert.NotNull(ex);
 
         // 5. Verify database state in independent context: remains at Version 6 with Worker A's authoritative update (no lost updates)
-        await using var verifyDb = new ProjectDbContext(_options);
+        await using var verifyDb = new CoreDbContext(_options);
         var finalProfile = await verifyDb.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == charId);
 
         Assert.Equal(6, finalProfile.VisualVersion);
@@ -131,7 +131,7 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         var charId = Guid.NewGuid();
 
         // 1. Initialize profile at Version 1
-        await using (var seedDb = new ProjectDbContext(_options))
+        await using (var seedDb = new CoreDbContext(_options))
         {
             var profile = new CharacterVisualProfile(charId, eyeColor: "Amber", hairColor: "Raven", visualVersion: 1);
             seedDb.CharacterVisualProfiles.Add(profile);
@@ -139,12 +139,12 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         }
 
         // 2. Pre-load profile across 10 independent contexts while at Version 1
-        var contexts = new List<ProjectDbContext>();
+        var contexts = new List<CoreDbContext>();
         var profiles = new List<CharacterVisualProfile>();
 
         for (int i = 0; i < 10; i++)
         {
-            var ctx = new ProjectDbContext(_options);
+            var ctx = new CoreDbContext(_options);
             var p = await ctx.CharacterVisualProfiles.FirstAsync(x => x.CharacterId == charId);
             Assert.Equal(1, p.VisualVersion);
             p.UpdateAppearance($"Style {i}", $"Outfit {i}", null, null, null, DateTime.UtcNow);
@@ -180,7 +180,7 @@ public sealed class VisualProfileConcurrencyTests : IDisposable
         Assert.Equal(9, concurrencyConflictCount);
 
         // Verify final DB state is Version 2
-        await using var verifyDb = new ProjectDbContext(_options);
+        await using var verifyDb = new CoreDbContext(_options);
         var finalProfile = await verifyDb.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == charId);
         Assert.Equal(2, finalProfile.VisualVersion);
     }

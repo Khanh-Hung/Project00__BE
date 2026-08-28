@@ -7,9 +7,9 @@ namespace Infrastructure.Services.Scene;
 
 public sealed class PreviousSceneReader : IPreviousSceneReader
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
 
-    public PreviousSceneReader(ProjectDbContext dbContext)
+    public PreviousSceneReader(CoreDbContext dbContext)
     {
         _dbContext = dbContext;
     }

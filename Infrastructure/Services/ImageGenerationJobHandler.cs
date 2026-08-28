@@ -24,7 +24,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
     /// Backwards-compatible constructor allowing direct instantiation in tests.
     /// </summary>
     public ImageGenerationJobHandler(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IVisualPromptCompiler visualCompiler,
         IImageGenerationService imageService,
         ILogger<ImageGenerationJobHandler> logger,

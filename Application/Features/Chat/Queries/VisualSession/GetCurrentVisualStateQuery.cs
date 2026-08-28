@@ -15,12 +15,12 @@ public sealed record GetCurrentVisualStateQuery(Guid SessionId) : IRequest<Resul
 
 public sealed class GetCurrentVisualStateHandler : IRequestHandler<GetCurrentVisualStateQuery, Result<VisualArtifactResponse>>
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ICurrentUserProvider _currentUserProvider;
     private readonly ILogger<GetCurrentVisualStateHandler> _logger;
 
     public GetCurrentVisualStateHandler(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ICurrentUserProvider currentUserProvider,
         ILogger<GetCurrentVisualStateHandler> logger)
     {

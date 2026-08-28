@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
 using Application.Services;
 using Domain.Entities;
@@ -20,18 +20,18 @@ namespace Tests.AutonomousLoop;
 public sealed class AutonomousConcurrencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public AutonomousConcurrencyTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -50,7 +50,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         };
         var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -63,7 +63,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         // 10 concurrent autonomous workers trying to process the exact same character simultaneously
         var tasks = Enumerable.Range(1, 10).Select(async workerId =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -84,7 +84,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         Assert.Equal(9, suppressed);
 
         // Assert DB Invariant: Exactly 1 activity record exists in DB and exactly 1 goal contribution
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var count = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
             Assert.Equal(1, count);
@@ -104,7 +104,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         };
         var goal = new CharacterGoal(charId, "Survey Ancient Ruins", CharacterGoalType.Exploration, 100);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -136,7 +136,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         // 10 concurrent workers directly dispatching the visual moment execution with the SAME ExecutionId
         var tasks = Enumerable.Range(1, 10).Select(async workerId =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
@@ -165,7 +165,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         Assert.Equal(9, suppressed);
 
         // Assert Database Authoritative Invariants
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             // Exactly 1 CharacterActivity row in DB
             var activityCount = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
@@ -191,7 +191,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         };
         var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -230,7 +230,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         );
 
         // Attempt 1: First invocation -> Normal Success
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -248,7 +248,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         }
 
         // Attempt 2: Explicit Retry with the SAME ExecutionId & Request -> Duplicate Suppressed
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -266,7 +266,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         }
 
         // Assert DB Invariant: Exactly 1 row for each entity, exactly 15 units of goal progress
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var actCount = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
             Assert.Equal(1, actCount);

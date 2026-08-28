@@ -16,12 +16,12 @@ namespace Infrastructure.Services;
 /// </summary>
 public sealed class ArtifactReconciliationService : IArtifactReconciliationService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<ArtifactReconciliationService> _logger;
 
     public ArtifactReconciliationService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IDateTimeProvider dateTimeProvider,
         ILogger<ArtifactReconciliationService> logger)
     {

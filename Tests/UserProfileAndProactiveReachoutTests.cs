@@ -61,11 +61,11 @@ public class UserProfileAndProactiveReachoutTests
     [Fact]
     public async Task GetUserProfileHandler_Auto_Initializes_Default_Profile_When_Missing()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        await using var dbContext = new ProjectDbContext(options);
+        await using var dbContext = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(dbContext);
         var handler = new GetUserProfileHandler(unitOfWork);
 
@@ -82,14 +82,14 @@ public class UserProfileAndProactiveReachoutTests
     [Fact]
     public async Task GenerateProactiveReachoutHandler_Orchestrates_AI_And_Creates_Session()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var characterId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var dbContext = new ProjectDbContext(options);
+        await using var dbContext = new CoreDbContext(options);
         var character = new Character(
             name: "Lâm Uyển Nhi",
             title: "Họa Sĩ Tự Do",

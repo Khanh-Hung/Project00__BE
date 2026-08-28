@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Reactions;
+using Application.Contracts.Reactions;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -18,18 +18,18 @@ namespace Tests.CharacterReaction;
 public sealed class CharacterReactionIdempotencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CharacterReactionIdempotencyTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -45,7 +45,7 @@ public sealed class CharacterReactionIdempotencyTests : IDisposable
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Great painting!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterWorldEvents.AddAsync(worldEvent);
@@ -62,7 +62,7 @@ public sealed class CharacterReactionIdempotencyTests : IDisposable
         );
 
         // Attempt 1: First invocation -> Success
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -79,7 +79,7 @@ public sealed class CharacterReactionIdempotencyTests : IDisposable
         }
 
         // Attempt 2: Sequential Retry with same ExecutionId -> Duplicate Suppressed
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -96,7 +96,7 @@ public sealed class CharacterReactionIdempotencyTests : IDisposable
         }
 
         // Invariant check: Exactly 1 row in CharacterWorldEventReactions and 1 Memory
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var count = await db.CharacterWorldEventReactions.CountAsync(r => r.CharacterId == charId && r.WorldEventId == worldEvent.Id);
             Assert.Equal(1, count);

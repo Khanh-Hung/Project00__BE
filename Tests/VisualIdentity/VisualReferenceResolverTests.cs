@@ -13,18 +13,18 @@ namespace Tests.VisualIdentity;
 public sealed class VisualReferenceResolverTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public VisualReferenceResolverTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -37,7 +37,7 @@ public sealed class VisualReferenceResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_WhenZeroCanonicalExists_ReturnsNullPrimaryIdentityReference()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var resolver = new CharacterVisualReferenceResolver(db, NullLogger<CharacterVisualReferenceResolver>.Instance);
         var charId = Guid.NewGuid();
 
@@ -78,7 +78,7 @@ public sealed class VisualReferenceResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_WhenOneCanonicalExists_SelectsAsPrimaryWithDominatingScore()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var resolver = new CharacterVisualReferenceResolver(db, NullLogger<CharacterVisualReferenceResolver>.Instance);
         var charId = Guid.NewGuid();
 
@@ -118,7 +118,7 @@ public sealed class VisualReferenceResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_WhenArchivedCanonicalAndActiveCanonicalExist_SelectsOnlyActiveCanonical()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var resolver = new CharacterVisualReferenceResolver(db, NullLogger<CharacterVisualReferenceResolver>.Instance);
         var charId = Guid.NewGuid();
         var now = DateTime.UtcNow;
@@ -155,7 +155,7 @@ public sealed class VisualReferenceResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_CanonicalReferenceAlwaysBeatsRecentGeneratedEvidence()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var resolver = new CharacterVisualReferenceResolver(db, NullLogger<CharacterVisualReferenceResolver>.Instance);
         var charId = Guid.NewGuid();
         var now = DateTime.UtcNow;
@@ -199,7 +199,7 @@ public sealed class VisualReferenceResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_RespectsSecondaryAndSceneLimits()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var resolver = new CharacterVisualReferenceResolver(db, NullLogger<CharacterVisualReferenceResolver>.Instance);
         var charId = Guid.NewGuid();
 

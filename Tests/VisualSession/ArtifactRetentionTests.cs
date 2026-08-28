@@ -11,13 +11,13 @@ namespace Tests.VisualSession;
 
 public sealed class ArtifactRetentionTests
 {
-    private static (ProjectDbContext Db, ArtifactRetentionService Service) CreateContext()
+    private static (CoreDbContext Db, ArtifactRetentionService Service) CreateContext()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var service = new ArtifactRetentionService(db, new SystemDateTimeProvider(), NullLogger<ArtifactRetentionService>.Instance);
         return (db, service);
     }

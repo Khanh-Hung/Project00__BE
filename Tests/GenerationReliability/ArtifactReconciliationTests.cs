@@ -20,11 +20,11 @@ public sealed class ArtifactReconciliationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -50,14 +50,14 @@ public sealed class ArtifactReconciliationTests
             isCurrent: true
         );
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SceneImages.AddAsync(orphanImage);
             await dbSeed.SaveChangesAsync();
         }
 
-        using (var dbReconcile = new ProjectDbContext(options))
+        using (var dbReconcile = new CoreDbContext(options))
         {
             var reconciliationService = new ArtifactReconciliationService(
                 dbContext: dbReconcile,
@@ -69,7 +69,7 @@ public sealed class ArtifactReconciliationTests
             Assert.Equal(1, demotedCount);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedImage = await dbVerify.SceneImages.FirstAsync(img => img.Id == orphanImage.Id);
             Assert.False(verifiedImage.IsCurrent); // Strictly demoted to false!
@@ -82,11 +82,11 @@ public sealed class ArtifactReconciliationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -121,7 +121,7 @@ public sealed class ArtifactReconciliationTests
             isCurrent: true
         );
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.ImageGenerationAttempts.AddAsync(attempt);
@@ -132,7 +132,7 @@ public sealed class ArtifactReconciliationTests
             await dbSeed.SaveChangesAsync();
         }
 
-        using (var dbReconcile = new ProjectDbContext(options))
+        using (var dbReconcile = new CoreDbContext(options))
         {
             var reconciliationService = new ArtifactReconciliationService(
                 dbContext: dbReconcile,
@@ -147,7 +147,7 @@ public sealed class ArtifactReconciliationTests
             Assert.Equal(0, count2);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedImage = await dbVerify.SceneImages.FirstAsync(img => img.Id == validImage.Id);
             Assert.True(verifiedImage.IsCurrent); // Remains validly current
@@ -160,11 +160,11 @@ public sealed class ArtifactReconciliationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -201,7 +201,7 @@ public sealed class ArtifactReconciliationTests
             isCurrent: true
         );
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.ImageGenerationAttempts.AddAsync(attempt);
@@ -210,7 +210,7 @@ public sealed class ArtifactReconciliationTests
         }
 
         // Simulate Worker committing acceptance: job is accepted and completed
-        using (var dbAccept = new ProjectDbContext(options))
+        using (var dbAccept = new CoreDbContext(options))
         {
             var targetJob = await dbAccept.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             targetJob.AcceptAttempt(attempt.Id, now, "worker-1");
@@ -218,7 +218,7 @@ public sealed class ArtifactReconciliationTests
         }
 
         // Reconciliation runs concurrently
-        using (var dbReconcile = new ProjectDbContext(options))
+        using (var dbReconcile = new CoreDbContext(options))
         {
             var reconciliationService = new ArtifactReconciliationService(
                 dbContext: dbReconcile,
@@ -230,7 +230,7 @@ public sealed class ArtifactReconciliationTests
             Assert.Equal(0, demotedCount); // Reconciliation must NOT demote accepted artifact
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedImage = await dbVerify.SceneImages.FirstAsync(img => img.Id == candidateImage.Id);
             Assert.True(verifiedImage.IsCurrent); // IsCurrent remains TRUE

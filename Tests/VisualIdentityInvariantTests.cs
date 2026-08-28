@@ -87,12 +87,12 @@ public sealed class VisualIdentityInvariantTests
             => Task.FromResult("canonical_face.png");
     }
 
-    private static (ProjectDbContext db, ImageGenerationJobHandler handler, CountingImageService imageService) CreateHarness(string dbName)
+    private static (CoreDbContext db, ImageGenerationJobHandler handler, CountingImageService imageService) CreateHarness(string dbName)
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var imageService = new CountingImageService();
         var visualCompiler = new VisualPromptCompiler();
         var handler = new ImageGenerationJobHandler(db, visualCompiler, imageService, NullLogger<ImageGenerationJobHandler>.Instance, new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator());
@@ -419,12 +419,12 @@ public sealed class VisualIdentityInvariantTests
     public async Task ConcurrencyTestB_ExpiredLeaseRace_StaleWorkerCannotOverwriteNewOwner()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
-        var dbA = new ProjectDbContext(options);
-        var dbB = new ProjectDbContext(options);
+        var dbA = new CoreDbContext(options);
+        var dbB = new CoreDbContext(options);
 
         var barrierService = new BarrierImageService();
         var visualCompiler = new VisualPromptCompiler();
@@ -539,10 +539,10 @@ public sealed class VisualIdentityInvariantTests
     public async Task ConcurrencyTestC_LeaseExpiresWithNoOtherWorker_StaleWorkerCannotCommitArtifact()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
 
         var startTime = new DateTime(2026, 8, 23, 12, 0, 0, DateTimeKind.Utc);
         var timeProvider = new TestDateTimeProvider(startTime);
@@ -579,10 +579,10 @@ public sealed class VisualIdentityInvariantTests
     public async Task ConcurrencyTestD_HostCancellationInterruption_LeavesJobRecoverableUponRestart()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -651,17 +651,17 @@ public sealed class VisualIdentityInvariantTests
         using var masterConnection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
         await masterConnection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connectionString)
             .Options;
 
-        using (var setupDb = new ProjectDbContext(options))
+        using (var setupDb = new CoreDbContext(options))
         {
             await setupDb.Database.EnsureCreatedAsync();
         }
 
-        var db1 = new ProjectDbContext(options);
-        var db2 = new ProjectDbContext(options);
+        var db1 = new CoreDbContext(options);
+        var db2 = new CoreDbContext(options);
 
         var barrierService = new TwoWorkerBarrierImageService();
         var visualCompiler = new VisualPromptCompiler();
@@ -685,7 +685,7 @@ public sealed class VisualIdentityInvariantTests
         Assert.Contains(results, r => r.Status == JobExecutionStatus.Completed);
 
         // Assert DB guarantees EXACTLY ONE artifact has IsCurrent = true!
-        using var verifyDb = new ProjectDbContext(options);
+        using var verifyDb = new CoreDbContext(options);
         var allImages = await verifyDb.SceneImages.AsNoTracking().Where(img => img.SessionId == sessionId && img.SceneRevision == 1).ToListAsync();
         Assert.NotEmpty(allImages);
 
@@ -699,11 +699,11 @@ public sealed class VisualIdentityInvariantTests
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using var db = new ProjectDbContext(options);
+        using var db = new CoreDbContext(options);
         await db.Database.EnsureCreatedAsync();
 
         Assert.True(db.Database.IsRelational());
@@ -723,7 +723,7 @@ public sealed class VisualIdentityInvariantTests
         Assert.Equal(JobExecutionStatus.Completed, res.Status);
 
         // Assert job completed and artifact committed atomically
-        using var verifyDb = new ProjectDbContext(options);
+        using var verifyDb = new CoreDbContext(options);
         var jobInDb = await verifyDb.ImageGenerationJobs.AsNoTracking().FirstAsync(j => j.GenerationRequestId == requestId);
         Assert.Equal(ImageJobStatus.Completed, jobInDb.Status);
 
@@ -738,11 +738,11 @@ public sealed class VisualIdentityInvariantTests
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using var db = new ProjectDbContext(options);
+        using var db = new CoreDbContext(options);
         await db.Database.EnsureCreatedAsync();
 
         var startTime = new DateTime(2026, 8, 23, 12, 0, 0, DateTimeKind.Utc);
@@ -776,10 +776,10 @@ public sealed class VisualIdentityInvariantTests
     public async Task BoundaryTest_CrashAfterQueuePromptBeforeProviderJobIdSaved_ReExecutesPromptAndCommitsSingleWinningArtifact()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
 
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -1073,7 +1073,7 @@ public sealed class VisualIdentityInvariantTests
         var configRoot = new ConfigurationBuilder().Add(configSource).Build();
 
         var profileProvider = new VisualGenerationProfileProvider(configRoot);
-        var db1 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var db1 = new CoreDbContext(new DbContextOptionsBuilder<CoreDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var uow1 = new UnitOfWork(db1);
         var pipeline1 = SceneCompositionTestHelper.CreatePipeline(db1);
         var resolver = new VisualStateResolver(
@@ -1122,7 +1122,7 @@ public sealed class VisualIdentityInvariantTests
         };
         var newConfigRoot = new ConfigurationBuilder().AddInMemoryCollection(newConfigDict).Build();
         var newProfileProvider = new VisualGenerationProfileProvider(newConfigRoot);
-        var db2 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var db2 = new CoreDbContext(new DbContextOptionsBuilder<CoreDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var uow2 = new UnitOfWork(db2);
         var pipeline2 = SceneCompositionTestHelper.CreatePipeline(db2);
         var newResolver = new VisualStateResolver(
@@ -1166,7 +1166,7 @@ public sealed class VisualIdentityInvariantTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
 
         var profileProvider = new VisualGenerationProfileProvider(configuration);
-        var db3 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var db3 = new CoreDbContext(new DbContextOptionsBuilder<CoreDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var uow3 = new UnitOfWork(db3);
         var pipeline3 = SceneCompositionTestHelper.CreatePipeline(db3);
         var resolver = new VisualStateResolver(

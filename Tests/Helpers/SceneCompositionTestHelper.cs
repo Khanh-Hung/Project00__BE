@@ -1,4 +1,4 @@
-﻿using Application.Interfaces;
+using Application.Interfaces;
 using Application.Services;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Scene;
@@ -8,7 +8,7 @@ namespace Tests
 {
     public static class SceneCompositionTestHelper
     {
-        public static ISceneCompositionPipelineService CreatePipeline(ProjectDbContext db)
+        public static ISceneCompositionPipelineService CreatePipeline(CoreDbContext db)
         {
             var profileReader = new CharacterVisualProfileReader(db);
             var canonicalReader = new CanonicalReferenceReader(db);
@@ -45,6 +45,6 @@ namespace Project.Tests
 {
     public static class SceneCompositionTestHelper
     {
-        public static ISceneCompositionPipelineService CreatePipeline(ProjectDbContext db) => Tests.SceneCompositionTestHelper.CreatePipeline(db);
+        public static ISceneCompositionPipelineService CreatePipeline(CoreDbContext db) => Tests.SceneCompositionTestHelper.CreatePipeline(db);
     }
 }

@@ -19,11 +19,11 @@ public sealed class GenerationRecoveryConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -32,7 +32,7 @@ public sealed class GenerationRecoveryConcurrencyTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-A", TimeSpan.FromMinutes(2), now.AddMinutes(-5)); // Expired lease, Version = 2
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SaveChangesAsync();
@@ -41,7 +41,7 @@ public sealed class GenerationRecoveryConcurrencyTests
         var staleSnapshotVersion = 2u;
 
         // 1. Recovery Scanner runs: Recovers Job to Queued (Version becomes 3)
-        using (var dbRecovery = new ProjectDbContext(options))
+        using (var dbRecovery = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery,
@@ -55,7 +55,7 @@ public sealed class GenerationRecoveryConcurrencyTests
         }
 
         // 2. Worker B claims the job (Version becomes 4)
-        using (var dbWorkerB = new ProjectDbContext(options))
+        using (var dbWorkerB = new CoreDbContext(options))
         {
             var jobForB = await dbWorkerB.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Queued, jobForB.Status);
@@ -70,7 +70,7 @@ public sealed class GenerationRecoveryConcurrencyTests
         }
 
         // 3. Stale Worker A wakes up and attempts a relational CAS mutation with stale snapshot Version = 2
-        using (var dbStaleWorkerA = new ProjectDbContext(options))
+        using (var dbStaleWorkerA = new CoreDbContext(options))
         {
             var rowsStaleA = await dbStaleWorkerA.ImageGenerationJobs
                 .Where(j => j.Id == job.Id
@@ -84,7 +84,7 @@ public sealed class GenerationRecoveryConcurrencyTests
         }
 
         // 4. Verification: Job remains claimed and owned by Worker B
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var finalJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Processing, finalJob.Status);

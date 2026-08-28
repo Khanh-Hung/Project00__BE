@@ -33,15 +33,15 @@ public sealed class UserTriggeredTurnImageGenerationTests
         }
     }
 
-    private static (ProjectDbContext db, UnitOfWork uow, FakeUserProvider userProvider, TriggerTurnSceneImageGenerationHandler handler) CreateHarness(
+    private static (CoreDbContext db, UnitOfWork uow, FakeUserProvider userProvider, TriggerTurnSceneImageGenerationHandler handler) CreateHarness(
         string dbName,
         string? currentUserId = null)
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userProvider = new FakeUserProvider(currentUserId);
         var handler = new TriggerTurnSceneImageGenerationHandler(
@@ -819,7 +819,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
         var charId = Guid.NewGuid();
         var dbName = Guid.NewGuid().ToString();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
@@ -842,7 +842,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
         );
 
         // Seed initial turn with isolated DbContext
-        await using (var seedDb = new ProjectDbContext(options))
+        await using (var seedDb = new CoreDbContext(options))
         {
             await seedDb.CharacterTurns.AddAsync(turn);
             await seedDb.SaveChangesAsync();
@@ -853,7 +853,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
         const int requestCount = 100;
         var tasks = Enumerable.Range(0, requestCount).Select(async _ =>
         {
-            await using var taskDb = new ProjectDbContext(options);
+            await using var taskDb = new CoreDbContext(options);
             var taskUow = new UnitOfWork(taskDb);
             var taskUserProvider = new FakeUserProvider(userId.ToString());
             var taskHandler = new TriggerTurnSceneImageGenerationHandler(
@@ -882,7 +882,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
         Assert.Single(generatedIds);
 
         // Assert EXACTLY 1 Outbox message and 1 ImageGenerationJob exist in database
-        await using (var verifyDb = new ProjectDbContext(options))
+        await using (var verifyDb = new CoreDbContext(options))
         {
             var outboxMessages = await verifyDb.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration).ToListAsync();
             Assert.Single(outboxMessages);
@@ -895,7 +895,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
     [Fact]
     public async Task Test20_ConcurrentGenerateRequests_AcrossDistinctTurns_ProduceUniqueGenerationRequestIds()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
@@ -935,7 +935,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
             );
         }).ToList();
 
-        using (var seedDb = new ProjectDbContext(options))
+        using (var seedDb = new CoreDbContext(options))
         {
             await seedDb.CharacterTurns.AddRangeAsync(turns);
             await seedDb.SaveChangesAsync();
@@ -943,7 +943,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
 
         var tasks = turns.Select(async turn =>
         {
-            await using var taskDb = new ProjectDbContext(options);
+            await using var taskDb = new CoreDbContext(options);
             var taskUow = new UnitOfWork(taskDb);
             var taskUserProvider = new FakeUserProvider(userId.ToString());
             var taskHandler = new TriggerTurnSceneImageGenerationHandler(
@@ -967,7 +967,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
         var generatedIds = results.Select(r => r.Value!.GenerationRequestId).ToList();
         Assert.Equal(turnCount, generatedIds.Distinct().Count());
 
-        await using (var verifyDb = new ProjectDbContext(options))
+        await using (var verifyDb = new CoreDbContext(options))
         {
             var outboxMessages = await verifyDb.OutboxMessages.Where(m => m.EventType == OutboxEventTypes.SceneImageGeneration).ToListAsync();
             Assert.Equal(turnCount, outboxMessages.Count);

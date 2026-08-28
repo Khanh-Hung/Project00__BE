@@ -31,7 +31,7 @@ public static class DependencyInjection
             options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
         });
 
-        services.AddDbContext<ProjectDbContext>(options =>
+        services.AddDbContext<CoreDbContext>(options =>
         {
             if (!string.IsNullOrWhiteSpace(connectionString))
             {

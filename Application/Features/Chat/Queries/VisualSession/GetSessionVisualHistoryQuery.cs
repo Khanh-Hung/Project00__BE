@@ -16,12 +16,12 @@ public sealed record GetSessionVisualHistoryQuery(
 
 public sealed class GetSessionVisualHistoryHandler : IRequestHandler<GetSessionVisualHistoryQuery, Result<IReadOnlyList<VisualHistoryEntry>>>
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ICurrentUserProvider _currentUserProvider;
     private readonly IVisualHistoryService _historyService;
 
     public GetSessionVisualHistoryHandler(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ICurrentUserProvider currentUserProvider,
         IVisualHistoryService historyService)
     {

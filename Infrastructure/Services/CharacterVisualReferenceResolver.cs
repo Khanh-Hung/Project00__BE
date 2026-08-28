@@ -9,11 +9,11 @@ namespace Infrastructure.Services;
 
 public sealed class CharacterVisualReferenceResolver : ICharacterVisualReferenceResolver
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<CharacterVisualReferenceResolver> _logger;
 
     public CharacterVisualReferenceResolver(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ILogger<CharacterVisualReferenceResolver> logger)
     {
         _dbContext = dbContext;

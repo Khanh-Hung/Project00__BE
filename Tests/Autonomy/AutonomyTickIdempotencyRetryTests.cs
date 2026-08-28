@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Autonomy;
+using Application.Contracts.Autonomy;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -19,18 +19,18 @@ namespace Tests.Autonomy;
 public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public AutonomyTickIdempotencyRetryTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -47,7 +47,7 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
         var goal = new CharacterGoal(charId, "Master Alchemical Research", CharacterGoalType.SkillDevelopment, 100);
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Great alchemical research discovery!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -67,7 +67,7 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
         );
 
         // Attempt 1: First invocation -> Success with full side-effects
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -98,7 +98,7 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
         }
 
         // Attempt 2: Sequential Retry with same TimeBucket -> Duplicate Suppressed with zero duplicate effects
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -128,7 +128,7 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
         }
 
         // Strict Invariant verification: Exactly 1 row in CharacterAutonomyTicks, 1 Reaction, 1 Activity, 1 Memory, 1 SceneSpecification (from reaction)
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var tickCount = await db.CharacterAutonomyTicks.CountAsync(t => t.CharacterId == charId && t.TimeBucket == timeBucket);
             Assert.Equal(1, tickCount);

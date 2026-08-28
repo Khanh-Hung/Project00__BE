@@ -31,7 +31,7 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task GetChatSession_Rejects_DifferentUser()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
@@ -39,7 +39,7 @@ public class SecurityAuthorizationTests
         var userB = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy") { Id = charId };
         var sessionA = new ChatSession(charId, userA, "User A Session");
         await context.Characters.AddAsync(character);
@@ -59,7 +59,7 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task DeleteChatSession_Rejects_DifferentUser()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
@@ -67,7 +67,7 @@ public class SecurityAuthorizationTests
         var userB = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy") { Id = charId };
         var sessionA = new ChatSession(charId, userA, "User A Session");
         await context.Characters.AddAsync(character);
@@ -87,7 +87,7 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task RollbackChatMessage_Rejects_DifferentUser()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
@@ -95,7 +95,7 @@ public class SecurityAuthorizationTests
         var userB = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy") { Id = charId };
         var sessionA = new ChatSession(charId, userA, "User A Session");
         var msg = sessionA.AddUserMessage("Hello");
@@ -116,14 +116,14 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task UpdateUserProfile_Rejects_DifferentUser()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var profileA = Domain.Entities.UserProfile.Create(userA, "User A", null, "Bio A", null, null, null);
         await context.UserProfiles.AddAsync(profileA);
         await context.SaveChangesAsync();
@@ -142,14 +142,14 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task UpdateCharacter_Rejects_DifferentCreator()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy");
         character.SetCreated(DateTime.UtcNow, userA.ToString());
         await context.Characters.AddAsync(character);
@@ -169,14 +169,14 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task DeleteCharacter_Rejects_DifferentCreator()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy");
         character.SetCreated(DateTime.UtcNow, userA.ToString());
         await context.Characters.AddAsync(character);
@@ -195,14 +195,14 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task CreateLorebookEntry_Rejects_DifferentCharacterCreator()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy");
         character.SetCreated(DateTime.UtcNow, userA.ToString());
         await context.Characters.AddAsync(character);
@@ -222,14 +222,14 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task DeleteLorebookEntry_Rejects_DifferentCharacterCreator()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy");
         character.SetCreated(DateTime.UtcNow, userA.ToString());
         await context.Characters.AddAsync(character);
@@ -251,14 +251,14 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task GetCharacterById_Hides_PrivateCharacter_From_OtherUsers()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy", isPublic: false);
         character.SetCreated(DateTime.UtcNow, userA.ToString());
         await context.Characters.AddAsync(character);
@@ -277,14 +277,14 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task GetCharacterLorebook_Hides_PrivateCharacter_From_OtherUsers()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy", isPublic: false);
         character.SetCreated(DateTime.UtcNow, userA.ToString());
         await context.Characters.AddAsync(character);
@@ -306,14 +306,14 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task GetMyCharacters_Returns_Only_Current_Users_Characters()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var charA = new Character("Alice", "Mage", "", "Friendly", "Hi", "Fantasy");
         charA.SetCreated(DateTime.UtcNow, userA.ToString());
 
@@ -337,11 +337,11 @@ public class SecurityAuthorizationTests
     [Fact]
     public async Task GetMyCharacters_Rejects_Unauthenticated()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(context);
         var unauthenticatedProvider = new TestCurrentUserProvider(null);
         var handler = new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersHandler(unitOfWork, unauthenticatedProvider);

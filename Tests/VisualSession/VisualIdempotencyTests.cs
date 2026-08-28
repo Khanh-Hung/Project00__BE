@@ -29,12 +29,12 @@ public sealed class VisualIdempotencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var dbOptions = new DbContextOptionsBuilder<ProjectDbContext>()
+        var dbOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
         // Ensure database schema is created
-        using (var setupDb = new ProjectDbContext(dbOptions))
+        using (var setupDb = new CoreDbContext(dbOptions))
         {
             await setupDb.Database.EnsureCreatedAsync();
         }
@@ -57,7 +57,7 @@ public sealed class VisualIdempotencyTests
         );
 
         // Seed initial Turn data
-        using (var seedDb = new ProjectDbContext(dbOptions))
+        using (var seedDb = new CoreDbContext(dbOptions))
         {
             var turn = new CharacterTurn(
                 turnId: turnId,
@@ -83,7 +83,7 @@ public sealed class VisualIdempotencyTests
         int concurrency = 50;
         var tasks = Enumerable.Range(0, concurrency).Select(async _ =>
         {
-            await using var db = new ProjectDbContext(dbOptions);
+            await using var db = new CoreDbContext(dbOptions);
             var uow = new UnitOfWork(db);
             var auth = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };
             var handler = new TriggerTurnSceneImageGenerationHandler(uow, auth, NullLogger<TriggerTurnSceneImageGenerationHandler>.Instance);
@@ -103,7 +103,7 @@ public sealed class VisualIdempotencyTests
         }
 
         // 4. Authoritative Database Assertions: EXACTLY 1 Job and EXACTLY 1 Outbox Message!
-        using (var verifyDb = new ProjectDbContext(dbOptions))
+        using (var verifyDb = new CoreDbContext(dbOptions))
         {
             var jobCount = await verifyDb.ImageGenerationJobs
                 .CountAsync(j => j.SessionId == sessionId && j.GenerationRequestId == requestId);

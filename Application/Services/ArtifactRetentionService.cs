@@ -19,12 +19,12 @@ namespace Application.Services;
 /// </summary>
 public sealed class ArtifactRetentionService : IArtifactRetentionService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<ArtifactRetentionService> _logger;
 
     public ArtifactRetentionService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IDateTimeProvider dateTimeProvider,
         ILogger<ArtifactRetentionService> logger)
     {

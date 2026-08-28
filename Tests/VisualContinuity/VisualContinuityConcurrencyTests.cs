@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Scene;
 using Microsoft.Data.Sqlite;
@@ -11,18 +11,18 @@ namespace Tests.VisualContinuity;
 public sealed class VisualContinuityConcurrencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public VisualContinuityConcurrencyTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -40,7 +40,7 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
         var sceneKey = "alchemy_lab";
 
         // Seed initial state at Version 5, Revision 5
-        await using (var db = new ProjectDbContext(_options))
+        await using (var db = new CoreDbContext(_options))
         {
             var reader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var charState = new CharacterVisualState(charId, "Alchemy Lab", 5);
@@ -62,12 +62,12 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
         }
 
         // Both Worker A and Worker B read state at Version 5
-        await using var dbWorkerA = new ProjectDbContext(_options);
+        await using var dbWorkerA = new CoreDbContext(_options);
         var readerA = new SceneVisualStateReader(dbWorkerA, NullLogger<SceneVisualStateReader>.Instance);
         var stateA = await readerA.GetLatestBySessionAndSceneKeyAsync(sessionId, sceneKey);
         Assert.NotNull(stateA);
 
-        await using var dbWorkerB = new ProjectDbContext(_options);
+        await using var dbWorkerB = new CoreDbContext(_options);
         var readerB = new SceneVisualStateReader(dbWorkerB, NullLogger<SceneVisualStateReader>.Instance);
         var stateB = await readerB.GetLatestBySessionAndSceneKeyAsync(sessionId, sceneKey);
         Assert.NotNull(stateB);
@@ -86,7 +86,7 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
         await readerA.SaveStateAsync(updatedStateA, expectedVersion: 5);
 
         // Verify DB is now Version 6
-        await using (var verifyDb = new ProjectDbContext(_options))
+        await using (var verifyDb = new CoreDbContext(_options))
         {
             var recordAfterA = await verifyDb.SceneVisualStates.FirstAsync(r => r.SessionId == sessionId && r.SceneKey == sceneKey);
             Assert.Equal(6u, recordAfterA.Version);
@@ -109,7 +109,7 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
             readerB.SaveStateAsync(updatedStateB, expectedVersion: 5));
 
         // Verify Worker B's stale write was rejected and DB remains Worker A's state
-        await using (var verifyDb = new ProjectDbContext(_options))
+        await using (var verifyDb = new CoreDbContext(_options))
         {
             var finalRecord = await verifyDb.SceneVisualStates.FirstAsync(r => r.SessionId == sessionId && r.SceneKey == sceneKey);
             Assert.Equal(6u, finalRecord.Version);
@@ -131,7 +131,7 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
         // 10 concurrent workers attempt to insert initial state for the SAME (SessionId, SceneKey)
         var tasks = Enumerable.Range(1, 10).Select(async workerIndex =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var workerReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
 
             var charState = new CharacterVisualState(charId, "Crystal Sanctuary", 1, outfit: $"Worker_{workerIndex}_Robes");
@@ -163,7 +163,7 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
         Assert.Equal(9, conflictCount);
 
         // Database Invariant: Maximum 1 authoritative current state per (SessionId, SceneKey)
-        await using (var db = new ProjectDbContext(_options))
+        await using (var db = new CoreDbContext(_options))
         {
             var count = await db.SceneVisualStates.CountAsync(r => r.SessionId == sessionId && r.SceneKey == sceneKey);
             Assert.Equal(1, count);
@@ -182,7 +182,7 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
         var sceneKey = "throne_room";
 
         // Seed initial state (Version 1, Revision 1) using production SaveStateAsync
-        await using (var db = new ProjectDbContext(_options))
+        await using (var db = new CoreDbContext(_options))
         {
             var reader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var charState = new CharacterVisualState(charId, "Throne Room", 1);
@@ -204,7 +204,7 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
         // 10 concurrent workers read Version 1 and attempt SaveStateAsync with expectedVersion = 1 to advance to Revision 2
         var tasks = Enumerable.Range(1, 10).Select(async workerIndex =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var workerReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
 
             var charState = new CharacterVisualState(charId, "Throne Room", 2);
@@ -237,7 +237,7 @@ public sealed class VisualContinuityConcurrencyTests : IDisposable
         Assert.Equal(9, conflictCount);
 
         // Verify: Database record has Version == 2 and SceneRevision == 2
-        await using (var db = new ProjectDbContext(_options))
+        await using (var db = new CoreDbContext(_options))
         {
             var finalRecord = await db.SceneVisualStates.FirstAsync(r => r.SessionId == sessionId && r.SceneKey == sceneKey);
             Assert.Equal(2, finalRecord.SceneRevision);

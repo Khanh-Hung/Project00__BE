@@ -16,7 +16,7 @@ namespace Infrastructure.Services.Reactions;
 
 public sealed class CharacterReactionExecutionService : ICharacterReactionExecutionService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IGoalProgressService _goalProgressService;
     private readonly IActivityExecutionService _activityExecutionService;
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
@@ -24,7 +24,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
     private readonly ILogger<CharacterReactionExecutionService> _logger;
 
     public CharacterReactionExecutionService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IGoalProgressService goalProgressService,
         IActivityExecutionService activityExecutionService,
         ISceneCompositionPipelineService sceneCompositionPipeline,

@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
 using Application.Contracts.Autonomy;
 using Application.Contracts.Reactions;
@@ -18,7 +18,7 @@ namespace Infrastructure.Services.Autonomy;
 /// </summary>
 public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharacterLifecycleOrchestrator
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IAutonomousCharacterContextLoader _contextLoader;
     private readonly IAutonomousDecisionService _decisionService;
     private readonly IActivityExecutionService _activityExecutionService;
@@ -26,7 +26,7 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
     private readonly ILogger<AutonomousCharacterLifecycleOrchestrator> _logger;
 
     public AutonomousCharacterLifecycleOrchestrator(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IAutonomousCharacterContextLoader contextLoader,
         IAutonomousDecisionService decisionService,
         IActivityExecutionService activityExecutionService,

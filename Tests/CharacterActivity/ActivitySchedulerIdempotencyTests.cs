@@ -1,4 +1,4 @@
-﻿using Application.Services;
+using Application.Services;
 using Domain.Entities;
 using Infrastructure.BackgroundJobs;
 using Infrastructure.Persistence;
@@ -14,18 +14,18 @@ namespace Tests.CharacterActivities;
 public sealed class ActivitySchedulerIdempotencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public ActivitySchedulerIdempotencyTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -43,7 +43,7 @@ public sealed class ActivitySchedulerIdempotencyTests : IDisposable
             Id = charId
         };
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SaveChangesAsync();
@@ -55,7 +55,7 @@ public sealed class ActivitySchedulerIdempotencyTests : IDisposable
         var testTime = new DateTime(2026, 8, 28, 10, 0, 0, DateTimeKind.Utc);
 
         // Run 1
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
@@ -66,7 +66,7 @@ public sealed class ActivitySchedulerIdempotencyTests : IDisposable
         }
 
         // Run 2 (Same time bucket)
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
@@ -77,7 +77,7 @@ public sealed class ActivitySchedulerIdempotencyTests : IDisposable
         }
 
         // Verify total DB count
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var activities = await db.CharacterActivities.Where(a => a.CharacterId == charId).ToListAsync();
             Assert.Single(activities);

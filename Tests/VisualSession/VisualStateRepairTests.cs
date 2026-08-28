@@ -10,12 +10,12 @@ namespace Tests.VisualSession;
 
 public sealed class VisualStateRepairTests
 {
-    private static ProjectDbContext CreateInMemoryDb()
+    private static CoreDbContext CreateInMemoryDb()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        return new ProjectDbContext(options);
+        return new CoreDbContext(options);
     }
 
     [Fact]
@@ -322,11 +322,11 @@ public sealed class VisualStateRepairTests
         attempt.AttachAcceptedArtifact(artifact.Id, DateTime.UtcNow);
         job.AcceptAttempt(attempt.Id, DateTime.UtcNow, "worker-1", "{}");
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
 
-        using (var seedDb = new ProjectDbContext(options))
+        using (var seedDb = new CoreDbContext(options))
         {
             seedDb.ImageGenerationJobs.Add(job);
             seedDb.ImageGenerationAttempts.Add(attempt);
@@ -338,7 +338,7 @@ public sealed class VisualStateRepairTests
         const int workerCount = 5;
         var tasks = Enumerable.Range(0, workerCount).Select(async _ =>
         {
-            using var workerDb = new ProjectDbContext(options);
+            using var workerDb = new CoreDbContext(options);
             var workerService = new VisualStateConsistencyService(workerDb, NullLogger<VisualStateConsistencyService>.Instance);
             return await workerService.RepairVisualStateAsync(sessionId);
         });
@@ -352,7 +352,7 @@ public sealed class VisualStateRepairTests
         });
 
         // Verification on DB state
-        using (var verifyDb = new ProjectDbContext(options))
+        using (var verifyDb = new CoreDbContext(options))
         {
             var currentArtifacts = await verifyDb.SceneImages.Where(img => img.SessionId == sessionId && img.IsCurrent).ToListAsync();
             Assert.Single(currentArtifacts);

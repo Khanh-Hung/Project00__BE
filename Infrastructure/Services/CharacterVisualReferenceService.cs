@@ -10,12 +10,12 @@ namespace Infrastructure.Services;
 
 public sealed class CharacterVisualReferenceService : ICharacterVisualReferenceService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ICharacterVisualProfileService _profileService;
     private readonly ILogger<CharacterVisualReferenceService> _logger;
 
     public CharacterVisualReferenceService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ICharacterVisualProfileService profileService,
         ILogger<CharacterVisualReferenceService> logger)
     {

@@ -33,14 +33,14 @@ public class SemanticMemoryRetrievalTests
     [Fact]
     public async Task MemoryService_Ranks_Semantically_Related_Memories_Highest()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var userId = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var uow = new UnitOfWork(context);
 
         var embeddingService = new EmbeddingService(
@@ -79,14 +79,14 @@ public class SemanticMemoryRetrievalTests
     [Fact]
     public async Task MemoryService_Generates_Embeddings_On_StoreCandidatesAsync()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var userId = Guid.NewGuid();
         var charId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var uow = new UnitOfWork(context);
 
         var embeddingService = new EmbeddingService(

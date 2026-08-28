@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Scene;
 using Microsoft.Data.Sqlite;
@@ -11,18 +11,18 @@ namespace Tests.AutonomousLoop;
 public sealed class SceneRevisionOrderingTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public SceneRevisionOrderingTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -50,7 +50,7 @@ public sealed class SceneRevisionOrderingTests : IDisposable
             sourceTurnId: Guid.NewGuid()
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var reader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             await reader.SaveStateAsync(stateRev2);
@@ -68,14 +68,14 @@ public sealed class SceneRevisionOrderingTests : IDisposable
             sourceTurnId: Guid.NewGuid()
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var reader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             await reader.SaveStateAsync(stateRev1);
         }
 
         // 3. Assert: Authoritative DB State remains Revision 2!
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var reader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var latest = await reader.GetLatestBySessionAndSceneKeyAsync(sessionId, sceneKey);

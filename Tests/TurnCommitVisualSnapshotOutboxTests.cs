@@ -23,14 +23,14 @@ public class TurnCommitVisualSnapshotOutboxTests
     public async Task MultiTurn_Snapshots_In_Outbox_Maintain_Exact_Spatial_And_Outfit_Isolation()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character(
             name: "Elysia",
             title: "Herrscher of Human: Ego",
@@ -163,7 +163,7 @@ public class TurnCommitVisualSnapshotOutboxTests
     {
         var dbName = Guid.NewGuid().ToString();
         var services = new ServiceCollection();
-        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddDbContext<CoreDbContext>(o => o.UseInMemoryDatabase(dbName));
         services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
         services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
         services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
@@ -204,7 +204,7 @@ public class TurnCommitVisualSnapshotOutboxTests
 
         using (var seedScope = scopeFactory.CreateScope())
         {
-            var ctx = seedScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = seedScope.ServiceProvider.GetRequiredService<CoreDbContext>();
 
             // The session in database has EVOLVED far ahead to Turn 10: Crimson Castle, Red Empress Gown
             var evolvedSession = new ChatSession(charId, Guid.NewGuid(), "Evolved Session") { Id = sessionId };
@@ -251,14 +251,14 @@ public class TurnCommitVisualSnapshotOutboxTests
     public async Task PreviousSceneImageUrl_Resolves_From_Exact_Revision_N_Minus_1()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character(
             name: "Elysia",
             title: "Herrscher of Human: Ego",
@@ -356,7 +356,7 @@ public class TurnCommitVisualSnapshotOutboxTests
 
         // Test Non-streaming turn
         var db1 = Guid.NewGuid().ToString();
-        await using var ctx1 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(db1).Options);
+        await using var ctx1 = new CoreDbContext(new DbContextOptionsBuilder<CoreDbContext>().UseInMemoryDatabase(db1).Options);
         await ctx1.Characters.AddAsync(character);
         var session1 = new ChatSession(charId, userId, "Session 1");
         await ctx1.ChatSessions.AddAsync(session1);
@@ -382,7 +382,7 @@ public class TurnCommitVisualSnapshotOutboxTests
 
         // Test Streaming turn
         var db2 = Guid.NewGuid().ToString();
-        await using var ctx2 = new ProjectDbContext(new DbContextOptionsBuilder<ProjectDbContext>().UseInMemoryDatabase(db2).Options);
+        await using var ctx2 = new CoreDbContext(new DbContextOptionsBuilder<CoreDbContext>().UseInMemoryDatabase(db2).Options);
         await ctx2.Characters.AddAsync(character);
         var session2 = new ChatSession(charId, userId, "Session 2");
         await ctx2.ChatSessions.AddAsync(session2);
@@ -422,7 +422,7 @@ public class TurnCommitVisualSnapshotOutboxTests
     {
         var dbName = Guid.NewGuid().ToString();
         var services = new ServiceCollection();
-        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddDbContext<CoreDbContext>(o => o.UseInMemoryDatabase(dbName));
         services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
         services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
         services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
@@ -443,7 +443,7 @@ public class TurnCommitVisualSnapshotOutboxTests
 
         using (var initScope = scopeFactory.CreateScope())
         {
-            var ctx = initScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = initScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var character = new Character(
                 name: "Elysia",
                 title: "Herrscher of Human",
@@ -468,7 +468,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         // --- TURN 1 ---
         using (var turn1Scope = scopeFactory.CreateScope())
         {
-            var ctx = turn1Scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = turn1Scope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var uow = new UnitOfWork(ctx);
             var runtime = new CharacterRuntime(
                 uow,
@@ -497,7 +497,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         // --- TURN 2 ---
         using (var turn2Scope = scopeFactory.CreateScope())
         {
-            var ctx = turn2Scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = turn2Scope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var uow = new UnitOfWork(ctx);
             var runtime = new CharacterRuntime(
                 uow,
@@ -528,7 +528,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         // --- TURN 3 ---
         using (var turn3Scope = scopeFactory.CreateScope())
         {
-            var ctx = turn3Scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = turn3Scope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var uow = new UnitOfWork(ctx);
             var runtime = new CharacterRuntime(
                 uow,
@@ -564,7 +564,7 @@ public class TurnCommitVisualSnapshotOutboxTests
     {
         var dbName = Guid.NewGuid().ToString();
         var services = new ServiceCollection();
-        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddDbContext<CoreDbContext>(o => o.UseInMemoryDatabase(dbName));
         services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
         services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
         services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
@@ -589,7 +589,7 @@ public class TurnCommitVisualSnapshotOutboxTests
 
         using (var seedScope = scopeFactory.CreateScope())
         {
-            var ctx = seedScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = seedScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var session = new ChatSession(charId, Guid.NewGuid(), "Out-of-order Session") { Id = sessionId };
             await ctx.ChatSessions.AddAsync(session);
 
@@ -609,7 +609,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         // 3. Verify SceneImages table contains distinct artifacts for all 3 revisions
         using (var verifyScope = scopeFactory.CreateScope())
         {
-            var ctx = verifyScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = verifyScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var artifacts = await ctx.SceneImages.Where(img => img.SessionId == sessionId).OrderBy(img => img.SceneRevision).ToListAsync();
             Assert.Equal(3, artifacts.Count);
             Assert.Equal(1, artifacts[0].SceneRevision);
@@ -620,7 +620,7 @@ public class TurnCommitVisualSnapshotOutboxTests
         // 4. Test Idempotency: Re-processing identical payload does not duplicate or throw
         using (var retryScope = scopeFactory.CreateScope())
         {
-            var ctx = retryScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = retryScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             // Add duplicate message for Revision 2
             await ctx.OutboxMessages.AddAsync(new OutboxMessage(OutboxEventTypes.SceneImageGeneration, JsonSerializer.Serialize(new SceneImageGenerationOutboxPayload(snap2.TurnId, charId, Guid.NewGuid(), snap2, snap2RequestId))));
             await ctx.SaveChangesAsync();
@@ -631,7 +631,7 @@ public class TurnCommitVisualSnapshotOutboxTests
 
         using (var finalScope = scopeFactory.CreateScope())
         {
-            var ctx = finalScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = finalScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var finalArtifacts = await ctx.SceneImages.Where(img => img.SessionId == sessionId).ToListAsync();
             Assert.Equal(3, finalArtifacts.Count); // Count remains strictly 3!
         }
@@ -766,14 +766,14 @@ public class TurnCommitVisualSnapshotOutboxTests
     public async Task Zero_State_Drift_Worker_Processes_Turn_Snapshot_Without_Being_Corrupted_By_Current_Character_State()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character(
             name: "Lyra",
             title: "Dragon Sovereign",

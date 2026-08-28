@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Contracts.Autonomy;
 using Application.Contracts.Goals;
 using Application.Interfaces;
@@ -18,12 +18,12 @@ namespace Infrastructure.Services.Autonomy;
 /// </summary>
 public sealed class AutonomousCharacterContextLoader : IAutonomousCharacterContextLoader
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ISceneVisualStateReader _visualStateReader;
     private readonly ILogger<AutonomousCharacterContextLoader> _logger;
 
     public AutonomousCharacterContextLoader(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ISceneVisualStateReader visualStateReader,
         ILogger<AutonomousCharacterContextLoader> logger)
     {

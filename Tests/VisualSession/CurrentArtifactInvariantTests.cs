@@ -10,18 +10,18 @@ namespace Tests.VisualSession;
 public sealed class CurrentArtifactInvariantTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CurrentArtifactInvariantTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -34,7 +34,7 @@ public sealed class CurrentArtifactInvariantTests : IDisposable
     [Fact]
     public async Task SingleCurrentArtifact_ForSessionAndRevision_IsAllowed()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var sessionId = Guid.NewGuid();
         var charId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -51,7 +51,7 @@ public sealed class CurrentArtifactInvariantTests : IDisposable
     [Fact]
     public async Task MultipleHistoricalArtifacts_ForSameSessionAndRevision_IsAllowed()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var sessionId = Guid.NewGuid();
         var charId = Guid.NewGuid();
         var turnId = Guid.NewGuid();
@@ -70,7 +70,7 @@ public sealed class CurrentArtifactInvariantTests : IDisposable
     [Fact]
     public async Task SecondCurrentArtifact_ForSameSessionAndRevision_ViolatesDatabaseConstraint()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var sessionId = Guid.NewGuid();
         var charId = Guid.NewGuid();
         var turnId = Guid.NewGuid();

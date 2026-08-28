@@ -14,11 +14,11 @@ namespace Infrastructure.Services;
 /// </summary>
 public sealed class PredecessorLineageResolver : IPredecessorLineageResolver
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<PredecessorLineageResolver> _logger;
 
     public PredecessorLineageResolver(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ILogger<PredecessorLineageResolver> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));

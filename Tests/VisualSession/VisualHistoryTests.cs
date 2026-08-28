@@ -13,11 +13,11 @@ public sealed class VisualHistoryTests
     [Fact]
     public async Task GetSessionVisualHistory_ReturnsNewestToOldest_AndSingleCurrentArtifact()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var service = new VisualHistoryService(db, NullLogger<VisualHistoryService>.Instance);
 
         var sessionId = Guid.NewGuid();
@@ -67,11 +67,11 @@ public sealed class VisualHistoryTests
     [Fact]
     public async Task GetSessionVisualHistory_RespectsLimitParameter()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var service = new VisualHistoryService(db, NullLogger<VisualHistoryService>.Instance);
 
         var sessionId = Guid.NewGuid();

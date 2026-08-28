@@ -235,11 +235,11 @@ public class CharacterRelationshipTests
     [Fact]
     public async Task MultipleChatSessions_SameUserAndCharacter_ShareSingleCharacterRelationship()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        using var dbContext = new ProjectDbContext(options);
+        using var dbContext = new CoreDbContext(options);
         var uow = new UnitOfWork(dbContext);
 
         var userId = Guid.NewGuid();

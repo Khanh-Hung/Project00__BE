@@ -19,12 +19,12 @@ public sealed record GetTurnImageGenerationStatusQuery(
 
 public sealed class GetTurnImageGenerationStatusHandler : IRequestHandler<GetTurnImageGenerationStatusQuery, Result<VisualGenerationStatusResponse>>
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ICurrentUserProvider _currentUserProvider;
     private readonly ILogger<GetTurnImageGenerationStatusHandler> _logger;
 
     public GetTurnImageGenerationStatusHandler(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ICurrentUserProvider currentUserProvider,
         ILogger<GetTurnImageGenerationStatusHandler>? logger = null)
     {

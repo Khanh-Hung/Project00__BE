@@ -9,11 +9,11 @@ namespace Infrastructure.Services;
 
 public sealed class CharacterVisualProfileService : ICharacterVisualProfileService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<CharacterVisualProfileService> _logger;
 
     public CharacterVisualProfileService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ILogger<CharacterVisualProfileService> logger)
     {
         _dbContext = dbContext;

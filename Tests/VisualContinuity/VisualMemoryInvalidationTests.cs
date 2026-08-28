@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Scene;
@@ -11,18 +11,18 @@ namespace Tests.VisualContinuity;
 public sealed class VisualMemoryInvalidationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public VisualMemoryInvalidationTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -40,7 +40,7 @@ public sealed class VisualMemoryInvalidationTests : IDisposable
         var turn1 = Guid.NewGuid();
         var turn2 = Guid.NewGuid();
 
-        await using (var db = new ProjectDbContext(_options))
+        await using (var db = new CoreDbContext(_options))
         {
             // Seed Artifact 1 & Memory 1 (Red Dress)
             var art1 = new SceneImage(sessionId, charId, turn1, 1, "https://cdn.example.com/red_dress.png", "red dress");
@@ -93,7 +93,7 @@ public sealed class VisualMemoryInvalidationTests : IDisposable
         }
 
         // Query through reader
-        await using (var db = new ProjectDbContext(_options))
+        await using (var db = new CoreDbContext(_options))
         {
             var reader = new VisualMemoryReader(db);
             var relevantMemories = await reader.GetRelevantMemoriesAsync(charId, maxResults: 5);

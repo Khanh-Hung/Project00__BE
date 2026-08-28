@@ -105,7 +105,7 @@ public sealed class GenerationWorker : BackgroundService
     private async Task<JobExecutionResult> ExecuteWorkItemAsync(GenerationWorkItem item, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
         var orchestrator = scope.ServiceProvider.GetRequiredService<IImageGenerationOrchestrator>();
         var dateTimeProvider = scope.ServiceProvider.GetRequiredService<IDateTimeProvider>();
         var now = dateTimeProvider.UtcNow;

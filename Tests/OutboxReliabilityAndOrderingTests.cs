@@ -89,14 +89,14 @@ public sealed class OutboxReliabilityAndOrderingTests
         return null;
     }
 
-    private (IServiceScopeFactory ScopeFactory, ProjectDbContext DbContext, MockImageService ImageService) CreatePostgreSqlTestContext(string connectionString)
+    private (IServiceScopeFactory ScopeFactory, CoreDbContext DbContext, MockImageService ImageService) CreatePostgreSqlTestContext(string connectionString)
     {
         var services = new ServiceCollection();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseNpgsql(connectionString)
             .Options;
 
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddScoped<IVoicePromptCompiler, DummyVoiceCompiler>();
         services.AddScoped<IVisualPromptCompiler, DummyVisualCompiler>();
         services.AddScoped<IVoiceGenerationService, DummyVoiceService>();
@@ -107,19 +107,19 @@ public sealed class OutboxReliabilityAndOrderingTests
 
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var dbContext = serviceProvider.GetRequiredService<ProjectDbContext>();
+        var dbContext = serviceProvider.GetRequiredService<CoreDbContext>();
 
         return (scopeFactory, dbContext, imageService);
     }
 
-    private (IServiceScopeFactory ScopeFactory, ProjectDbContext DbContext, MockImageService ImageService) CreateTestContext(string dbName)
+    private (IServiceScopeFactory ScopeFactory, CoreDbContext DbContext, MockImageService ImageService) CreateTestContext(string dbName)
     {
         var services = new ServiceCollection();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
-        services.AddScoped(_ => new ProjectDbContext(options));
+        services.AddScoped(_ => new CoreDbContext(options));
         services.AddScoped<IVoicePromptCompiler, DummyVoiceCompiler>();
         services.AddScoped<IVisualPromptCompiler, DummyVisualCompiler>();
         services.AddScoped<IVoiceGenerationService, DummyVoiceService>();
@@ -130,7 +130,7 @@ public sealed class OutboxReliabilityAndOrderingTests
 
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var dbContext = serviceProvider.GetRequiredService<ProjectDbContext>();
+        var dbContext = serviceProvider.GetRequiredService<CoreDbContext>();
 
         return (scopeFactory, dbContext, imageService);
     }

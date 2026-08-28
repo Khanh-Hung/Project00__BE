@@ -9,12 +9,12 @@ namespace Tests.VisualIdentity;
 
 public sealed class VisualMemoryTests
 {
-    private static ProjectDbContext CreateInMemoryDb()
+    private static CoreDbContext CreateInMemoryDb()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        return new ProjectDbContext(options);
+        return new CoreDbContext(options);
     }
 
     [Fact]

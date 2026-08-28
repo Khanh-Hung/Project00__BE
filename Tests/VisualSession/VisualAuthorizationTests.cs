@@ -21,13 +21,13 @@ public sealed class VisualAuthorizationTests
         public string? CurrentUserId { get; set; }
     }
 
-    private static (ProjectDbContext db, Guid ownerUserId, Guid foreignUserId, Guid sessionId, Guid turnId) SetupContext()
+    private static (CoreDbContext db, Guid ownerUserId, Guid foreignUserId, Guid sessionId, Guid turnId) SetupContext()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var ownerUserId = Guid.NewGuid();
         var foreignUserId = Guid.NewGuid();
         var characterId = Guid.NewGuid();
@@ -173,11 +173,11 @@ public sealed class VisualAuthorizationTests
     [Fact]
     public async Task GetTurnImageStatus_ResolvesArtifactOfAcceptedAttempt_WhenMultipleAttemptsExist()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var userId = Guid.NewGuid();
         var charId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
@@ -219,11 +219,11 @@ public sealed class VisualAuthorizationTests
     [Fact]
     public async Task GetTurnImageStatus_WhenAcceptedAttemptIdMissingInDb_Returns500StateDivergence()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var userId = Guid.NewGuid();
         var charId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
@@ -253,11 +253,11 @@ public sealed class VisualAuthorizationTests
     [Fact]
     public async Task GetTurnImageStatus_WhenWinningArtifactMissingInDb_Returns500StateDivergence()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var userId = Guid.NewGuid();
         var charId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();

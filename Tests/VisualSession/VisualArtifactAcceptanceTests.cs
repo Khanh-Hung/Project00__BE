@@ -15,13 +15,13 @@ namespace Tests.VisualSession;
 
 public sealed class VisualArtifactAcceptanceTests
 {
-    private static (ProjectDbContext Db, ArtifactAcceptanceService Service) CreateContext()
+    private static (CoreDbContext Db, ArtifactAcceptanceService Service) CreateContext()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var service = new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
         return (db, service);
     }

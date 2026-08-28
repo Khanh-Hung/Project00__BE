@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
 using Application.Contracts.Goals;
 using Application.Services;
@@ -20,18 +20,18 @@ namespace Tests.AutonomousLoop;
 public sealed class ActivityExecutionIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public ActivityExecutionIntegrationTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -53,7 +53,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         var m1 = goal.AddMilestone("Learn Knife Skills", 1, 10);
         var m2 = goal.AddMilestone("Master Sauces", 2, 40);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -99,7 +99,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         Assert.Equal(goal.Id, decision.Candidate.GoalId);
 
         // 2. Atomic Execution
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -140,7 +140,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         }
 
         // 3. Assert Authoritative Database Invariants
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var savedActivity = await db.CharacterActivities.FirstAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
             Assert.Equal(CharacterActivityType.Cooking, savedActivity.ActivityType);
@@ -171,7 +171,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         };
         var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -206,7 +206,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         );
 
         // Run 1: Succeeds
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -219,7 +219,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         }
 
         // Run 2: Exact same Character & TimeBucket -> Suppressed!
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -232,7 +232,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         }
 
         // Assert DB Invariant: Exactly 1 activity record, exactly 1 contribution, exactly 15 units of progress
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var actCount = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
             Assert.Equal(1, actCount);

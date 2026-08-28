@@ -21,14 +21,14 @@ public class PromptCompilerAndContextEngineTests
     [Fact]
     public async Task RoleplayContextEngine_Enforces_Budgets_For_Messages_And_Memories()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -64,7 +64,7 @@ public class PromptCompilerAndContextEngineTests
     [Fact]
     public async Task RoleplayContextEngine_Strictly_Isolates_Memories_Between_Users()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
@@ -72,7 +72,7 @@ public class PromptCompilerAndContextEngineTests
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -113,7 +113,7 @@ public class PromptCompilerAndContextEngineTests
     [Fact]
     public async Task RoleplayContextEngine_Rejects_Unauthorized_Access_To_Another_Users_Session()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
@@ -121,7 +121,7 @@ public class PromptCompilerAndContextEngineTests
         var legitimateUser = Guid.NewGuid();
         var attackerUser = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -219,14 +219,14 @@ public class PromptCompilerAndContextEngineTests
     [Fact]
     public async Task RoleplayContextEngine_Prunes_Oldest_Messages_When_Exceeding_Token_Budget()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = charId };
         var session = new ChatSession(charId, userId, "Session 1");
 

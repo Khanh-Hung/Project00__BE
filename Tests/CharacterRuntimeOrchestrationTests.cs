@@ -19,14 +19,14 @@ public class CharacterRuntimeOrchestrationTests
     [Fact]
     public async Task CharacterRuntime_Executes_Full_Turn_Successfully()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Starlight Mage", "https://example.com/luna.jpg", "Playful & Intelligent", "Hello!", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -90,7 +90,7 @@ public class CharacterRuntimeOrchestrationTests
     public async Task Retry_Returns_Exactly_The_Original_Response_With_Custom_Milestones_And_Snapshots()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
@@ -104,7 +104,7 @@ public class CharacterRuntimeOrchestrationTests
             new("Soulmate", 10, 100, "Tri kỷ đặc biệt")
         };
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character(
             name: "Luna",
             title: "Starlight Mage",
@@ -163,7 +163,7 @@ public class CharacterRuntimeOrchestrationTests
         Assert.Equal("DeepConnection", first.Relationship.Events[0].EventKey);
 
         // Turn 2: Simulate Process Restart / Different context instance with brand new Runtime
-        await using var context2 = new ProjectDbContext(options);
+        await using var context2 = new CoreDbContext(options);
         var unitOfWork2 = new UnitOfWork(context2);
         var contextEngine2 = new RoleplayContextEngine(unitOfWork2, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
         var fakeLlmService2 = new FakeLLMService("Phản hồi không được gọi", CharacterMood.Angry, 10, 0);
@@ -204,7 +204,7 @@ public class CharacterRuntimeOrchestrationTests
     [Fact]
     public async Task CharacterRuntime_Eliminates_Concurrent_Idempotency_Race_Invoking_LLM_Only_Once()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
@@ -212,7 +212,7 @@ public class CharacterRuntimeOrchestrationTests
         var userId = Guid.NewGuid();
         var fixedTurnId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Starlight Mage", "https://example.com/luna.jpg", "Playful & Intelligent", "Hello!", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -268,7 +268,7 @@ public class CharacterRuntimeOrchestrationTests
     public async Task CharacterRelationship_Optimistic_Concurrency_Prevents_Lost_Updates()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
@@ -276,7 +276,7 @@ public class CharacterRuntimeOrchestrationTests
         var userId = Guid.NewGuid();
 
         // 1. Initial State: Version = 1, AffectionScore = 10
-        await using (var seedCtx = new ProjectDbContext(options))
+        await using (var seedCtx = new CoreDbContext(options))
         {
             var rel = CharacterRelationship.Create(charId, userId, initialAffection: 10);
             await seedCtx.CharacterRelationships.AddAsync(rel);
@@ -284,8 +284,8 @@ public class CharacterRuntimeOrchestrationTests
         }
 
         // 2. Load the same entity in Context A and Context B (both see Version = 1)
-        await using var ctxA = new ProjectDbContext(options);
-        await using var ctxB = new ProjectDbContext(options);
+        await using var ctxA = new CoreDbContext(options);
+        await using var ctxB = new CoreDbContext(options);
 
         var relA = await ctxA.CharacterRelationships.FirstAsync(r => r.CharacterId == charId && r.UserId == userId);
         var relB = await ctxB.CharacterRelationships.FirstAsync(r => r.CharacterId == charId && r.UserId == userId);
@@ -308,7 +308,7 @@ public class CharacterRuntimeOrchestrationTests
     [Fact]
     public async Task CharacterRuntime_Rejects_Mismatched_CharacterId()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
@@ -316,7 +316,7 @@ public class CharacterRuntimeOrchestrationTests
         var mismatchedCharId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = actualCharId };
         await context.Characters.AddAsync(character);
 
@@ -356,14 +356,14 @@ public class CharacterRuntimeOrchestrationTests
     [Fact]
     public async Task CharacterRuntime_Isolates_Side_Effect_Failures_Chat_Still_Succeeds()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character(
             "Luna", "Starlight Mage", "https://example.com/luna.jpg", "Playful", "Hello!", "Fantasy",
             voiceProfile: new CharacterVoiceProfile("luna_voice"),

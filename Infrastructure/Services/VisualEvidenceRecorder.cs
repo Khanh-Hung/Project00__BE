@@ -8,11 +8,11 @@ namespace Infrastructure.Services;
 
 public sealed class VisualEvidenceRecorder : IVisualEvidenceRecorder
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<VisualEvidenceRecorder> _logger;
 
     public VisualEvidenceRecorder(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ILogger<VisualEvidenceRecorder> logger)
     {
         _dbContext = dbContext;

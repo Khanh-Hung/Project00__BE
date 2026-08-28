@@ -18,13 +18,13 @@ namespace Tests.GenerationProduction;
 
 public sealed class GenerationProductionConcurrencyTests
 {
-    private static ProjectDbContext CreateSqliteDbContext(SqliteConnection connection)
+    private static CoreDbContext CreateSqliteDbContext(SqliteConnection connection)
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        return new ProjectDbContext(options);
+        return new CoreDbContext(options);
     }
 
     [Fact]

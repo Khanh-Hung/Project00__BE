@@ -7,7 +7,7 @@ namespace Infrastructure.Persistence.Repositories;
 
 public sealed class CharacterMemoryRepository : GenericRepository<CharacterMemory>, ICharacterMemoryRepository
 {
-    public CharacterMemoryRepository(ProjectDbContext dbContext) : base(dbContext)
+    public CharacterMemoryRepository(CoreDbContext dbContext) : base(dbContext)
     {
     }
 

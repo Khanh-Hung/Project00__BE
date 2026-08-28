@@ -1,4 +1,4 @@
-﻿using Application.DTOs;
+using Application.DTOs;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -15,18 +15,18 @@ namespace Tests.VisualContinuity;
 public sealed class VisualStateEvolutionTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public VisualStateEvolutionTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -39,7 +39,7 @@ public sealed class VisualStateEvolutionTests : IDisposable
     [Fact]
     public async Task SameScene_PreservesEnvironmentAndOutfit_WhileUpdatingActionAndPose()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
         var resolver = new VisualContinuityResolver(stateReader, NullLogger<VisualContinuityResolver>.Instance);
 
@@ -104,7 +104,7 @@ public sealed class VisualStateEvolutionTests : IDisposable
     [Fact]
     public async Task LocationTransition_ResetsLocationSpecificEnvironment_PreservesCharacterAppearance()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
         var resolver = new VisualContinuityResolver(stateReader, NullLogger<VisualContinuityResolver>.Instance);
 
@@ -154,7 +154,7 @@ public sealed class VisualStateEvolutionTests : IDisposable
     [Fact]
     public async Task ExplicitOverride_ImmediatelyMutatesAppearanceAndHairstyle()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
         var resolver = new VisualContinuityResolver(stateReader, NullLogger<VisualContinuityResolver>.Instance);
 

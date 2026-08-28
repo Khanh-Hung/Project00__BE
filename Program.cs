@@ -38,7 +38,7 @@ using (var scope = app.Services.CreateScope())
 {
     try
     {
-        var dbContext = scope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
         if (dbContext.Database.IsRelational())
         {
             await dbContext.Database.MigrateAsync();

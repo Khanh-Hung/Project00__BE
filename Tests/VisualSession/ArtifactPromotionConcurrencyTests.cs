@@ -16,18 +16,18 @@ namespace Tests.VisualSession;
 public sealed class ArtifactPromotionConcurrencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public ArtifactPromotionConcurrencyTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -87,7 +87,7 @@ public sealed class ArtifactPromotionConcurrencyTests : IDisposable
             return attempt;
         }).ToList();
 
-        await using (var seedDb = new ProjectDbContext(_options))
+        await using (var seedDb = new CoreDbContext(_options))
         {
             await seedDb.ImageGenerationJobs.AddAsync(job);
             await seedDb.ImageGenerationAttempts.AddRangeAsync(attempts);
@@ -99,7 +99,7 @@ public sealed class ArtifactPromotionConcurrencyTests : IDisposable
         // 10 concurrent worker tasks executing AcceptAttemptAtomicallyAsync
         var tasks = attempts.Select(async attempt =>
         {
-            await using var taskDb = new ProjectDbContext(_options);
+            await using var taskDb = new CoreDbContext(_options);
             var service = new ArtifactAcceptanceService(taskDb, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
             var request = new ArtifactAcceptanceRequest(
                 JobId: job.Id,
@@ -129,7 +129,7 @@ public sealed class ArtifactPromotionConcurrencyTests : IDisposable
         Assert.Equal(workerCount - 1, deferreds.Count);
 
         // Verify relational state via a fresh DbContext
-        await using (var verifyDb = new ProjectDbContext(_options))
+        await using (var verifyDb = new CoreDbContext(_options))
         {
             var finalJob = await verifyDb.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Completed, finalJob.Status);

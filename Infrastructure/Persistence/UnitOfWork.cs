@@ -6,10 +6,10 @@ namespace Infrastructure.Persistence;
 
 public class UnitOfWork : IUnitOfWork
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly Dictionary<Type, object> _repositories = new();
 
-    public UnitOfWork(ProjectDbContext dbContext)
+    public UnitOfWork(CoreDbContext dbContext)
     {
         _dbContext = dbContext;
     }

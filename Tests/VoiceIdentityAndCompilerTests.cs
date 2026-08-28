@@ -109,7 +109,7 @@ public class VoiceIdentityAndCompilerTests
     [Fact]
     public async Task GenerateMessageVoiceHandler_Enforces_Session_Ownership()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
@@ -117,7 +117,7 @@ public class VoiceIdentityAndCompilerTests
         var legitimateUser = Guid.NewGuid();
         var attackerUser = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 

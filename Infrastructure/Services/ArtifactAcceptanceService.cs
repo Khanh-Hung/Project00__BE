@@ -19,12 +19,12 @@ namespace Infrastructure.Services;
 /// </summary>
 public sealed class ArtifactAcceptanceService : IArtifactAcceptanceService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<ArtifactAcceptanceService> _logger;
 
     public ArtifactAcceptanceService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IDateTimeProvider dateTimeProvider,
         ILogger<ArtifactAcceptanceService> logger)
     {

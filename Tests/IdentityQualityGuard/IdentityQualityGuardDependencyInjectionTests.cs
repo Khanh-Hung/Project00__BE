@@ -94,11 +94,11 @@ public sealed class IdentityQualityGuardDependencyInjectionTests
     [Fact]
     public void SceneImage_ModelConfiguration_ContainsBothTurnIdIndexAndFingerprintUniqueIndex()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        using var db = new ProjectDbContext(options);
+        using var db = new CoreDbContext(options);
         var entityType = db.Model.FindEntityType(typeof(SceneImage));
         Assert.NotNull(entityType);
 
@@ -117,11 +117,11 @@ public sealed class IdentityQualityGuardDependencyInjectionTests
     [Fact]
     public void ImageGenerationJob_ModelConfiguration_ContainsAcceptedAttemptIdAndIndexes()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        using var db = new ProjectDbContext(options);
+        using var db = new CoreDbContext(options);
         var entityType = db.Model.FindEntityType(typeof(ImageGenerationJob));
         Assert.NotNull(entityType);
 

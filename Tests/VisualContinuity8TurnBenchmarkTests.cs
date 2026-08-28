@@ -29,7 +29,7 @@ public class VisualContinuity8TurnBenchmarkTests
     {
         var dbName = Guid.NewGuid().ToString();
         var services = new ServiceCollection();
-        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddDbContext<CoreDbContext>(o => o.UseInMemoryDatabase(dbName));
         services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
         services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
         services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
@@ -53,7 +53,7 @@ public class VisualContinuity8TurnBenchmarkTests
         // Seed Character and ChatSession
         using (var initScope = scopeFactory.CreateScope())
         {
-            var ctx = initScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = initScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var character = new Character(
                 name: "Elysia",
                 title: "Herrscher of Human: Ego",
@@ -87,7 +87,7 @@ public class VisualContinuity8TurnBenchmarkTests
         {
             tracker.NextDelta = delta;
             using var turnScope = scopeFactory.CreateScope();
-            var ctx = turnScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = turnScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var uow = new UnitOfWork(ctx);
             var runtime = new CharacterRuntime(
                 uow,
@@ -194,7 +194,7 @@ public class VisualContinuity8TurnBenchmarkTests
         // Verify Database Artifacts
         using (var verifyScope = scopeFactory.CreateScope())
         {
-            var ctx = verifyScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = verifyScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var artifacts = await ctx.SceneImages
                 .Where(img => img.SessionId == sessionId)
                 .OrderBy(img => img.SceneRevision)
@@ -319,7 +319,7 @@ public class VisualContinuity8TurnBenchmarkTests
     public async Task VisualSnapshot_Predecessor_Lineage_Is_Frozen_And_Resistant_To_Revision_Regeneration()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
 
@@ -340,7 +340,7 @@ public class VisualContinuity8TurnBenchmarkTests
         );
         typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(imageA, imageAId);
 
-        var uow = new UnitOfWork(new ProjectDbContext(options));
+        var uow = new UnitOfWork(new CoreDbContext(options));
         var sceneRepo = uow.GetRepository<SceneImage>();
         await sceneRepo.AddAsync(imageA);
         await uow.SaveChangesAsync();
@@ -359,7 +359,7 @@ public class VisualContinuity8TurnBenchmarkTests
         session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
 
         // 2. Turn 2 Commit: VisualStateResolver resolves and freezes predecessor
-        var resolver = new VisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new ProjectDbContext(options)));
+        var resolver = new VisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new CoreDbContext(options)));
         var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(
             character,
             session,
@@ -397,13 +397,13 @@ public class VisualContinuity8TurnBenchmarkTests
     public async Task VisualSnapshot_Concurrent_Predecessor_Resolution_Observes_Committed_State_And_Freezes_Permanently()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
 
         var sessionId = Guid.NewGuid();
         var characterId = Guid.NewGuid();
-        var uow = new UnitOfWork(new ProjectDbContext(options));
+        var uow = new UnitOfWork(new CoreDbContext(options));
         var sceneRepo = uow.GetRepository<SceneImage>();
 
         var character = new Character(
@@ -428,7 +428,7 @@ public class VisualContinuity8TurnBenchmarkTests
         typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(session, sessionId);
         session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
 
-        var resolver = new VisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new ProjectDbContext(options)));
+        var resolver = new VisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new CoreDbContext(options)));
 
         // Transaction 1: Turn 2 Resolves Turn 1 Predecessor
         var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(character, session, "Action 2", "Reply 2", CharacterMood.Happy, Guid.NewGuid());

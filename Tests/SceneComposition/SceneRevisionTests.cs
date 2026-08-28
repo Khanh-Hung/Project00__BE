@@ -9,18 +9,18 @@ namespace Tests.SceneComposition;
 public sealed class SceneRevisionTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public SceneRevisionTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -48,7 +48,7 @@ public sealed class SceneRevisionTests : IDisposable
     [Fact]
     public async Task UniqueConstraint_EnforcesSingleSceneSpecificationPerRevisionInDb()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var charId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var turnId = Guid.NewGuid();

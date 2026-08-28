@@ -30,15 +30,15 @@ public sealed class SceneImageQueryEndpointTests
         }
     }
 
-    private static (ProjectDbContext db, UnitOfWork uow, FakeUserProvider userProvider, GetSceneImageStatusHandler statusHandler, GetTurnSceneImagesHandler turnImagesHandler) CreateHarness(
+    private static (CoreDbContext db, UnitOfWork uow, FakeUserProvider userProvider, GetSceneImageStatusHandler statusHandler, GetTurnSceneImagesHandler turnImagesHandler) CreateHarness(
         string dbName,
         string? currentUserId = null)
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var uow = new UnitOfWork(db);
         var userProvider = new FakeUserProvider(currentUserId);
         var statusHandler = new GetSceneImageStatusHandler(

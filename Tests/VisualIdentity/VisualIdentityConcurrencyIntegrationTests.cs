@@ -13,18 +13,18 @@ namespace Tests.VisualIdentity;
 public sealed class VisualIdentityConcurrencyIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public VisualIdentityConcurrencyIntegrationTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -41,7 +41,7 @@ public sealed class VisualIdentityConcurrencyIntegrationTests : IDisposable
 
         // Pre-seed 10 references
         var refIds = new List<Guid>();
-        await using (var seedDb = new ProjectDbContext(_options))
+        await using (var seedDb = new CoreDbContext(_options))
         {
             var profileService = new CharacterVisualProfileService(seedDb, NullLogger<CharacterVisualProfileService>.Instance);
             await profileService.CreateProfileAsync(charId, eyeColor: "Red", hairColor: "Silver");
@@ -67,7 +67,7 @@ public sealed class VisualIdentityConcurrencyIntegrationTests : IDisposable
         {
             try
             {
-                await using var taskDb = new ProjectDbContext(_options);
+                await using var taskDb = new CoreDbContext(_options);
                 var profileService = new CharacterVisualProfileService(taskDb, NullLogger<CharacterVisualProfileService>.Instance);
                 var referenceService = new CharacterVisualReferenceService(taskDb, profileService, NullLogger<CharacterVisualReferenceService>.Instance);
 
@@ -82,7 +82,7 @@ public sealed class VisualIdentityConcurrencyIntegrationTests : IDisposable
         await Task.WhenAll(tasks);
 
         // Verification: Exactly 1 active canonical reference MUST exist for the character
-        await using var verifyDb = new ProjectDbContext(_options);
+        await using var verifyDb = new CoreDbContext(_options);
         var canonicals = await verifyDb.CharacterVisualReferences
             .Where(r => r.CharacterId == charId && r.IsCanonical && r.Type == VisualReferenceType.Canonical && r.Status == VisualReferenceStatus.Active)
             .ToListAsync();

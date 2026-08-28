@@ -19,7 +19,7 @@ public class CharacterRuntimeStreamingTests
     [Fact]
     public async Task CharacterRuntime_Streams_Tokens_And_Lifecycle_Events_Successfully()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
@@ -27,7 +27,7 @@ public class CharacterRuntimeStreamingTests
         var userId = Guid.NewGuid();
         var fixedTurnId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Eldrin", "Ancient Sage", "https://example.com/eldrin.jpg", "Wise", "Greetings", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -117,7 +117,7 @@ public class CharacterRuntimeStreamingTests
     [Fact]
     public async Task CharacterRuntime_Streams_With_Nested_Event_And_Mood_Before_Reply_Successfully()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
@@ -125,7 +125,7 @@ public class CharacterRuntimeStreamingTests
         var userId = Guid.NewGuid();
         var fixedTurnId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Eldrin", "Ancient Sage", "https://example.com/eldrin.jpg", "Wise", "Greetings", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -227,7 +227,7 @@ public class CharacterRuntimeStreamingTests
     public async Task CharacterRuntime_Stream_Returns_Idempotent_Stream_On_Retry()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
@@ -235,7 +235,7 @@ public class CharacterRuntimeStreamingTests
         var userId = Guid.NewGuid();
         var fixedTurnId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Eldrin", "Ancient Sage", "https://example.com/eldrin.jpg", "Wise", "Greetings", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -280,7 +280,7 @@ public class CharacterRuntimeStreamingTests
         Assert.Equal(1, fakeLlmService1.StreamCallCount);
 
         // Stream 2 with brand new context and runtime (Simulating replay on retry)
-        await using var context2 = new ProjectDbContext(options);
+        await using var context2 = new CoreDbContext(options);
         var unitOfWork2 = new UnitOfWork(context2);
         var contextEngine2 = new RoleplayContextEngine(unitOfWork2, fakeMemoryService, fakeUserProvider, NullLogger<RoleplayContextEngine>.Instance);
         var fakeLlmService2 = new FakeStreamingLLMService(new[] { "Không được gọi" });

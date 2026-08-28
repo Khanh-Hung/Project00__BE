@@ -164,7 +164,7 @@ public class CharacterBlueprintTests
     public async Task EntityFrameworkCore_Persists_And_Loads_CharacterBlueprint()
     {
         // Arrange
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
@@ -182,7 +182,7 @@ public class CharacterBlueprintTests
         );
 
         // Act - Save
-        await using (var context = new ProjectDbContext(options))
+        await using (var context = new CoreDbContext(options))
         {
             context.Characters.Add(character);
             await context.SaveChangesAsync();
@@ -190,7 +190,7 @@ public class CharacterBlueprintTests
         }
 
         // Act - Load
-        await using (var context = new ProjectDbContext(options))
+        await using (var context = new CoreDbContext(options))
         {
             var loaded = await context.Characters.FindAsync(characterId);
 

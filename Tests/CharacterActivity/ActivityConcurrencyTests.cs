@@ -1,4 +1,4 @@
-﻿using Application.Services;
+using Application.Services;
 using Domain.Entities;
 using Infrastructure.BackgroundJobs;
 using Infrastructure.Persistence;
@@ -14,18 +14,18 @@ namespace Tests.CharacterActivities;
 public sealed class ActivityConcurrencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public ActivityConcurrencyTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -43,7 +43,7 @@ public sealed class ActivityConcurrencyTests : IDisposable
             Id = charId
         };
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SaveChangesAsync();
@@ -57,7 +57,7 @@ public sealed class ActivityConcurrencyTests : IDisposable
         // 10 concurrent workers trying to process the same character simultaneously
         var tasks = Enumerable.Range(1, 10).Select(async workerId =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
                 workerDb, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
@@ -74,7 +74,7 @@ public sealed class ActivityConcurrencyTests : IDisposable
         Assert.Equal(9, suppressed);
 
         // Assert DB Invariant: Exactly 1 record exists in DB
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var count = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
             Assert.Equal(1, count);

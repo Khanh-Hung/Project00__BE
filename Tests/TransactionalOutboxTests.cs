@@ -20,14 +20,14 @@ public class TransactionalOutboxTests
     [Fact]
     public async Task CharacterRuntime_Enqueues_Outbox_Messages_Atomically_During_Turn()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character(
             name: "Aria",
             title: "Songstress",
@@ -89,12 +89,12 @@ public class TransactionalOutboxTests
     public async Task OutboxProcessor_Processes_Pending_Messages_Successfully()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
         var services = new ServiceCollection();
-        services.AddDbContext<ProjectDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddDbContext<CoreDbContext>(o => o.UseInMemoryDatabase(dbName));
         services.AddSingleton<IVoicePromptCompiler, VoicePromptCompiler>();
         services.AddSingleton<IVisualPromptCompiler, VisualPromptCompiler>();
         services.AddSingleton<IVoiceGenerationService, MockVoiceService>();
@@ -108,7 +108,7 @@ public class TransactionalOutboxTests
         // Seed 2 outbox messages
         using (var seedScope = scopeFactory.CreateScope())
         {
-            var ctx = seedScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = seedScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var voicePayload = new VoiceGenerationOutboxPayload(
                 TurnId: Guid.NewGuid(),
                 CharacterId: Guid.NewGuid(),
@@ -132,7 +132,7 @@ public class TransactionalOutboxTests
         // Verify outbox message updated to Completed
         using (var verifyScope = scopeFactory.CreateScope())
         {
-            var ctx = verifyScope.ServiceProvider.GetRequiredService<ProjectDbContext>();
+            var ctx = verifyScope.ServiceProvider.GetRequiredService<CoreDbContext>();
             var msg = await ctx.OutboxMessages.FirstAsync();
             Assert.Equal(OutboxStatus.Completed, msg.Status);
             Assert.NotNull(msg.ProcessedAt);

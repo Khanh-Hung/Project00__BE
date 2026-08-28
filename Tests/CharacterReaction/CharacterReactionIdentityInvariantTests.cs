@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Reactions;
+using Application.Contracts.Reactions;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -18,18 +18,18 @@ namespace Tests.CharacterReaction;
 public sealed class CharacterReactionIdentityInvariantTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CharacterReactionIdentityInvariantTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -70,7 +70,7 @@ public sealed class CharacterReactionIdentityInvariantTests : IDisposable
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Great painting!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterWorldEvents.AddAsync(worldEvent);
@@ -81,7 +81,7 @@ public sealed class CharacterReactionIdentityInvariantTests : IDisposable
         var executionId2 = Guid.NewGuid(); // Caller generates DIFFERENT ExecutionIds for same event attempt
 
         // First attempt with executionId1 -> Success
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -97,7 +97,7 @@ public sealed class CharacterReactionIdentityInvariantTests : IDisposable
         }
 
         // Second attempt with different executionId2 on SAME WorldEvent + CharacterId -> Database Unique Constraint catches duplicate!
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();

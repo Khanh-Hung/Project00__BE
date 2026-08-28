@@ -157,14 +157,14 @@ public class CharacterMemoryTests
     [Fact]
     public async Task MemoryService_Deduplication_Updates_Existing_Memory_Without_Duplication()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(context);
         var validator = new MemoryCandidateValidator();
         var memoryService = new MemoryService(unitOfWork, validator, NullLogger<MemoryService>.Instance);
@@ -200,14 +200,14 @@ public class CharacterMemoryTests
     [Fact]
     public async Task MemoryService_Retrieval_Applies_Diversity_And_Limits_Output()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(context);
         var validator = new MemoryCandidateValidator();
         var memoryService = new MemoryService(unitOfWork, validator, NullLogger<MemoryService>.Instance);
@@ -306,14 +306,14 @@ public class CharacterMemoryTests
     [Fact]
     public async Task SendChatMessage_Succeeds_When_Memory_Retrieval_Fails()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var character = new Character("Luna", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy") { Id = charId };
         await context.Characters.AddAsync(character);
 

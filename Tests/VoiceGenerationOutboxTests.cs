@@ -31,7 +31,7 @@ namespace Project.Tests;
 /// </summary>
 public class VoiceGenerationOutboxTests
 {
-    private static (DbContextOptions<ProjectDbContext> options, ServiceProvider sp) CreateTestEnvironment(
+    private static (DbContextOptions<CoreDbContext> options, ServiceProvider sp) CreateTestEnvironment(
         string dbName,
         IVoiceProvider? customProvider = null,
         IVoiceStorage? customStorage = null)
@@ -39,12 +39,12 @@ public class VoiceGenerationOutboxTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
         services.AddSingleton(options);
-        services.AddScoped<ProjectDbContext>();
+        services.AddScoped<CoreDbContext>();
         services.AddScoped<IVoicePromptCompiler, VoicePromptCompiler>();
         services.AddScoped<IVisualPromptCompiler, VisualPromptCompiler>();
         services.AddScoped<IImageGenerationService, MockImageService>();
@@ -125,7 +125,7 @@ public class VoiceGenerationOutboxTests
         );
 
         var outboxMsg = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(voicePayload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg);
             await db.SaveChangesAsync();
@@ -139,7 +139,7 @@ public class VoiceGenerationOutboxTests
         var processedCount = await processor.ProcessDueMessagesAsync();
         Assert.Equal(1, processedCount);
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             var committedMsg = await db.OutboxMessages.FirstOrDefaultAsync(m => m.Id == outboxMsg.Id);
             Assert.NotNull(committedMsg);
@@ -186,7 +186,7 @@ public class VoiceGenerationOutboxTests
         );
 
         var outboxMsg = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(payload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg);
             await db.SaveChangesAsync();
@@ -201,7 +201,7 @@ public class VoiceGenerationOutboxTests
 
         Assert.Equal(1, customProviderCallCount);
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             var artifact = await db.AudioArtifacts.FirstOrDefaultAsync(a => a.TurnId == turnId);
             Assert.NotNull(artifact);
@@ -235,7 +235,7 @@ public class VoiceGenerationOutboxTests
         );
 
         var outboxMsg = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(payload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg);
             await db.SaveChangesAsync();
@@ -248,7 +248,7 @@ public class VoiceGenerationOutboxTests
 
         await processor.ProcessDueMessagesAsync();
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             var artifact = await db.AudioArtifacts.FirstOrDefaultAsync(a => a.TurnId == turnId);
             Assert.NotNull(artifact);
@@ -295,7 +295,7 @@ public class VoiceGenerationOutboxTests
 
         // Run 1: Normal Generation
         var outboxMsg1 = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(payload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg1);
             await db.SaveChangesAsync();
@@ -303,14 +303,14 @@ public class VoiceGenerationOutboxTests
         await processor.ProcessDueMessagesAsync();
 
         Assert.Equal(1, provider.CallCount);
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             Assert.Equal(1, await db.AudioArtifacts.CountAsync());
         }
 
         // Run 2: Replay same payload (same ContextHash)
         var outboxMsg2 = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(payload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg2);
             await db.SaveChangesAsync();
@@ -319,7 +319,7 @@ public class VoiceGenerationOutboxTests
 
         // INVARIANT: Provider must NOT be called again, 0 duplicate artifacts!
         Assert.Equal(1, provider.CallCount);
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             Assert.Equal(1, await db.AudioArtifacts.CountAsync());
             var msg2 = await db.OutboxMessages.FirstOrDefaultAsync(m => m.Id == outboxMsg2.Id);
@@ -334,11 +334,11 @@ public class VoiceGenerationOutboxTests
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
 
@@ -357,7 +357,7 @@ public class VoiceGenerationOutboxTests
         }
 
         // Attempt concurrent duplicate insert with exact same ContextHash
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             var artifact2 = new AudioArtifact(
                 sessionId: Guid.NewGuid(),
@@ -377,7 +377,7 @@ public class VoiceGenerationOutboxTests
         }
 
         // Verify exactly 1 artifact exists in DB
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             var count = await db.AudioArtifacts.CountAsync(a => a.ContextHash == "unique_hash_123");
             Assert.Equal(1, count);
@@ -416,7 +416,7 @@ public class VoiceGenerationOutboxTests
         );
 
         var outboxMsg = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(payload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg);
             await db.SaveChangesAsync();
@@ -430,7 +430,7 @@ public class VoiceGenerationOutboxTests
         // Attempt 1: Transient Error
         await processor.ProcessDueMessagesAsync();
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             var msgAfterFail = await db.OutboxMessages.FirstOrDefaultAsync(m => m.Id == outboxMsg.Id);
             Assert.NotNull(msgAfterFail);
@@ -443,7 +443,7 @@ public class VoiceGenerationOutboxTests
         var now = DateTime.UtcNow.AddMinutes(5);
         await processor.ProcessDueMessagesAsync(now);
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             var msgAfterSuccess = await db.OutboxMessages.FirstOrDefaultAsync(m => m.Id == outboxMsg.Id);
             Assert.NotNull(msgAfterSuccess);
@@ -475,7 +475,7 @@ public class VoiceGenerationOutboxTests
         );
 
         var outboxMsg = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(payload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg);
             await db.SaveChangesAsync();
@@ -488,7 +488,7 @@ public class VoiceGenerationOutboxTests
 
         await processor.ProcessDueMessagesAsync();
 
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             var msg = await db.OutboxMessages.FirstOrDefaultAsync(m => m.Id == outboxMsg.Id);
             Assert.NotNull(msg);
@@ -519,7 +519,7 @@ public class VoiceGenerationOutboxTests
         );
 
         var outboxMsg = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(payload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg);
             await db.SaveChangesAsync();
@@ -533,7 +533,7 @@ public class VoiceGenerationOutboxTests
         await processor.ProcessDueMessagesAsync();
 
         // INVARIANT: When storage fails, NO AudioArtifact should be committed in DB
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             Assert.Equal(0, await db.AudioArtifacts.CountAsync());
 
@@ -567,7 +567,7 @@ public class VoiceGenerationOutboxTests
         );
 
         var outboxMsg = new OutboxMessage(OutboxEventTypes.VoiceGeneration, JsonSerializer.Serialize(payload));
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             await db.OutboxMessages.AddAsync(outboxMsg);
             await db.SaveChangesAsync();
@@ -580,7 +580,7 @@ public class VoiceGenerationOutboxTests
 
         // Attempt 1: Storage throws exception
         await processor.ProcessDueMessagesAsync();
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             Assert.Equal(0, await db.AudioArtifacts.CountAsync());
         }
@@ -591,7 +591,7 @@ public class VoiceGenerationOutboxTests
         await processor.ProcessDueMessagesAsync(now);
 
         // INVARIANT: Exactly 1 AudioArtifact exists, Outbox is Completed
-        await using (var db = new ProjectDbContext(options))
+        await using (var db = new CoreDbContext(options))
         {
             Assert.Equal(1, await db.AudioArtifacts.CountAsync());
             var artifact = await db.AudioArtifacts.FirstOrDefaultAsync(a => a.TurnId == turnId);

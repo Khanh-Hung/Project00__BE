@@ -8,9 +8,9 @@ namespace Infrastructure.Services.Scene;
 
 public sealed class VisualMemoryReader : IVisualMemoryReader
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
 
-    public VisualMemoryReader(ProjectDbContext dbContext)
+    public VisualMemoryReader(CoreDbContext dbContext)
     {
         _dbContext = dbContext;
     }

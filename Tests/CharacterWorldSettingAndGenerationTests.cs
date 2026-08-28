@@ -15,11 +15,11 @@ public class CharacterWorldSettingAndGenerationTests
     [Fact]
     public async Task CreateCharacterHandler_Persists_WorldSetting_And_Auto_Inserts_InitialLorebookEntries()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var uow = new UnitOfWork(context);
         var handler = new CreateCharacterHandler(uow);
 

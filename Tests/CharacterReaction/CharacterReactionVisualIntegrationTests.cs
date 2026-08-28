@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Reactions;
+using Application.Contracts.Reactions;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -18,18 +18,18 @@ namespace Tests.CharacterReaction;
 public sealed class CharacterReactionVisualIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CharacterReactionVisualIntegrationTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -45,7 +45,7 @@ public sealed class CharacterReactionVisualIntegrationTests : IDisposable
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "I love your work, thank you!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterWorldEvents.AddAsync(worldEvent);
@@ -61,7 +61,7 @@ public sealed class CharacterReactionVisualIntegrationTests : IDisposable
             CurrentVisualState: new CharacterVisualState(charId, "Art Studio", sceneRevision: 1)
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -76,7 +76,7 @@ public sealed class CharacterReactionVisualIntegrationTests : IDisposable
             Assert.NotNull(result.SceneSpecificationId);
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var spec = await db.SceneSpecifications.FirstOrDefaultAsync(s => s.CharacterId == charId);
             Assert.NotNull(spec);

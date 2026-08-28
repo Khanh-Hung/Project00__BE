@@ -16,13 +16,13 @@ public class LorebookEngineTests
     [Fact]
     public async Task LorebookEngine_Matches_Dynamic_Entries_By_Keywords()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var entry1 = new LorebookEntry(
             characterId: charId,
             title: "Hiên Viên Kiếm",
@@ -75,13 +75,13 @@ public class LorebookEngineTests
     [Fact]
     public async Task LorebookEngine_Always_Includes_Constant_Entries()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var charId = Guid.NewGuid();
 
-        await using var context = new ProjectDbContext(options);
+        await using var context = new CoreDbContext(options);
         var constantEntry = new LorebookEntry(
             characterId: charId,
             title: "Luật Ma Giới",

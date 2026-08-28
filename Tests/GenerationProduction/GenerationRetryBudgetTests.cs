@@ -151,11 +151,11 @@ public sealed class GenerationRetryBudgetTests
     [Fact]
     public async Task CanRetryFailure_False_WhenMaxAttemptsExhausted_ResultsInExactSingleTerminalJobFailure_AndCannotBeRetriedByWorker()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        using var dbContext = new ProjectDbContext(options);
+        using var dbContext = new CoreDbContext(options);
         var clock = new SystemDateTimeProvider();
 
         var sessionId = Guid.NewGuid();

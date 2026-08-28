@@ -43,11 +43,11 @@ public sealed class GenerationCancellationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -55,7 +55,7 @@ public sealed class GenerationCancellationTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.MarkQueued(DateTime.UtcNow);
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SaveChangesAsync();
@@ -63,7 +63,7 @@ public sealed class GenerationCancellationTests
 
         var mockComfy = new TrackingComfyClient();
 
-        using (var dbCancel = new ProjectDbContext(options))
+        using (var dbCancel = new CoreDbContext(options))
         {
             var cancellationService = new GenerationCancellationService(
                 dbContext: dbCancel,
@@ -76,7 +76,7 @@ public sealed class GenerationCancellationTests
             Assert.True(cancelled);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Cancelled, verifiedJob.Status);
@@ -90,11 +90,11 @@ public sealed class GenerationCancellationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -102,7 +102,7 @@ public sealed class GenerationCancellationTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SaveChangesAsync();
@@ -110,7 +110,7 @@ public sealed class GenerationCancellationTests
 
         var mockComfy = new TrackingComfyClient();
 
-        using (var dbCancel = new ProjectDbContext(options))
+        using (var dbCancel = new CoreDbContext(options))
         {
             var cancellationService = new GenerationCancellationService(
                 dbContext: dbCancel,
@@ -124,7 +124,7 @@ public sealed class GenerationCancellationTests
             Assert.True(mockComfy.InterruptCalled);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.True(verifiedJob.CancellationRequested);
@@ -137,11 +137,11 @@ public sealed class GenerationCancellationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -160,7 +160,7 @@ public sealed class GenerationCancellationTests
             status: GenerationAttemptStatus.Succeeded
         );
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.ImageGenerationAttempts.AddAsync(attempt);
@@ -172,7 +172,7 @@ public sealed class GenerationCancellationTests
 
         var mockComfy = new TrackingComfyClient();
 
-        using (var dbCancel = new ProjectDbContext(options))
+        using (var dbCancel = new CoreDbContext(options))
         {
             var cancellationService = new GenerationCancellationService(
                 dbContext: dbCancel,
@@ -186,7 +186,7 @@ public sealed class GenerationCancellationTests
             Assert.False(mockComfy.InterruptCalled);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Completed, verifiedJob.Status);
@@ -199,11 +199,11 @@ public sealed class GenerationCancellationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -212,7 +212,7 @@ public sealed class GenerationCancellationTests
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow);
         job.SetProviderJobId("prompt-targeted-999");
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SaveChangesAsync();
@@ -220,7 +220,7 @@ public sealed class GenerationCancellationTests
 
         var mockComfy = new TrackingComfyClient();
 
-        using (var dbCancel = new ProjectDbContext(options))
+        using (var dbCancel = new CoreDbContext(options))
         {
             var cancellationService = new GenerationCancellationService(
                 dbContext: dbCancel,
@@ -242,11 +242,11 @@ public sealed class GenerationCancellationTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -274,7 +274,7 @@ public sealed class GenerationCancellationTests
             leaseUntil: now.AddMinutes(2)
         );
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.ImageGenerationAttempts.AddAsync(attempt);
@@ -282,7 +282,7 @@ public sealed class GenerationCancellationTests
         }
 
         // 1. User / Worker B cancels the job concurrently
-        using (var dbCancel = new ProjectDbContext(options))
+        using (var dbCancel = new CoreDbContext(options))
         {
             var cancellationService = new GenerationCancellationService(
                 dbContext: dbCancel,
@@ -295,7 +295,7 @@ public sealed class GenerationCancellationTests
         }
 
         // 2. Worker A finishes quality evaluation and attempts to atomically accept the artifact
-        using (var dbAccept = new ProjectDbContext(options))
+        using (var dbAccept = new CoreDbContext(options))
         {
             var acceptanceService = new ArtifactAcceptanceService(
                 dbContext: dbAccept,
@@ -335,7 +335,7 @@ public sealed class GenerationCancellationTests
         }
 
         // 3. Authoritative verification: Job is NOT Completed, AcceptedAttemptId is null, and no SceneImage was promoted to IsCurrent
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var finalJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.NotEqual(ImageJobStatus.Completed, finalJob.Status);

@@ -11,13 +11,13 @@ namespace Tests.VisualSession;
 
 public sealed class VisualPredecessorResolverTests
 {
-    private static (ProjectDbContext Db, VisualPredecessorResolver Resolver) CreateContext()
+    private static (CoreDbContext Db, VisualPredecessorResolver Resolver) CreateContext()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var resolver = new VisualPredecessorResolver(db, NullLogger<VisualPredecessorResolver>.Instance);
         return (db, resolver);
     }

@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace Project.Infrastructure.Persistence.Migrations
 {
-    [DbContext(typeof(ProjectDbContext))]
+    [DbContext(typeof(CoreDbContext))]
     [Migration("20260824094700_AddVisualSnapshotJsonToCharacterTurn")]
     partial class AddVisualSnapshotJsonToCharacterTurn
     {

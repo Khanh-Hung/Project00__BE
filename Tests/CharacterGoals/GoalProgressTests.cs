@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Goals;
@@ -12,18 +12,18 @@ namespace Tests.CharacterGoals;
 public sealed class GoalProgressTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public GoalProgressTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -40,7 +40,7 @@ public sealed class GoalProgressTests : IDisposable
         var m1 = goal.AddMilestone("Foundation", 1, 25);
         var m2 = goal.AddMilestone("Telescope Mount", 2, 25);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterGoals.AddAsync(goal);
             await db.SaveChangesAsync();
@@ -50,7 +50,7 @@ public sealed class GoalProgressTests : IDisposable
         var activityId2 = Guid.NewGuid();
 
         // 1. First contribution (25)
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var service = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var res1 = await service.RecordContributionAsync(goal.Id, activityId1, 25);
@@ -64,7 +64,7 @@ public sealed class GoalProgressTests : IDisposable
         }
 
         // 2. Second contribution (25) -> Completes Goal
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var service = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var res2 = await service.RecordContributionAsync(goal.Id, activityId2, 25);
@@ -78,7 +78,7 @@ public sealed class GoalProgressTests : IDisposable
         }
 
         // Verify DB State
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var savedGoal = await db.CharacterGoals.Include(g => g.Milestones).FirstAsync(g => g.Id == goal.Id);
             Assert.Equal(CharacterGoalStatus.Completed, savedGoal.Status);
@@ -96,13 +96,13 @@ public sealed class GoalProgressTests : IDisposable
     {
         var goal = new CharacterGoal(Guid.NewGuid(), "Learn Basic French", CharacterGoalType.SkillDevelopment, 20);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterGoals.AddAsync(goal);
             await db.SaveChangesAsync();
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var service = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var res = await service.RecordContributionAsync(goal.Id, Guid.NewGuid(), 50);
@@ -112,7 +112,7 @@ public sealed class GoalProgressTests : IDisposable
             Assert.True(res.GoalCompleted);
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var saved = await db.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
             Assert.Equal(CharacterGoalStatus.Completed, saved.Status);

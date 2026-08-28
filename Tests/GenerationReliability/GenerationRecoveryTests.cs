@@ -22,11 +22,11 @@ public sealed class GenerationRecoveryTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -35,7 +35,7 @@ public sealed class GenerationRecoveryTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-A", TimeSpan.FromMinutes(2), now.AddMinutes(-5)); // Expired 3 minutes ago
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SaveChangesAsync();
@@ -44,7 +44,7 @@ public sealed class GenerationRecoveryTests
         using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
         var timeProvider = new SystemDateTimeProvider();
 
-        using (var dbRecovery = new ProjectDbContext(options))
+        using (var dbRecovery = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery,
@@ -58,7 +58,7 @@ public sealed class GenerationRecoveryTests
             Assert.Equal(1, recoveredCount);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Queued, verifiedJob.Status);
@@ -73,11 +73,11 @@ public sealed class GenerationRecoveryTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -86,7 +86,7 @@ public sealed class GenerationRecoveryTests
         var job = new ImageGenerationJob(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1);
         job.TryClaim("worker-A", TimeSpan.FromMinutes(5), now); // Active for 5 min
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SaveChangesAsync();
@@ -95,7 +95,7 @@ public sealed class GenerationRecoveryTests
         using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
         var timeProvider = new SystemDateTimeProvider();
 
-        using (var dbRecovery = new ProjectDbContext(options))
+        using (var dbRecovery = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery,
@@ -109,7 +109,7 @@ public sealed class GenerationRecoveryTests
             Assert.Equal(0, recoveredCount);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Processing, verifiedJob.Status);
@@ -124,11 +124,11 @@ public sealed class GenerationRecoveryTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -138,13 +138,13 @@ public sealed class GenerationRecoveryTests
         job.TryClaim("worker-A", TimeSpan.FromMinutes(2), now.AddMinutes(-5));
         job.RequestCancellation(now);
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SaveChangesAsync();
         }
 
-        using (var dbRecovery = new ProjectDbContext(options))
+        using (var dbRecovery = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery,
@@ -157,7 +157,7 @@ public sealed class GenerationRecoveryTests
             Assert.Equal(1, recoveredCount);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Cancelled, verifiedJob.Status);
@@ -170,11 +170,11 @@ public sealed class GenerationRecoveryTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -203,7 +203,7 @@ public sealed class GenerationRecoveryTests
             payloadJson: JsonSerializer.Serialize(payload)
         );
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.OutboxMessages.AddAsync(outboxMessage);
             await dbSeed.SaveChangesAsync();
@@ -213,7 +213,7 @@ public sealed class GenerationRecoveryTests
         using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
         Assert.Equal(0, queue.CurrentDepth);
 
-        using (var dbRecovery = new ProjectDbContext(options))
+        using (var dbRecovery = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery,
@@ -240,11 +240,11 @@ public sealed class GenerationRecoveryTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -268,13 +268,13 @@ public sealed class GenerationRecoveryTests
         job2.ScheduleRetry(now.AddMinutes(-5), "second failure", now.AddMinutes(-5));
         job2.TryClaim("worker-3", TimeSpan.FromMinutes(2), now.AddMinutes(-5)); // RetryCount = 2
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddRangeAsync(job0, job1, job2);
             await dbSeed.SaveChangesAsync();
         }
 
-        using (var dbRecovery = new ProjectDbContext(options))
+        using (var dbRecovery = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery,
@@ -287,7 +287,7 @@ public sealed class GenerationRecoveryTests
             Assert.Equal(3, count);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var v0 = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job0.Id);
             var v1 = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job1.Id);
@@ -313,11 +313,11 @@ public sealed class GenerationRecoveryTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -356,7 +356,7 @@ public sealed class GenerationRecoveryTests
         var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, reqId);
         job.ScheduleRetry(now.AddSeconds(30), "backoff in progress", now);
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.OutboxMessages.AddAsync(outboxMessage);
             await dbSeed.ImageGenerationJobs.AddAsync(job);
@@ -366,7 +366,7 @@ public sealed class GenerationRecoveryTests
         using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
 
         // 1. Scan at time 'now': NextAttemptAt is 30s in the future -> MUST NOT ENQUEUE
-        using (var dbRecovery1 = new ProjectDbContext(options))
+        using (var dbRecovery1 = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery1,
@@ -382,7 +382,7 @@ public sealed class GenerationRecoveryTests
         Assert.Equal(0, queue.CurrentDepth); // Backoff gate successfully protected!
 
         // 2. Scan at time 'now + 31s': NextAttemptAt has elapsed -> MUST ENQUEUE
-        using (var dbRecovery2 = new ProjectDbContext(options))
+        using (var dbRecovery2 = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery2,
@@ -404,11 +404,11 @@ public sealed class GenerationRecoveryTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -438,7 +438,7 @@ public sealed class GenerationRecoveryTests
             payloadJson: JsonSerializer.Serialize(payload)
         );
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.OutboxMessages.AddAsync(outboxMessage);
             await dbSeed.SaveChangesAsync();
@@ -448,8 +448,8 @@ public sealed class GenerationRecoveryTests
         using var queueA = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
         using var queueB = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
 
-        using var dbA = new ProjectDbContext(options);
-        using var dbB = new ProjectDbContext(options);
+        using var dbA = new CoreDbContext(options);
+        using var dbB = new CoreDbContext(options);
 
         var recoveryA = new GenerationRecoveryService(
             dbContext: dbA,
@@ -476,7 +476,7 @@ public sealed class GenerationRecoveryTests
         // Exactly ONE instance must win the claim and enqueue the message
         Assert.Equal(1, queueA.CurrentDepth + queueB.CurrentDepth);
 
-        using var dbVerify = new ProjectDbContext(options);
+        using var dbVerify = new CoreDbContext(options);
         var finalOutbox = await dbVerify.OutboxMessages.FirstAsync(m => m.Id == outboxMessage.Id);
         Assert.Equal(OutboxStatus.Processing, finalOutbox.Status);
         Assert.Equal("recovery-dispatcher", finalOutbox.ClaimedBy);
@@ -488,11 +488,11 @@ public sealed class GenerationRecoveryTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -543,7 +543,7 @@ public sealed class GenerationRecoveryTests
             status: GenerationAttemptStatus.Succeeded
         );
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.OutboxMessages.AddAsync(staleOutbox);
             await dbSeed.ImageGenerationJobs.AddAsync(completedJob);
@@ -557,7 +557,7 @@ public sealed class GenerationRecoveryTests
         using var queue = new GenerationQueue(NullLogger<GenerationQueue>.Instance, 100);
 
         // Run recovery: detects stale outbox lease, reclaims to Pending, but respects terminal downstream Job gate
-        using (var dbRecovery = new ProjectDbContext(options))
+        using (var dbRecovery = new CoreDbContext(options))
         {
             var recoveryService = new GenerationRecoveryService(
                 dbContext: dbRecovery,
@@ -570,7 +570,7 @@ public sealed class GenerationRecoveryTests
             await recoveryService.RecoverExpiredJobsAsync(now);
         }
 
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var reclaimedOutbox = await dbVerify.OutboxMessages.FirstAsync(m => m.Id == staleOutbox.Id);
             // Outbox was safely reclaimed from stale processing

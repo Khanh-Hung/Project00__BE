@@ -9,10 +9,10 @@ namespace Infrastructure.Services.Scene;
 
 public sealed class SceneVisualStateReader : ISceneVisualStateReader
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<SceneVisualStateReader> _logger;
 
-    public SceneVisualStateReader(ProjectDbContext dbContext, ILogger<SceneVisualStateReader> logger)
+    public SceneVisualStateReader(CoreDbContext dbContext, ILogger<SceneVisualStateReader> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));

@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Goals;
@@ -12,18 +12,18 @@ namespace Tests.CharacterGoals;
 public sealed class GoalConcurrencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public GoalConcurrencyTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -38,15 +38,15 @@ public sealed class GoalConcurrencyTests : IDisposable
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "Master Swordsmanship", CharacterGoalType.SkillDevelopment, 100);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterGoals.AddAsync(goal);
             await db.SaveChangesAsync();
         }
 
         // Two workers load the same Goal at Version 1
-        using var dbWorker1 = new ProjectDbContext(_options);
-        using var dbWorker2 = new ProjectDbContext(_options);
+        using var dbWorker1 = new CoreDbContext(_options);
+        using var dbWorker2 = new CoreDbContext(_options);
 
         var goal1 = await dbWorker1.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
         var goal2 = await dbWorker2.CharacterGoals.FirstAsync(g => g.Id == goal.Id);

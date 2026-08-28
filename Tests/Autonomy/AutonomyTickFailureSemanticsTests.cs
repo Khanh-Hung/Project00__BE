@@ -19,18 +19,18 @@ namespace Tests.Autonomy;
 public sealed class AutonomyTickFailureSemanticsTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public AutonomyTickFailureSemanticsTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -46,7 +46,7 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
         var executionId = Guid.NewGuid();
         var timeBucket = "2026-08-28T18:00";
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
         var fakePipeline = new FakeSceneCompositionPipelineService();
         var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
@@ -105,7 +105,7 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
             CurrentTime: DateTime.UtcNow
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -131,7 +131,7 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
         }
 
         // Now the character is added to DB (e.g. transient issue resolved)
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SaveChangesAsync();
@@ -146,7 +146,7 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
             CurrentTime: DateTime.UtcNow
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -175,7 +175,7 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
         }
 
         // Attempt 3: Retry after Completed -> Must be suppressed
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -220,7 +220,7 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
         );
         initialFailedTick.Fail(DateTime.UtcNow.AddMinutes(-4), "Simulated transient DB connection fault");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -234,7 +234,7 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
 
         var tasks = workerExecutionIds.Select(async execId =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
@@ -276,7 +276,7 @@ public sealed class AutonomyTickFailureSemanticsTests : IDisposable
         Assert.Equal(AutonomyTickStatus.Completed, winningResult.Tick.Status);
 
         // Step 3: Strict Invariant Assertions on Final Database State
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             // 1. Exactly 1 row in CharacterAutonomyTicks, status Completed, winner's ExecutionId, incremented Version
             var dbTick = await db.CharacterAutonomyTicks.FirstAsync(t => t.CharacterId == charId && t.TimeBucket == timeBucket);

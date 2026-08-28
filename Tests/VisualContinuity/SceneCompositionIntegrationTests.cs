@@ -21,18 +21,18 @@ namespace Tests.VisualContinuity;
 public sealed class SceneCompositionIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public SceneCompositionIntegrationTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -62,7 +62,7 @@ public sealed class SceneCompositionIntegrationTests : IDisposable
     [Fact]
     public async Task CompleteFlow_ContinuityResolver_FeedsCompositionPipeline_AndProducesAcceptedArtifact()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var dateTimeProvider = new SystemDateTimeProvider();
 
         // 1. Setup Architecture Services

@@ -23,11 +23,11 @@ public sealed class VisualSnapshotConsistencyTests
     [Fact]
     public async Task MismatchedSnapshotIdentity_RejectsGenerationWithServerError()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
-        var db = new ProjectDbContext(options);
+        var db = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(db);
         var userId = Guid.NewGuid();
         var authProvider = new FakeCurrentUserProvider { CurrentUserId = userId.ToString() };

@@ -1,4 +1,4 @@
-﻿using Application.Services;
+using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.BackgroundJobs;
@@ -15,18 +15,18 @@ namespace Tests.CharacterActivities;
 public sealed class ActivityAuthoritativeContextTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public ActivityAuthoritativeContextTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -53,7 +53,7 @@ public sealed class ActivityAuthoritativeContextTests : IDisposable
             sceneRevision: 4
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
@@ -66,7 +66,7 @@ public sealed class ActivityAuthoritativeContextTests : IDisposable
         var nightTime = new DateTime(2026, 8, 28, 23, 0, 0, DateTimeKind.Utc);
         var timeBucket = CharacterActivityScheduler.GetTimeBucket(nightTime);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
@@ -77,7 +77,7 @@ public sealed class ActivityAuthoritativeContextTests : IDisposable
         }
 
         // Verify Activity uses "Grand Observatory" (from visual state), NOT WorldDescription!
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var activity = await db.CharacterActivities.FirstOrDefaultAsync(a => a.CharacterId == charId);
             Assert.NotNull(activity);

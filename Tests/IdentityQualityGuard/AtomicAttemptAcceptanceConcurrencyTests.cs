@@ -24,7 +24,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
@@ -52,7 +52,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             GenerationRequestId: requestId
         );
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -62,8 +62,8 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
-        using var db1 = new ProjectDbContext(options);
-        using var db2 = new ProjectDbContext(options);
+        using var db1 = new CoreDbContext(options);
+        using var db2 = new CoreDbContext(options);
 
         var timeProvider = new SystemDateTimeProvider();
         var orchestrator1 = new ImageGenerationOrchestrator(
@@ -102,7 +102,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         Assert.Contains(results, r => r.Status == JobExecutionStatus.Completed);
 
         // Assert exactly 1 SceneImage artifact exists in DB and is marked Current
-        using var verifyDb = new ProjectDbContext(options);
+        using var verifyDb = new CoreDbContext(options);
         var artifacts = await verifyDb.SceneImages.ToListAsync();
         Assert.Single(artifacts);
         Assert.True(artifacts[0].IsCurrent);
@@ -125,11 +125,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -161,7 +161,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var compiler = new FakePromptCompiler("1man knight", "1girl");
 
         // 1. Simulate Worker 1 crashing after recording attempt Succeeded in DB, but before CAS Acceptance!
-        using (var dbCrash = new ProjectDbContext(options))
+        using (var dbCrash = new CoreDbContext(options))
         {
             var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, requestId);
             job.TryClaim("worker-1", TimeSpan.FromMinutes(2), DateTime.UtcNow.AddMinutes(-5)); // lease expired
@@ -195,7 +195,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var evaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
-        using var dbWorker2 = new ProjectDbContext(options);
+        using var dbWorker2 = new CoreDbContext(options);
         var timeProvider = new SystemDateTimeProvider();
         var orchestrator2 = new ImageGenerationOrchestrator(
             dbContext: dbWorker2,
@@ -215,7 +215,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         Assert.Equal(0, countingImageService.CallCount); // ZERO duplicate GPU calls! Reused attempt ledger!
 
         // Assert exactly 1 SceneImage was promoted and isCurrent=true
-        using var verifyDb = new ProjectDbContext(options);
+        using var verifyDb = new CoreDbContext(options);
         var images = await verifyDb.SceneImages.ToListAsync();
         Assert.Single(images);
         Assert.True(images[0].IsCurrent);
@@ -229,10 +229,10 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
     [Fact]
     public async Task ArtifactAcceptance_WhenAttemptBelongsToDifferentJob_ThrowsInvalidOperationException()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
 
         var service = new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
 
@@ -279,16 +279,16 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
 
-        using var db = new ProjectDbContext(options);
+        using var db = new CoreDbContext(options);
         var service = new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
 
         var jobId = Guid.NewGuid();
@@ -335,16 +335,16 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
 
-        using var db = new ProjectDbContext(options);
+        using var db = new CoreDbContext(options);
         var service = new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
 
         var jobId = Guid.NewGuid();
@@ -391,11 +391,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -430,7 +430,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var policy = new IdentityQualityGuardPolicy(MinAcceptableIdentitySimilarity: 0.75f, MaxAttempts: 3);
 
         var timeProvider = new SystemDateTimeProvider();
-        using var db = new ProjectDbContext(options);
+        using var db = new CoreDbContext(options);
         var orchestrator = new ImageGenerationOrchestrator(
             dbContext: db,
             visualCompiler: compiler,
@@ -447,7 +447,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         Assert.Equal(JobExecutionStatus.Completed, result.Status);
 
         // Assert outbox message for GenerationJobAccepted was persisted atomically with the artifact!
-        using var verifyDb = new ProjectDbContext(options);
+        using var verifyDb = new CoreDbContext(options);
         var outboxEvents = await verifyDb.OutboxMessages
             .Where(m => m.EventType == OutboxEventTypes.GenerationJobAccepted)
             .ToListAsync();
@@ -474,11 +474,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -514,7 +514,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
 
         var timeProvider = new SystemDateTimeProvider();
         // 1. Worker 1 runs and fully commits the transaction
-        using (var dbWorker1 = new ProjectDbContext(options))
+        using (var dbWorker1 = new CoreDbContext(options))
         {
             var orchestrator1 = new ImageGenerationOrchestrator(
                 dbContext: dbWorker1,
@@ -535,7 +535,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         Assert.Equal(1, trackingImageService.CallCount);
 
         // 2. Outbox replays same message to Worker 2 (simulating crash right after commit before acking message)
-        using (var dbWorker2 = new ProjectDbContext(options))
+        using (var dbWorker2 = new CoreDbContext(options))
         {
             var orchestrator2 = new ImageGenerationOrchestrator(
                 dbContext: dbWorker2,
@@ -557,7 +557,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         Assert.Equal(1, trackingImageService.CallCount);
 
         // Assert exactly 1 artifact in DB
-        using (var verifyDb = new ProjectDbContext(options))
+        using (var verifyDb = new CoreDbContext(options))
         {
             var images = await verifyDb.SceneImages.ToListAsync();
             Assert.Single(images);
@@ -571,11 +571,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -586,7 +586,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var req1 = Guid.NewGuid();
         var req2 = Guid.NewGuid();
 
-        using (var db1 = new ProjectDbContext(options))
+        using (var db1 = new CoreDbContext(options))
         {
             var job1 = new ImageGenerationJob(sessionId, turnId, characterId, 1, req1);
             var job2 = new ImageGenerationJob(sessionId, turnId, characterId, 1, req2);
@@ -611,11 +611,11 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connection)
             .Options;
 
-        using (var dbInit = new ProjectDbContext(options))
+        using (var dbInit = new CoreDbContext(options))
         {
             await dbInit.Database.EnsureCreatedAsync();
         }
@@ -629,15 +629,15 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         var job = new ImageGenerationJob(sessionId, turnId, characterId, 1, reqId);
         job.TryClaim("worker-1", TimeSpan.FromMinutes(2), now);
 
-        using (var dbSeed = new ProjectDbContext(options))
+        using (var dbSeed = new CoreDbContext(options))
         {
             await dbSeed.ImageGenerationJobs.AddAsync(job);
             await dbSeed.SaveChangesAsync();
         }
 
         // Part 1: Optimistic Concurrency Token via EF ChangeTracker
-        using (var dbA = new ProjectDbContext(options))
-        using (var dbB = new ProjectDbContext(options))
+        using (var dbA = new CoreDbContext(options))
+        using (var dbB = new CoreDbContext(options))
         {
             var jobA = await dbA.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             var jobB = await dbB.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
@@ -658,7 +658,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         }
 
         // Part 2: Relational CAS ExecuteUpdateAsync Fencing
-        using (var dbSeed2 = new ProjectDbContext(options))
+        using (var dbSeed2 = new CoreDbContext(options))
         {
             var job2 = new ImageGenerationJob(sessionId, turnId, characterId, 2, Guid.NewGuid());
             job2.TryClaim("worker-1", TimeSpan.FromMinutes(2), now);
@@ -707,7 +707,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
         }
 
         // Final Verification
-        using (var dbVerify = new ProjectDbContext(options))
+        using (var dbVerify = new CoreDbContext(options))
         {
             var verifiedJob = await dbVerify.ImageGenerationJobs.FirstAsync(j => j.Id == job.Id);
             Assert.Equal(ImageJobStatus.Failed, verifiedJob.Status);

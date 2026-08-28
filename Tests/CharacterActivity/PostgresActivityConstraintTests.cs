@@ -14,18 +14,18 @@ namespace Tests.CharacterActivities;
 public sealed class PostgresActivityConstraintTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public PostgresActivityConstraintTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -69,11 +69,11 @@ public sealed class PostgresActivityConstraintTests : IDisposable
 
         // Intentionally corrupt db options with broken connection to cause non-unique exception
         var brokenConnection = new SqliteConnection("Filename=nonexistent_broken.db");
-        var brokenOptions = new DbContextOptionsBuilder<ProjectDbContext>()
+        var brokenOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(brokenConnection)
             .Options;
 
-        using var brokenDb = new ProjectDbContext(brokenOptions);
+        using var brokenDb = new CoreDbContext(brokenOptions);
         var stateReader = new SceneVisualStateReader(brokenDb, NullLogger<SceneVisualStateReader>.Instance);
         var scheduler = new CharacterActivityScheduler(
             brokenDb, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
@@ -85,7 +85,7 @@ public sealed class PostgresActivityConstraintTests : IDisposable
     [Fact]
     public void ModelMetadata_VerifiesPartialUniqueIndex_AndCompositeIndex()
     {
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         var entityType = db.Model.FindEntityType(typeof(CharacterActivity));
         Assert.NotNull(entityType);
 

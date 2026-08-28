@@ -20,7 +20,7 @@ namespace Infrastructure.Services;
 /// </summary>
 public sealed class GenerationRecoveryService : IGenerationRecoveryService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<GenerationRecoveryService> _logger;
     private readonly GenerationRetryPolicy _retryPolicy;
@@ -28,7 +28,7 @@ public sealed class GenerationRecoveryService : IGenerationRecoveryService
     private readonly TimeSpan _outboxStaleLeaseTimeout = TimeSpan.FromMinutes(2);
 
     public GenerationRecoveryService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IDateTimeProvider dateTimeProvider,
         ILogger<GenerationRecoveryService> logger,
         GenerationRetryPolicy? retryPolicy = null,

@@ -21,11 +21,11 @@ namespace Application.Services;
 /// </summary>
 public sealed class VisualPredecessorResolver : IVisualPredecessorResolver
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<VisualPredecessorResolver> _logger;
 
     public VisualPredecessorResolver(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ILogger<VisualPredecessorResolver> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));

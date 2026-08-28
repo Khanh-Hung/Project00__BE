@@ -36,13 +36,13 @@ public sealed class VisualConcurrencyTests
         var dbPath = Path.Combine(Path.GetTempPath(), $"visual_concurrency_a_{Guid.NewGuid():N}.db");
         var connectionString = $"Data Source={dbPath};";
 
-        var dbOptions = new DbContextOptionsBuilder<ProjectDbContext>()
+        var dbOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connectionString)
             .Options;
 
         try
         {
-            using (var setupDb = new ProjectDbContext(dbOptions))
+            using (var setupDb = new CoreDbContext(dbOptions))
             {
                 await setupDb.Database.EnsureCreatedAsync();
             }
@@ -62,7 +62,7 @@ public sealed class VisualConcurrencyTests
 
             var attemptC = new ImageGenerationAttempt(jobC.Id, turnId, 1, 1, 2000L, "{}", "fp-C", GenerationAttemptStatus.Succeeded, claimedBy: "worker-C");
 
-            using (var seedDb = new ProjectDbContext(dbOptions))
+            using (var seedDb = new CoreDbContext(dbOptions))
             {
                 await seedDb.ImageGenerationJobs.AddRangeAsync(jobB, jobC);
                 await seedDb.ImageGenerationAttempts.AddRangeAsync(attemptB, attemptC);
@@ -74,7 +74,7 @@ public sealed class VisualConcurrencyTests
             // 2. Run concurrent acceptance in parallel with separate DbContexts on separate connections
             var taskB = Task.Run(async () =>
             {
-                await using var dbB = new ProjectDbContext(dbOptions);
+                await using var dbB = new CoreDbContext(dbOptions);
                 var serviceB = new ArtifactAcceptanceService(dbB, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
                 var reqB = new ArtifactAcceptanceRequest(jobB.Id, attemptB.Id, snapshot, "https://cdn.project00.ai/B.png", "prompt B", null, "fp-B", "{}", true, "worker-B", Guid.NewGuid(), null);
                 return await serviceB.AcceptAttemptAtomicallyAsync(reqB);
@@ -82,7 +82,7 @@ public sealed class VisualConcurrencyTests
 
             var taskC = Task.Run(async () =>
             {
-                await using var dbC = new ProjectDbContext(dbOptions);
+                await using var dbC = new CoreDbContext(dbOptions);
                 var serviceC = new ArtifactAcceptanceService(dbC, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
                 var reqC = new ArtifactAcceptanceRequest(jobC.Id, attemptC.Id, snapshot, "https://cdn.project00.ai/C.png", "prompt C", null, "fp-C", "{}", true, "worker-C", Guid.NewGuid(), null);
                 return await serviceC.AcceptAttemptAtomicallyAsync(reqC);
@@ -91,7 +91,7 @@ public sealed class VisualConcurrencyTests
             var results = await Task.WhenAll(taskB, taskC);
 
             // 3. Invariant Verification: Exactly ONE Current artifact exists in the session in DB
-            using (var verifyDb = new ProjectDbContext(dbOptions))
+            using (var verifyDb = new CoreDbContext(dbOptions))
             {
                 var currentArtifacts = await verifyDb.SceneImages
                     .Where(img => img.SessionId == sessionId && img.IsCurrent)
@@ -119,13 +119,13 @@ public sealed class VisualConcurrencyTests
         var dbPath = Path.Combine(Path.GetTempPath(), $"visual_concurrency_b_{Guid.NewGuid():N}.db");
         var connectionString = $"Data Source={dbPath};";
 
-        var dbOptions = new DbContextOptionsBuilder<ProjectDbContext>()
+        var dbOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connectionString)
             .Options;
 
         try
         {
-            using (var setupDb = new ProjectDbContext(dbOptions))
+            using (var setupDb = new CoreDbContext(dbOptions))
             {
                 await setupDb.Database.EnsureCreatedAsync();
             }
@@ -141,7 +141,7 @@ public sealed class VisualConcurrencyTests
 
             var attempt = new ImageGenerationAttempt(job.Id, turnId, 1, 1, 1000L, "{}", "fp-cancel", GenerationAttemptStatus.Succeeded, claimedBy: "worker-1");
 
-            using (var seedDb = new ProjectDbContext(dbOptions))
+            using (var seedDb = new CoreDbContext(dbOptions))
             {
                 await seedDb.ImageGenerationJobs.AddAsync(job);
                 await seedDb.ImageGenerationAttempts.AddAsync(attempt);
@@ -150,7 +150,7 @@ public sealed class VisualConcurrencyTests
 
             var snapshot = CreateTestSnapshot(sessionId, turnId, charId);
 
-            using (var db = new ProjectDbContext(dbOptions))
+            using (var db = new CoreDbContext(dbOptions))
             {
                 var service = new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
                 var req = new ArtifactAcceptanceRequest(job.Id, attempt.Id, snapshot, "https://cdn.project00.ai/cancelled.png", "prompt", null, "fp-cancel", "{}", true, "worker-1", Guid.NewGuid(), null);
@@ -159,7 +159,7 @@ public sealed class VisualConcurrencyTests
                 Assert.Equal(JobExecutionStatus.Deferred, res.Status);
             }
 
-            using (var verifyDb = new ProjectDbContext(dbOptions))
+            using (var verifyDb = new CoreDbContext(dbOptions))
             {
                 var currentCount = await verifyDb.SceneImages.CountAsync(img => img.SessionId == sessionId && img.IsCurrent);
                 Assert.Equal(0, currentCount);
@@ -180,13 +180,13 @@ public sealed class VisualConcurrencyTests
         var dbPath = Path.Combine(Path.GetTempPath(), $"visual_concurrency_c_{Guid.NewGuid():N}.db");
         var connectionString = $"Data Source={dbPath};";
 
-        var dbOptions = new DbContextOptionsBuilder<ProjectDbContext>()
+        var dbOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(connectionString)
             .Options;
 
         try
         {
-            using (var setupDb = new ProjectDbContext(dbOptions))
+            using (var setupDb = new CoreDbContext(dbOptions))
             {
                 await setupDb.Database.EnsureCreatedAsync();
             }
@@ -212,7 +212,7 @@ public sealed class VisualConcurrencyTests
             var artifactB = new SceneImage(sessionId, charId, turnId2, 2, "https://cdn.project00.ai/B.png", "prompt B", generationJobId: jobB.Id, visualRevision: 2, isCurrent: true, lifecycleStatus: ArtifactLifecycleStatus.Current);
             var state = new VisualSessionState(sessionId, artifactB.Id, jobB.Id, visualRevision: 2);
 
-            using (var seedDb = new ProjectDbContext(dbOptions))
+            using (var seedDb = new CoreDbContext(dbOptions))
             {
                 await seedDb.ImageGenerationJobs.AddRangeAsync(jobA, jobB);
                 await seedDb.ImageGenerationAttempts.AddRangeAsync(attemptA, attemptB);
@@ -226,7 +226,7 @@ public sealed class VisualConcurrencyTests
 
             // Worker A finishes late
             var snapshotA = CreateTestSnapshot(sessionId, turnId1, charId, 1);
-            using (var dbA = new ProjectDbContext(dbOptions))
+            using (var dbA = new CoreDbContext(dbOptions))
             {
                 var serviceA = new ArtifactAcceptanceService(dbA, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance);
                 var reqA = new ArtifactAcceptanceRequest(jobA.Id, attemptA.Id, snapshotA, "https://cdn.project00.ai/A.png", "prompt A", null, "fp-A", "{}", true, "worker-A", Guid.NewGuid(), null);
@@ -236,7 +236,7 @@ public sealed class VisualConcurrencyTests
             }
 
             // Invariant: Job B remains the authoritative Current image in DB
-            using (var verifyDb = new ProjectDbContext(dbOptions))
+            using (var verifyDb = new CoreDbContext(dbOptions))
             {
                 var reloadedArtifactB = await verifyDb.SceneImages.FirstAsync(img => img.Id == artifactB.Id);
                 Assert.True(reloadedArtifactB.IsCurrent);

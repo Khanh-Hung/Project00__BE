@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Goals;
@@ -12,18 +12,18 @@ namespace Tests.CharacterGoals;
 public sealed class GoalContributionIdempotencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public GoalContributionIdempotencyTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -38,7 +38,7 @@ public sealed class GoalContributionIdempotencyTests : IDisposable
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "Learn Alchemy", CharacterGoalType.SkillDevelopment, 100);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterGoals.AddAsync(goal);
             await db.SaveChangesAsync();
@@ -47,7 +47,7 @@ public sealed class GoalContributionIdempotencyTests : IDisposable
         var activityId = Guid.NewGuid();
 
         // Run 1: First contribution (20)
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var service = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var res1 = await service.RecordContributionAsync(goal.Id, activityId, 20);
@@ -58,7 +58,7 @@ public sealed class GoalContributionIdempotencyTests : IDisposable
         }
 
         // Run 2: Exact same (GoalId, ActivityId) duplicate attempt (20)
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var service = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var res2 = await service.RecordContributionAsync(goal.Id, activityId, 20);
@@ -69,7 +69,7 @@ public sealed class GoalContributionIdempotencyTests : IDisposable
         }
 
         // Assert DB Invariant: Exactly 1 contribution record in DB and goal value remains 20
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var count = await db.GoalActivityContributions.CountAsync(c => c.GoalId == goal.Id && c.ActivityId == activityId);
             Assert.Equal(1, count);

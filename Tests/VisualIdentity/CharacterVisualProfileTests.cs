@@ -12,18 +12,18 @@ namespace Tests.VisualIdentity;
 public sealed class CharacterVisualProfileTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CharacterVisualProfileTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -167,7 +167,7 @@ public sealed class CharacterVisualProfileTests : IDisposable
     [Fact]
     public async Task SetPrimaryReference_WhenReferenceBelongsToDifferentCharacter_ThrowsInvalidOperationExceptionAndPreservesDb()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var service = new CharacterVisualProfileService(db, NullLogger<CharacterVisualProfileService>.Instance);
 
         var charA = Guid.NewGuid();
@@ -206,7 +206,7 @@ public sealed class CharacterVisualProfileTests : IDisposable
         // Simulate 5 concurrent worker tasks attempting to create the visual profile for the same character
         var tasks = Enumerable.Range(0, 5).Select(async _ =>
         {
-            await using var taskDb = new ProjectDbContext(_options);
+            await using var taskDb = new CoreDbContext(_options);
             var service = new CharacterVisualProfileService(taskDb, NullLogger<CharacterVisualProfileService>.Instance);
             return await service.CreateProfileAsync(charId, eyeColor: "Red", hairColor: "Silver");
         });
@@ -216,7 +216,7 @@ public sealed class CharacterVisualProfileTests : IDisposable
         Assert.All(results, p => Assert.Equal(charId, p.CharacterId));
 
         // Invariant: Exactly 1 profile row in the database for this CharacterId
-        await using var verifyDb = new ProjectDbContext(_options);
+        await using var verifyDb = new CoreDbContext(_options);
         var count = await verifyDb.CharacterVisualProfiles.CountAsync(p => p.CharacterId == charId);
         Assert.Equal(1, count);
     }

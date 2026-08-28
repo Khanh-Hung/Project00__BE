@@ -8,9 +8,9 @@ namespace Infrastructure.Services.Scene;
 
 public sealed class CanonicalReferenceReader : ICanonicalReferenceReader
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
 
-    public CanonicalReferenceReader(ProjectDbContext dbContext)
+    public CanonicalReferenceReader(CoreDbContext dbContext)
     {
         _dbContext = dbContext;
     }

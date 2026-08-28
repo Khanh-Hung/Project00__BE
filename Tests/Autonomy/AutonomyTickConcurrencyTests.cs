@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Autonomy;
+using Application.Contracts.Autonomy;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -19,18 +19,18 @@ namespace Tests.Autonomy;
 public sealed class AutonomyTickConcurrencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public AutonomyTickConcurrencyTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -45,7 +45,7 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
         var charId = Guid.NewGuid();
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SaveChangesAsync();
@@ -55,7 +55,7 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
 
         var tasks = Enumerable.Range(1, 2).Select(async i =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
@@ -98,13 +98,13 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
         var charId = Guid.NewGuid();
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SaveChangesAsync();
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -144,7 +144,7 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
         var goal = new CharacterGoal(charId, "Master Alchemical Research", CharacterGoalType.SkillDevelopment, 100);
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Great alchemical research discovery!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -157,7 +157,7 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
 
         var tasks = Enumerable.Range(1, 10).Select(async _ =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
@@ -201,7 +201,7 @@ public sealed class AutonomyTickConcurrencyTests : IDisposable
         // 4. Exactly 1 row in CharacterMemories
         // 5. Goal contribution applied exactly once: 30.0 (Reaction) + 2.0 (Activity) = 32.0 (NOT multiplied by 10)
         // 6. Exactly 1 SceneSpecification generated (1 from reaction in the single winning tick, NOT 10 for 10 workers)
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var tickCount = await db.CharacterAutonomyTicks.CountAsync(t => t.CharacterId == charId && t.TimeBucket == timeBucket);
             Assert.Equal(1, tickCount);

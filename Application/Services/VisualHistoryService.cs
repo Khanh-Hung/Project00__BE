@@ -16,11 +16,11 @@ namespace Application.Services;
 /// </summary>
 public sealed class VisualHistoryService : IVisualHistoryService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<VisualHistoryService> _logger;
 
     public VisualHistoryService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ILogger<VisualHistoryService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));

@@ -1,4 +1,4 @@
-﻿using Application.Interfaces;
+using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
@@ -9,11 +9,11 @@ namespace Infrastructure.Services.Goals;
 
 public sealed class GoalProgressService : IGoalProgressService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<GoalProgressService> _logger;
 
     public GoalProgressService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ILogger<GoalProgressService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));

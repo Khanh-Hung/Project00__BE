@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using Application.Abstractions.Data;
 using Domain.Common;
 using Infrastructure.Persistence;
@@ -8,9 +8,9 @@ namespace Infrastructure.Persistence.Repositories;
 
 public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEntity : BaseEntity
 {
-    protected readonly ProjectDbContext DbContext;
+    protected readonly CoreDbContext DbContext;
 
-    public GenericRepository(ProjectDbContext dbContext)
+    public GenericRepository(CoreDbContext dbContext)
     {
         DbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     }

@@ -19,14 +19,14 @@ namespace Infrastructure.BackgroundJobs;
 /// </summary>
 public sealed class CharacterActivityScheduler
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IAutonomousDecisionService _decisionService;
     private readonly IActivityExecutionService _executionService;
     private readonly ISceneVisualStateReader _visualStateReader;
     private readonly ILogger<CharacterActivityScheduler> _logger;
 
     public CharacterActivityScheduler(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IAutonomousDecisionService decisionService,
         IActivityExecutionService executionService,
         ISceneVisualStateReader visualStateReader,
@@ -40,7 +40,7 @@ public sealed class CharacterActivityScheduler
     }
 
     public CharacterActivityScheduler(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ICharacterActivityDecisionService decisionService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,

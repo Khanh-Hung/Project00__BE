@@ -25,7 +25,7 @@ namespace Infrastructure.Services;
 /// </summary>
 public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IVisualPromptCompiler _visualCompiler;
     private readonly IImageGenerationService _imageService;
     private readonly IDateTimeProvider _dateTimeProvider;
@@ -39,7 +39,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
     private readonly GenerationRetryBudget _retryBudget;
 
     public ImageGenerationOrchestrator(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IVisualPromptCompiler visualCompiler,
         IImageGenerationService imageService,
         ILogger<ImageGenerationOrchestrator> logger,

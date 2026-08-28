@@ -11,18 +11,18 @@ namespace Tests.CharacterReaction;
 public sealed class PostgresWorldEventConstraintTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public PostgresWorldEventConstraintTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -53,13 +53,13 @@ public sealed class PostgresWorldEventConstraintTests : IDisposable
             priority: ReactionPriority.DirectUserInteraction
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterWorldEventReactions.AddAsync(reaction1);
             await db.SaveChangesAsync();
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterWorldEventReactions.AddAsync(reaction2);
             var ex = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
@@ -72,7 +72,7 @@ public sealed class PostgresWorldEventConstraintTests : IDisposable
     [Fact]
     public void SceneSpecifications_HasCompositeIndexOn_CharacterId_And_SceneRevision()
     {
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         var entityType = db.Model.FindEntityType(typeof(SceneSpecification));
         Assert.NotNull(entityType);
 
@@ -88,7 +88,7 @@ public sealed class PostgresWorldEventConstraintTests : IDisposable
     [Fact]
     public void CharacterWorldEventReactions_HasUniqueIndexOn_WorldEventId_And_CharacterId()
     {
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         var entityType = db.Model.FindEntityType(typeof(CharacterWorldEventReaction));
         Assert.NotNull(entityType);
 

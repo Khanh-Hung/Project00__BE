@@ -362,10 +362,10 @@ public sealed class IdentityInvariantSystemTests
     public async Task VisualStateResolver_MultiTurnPipeline_GuaranteesCanonicalReferenceImmutability_And_DynamicSlot2Resolution()
     {
         // Arrange
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(db);
 
         var canonicalAvatarUrl = "https://cdn.project00.ai/avatars/valerius_canonical_face.png";
@@ -466,10 +466,10 @@ public sealed class IdentityInvariantSystemTests
     public async Task ImageGenerationJobHandler_EndToEnd_DispatchesRequest_WithCompiledInvariants_And_ImmutableReference()
     {
         // Arrange
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(db);
 
         var canonicalAvatar = "https://cdn.project00.ai/avatars/valerius_canonical_face.png";

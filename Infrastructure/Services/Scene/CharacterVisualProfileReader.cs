@@ -7,9 +7,9 @@ namespace Infrastructure.Services.Scene;
 
 public sealed class CharacterVisualProfileReader : ICharacterVisualProfileReader
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
 
-    public CharacterVisualProfileReader(ProjectDbContext dbContext)
+    public CharacterVisualProfileReader(CoreDbContext dbContext)
     {
         _dbContext = dbContext;
     }

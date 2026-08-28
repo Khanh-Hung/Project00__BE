@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Autonomy;
@@ -11,18 +11,18 @@ namespace Tests.Autonomy;
 public sealed class AutonomyTickDatabaseConstraintTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public AutonomyTickDatabaseConstraintTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -49,13 +49,13 @@ public sealed class AutonomyTickDatabaseConstraintTests : IDisposable
             timeBucket: timeBucket
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterAutonomyTicks.AddAsync(tick1);
             await db.SaveChangesAsync();
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterAutonomyTicks.AddAsync(tick2);
             var ex = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
@@ -68,7 +68,7 @@ public sealed class AutonomyTickDatabaseConstraintTests : IDisposable
     [Fact]
     public void CharacterAutonomyTicks_HasUniqueIndexOn_CharacterId_And_TimeBucket()
     {
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         var entityType = db.Model.FindEntityType(typeof(CharacterAutonomyTick));
         Assert.NotNull(entityType);
 

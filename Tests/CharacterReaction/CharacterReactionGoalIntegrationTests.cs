@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Reactions;
+using Application.Contracts.Reactions;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -18,18 +18,18 @@ namespace Tests.CharacterReaction;
 public sealed class CharacterReactionGoalIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CharacterReactionGoalIntegrationTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -46,7 +46,7 @@ public sealed class CharacterReactionGoalIntegrationTests : IDisposable
         var goal = new CharacterGoal(charId, "Master Landscape Art", CharacterGoalType.SkillDevelopment, 100);
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Your painting exhibition was a grand success!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -75,7 +75,7 @@ public sealed class CharacterReactionGoalIntegrationTests : IDisposable
             CurrentGoals: new[] { goalSnapshot }
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -90,7 +90,7 @@ public sealed class CharacterReactionGoalIntegrationTests : IDisposable
             Assert.Equal(goal.Id, result.GoalId);
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var updatedGoal = await db.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
             Assert.True(updatedGoal.CurrentValue > 0);

@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Reactions;
+using Application.Contracts.Reactions;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -18,18 +18,18 @@ namespace Tests.CharacterReaction;
 public sealed class CharacterReactionConcurrencyTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CharacterReactionConcurrencyTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -45,7 +45,7 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Great work!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterWorldEvents.AddAsync(worldEvent);
@@ -63,7 +63,7 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
 
         var tasks = Enumerable.Range(1, 2).Select(async _ =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
@@ -90,7 +90,7 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
         var goal = new CharacterGoal(charId, "Master Landscape Art", CharacterGoalType.SkillDevelopment, 100);
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Your new artwork exhibition is magnificent!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterGoals.AddAsync(goal);
@@ -123,7 +123,7 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
 
         var tasks = Enumerable.Range(1, 10).Select(async _ =>
         {
-            await using var workerDb = new ProjectDbContext(_options);
+            await using var workerDb = new CoreDbContext(_options);
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
@@ -146,7 +146,7 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
         // 2. Exactly 1 row in CharacterMemories
         // 3. Exactly 1 Goal contribution applied (CurrentValue > 0, not multiplied by 10)
         // 4. Exactly 1 SceneSpecification generated
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var count = await db.CharacterWorldEventReactions.CountAsync(r => r.CharacterId == charId && r.WorldEventId == worldEvent.Id);
             Assert.Equal(1, count);

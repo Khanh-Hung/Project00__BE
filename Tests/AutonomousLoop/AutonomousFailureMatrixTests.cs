@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
 using Domain.Entities;
 using Domain.Enums;
@@ -18,18 +18,18 @@ namespace Tests.AutonomousLoop;
 public sealed class AutonomousFailureMatrixTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public AutonomousFailureMatrixTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -59,11 +59,11 @@ public sealed class AutonomousFailureMatrixTests : IDisposable
     public async Task DbConnectionFailure_IsRethrown_AndNotSwallowed()
     {
         var brokenConnection = new SqliteConnection("Filename=nonexistent_broken_db.db");
-        var brokenOptions = new DbContextOptionsBuilder<ProjectDbContext>()
+        var brokenOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(brokenConnection)
             .Options;
 
-        using var brokenDb = new ProjectDbContext(brokenOptions);
+        using var brokenDb = new CoreDbContext(brokenOptions);
         var goalService = new GoalProgressService(brokenDb, NullLogger<GoalProgressService>.Instance);
         var fakePipeline = new FakeSceneCompositionPipelineService();
         var stateReader = new SceneVisualStateReader(brokenDb, NullLogger<SceneVisualStateReader>.Instance);
@@ -99,7 +99,7 @@ public sealed class AutonomousFailureMatrixTests : IDisposable
             Id = charId
         };
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SaveChangesAsync();
@@ -125,7 +125,7 @@ public sealed class AutonomousFailureMatrixTests : IDisposable
 
         var request = new ActivityExecutionRequest(character, candidate, DateTime.UtcNow, "2026-08-28T16:00");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -136,7 +136,7 @@ public sealed class AutonomousFailureMatrixTests : IDisposable
         }
 
         // Verify DB State: 0 activities inserted
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var count = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId);
             Assert.Equal(0, count);

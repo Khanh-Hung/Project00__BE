@@ -223,11 +223,11 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
     {
         // 1. Setup Database & In-Memory Context
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(db);
 
         var charId = Guid.NewGuid();
@@ -579,11 +579,11 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
     public async Task Affection_Delta_Is_Strictly_Clamped_Within_Domain_Boundaries()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(db);
 
         var charId = Guid.NewGuid();
@@ -636,11 +636,11 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
     public async Task Relationship_Event_Deduplication_And_Persistence_Contract()
     {
         var dbName = Guid.NewGuid().ToString();
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: dbName)
             .Options;
 
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(db);
 
         var charId = Guid.NewGuid();

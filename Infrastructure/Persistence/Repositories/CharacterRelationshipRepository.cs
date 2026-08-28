@@ -7,7 +7,7 @@ namespace Infrastructure.Persistence.Repositories;
 
 public sealed class CharacterRelationshipRepository : GenericRepository<CharacterRelationship>, ICharacterRelationshipRepository
 {
-    public CharacterRelationshipRepository(ProjectDbContext dbContext) : base(dbContext)
+    public CharacterRelationshipRepository(CoreDbContext dbContext) : base(dbContext)
     {
     }
 

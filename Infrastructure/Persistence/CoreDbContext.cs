@@ -7,12 +7,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Persistence;
 
-public class ProjectDbContext : DbContext
+public class CoreDbContext : DbContext
 {
     private readonly ICurrentUserProvider? _currentUserProvider;
 
-    public ProjectDbContext(
-        DbContextOptions<ProjectDbContext> options,
+    public CoreDbContext(
+        DbContextOptions<CoreDbContext> options,
         ICurrentUserProvider? currentUserProvider = null) : base(options)
     {
         _currentUserProvider = currentUserProvider;

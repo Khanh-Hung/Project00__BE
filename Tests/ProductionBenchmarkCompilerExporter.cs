@@ -43,10 +43,10 @@ public sealed class ProductionBenchmarkCompilerExporter
 
     public static async Task<List<ExportableTurnRequest>> GenerateAllAuthoritativeRequestsAsync()
     {
-        var options = new DbContextOptionsBuilder<ProjectDbContext>()
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ProjectDbContext(options);
+        await using var db = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(db);
         var compiler = new VisualPromptCompiler();
         var profileProvider = new VisualGenerationProfileProvider();
@@ -220,7 +220,7 @@ public sealed class ProductionBenchmarkCompilerExporter
     }
 
     private static async Task ProcessCharacterScenarioAsync(
-        ProjectDbContext db,
+        CoreDbContext db,
         IUnitOfWork unitOfWork,
         IVisualPromptCompiler compiler,
         IVisualGenerationProfileProvider profileProvider,

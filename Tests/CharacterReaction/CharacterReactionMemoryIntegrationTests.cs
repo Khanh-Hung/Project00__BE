@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Reactions;
+using Application.Contracts.Reactions;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -18,18 +18,18 @@ namespace Tests.CharacterReaction;
 public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CharacterReactionMemoryIntegrationTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -44,7 +44,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         var charId = Guid.NewGuid();
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.SaveChangesAsync();
@@ -60,7 +60,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
                 payloadJson: $"Rain started falling lightly (tick {i})."
             );
 
-            using (var db = new ProjectDbContext(_options))
+            using (var db = new CoreDbContext(_options))
             {
                 await db.CharacterWorldEvents.AddAsync(rainEvent);
                 await db.SaveChangesAsync();
@@ -81,7 +81,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         }
 
         // Invariant: Zero memory rows created after 4 ambient ticks
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var memCount = await db.CharacterMemories.CountAsync(m => m.CharacterId == charId);
             Assert.Equal(0, memCount);
@@ -100,7 +100,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
             payloadJson: "I love your artwork and cherish our friendship forever!"
         );
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterWorldEvents.AddAsync(loveEvent);
@@ -111,7 +111,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         var request = new ReactionExecutionRequest(loveEvent, character, executionId, DateTime.UtcNow);
 
         // Attempt 1: First invocation -> Memory created
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -126,7 +126,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         }
 
         // Attempt 2: Sequential retry -> Duplicate suppressed, zero new memory created
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -141,7 +141,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         }
 
         // Invariant: Exactly 1 row in CharacterMemories
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var memCount = await db.CharacterMemories.CountAsync(m => m.CharacterId == charId);
             Assert.Equal(1, memCount);
@@ -157,14 +157,14 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         var event1 = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Congratulations on completing your alchemy masterpiece!");
         var event2 = CharacterWorldEvent.Create(charId, CharacterWorldEventType.GoalCompleted, "Goal", payloadJson: "Master Alchemist title unlocked!");
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
             await db.CharacterWorldEvents.AddRangeAsync(event1, event2);
             await db.SaveChangesAsync();
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
@@ -179,7 +179,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
             Assert.True(res2.Success && res2.MemoryCreated);
         }
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var memCount = await db.CharacterMemories.CountAsync(m => m.CharacterId == charId);
             Assert.Equal(2, memCount);

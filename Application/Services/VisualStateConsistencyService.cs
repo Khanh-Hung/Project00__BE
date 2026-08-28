@@ -10,11 +10,11 @@ namespace Application.Services;
 
 public sealed class VisualStateConsistencyService : IVisualStateConsistencyService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly ILogger<VisualStateConsistencyService> _logger;
 
     public VisualStateConsistencyService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         ILogger<VisualStateConsistencyService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));

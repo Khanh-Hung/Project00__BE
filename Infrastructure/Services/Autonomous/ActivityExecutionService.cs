@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Autonomous;
+using Application.Contracts.Autonomous;
 using Application.Interfaces;
 using Application.Services;
 using Domain.Entities;
@@ -13,14 +13,14 @@ namespace Infrastructure.Services.Autonomous;
 
 public sealed class ActivityExecutionService : IActivityExecutionService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IGoalProgressService _goalProgressService;
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
     private readonly ISceneVisualStateReader _visualStateReader;
     private readonly ILogger<ActivityExecutionService> _logger;
 
     public ActivityExecutionService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IGoalProgressService goalProgressService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,

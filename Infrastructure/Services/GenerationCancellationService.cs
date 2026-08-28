@@ -17,13 +17,13 @@ namespace Infrastructure.Services;
 /// </summary>
 public sealed class GenerationCancellationService : IGenerationCancellationService
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<GenerationCancellationService> _logger;
     private readonly IComfyUIClient? _comfyClient;
 
     public GenerationCancellationService(
-        ProjectDbContext dbContext,
+        CoreDbContext dbContext,
         IDateTimeProvider dateTimeProvider,
         ILogger<GenerationCancellationService> logger,
         IComfyUIClient? comfyClient = null)

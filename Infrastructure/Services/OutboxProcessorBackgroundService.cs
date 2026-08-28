@@ -72,7 +72,7 @@ public sealed class OutboxProcessorBackgroundService : BackgroundService
     public async Task<int> ProcessPendingOutboxMessagesAsync(DateTime? referenceTime, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.Persistence.ProjectDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.Persistence.CoreDbContext>();
         var voiceCompiler = scope.ServiceProvider.GetRequiredService<IVoicePromptCompiler>();
         var visualCompiler = scope.ServiceProvider.GetRequiredService<IVisualPromptCompiler>();
         var voiceService = scope.ServiceProvider.GetRequiredService<IVoiceGenerationService>();

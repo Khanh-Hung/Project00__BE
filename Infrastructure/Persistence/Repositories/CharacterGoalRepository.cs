@@ -1,4 +1,4 @@
-﻿using Application.Interfaces;
+using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
@@ -8,9 +8,9 @@ namespace Infrastructure.Persistence.Repositories;
 
 public sealed class CharacterGoalRepository : ICharacterGoalRepository
 {
-    private readonly ProjectDbContext _dbContext;
+    private readonly CoreDbContext _dbContext;
 
-    public CharacterGoalRepository(ProjectDbContext dbContext)
+    public CharacterGoalRepository(CoreDbContext dbContext)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     }

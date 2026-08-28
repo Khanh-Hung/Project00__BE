@@ -13,18 +13,18 @@ namespace Tests.VisualIdentity;
 public sealed class CanonicalReferenceInvariantTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public CanonicalReferenceInvariantTests()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -37,7 +37,7 @@ public sealed class CanonicalReferenceInvariantTests : IDisposable
     [Fact]
     public async Task SingleCanonicalReference_ForCharacter_IsAllowed()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var charId = Guid.NewGuid();
 
         var canonical = new CharacterVisualReference(
@@ -59,7 +59,7 @@ public sealed class CanonicalReferenceInvariantTests : IDisposable
     [Fact]
     public async Task SecondActiveCanonicalReference_ForSameCharacter_ViolatesDatabaseConstraint()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var charId = Guid.NewGuid();
 
         var canonical1 = new CharacterVisualReference(
@@ -91,7 +91,7 @@ public sealed class CanonicalReferenceInvariantTests : IDisposable
     [Fact]
     public async Task ArchivedCanonicalReference_DoesNotBlockNewActiveCanonicalReference()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var charId = Guid.NewGuid();
 
         var archivedCanonical = new CharacterVisualReference(
@@ -124,7 +124,7 @@ public sealed class CanonicalReferenceInvariantTests : IDisposable
     [Fact]
     public async Task ServicePromotion_AtomicallyDemotesPreviousCanonical_PreservingSingleCanonicalInvariant()
     {
-        await using var db = new ProjectDbContext(_options);
+        await using var db = new CoreDbContext(_options);
         var profileService = new CharacterVisualProfileService(db, NullLogger<CharacterVisualProfileService>.Instance);
         var referenceService = new CharacterVisualReferenceService(db, profileService, NullLogger<CharacterVisualReferenceService>.Instance);
         var charId = Guid.NewGuid();

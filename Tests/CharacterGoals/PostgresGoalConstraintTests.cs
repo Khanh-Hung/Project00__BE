@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Goals;
@@ -12,18 +12,18 @@ namespace Tests.CharacterGoals;
 public sealed class PostgresGoalConstraintTests : IDisposable
 {
     private readonly SqliteConnection _connection;
-    private readonly DbContextOptions<ProjectDbContext> _options;
+    private readonly DbContextOptions<CoreDbContext> _options;
 
     public PostgresGoalConstraintTests()
     {
         _connection = new SqliteConnection("Filename=:memory:");
         _connection.Open();
 
-        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+        _options = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
     }
 
@@ -57,11 +57,11 @@ public sealed class PostgresGoalConstraintTests : IDisposable
         var activityId = Guid.NewGuid();
 
         var brokenConnection = new SqliteConnection("Filename=nonexistent_broken_goals.db");
-        var brokenOptions = new DbContextOptionsBuilder<ProjectDbContext>()
+        var brokenOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(brokenConnection)
             .Options;
 
-        using var brokenDb = new ProjectDbContext(brokenOptions);
+        using var brokenDb = new CoreDbContext(brokenOptions);
         var service = new GoalProgressService(brokenDb, NullLogger<GoalProgressService>.Instance);
 
         await Assert.ThrowsAnyAsync<Exception>(() => service.RecordContributionAsync(goalId, activityId, 10));
@@ -73,7 +73,7 @@ public sealed class PostgresGoalConstraintTests : IDisposable
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "Master Archery", CharacterGoalType.SkillDevelopment, 100);
 
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             await db.CharacterGoals.AddAsync(goal);
             await db.SaveChangesAsync();
@@ -82,7 +82,7 @@ public sealed class PostgresGoalConstraintTests : IDisposable
         var activityId = Guid.NewGuid();
 
         // 1. Initial contribution
-        using (var db1 = new ProjectDbContext(_options))
+        using (var db1 = new CoreDbContext(_options))
         {
             var service1 = new GoalProgressService(db1, NullLogger<GoalProgressService>.Instance);
             var res1 = await service1.RecordContributionAsync(goal.Id, activityId, 10);
@@ -92,7 +92,7 @@ public sealed class PostgresGoalConstraintTests : IDisposable
         }
 
         // 2. Duplicate contribution attempt (pre-check path)
-        using (var db2 = new ProjectDbContext(_options))
+        using (var db2 = new CoreDbContext(_options))
         {
             var service2 = new GoalProgressService(db2, NullLogger<GoalProgressService>.Instance);
             var res2 = await service2.RecordContributionAsync(goal.Id, activityId, 10);
@@ -102,7 +102,7 @@ public sealed class PostgresGoalConstraintTests : IDisposable
         }
 
         // Verify database invariants: exactly 1 contribution row and exactly 10 units of progress
-        using (var db = new ProjectDbContext(_options))
+        using (var db = new CoreDbContext(_options))
         {
             var contributionCount = await db.GoalActivityContributions
                 .CountAsync(c => c.GoalId == goal.Id && c.ActivityId == activityId);
@@ -117,7 +117,7 @@ public sealed class PostgresGoalConstraintTests : IDisposable
     [Fact]
     public void ModelMetadata_VerifiesUniqueContributionIndex_AndGoalIndexes()
     {
-        using var db = new ProjectDbContext(_options);
+        using var db = new CoreDbContext(_options);
 
         // 1. Verify Unique Index on GoalActivityContribution (GoalId, ActivityId)
         var contribEntity = db.Model.FindEntityType(typeof(GoalActivityContribution));
