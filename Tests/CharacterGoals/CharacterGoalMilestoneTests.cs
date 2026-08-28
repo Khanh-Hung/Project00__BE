@@ -7,7 +7,7 @@ namespace Tests.CharacterGoals;
 public sealed class CharacterGoalMilestoneTests
 {
     [Fact]
-    public void Milestones_AddedInOrder_FirstMilestoneAutomaticallyActive()
+    public void Milestones_AddedToAggregate_FirstMilestoneActivatedByAggregateRoot()
     {
         var goal = new CharacterGoal(Guid.NewGuid(), "Become Master Wizard", CharacterGoalType.Career, 100);
 
@@ -22,31 +22,52 @@ public sealed class CharacterGoalMilestoneTests
     }
 
     [Fact]
-    public void MilestoneProgression_AdvancesNextMilestone_WhenActiveCompletes()
+    public void MilestoneProgression_CascadingOverflow_DistributesContributionAcrossMultipleMilestones()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Master Culinary Arts", CharacterGoalType.SkillDevelopment, 30);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Master Culinary Arts", CharacterGoalType.SkillDevelopment, 100);
         var m1 = goal.AddMilestone("Knife Skills", 1, 10);
-        var m2 = goal.AddMilestone("Baking Basics", 2, 10);
-        var m3 = goal.AddMilestone("Host 3-Course Banquet", 3, 10);
+        var m2 = goal.AddMilestone("Baking Basics", 2, 40);
+        var m3 = goal.AddMilestone("Host Banquet", 3, 50);
 
-        // Progress 10 -> Completes m1 and auto-activates m2
-        goal.RecordProgress(10);
+        // Contribution of 25:
+        // m1 takes 10, completes.
+        // remaining 15 overflows to m2, which activates and has current 15/40.
+        goal.RecordProgress(25);
 
         Assert.Equal(CharacterGoalMilestoneStatus.Completed, m1.Status);
         Assert.Equal(10, m1.CurrentValue);
         Assert.NotNull(m1.CompletedAt);
 
         Assert.Equal(CharacterGoalMilestoneStatus.Active, m2.Status);
+        Assert.Equal(15, m2.CurrentValue);
         Assert.Equal(CharacterGoalMilestoneStatus.Pending, m3.Status);
-        Assert.Equal(CharacterGoalStatus.Active, goal.Status);
+        Assert.Equal(0.25f, goal.Progress);
+        Assert.Equal(25, goal.CurrentValue);
 
-        // Progress another 20 -> Completes m2 and m3 and completes goal
-        goal.RecordProgress(20);
+        // Next contribution of 35:
+        // m2 needs 25 (40 - 15), takes 25, completes.
+        // remaining 10 overflows to m3, which activates and has current 10/50.
+        goal.RecordProgress(35);
 
         Assert.Equal(CharacterGoalMilestoneStatus.Completed, m2.Status);
+        Assert.Equal(40, m2.CurrentValue);
+        Assert.NotNull(m2.CompletedAt);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Active, m3.Status);
+        Assert.Equal(10, m3.CurrentValue);
+        Assert.Equal(0.60f, goal.Progress);
+        Assert.Equal(60, goal.CurrentValue);
+
+        // Final contribution of 40:
+        // m3 takes 40, completes (50/50).
+        // Goal completes (100/100).
+        goal.RecordProgress(40);
+
         Assert.Equal(CharacterGoalMilestoneStatus.Completed, m3.Status);
+        Assert.Equal(50, m3.CurrentValue);
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
         Assert.Equal(1.0f, goal.Progress);
+        Assert.Equal(100, goal.CurrentValue);
     }
 
     [Fact]

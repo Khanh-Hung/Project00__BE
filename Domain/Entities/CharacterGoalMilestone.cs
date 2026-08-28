@@ -45,7 +45,7 @@ public sealed class CharacterGoalMilestone : BaseEntity
         Order = order;
         TargetValue = targetValue;
         CurrentValue = 0;
-        Status = order == 1 ? CharacterGoalMilestoneStatus.Active : CharacterGoalMilestoneStatus.Pending;
+        Status = CharacterGoalMilestoneStatus.Pending;
     }
 
     public void Activate()

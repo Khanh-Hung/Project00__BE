@@ -47,29 +47,45 @@ public sealed class CharacterGoalDomainTests
     }
 
     [Fact]
-    public void GoalLifecycle_InvalidTransitions_ThrowsInvalidOperationException()
+    public void GoalLifecycle_TerminalStates_CannotTransitionBackToActive()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Learn Cooking", CharacterGoalType.Lifestyle, 10);
-        goal.Complete();
+        // 1. Completed cannot become Active, Paused, Cancelled, or Expired
+        var completedGoal = new CharacterGoal(Guid.NewGuid(), "Completed", CharacterGoalType.Lifestyle, 10);
+        completedGoal.Complete();
 
-        // Completed cannot become Active
-        Assert.Throws<InvalidOperationException>(() => goal.Activate());
+        Assert.Throws<InvalidOperationException>(() => completedGoal.Activate());
+        Assert.Throws<InvalidOperationException>(() => completedGoal.Pause());
+        Assert.Throws<InvalidOperationException>(() => completedGoal.Cancel());
+        Assert.Throws<InvalidOperationException>(() => completedGoal.Expire());
 
-        // Completed cannot be Cancelled
-        Assert.Throws<InvalidOperationException>(() => goal.Cancel());
-
-        var pausedGoal = new CharacterGoal(Guid.NewGuid(), "Paused Goal", CharacterGoalType.Career, 10);
-        pausedGoal.Pause();
-
-        // Paused cannot complete without Resume
-        Assert.Throws<InvalidOperationException>(() => pausedGoal.Complete());
-
-        var cancelledGoal = new CharacterGoal(Guid.NewGuid(), "Cancelled Goal", CharacterGoalType.Relationship, 10);
+        // 2. Cancelled cannot become Active, Paused, or Completed
+        var cancelledGoal = new CharacterGoal(Guid.NewGuid(), "Cancelled", CharacterGoalType.Relationship, 10);
         cancelledGoal.Cancel();
 
-        // Cancelled cannot become Active or Completed
         Assert.Throws<InvalidOperationException>(() => cancelledGoal.Activate());
+        Assert.Throws<InvalidOperationException>(() => cancelledGoal.Pause());
         Assert.Throws<InvalidOperationException>(() => cancelledGoal.Complete());
+
+        // 3. Expired cannot become Active, Paused, or Completed
+        var expiredGoal = new CharacterGoal(Guid.NewGuid(), "Expired", CharacterGoalType.Career, 10);
+        expiredGoal.Expire();
+
+        Assert.Throws<InvalidOperationException>(() => expiredGoal.Activate());
+        Assert.Throws<InvalidOperationException>(() => expiredGoal.Pause());
+        Assert.Throws<InvalidOperationException>(() => expiredGoal.Complete());
+    }
+
+    [Fact]
+    public void PausedGoal_CannotCompleteDirectly_MustResumeFirst()
+    {
+        var goal = new CharacterGoal(Guid.NewGuid(), "Paused Goal", CharacterGoalType.Career, 10);
+        goal.Pause();
+
+        Assert.Throws<InvalidOperationException>(() => goal.Complete());
+
+        goal.Resume();
+        goal.Complete();
+        Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
     }
 
     [Fact]

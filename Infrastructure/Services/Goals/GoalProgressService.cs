@@ -1,12 +1,11 @@
 ﻿using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
-using Infrastructure.BackgroundJobs;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services;
+namespace Infrastructure.Services.Goals;
 
 public sealed class GoalProgressService : IGoalProgressService
 {
@@ -39,7 +38,33 @@ public sealed class GoalProgressService : IGoalProgressService
 
         var time = now ?? DateTime.UtcNow;
 
-        // 1. Fetch Goal Aggregate
+        // 1. Check idempotency first: If contribution already exists in DB, return immediately without touching Goal!
+        bool alreadyRecorded = await _dbContext.GoalActivityContributions
+            .AsNoTracking()
+            .AnyAsync(c => c.GoalId == goalId && c.ActivityId == activityId, ct);
+
+        if (alreadyRecorded)
+        {
+            _logger.LogInformation("[GoalProgressService] Contribution already exists for GoalId={GoalId}, ActivityId={ActivityId}. Returning idempotent result without mutating goal.",
+                goalId, activityId);
+
+            var existingGoal = await _dbContext.CharacterGoals
+                .AsNoTracking()
+                .FirstOrDefaultAsync(g => g.Id == goalId, ct);
+
+            return new GoalProgressResult(
+                Success: true,
+                IsDuplicateContribution: true,
+                ContributionValue: contributionValue,
+                PreviousProgress: existingGoal?.Progress ?? 0f,
+                NewProgress: existingGoal?.Progress ?? 0f,
+                MilestoneCompleted: false,
+                GoalCompleted: existingGoal?.Status == CharacterGoalStatus.Completed,
+                Message: "Idempotent duplicate contribution suppressed."
+            );
+        }
+
+        // 2. Fetch Goal Aggregate
         var goal = await _dbContext.CharacterGoals
             .Include(g => g.Milestones)
             .FirstOrDefaultAsync(g => g.Id == goalId, ct);
@@ -73,10 +98,12 @@ public sealed class GoalProgressService : IGoalProgressService
         }
 
         float prevProgress = goal.Progress;
-        var activeMilestoneBefore = goal.Milestones.FirstOrDefault(m => m.Status == CharacterGoalMilestoneStatus.Active);
-        var activeMilestoneIdBefore = activeMilestoneBefore?.Id;
+        var completedMilestonesBefore = goal.Milestones
+            .Where(m => m.Status == CharacterGoalMilestoneStatus.Completed)
+            .Select(m => m.Id)
+            .ToHashSet();
 
-        // 2. Prepare Contribution Entity
+        // 3. Prepare Contribution Entity
         var contribution = new GoalActivityContribution(
             goalId: goalId,
             activityId: activityId,
@@ -84,10 +111,10 @@ public sealed class GoalProgressService : IGoalProgressService
             createdAt: time
         );
 
-        // 3. Mutate Goal Progress on the Domain Aggregate
+        // 4. Mutate Goal Progress on Domain Aggregate
         goal.RecordProgress(contributionValue, time);
 
-        // 4. Atomic Persistence with Unique Duplicate Protection
+        // 5. Atomic Persistence with Duplicate Race Condition Protection
         try
         {
             await _dbContext.GoalActivityContributions.AddAsync(contribution, ct);
@@ -97,8 +124,12 @@ public sealed class GoalProgressService : IGoalProgressService
         {
             if (IsDuplicateContributionViolation(ex))
             {
-                _logger.LogInformation(ex, "[GoalProgressService] Duplicate goal contribution suppressed for GoalId={GoalId}, ActivityId={ActivityId}",
+                _logger.LogInformation(ex, "[GoalProgressService] Concurrent duplicate goal contribution suppressed for GoalId={GoalId}, ActivityId={ActivityId}",
                     goalId, activityId);
+
+                // Detach entities from DbContext to prevent dirty tracking
+                _dbContext.Entry(contribution).State = EntityState.Detached;
+                _dbContext.Entry(goal).State = EntityState.Detached;
 
                 return new GoalProgressResult(
                     Success: true,
@@ -117,8 +148,8 @@ public sealed class GoalProgressService : IGoalProgressService
             throw;
         }
 
-        bool milestoneCompleted = activeMilestoneIdBefore.HasValue &&
-            goal.Milestones.Any(m => m.Id == activeMilestoneIdBefore.Value && m.Status == CharacterGoalMilestoneStatus.Completed);
+        bool milestoneCompleted = goal.Milestones.Any(m =>
+            m.Status == CharacterGoalMilestoneStatus.Completed && !completedMilestonesBefore.Contains(m.Id));
         bool goalCompleted = goal.Status == CharacterGoalStatus.Completed;
 
         _logger.LogInformation(
@@ -153,6 +184,7 @@ public sealed class GoalProgressService : IGoalProgressService
                         return true;
                     }
                 }
+                return false;
             }
 
             var sqlStateProp = inner.GetType().GetProperty("SqlState");
@@ -163,13 +195,22 @@ public sealed class GoalProgressService : IGoalProgressService
                 {
                     return true;
                 }
+                return false;
             }
 
             var sqliteErrProp = inner.GetType().GetProperty("SqliteErrorCode");
             if (sqliteErrProp != null)
             {
                 var errCode = sqliteErrProp.GetValue(inner);
-                if (errCode is int code && code == 19) return true;
+                if (errCode is int code && code == 19) 
+                {
+                    var innerMsg = inner.Message ?? "";
+                    if (innerMsg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) &&
+                        innerMsg.Contains("GoalActivityContributions", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
             }
 
             inner = inner.InnerException;

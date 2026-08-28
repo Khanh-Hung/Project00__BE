@@ -206,7 +206,7 @@ public static class DependencyInjection
 
         // PR #34: Character Goals & Long-term State
         services.AddScoped<ICharacterGoalRepository, Infrastructure.Persistence.Repositories.CharacterGoalRepository>();
-        services.AddScoped<IGoalProgressService, Application.Services.GoalProgressService>();
+        services.AddScoped<IGoalProgressService, Infrastructure.Services.Goals.GoalProgressService>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();

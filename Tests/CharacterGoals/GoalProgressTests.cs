@@ -1,7 +1,7 @@
-﻿using Application.Services;
-using Domain.Entities;
+﻿using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Persistence;
+using Infrastructure.Services.Goals;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -105,7 +105,7 @@ public sealed class GoalProgressTests : IDisposable
         using (var db = new ProjectDbContext(_options))
         {
             var service = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
-            var res = await service.RecordContributionAsync(goal.Id, Guid.NewGuid(), 50); // overshoot 50 on target 20
+            var res = await service.RecordContributionAsync(goal.Id, Guid.NewGuid(), 50);
 
             Assert.True(res.Success);
             Assert.Equal(1.0f, res.NewProgress);

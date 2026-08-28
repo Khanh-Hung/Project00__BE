@@ -1,4 +1,4 @@
-using Domain.Common;
+﻿using Domain.Common;
 using Domain.Enums;
 
 namespace Domain.Entities;
@@ -69,11 +69,8 @@ public sealed class CharacterGoal : BaseEntity
 
     public void Activate(DateTime? now = null)
     {
-        if (Status == CharacterGoalStatus.Completed)
-            throw new InvalidOperationException("Completed goal cannot become Active.");
-
-        if (Status == CharacterGoalStatus.Cancelled)
-            throw new InvalidOperationException("Cancelled goal cannot become Active.");
+        if (Status == CharacterGoalStatus.Completed || Status == CharacterGoalStatus.Cancelled || Status == CharacterGoalStatus.Expired)
+            throw new InvalidOperationException($"Cannot activate goal in terminal state '{Status}'.");
 
         Status = CharacterGoalStatus.Active;
         StartedAt ??= now ?? DateTime.UtcNow;
@@ -85,7 +82,7 @@ public sealed class CharacterGoal : BaseEntity
     public void Pause(DateTime? now = null)
     {
         if (Status != CharacterGoalStatus.Active)
-            throw new InvalidOperationException($"Cannot pause a goal with status {Status}. Must be Active.");
+            throw new InvalidOperationException($"Cannot pause a goal with status '{Status}'. Must be Active.");
 
         Status = CharacterGoalStatus.Paused;
         PausedAt = now ?? DateTime.UtcNow;
@@ -96,7 +93,7 @@ public sealed class CharacterGoal : BaseEntity
     public void Resume(DateTime? now = null)
     {
         if (Status != CharacterGoalStatus.Paused)
-            throw new InvalidOperationException($"Cannot resume a goal with status {Status}. Must be Paused.");
+            throw new InvalidOperationException($"Cannot resume a goal with status '{Status}'. Must be Paused.");
 
         Status = CharacterGoalStatus.Active;
         PausedAt = null;
@@ -112,8 +109,8 @@ public sealed class CharacterGoal : BaseEntity
         if (Status == CharacterGoalStatus.Paused)
             throw new InvalidOperationException("Paused goal cannot complete without Resume.");
 
-        if (Status == CharacterGoalStatus.Cancelled)
-            throw new InvalidOperationException("Cancelled goal cannot be completed.");
+        if (Status == CharacterGoalStatus.Cancelled || Status == CharacterGoalStatus.Expired)
+            throw new InvalidOperationException($"Cannot complete goal in terminal state '{Status}'.");
 
         Status = CharacterGoalStatus.Completed;
         CompletedAt = now ?? DateTime.UtcNow;
@@ -131,11 +128,27 @@ public sealed class CharacterGoal : BaseEntity
 
     public void Cancel(DateTime? now = null)
     {
-        if (Status == CharacterGoalStatus.Completed)
-            throw new InvalidOperationException("Completed goal cannot be cancelled.");
+        if (Status == CharacterGoalStatus.Completed || Status == CharacterGoalStatus.Expired)
+            throw new InvalidOperationException($"Cannot cancel goal in terminal state '{Status}'.");
 
         Status = CharacterGoalStatus.Cancelled;
         CancelledAt = now ?? DateTime.UtcNow;
+        Version++;
+        Touch();
+    }
+
+    public void Expire(DateTime? now = null)
+    {
+        if (Status == CharacterGoalStatus.Completed)
+            throw new InvalidOperationException("Completed goal cannot be expired.");
+
+        if (Status == CharacterGoalStatus.Cancelled)
+            throw new InvalidOperationException("Cancelled goal cannot be expired.");
+
+        if (Status == CharacterGoalStatus.Expired)
+            return;
+
+        Status = CharacterGoalStatus.Expired;
         Version++;
         Touch();
     }
@@ -149,9 +162,11 @@ public sealed class CharacterGoal : BaseEntity
         _milestones.Add(milestone);
         _milestones.Sort((a, b) => a.Order.CompareTo(b.Order));
 
+        // Aggregate root deterministically controls milestone activation
         if (!_milestones.Any(m => m.Status == CharacterGoalMilestoneStatus.Active || m.Status == CharacterGoalMilestoneStatus.Completed))
         {
-            milestone.Activate();
+            var firstMilestone = _milestones.First();
+            firstMilestone.Activate();
         }
 
         Version++;
@@ -162,29 +177,65 @@ public sealed class CharacterGoal : BaseEntity
     public void RecordProgress(double incrementValue, DateTime? now = null)
     {
         if (Status != CharacterGoalStatus.Active)
-            throw new InvalidOperationException($"Cannot record progress on a goal with status {Status}.");
+            throw new InvalidOperationException($"Cannot record progress on a goal with status '{Status}'.");
 
         if (incrementValue < 0)
             throw new ArgumentOutOfRangeException(nameof(incrementValue), "Progress increment cannot be negative.");
 
         var time = now ?? DateTime.UtcNow;
         CurrentValue += incrementValue;
-
         Progress = (float)Math.Clamp(CurrentValue / TargetValue, 0.0, 1.0);
 
-        var activeMilestone = _milestones.FirstOrDefault(m => m.Status == CharacterGoalMilestoneStatus.Active);
-        if (activeMilestone != null)
+        // Cascading milestone progress allocation with overflow propagation
+        double remainingForMilestones = incrementValue;
+        while (remainingForMilestones > 0)
         {
-            activeMilestone.RecordProgress(incrementValue, time);
+            var activeMilestone = _milestones
+                .Where(m => m.Status == CharacterGoalMilestoneStatus.Active)
+                .OrderBy(m => m.Order)
+                .FirstOrDefault();
 
-            if (activeMilestone.Status == CharacterGoalMilestoneStatus.Completed)
+            if (activeMilestone == null)
             {
-                var nextMilestone = _milestones
-                    .Where(m => m.Order > activeMilestone.Order && m.Status == CharacterGoalMilestoneStatus.Pending)
+                var nextPending = _milestones
+                    .Where(m => m.Status == CharacterGoalMilestoneStatus.Pending)
                     .OrderBy(m => m.Order)
                     .FirstOrDefault();
 
-                nextMilestone?.Activate();
+                if (nextPending == null)
+                    break;
+
+                nextPending.Activate();
+                activeMilestone = nextPending;
+            }
+
+            double needed = Math.Max(0, activeMilestone.TargetValue - activeMilestone.CurrentValue);
+            if (needed <= 0)
+            {
+                activeMilestone.Complete(time);
+                var nextPending = _milestones
+                    .Where(m => m.Status == CharacterGoalMilestoneStatus.Pending)
+                    .OrderBy(m => m.Order)
+                    .FirstOrDefault();
+                nextPending?.Activate();
+                continue;
+            }
+
+            if (remainingForMilestones >= needed)
+            {
+                activeMilestone.RecordProgress(needed, time);
+                remainingForMilestones -= needed;
+                
+                var nextPending = _milestones
+                    .Where(m => m.Status == CharacterGoalMilestoneStatus.Pending)
+                    .OrderBy(m => m.Order)
+                    .FirstOrDefault();
+                nextPending?.Activate();
+            }
+            else
+            {
+                activeMilestone.RecordProgress(remainingForMilestones, time);
+                remainingForMilestones = 0;
             }
         }
 
