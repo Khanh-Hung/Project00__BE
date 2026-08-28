@@ -1,7 +1,6 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
-using Domain.Common;
 
 namespace Domain.Entities;
 
@@ -10,8 +9,9 @@ namespace Domain.Entities;
 /// Tracks characters, environment, props, persistent world changes, temporal validity across monotonic scene revisions,
 /// and deterministic content fingerprint.
 /// </summary>
-public sealed class SceneVisualState : BaseEntity
+public sealed class SceneVisualState
 {
+    public Guid Id { get; private set; }
     public Guid SessionId { get; private set; }
     public Guid CharacterId { get; private set; }
     public string SceneKey { get; private set; }
@@ -35,6 +35,7 @@ public sealed class SceneVisualState : BaseEntity
 
     public string Fingerprint { get; private set; }
     public uint Version { get; private set; } = 1;
+    public DateTime CreatedAt { get; private set; }
 
     [JsonConstructor]
     public SceneVisualState(
@@ -196,7 +197,6 @@ public sealed class SceneVisualState : BaseEntity
         Fingerprint = ComputeFingerprint(CharacterId, Location, CharacterState.Outfit, CharacterState.Hairstyle, CharacterState.Pose,
             CharacterState.Action, TimeOfDay, Weather, Lighting, Atmosphere, Props, PersistentChanges, SceneRevision);
         Version++;
-        Touch();
     }
 
     public void Invalidate(Guid supersededByTurnId, int? supersededByRevision = null)
@@ -208,7 +208,6 @@ public sealed class SceneVisualState : BaseEntity
         }
         CharacterState.Invalidate(supersededByTurnId, supersededByRevision);
         Version++;
-        Touch();
     }
 
     public bool IsActiveForRevision(int targetRevision)

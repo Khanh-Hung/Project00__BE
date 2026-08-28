@@ -1,5 +1,4 @@
 ﻿using System.Text.Json.Serialization;
-using Domain.Common;
 
 namespace Domain.Entities;
 
@@ -8,8 +7,9 @@ namespace Domain.Entities;
 /// Does NOT duplicate immutable core identity traits (eye color, facial structure) from PR30 CharacterVisualProfile.
 /// Supports temporal validity and evolution tracking across monotonic scene revisions.
 /// </summary>
-public sealed class CharacterVisualState : BaseEntity
+public sealed class CharacterVisualState
 {
+    public Guid Id { get; private set; }
     public Guid CharacterId { get; private set; }
     public int SceneRevision { get; private set; } = 1;
     public string Location { get; private set; }
@@ -27,6 +27,7 @@ public sealed class CharacterVisualState : BaseEntity
     public int? ValidUntilRevision { get; private set; }
     public float Confidence { get; private set; } = 1.0f;
     public uint Version { get; private set; } = 1;
+    public DateTime CreatedAt { get; private set; }
 
     [JsonConstructor]
     public CharacterVisualState(
@@ -90,7 +91,6 @@ public sealed class CharacterVisualState : BaseEntity
         SourceTurnId = turnId;
         SceneRevision = revision;
         Version++;
-        Touch();
     }
 
     public void EvolveHairstyle(string newHairstyle, Guid turnId, int revision)
@@ -100,7 +100,6 @@ public sealed class CharacterVisualState : BaseEntity
         SourceTurnId = turnId;
         SceneRevision = revision;
         Version++;
-        Touch();
     }
 
     public void EvolvePoseAndAction(string? pose, string? action, Guid turnId, int revision)
@@ -110,7 +109,6 @@ public sealed class CharacterVisualState : BaseEntity
         SourceTurnId = turnId;
         SceneRevision = revision;
         Version++;
-        Touch();
     }
 
     public void SetActiveProps(IEnumerable<string> props, Guid turnId)
@@ -118,7 +116,6 @@ public sealed class CharacterVisualState : BaseEntity
         ActiveProps = props.Select(p => p.Trim()).Where(p => !string.IsNullOrEmpty(p)).Distinct().ToList();
         SourceTurnId = turnId;
         Version++;
-        Touch();
     }
 
     public void Invalidate(Guid supersededByTurnId, int? supersededByRevision = null)
@@ -129,7 +126,6 @@ public sealed class CharacterVisualState : BaseEntity
             ValidUntilRevision = supersededByRevision.Value;
         }
         Version++;
-        Touch();
     }
 
     public bool IsActiveForRevision(int targetRevision)
