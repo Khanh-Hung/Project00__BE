@@ -112,9 +112,41 @@ public sealed class CharacterActivityScheduler
             : "Sanctuary";
         int sceneRevision = latestVisualState != null ? latestVisualState.SceneRevision : 1;
 
-        // Parse Active Goals from character milestones if present
+        // Parse Active Goals from database / character milestones
+        var dbGoals = await _dbContext.CharacterGoals
+            .AsNoTracking()
+            .Include(g => g.Milestones)
+            .Where(g => g.CharacterId == character.Id && g.Status == CharacterGoalStatus.Active)
+            .OrderByDescending(g => g.Priority)
+            .ThenByDescending(g => g.CreatedAt)
+            .ToListAsync(ct);
+
+        var goalSnapshots = dbGoals.Select(g =>
+        {
+            var activeM = g.Milestones.FirstOrDefault(m => m.Status == CharacterGoalMilestoneStatus.Active);
+            float mProg = activeM != null && activeM.TargetValue > 0 ? (float)(activeM.CurrentValue / activeM.TargetValue) : 0f;
+            return new Application.Contracts.Goals.CharacterGoalSnapshot(
+                GoalId: g.Id,
+                CharacterId: g.CharacterId,
+                Title: g.Title,
+                GoalType: g.GoalType,
+                Priority: g.Priority,
+                Status: g.Status,
+                Progress: g.Progress,
+                CurrentValue: g.CurrentValue,
+                TargetValue: g.TargetValue,
+                CurrentMilestone: activeM?.Title,
+                MilestoneProgress: mProg,
+                Description: g.Description
+            );
+        }).ToList();
+
         IReadOnlyList<string>? activeGoals = null;
-        if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
+        if (goalSnapshots.Count > 0)
+        {
+            activeGoals = goalSnapshots.Select(g => g.Title).ToList();
+        }
+        else if (!string.IsNullOrWhiteSpace(character.CustomMilestonesJson))
         {
             try
             {
@@ -137,6 +169,7 @@ public sealed class CharacterActivityScheduler
             PersonalityPrompt: character.PersonalityPrompt,
             WorldDescription: character.WorldDescription,
             ActiveGoals: activeGoals,
+            Goals: goalSnapshots,
             SceneRevision: sceneRevision
         );
 
@@ -161,6 +194,7 @@ public sealed class CharacterActivityScheduler
             shouldCreateVisualMoment: candidate.ShouldCreateVisualMoment,
             reason: candidate.Reason,
             startedAt: now,
+            goalId: candidate.GoalId,
             status: CharacterActivityStatus.Started,
             now: now
         );

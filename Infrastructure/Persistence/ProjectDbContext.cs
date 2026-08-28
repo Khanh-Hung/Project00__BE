@@ -39,6 +39,9 @@ public class ProjectDbContext : DbContext
     public DbSet<SceneSpecification> SceneSpecifications { get; set; }
     public DbSet<SceneVisualStateRecord> SceneVisualStates { get; set; }
     public DbSet<CharacterActivity> CharacterActivities { get; set; }
+    public DbSet<CharacterGoal> CharacterGoals { get; set; }
+    public DbSet<CharacterGoalMilestone> CharacterGoalMilestones { get; set; }
+    public DbSet<GoalActivityContribution> GoalActivityContributions { get; set; }
 
     private string NormalizeUserId()
     {

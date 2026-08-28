@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 
 namespace Application.Contracts.Activities;
 
@@ -16,5 +16,6 @@ public sealed record CharacterActivityDecisionRequest(
     string? PersonalityPrompt = null,
     string? WorldDescription = null,
     IReadOnlyList<string>? ActiveGoals = null,
+    IReadOnlyList<Application.Contracts.Goals.CharacterGoalSnapshot>? Goals = null,
     int SceneRevision = 1
 );
