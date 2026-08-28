@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 
 namespace Domain.Policies;
@@ -29,31 +29,31 @@ public static class GoalActivityRelevancePolicy
         string reason = $"Activity {activityType} evaluated for goal '{title}'.";
 
         // 1. Keyword Overrides for High Direct Relevance
-        if ((text.Contains("cook") || text.Contains("baking") || text.Contains("culinary") || text.Contains("recipe")) &&
-            activityType == CharacterActivityType.Cooking)
+        if ((text.Contains("cook") || text.Contains("baking") || text.Contains("culinary") || text.Contains("recipe") || text.Contains("chef") || text.Contains("kitchen") || text.Contains("food") || text.Contains("dish") || text.Contains("meal")) &&
+            (activityType == CharacterActivityType.Cooking || activityType == CharacterActivityType.Eating))
         {
-            return new GoalRelevanceResult(0.95f, $"Cooking directly advances culinary goal '{title}'.");
+            return new GoalRelevanceResult(0.95f, $"Culinary activity directly advances goal '{title}'.");
         }
 
-        if ((text.Contains("paint") || text.Contains("drawing") || text.Contains("art") || text.Contains("sculpt") || text.Contains("write") || text.Contains("book")) &&
+        if ((text.Contains("paint") || text.Contains("drawing") || text.Contains("art") || text.Contains("sculpt") || text.Contains("write") || text.Contains("book") || text.Contains("craft") || text.Contains("music")) &&
             (activityType == CharacterActivityType.Working || activityType == CharacterActivityType.Custom))
         {
             return new GoalRelevanceResult(0.95f, $"Creative activity directly advances goal '{title}'.");
         }
 
-        if ((text.Contains("train") || text.Contains("exercise") || text.Contains("fitness") || text.Contains("workout") || text.Contains("strength") || text.Contains("sword")) &&
+        if ((text.Contains("train") || text.Contains("exercise") || text.Contains("fitness") || text.Contains("workout") || text.Contains("strength") || text.Contains("sword") || text.Contains("martial") || text.Contains("run")) &&
             activityType == CharacterActivityType.Exercising)
         {
             return new GoalRelevanceResult(0.95f, $"Physical exercise directly advances training goal '{title}'.");
         }
 
-        if ((text.Contains("explore") || text.Contains("ruin") || text.Contains("uncharted") || text.Contains("discover") || text.Contains("survey")) &&
+        if ((text.Contains("explore") || text.Contains("ruin") || text.Contains("uncharted") || text.Contains("discover") || text.Contains("survey") || text.Contains("scout") || text.Contains("travel") || text.Contains("mountain")) &&
             (activityType == CharacterActivityType.Exploring || activityType == CharacterActivityType.Walking))
         {
             return new GoalRelevanceResult(0.95f, $"Exploration directly advances discovery goal '{title}'.");
         }
 
-        if ((text.Contains("study") || text.Contains("learn") || text.Contains("research") || text.Contains("read") || text.Contains("scholar") || text.Contains("alchemy")) &&
+        if ((text.Contains("study") || text.Contains("learn") || text.Contains("research") || text.Contains("read") || text.Contains("scholar") || text.Contains("alchemy") || text.Contains("academic") || text.Contains("lore")) &&
             (activityType == CharacterActivityType.Reading || activityType == CharacterActivityType.Working))
         {
             return new GoalRelevanceResult(0.95f, $"Study and research directly advance intellectual goal '{title}'.");

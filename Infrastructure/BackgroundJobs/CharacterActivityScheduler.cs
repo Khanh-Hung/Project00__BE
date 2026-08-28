@@ -1,27 +1,43 @@
 using System.Text.Json;
 using Application.Contracts.Activities;
+using Application.Contracts.Autonomous;
 using Application.Interfaces;
-using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Infrastructure.BackgroundJobs;
 
 /// <summary>
-/// Authoritative background scheduler for evaluating and scheduling autonomous character activities.
-/// Distributed-safe, idempotent, and non-blocking with respect to the generation engine.
+/// Authoritative background scheduler for waking and dispatching autonomous characters.
+/// Dispatches to IAutonomousDecisionService and IActivityExecutionService.
+/// Distributed-safe, idempotent, and non-blocking.
 /// </summary>
 public sealed class CharacterActivityScheduler
 {
     private readonly ProjectDbContext _dbContext;
-    private readonly ICharacterActivityDecisionService _decisionService;
-    private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
+    private readonly IAutonomousDecisionService _decisionService;
+    private readonly IActivityExecutionService _executionService;
     private readonly ISceneVisualStateReader _visualStateReader;
     private readonly ILogger<CharacterActivityScheduler> _logger;
+
+    public CharacterActivityScheduler(
+        ProjectDbContext dbContext,
+        IAutonomousDecisionService decisionService,
+        IActivityExecutionService executionService,
+        ISceneVisualStateReader visualStateReader,
+        ILogger<CharacterActivityScheduler> logger)
+    {
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _decisionService = decisionService ?? throw new ArgumentNullException(nameof(decisionService));
+        _executionService = executionService ?? throw new ArgumentNullException(nameof(executionService));
+        _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
     public CharacterActivityScheduler(
         ProjectDbContext dbContext,
@@ -29,12 +45,18 @@ public sealed class CharacterActivityScheduler
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
         ILogger<CharacterActivityScheduler> logger)
+        : this(
+            dbContext,
+            new Application.Services.AutonomousDecisionService(NullLogger<Application.Services.AutonomousDecisionService>.Instance),
+            new Infrastructure.Services.Autonomous.ActivityExecutionService(
+                dbContext,
+                new Infrastructure.Services.Goals.GoalProgressService(dbContext, NullLogger<Infrastructure.Services.Goals.GoalProgressService>.Instance),
+                sceneCompositionPipeline,
+                visualStateReader,
+                NullLogger<Infrastructure.Services.Autonomous.ActivityExecutionService>.Instance),
+            visualStateReader,
+            logger)
     {
-        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _decisionService = decisionService ?? throw new ArgumentNullException(nameof(decisionService));
-        _sceneCompositionPipeline = sceneCompositionPipeline ?? throw new ArgumentNullException(nameof(sceneCompositionPipeline));
-        _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<int> ExecuteCycleAsync(
@@ -48,7 +70,6 @@ public sealed class CharacterActivityScheduler
         _logger.LogInformation("[CharacterActivityScheduler] Starting activity cycle for TimeBucket={TimeBucket}", timeBucket);
 
         // 1. Query Eligible Characters
-        // Exclude characters who already have an autonomous activity recorded for this time bucket
         var existingClaimCharIds = await _dbContext.CharacterActivities
             .AsNoTracking()
             .Where(a => a.TimeBucket == timeBucket && a.Source == CharacterActivitySource.Autonomous)
@@ -112,7 +133,7 @@ public sealed class CharacterActivityScheduler
             : "Sanctuary";
         int sceneRevision = latestVisualState != null ? latestVisualState.SceneRevision : 1;
 
-        // Parse Active Goals from database / character milestones
+        // Parse Active Goals from database
         var dbGoals = await _dbContext.CharacterGoals
             .AsNoTracking()
             .Include(g => g.Milestones)
@@ -158,12 +179,13 @@ public sealed class CharacterActivityScheduler
             }
         }
 
-        var decisionRequest = new CharacterActivityDecisionRequest(
+        var decisionRequest = new AutonomousDecisionRequest(
             CharacterId: character.Id,
             CurrentTime: now,
             CurrentLocation: currentLocation,
             TimeBucket: timeBucket,
             CurrentVisualState: currentVisualState,
+            StateSnapshot: CharacterStateSnapshot.CreateDefault(),
             RecentActivities: recentActivities,
             RecentVisualMemories: recentMemories,
             PersonalityPrompt: character.PersonalityPrompt,
@@ -173,141 +195,34 @@ public sealed class CharacterActivityScheduler
             SceneRevision: sceneRevision
         );
 
-        // 2. Decide next activity candidate
-        var candidate = await _decisionService.DecideAsync(decisionRequest, ct);
-        if (candidate == null)
+        // 2. Decide next action via AutonomousDecisionService
+        var decision = await _decisionService.DecideNextActionAsync(decisionRequest, ct);
+        if (decision.Action == AutonomousDecisionAction.DoNothing || decision.Candidate == null)
         {
-            _logger.LogWarning("[CharacterActivityScheduler] Decision service returned null for CharacterId={CharacterId}", character.Id);
+            _logger.LogInformation("[CharacterActivityScheduler] AutonomousDecisionService decided DoNothing for CharacterId={CharacterId}", character.Id);
             return false;
         }
 
-        // 3. Create Activity Entity
-        var activity = new CharacterActivity(
-            characterId: character.Id,
-            activityType: candidate.ActivityType,
-            location: candidate.Location,
-            timeBucket: timeBucket,
-            decisionFingerprint: candidate.DecisionFingerprint,
-            source: CharacterActivitySource.Autonomous,
-            priority: candidate.Priority,
-            durationMinutes: candidate.DurationMinutes,
-            shouldCreateVisualMoment: candidate.ShouldCreateVisualMoment,
-            reason: candidate.Reason,
-            startedAt: now,
-            goalId: candidate.GoalId,
-            status: CharacterActivityStatus.Started,
-            now: now
+        // 3. Execute Activity via ActivityExecutionService with caller-owned ExecutionId
+        var executionId = Guid.NewGuid();
+        var executionRequest = new ActivityExecutionRequest(
+            Character: character,
+            Candidate: decision.Candidate,
+            CurrentTime: now,
+            TimeBucket: timeBucket,
+            ExecutionId: executionId,
+            CurrentVisualState: currentVisualState,
+            CurrentState: CharacterStateSnapshot.CreateDefault(),
+            SceneRevision: sceneRevision
         );
 
-        // 4. Persist with Distributed Concurrency Guard (Suppress ONLY unique constraint duplicates)
-        try
-        {
-            await _dbContext.CharacterActivities.AddAsync(activity, ct);
-            await _dbContext.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex)
-        {
-            if (IsUniqueConstraintViolation(ex))
-            {
-                _logger.LogInformation(ex, "[CharacterActivityScheduler] Idempotent duplicate suppressed for CharacterId={CharacterId}, TimeBucket={TimeBucket}",
-                    character.Id, timeBucket);
-                return false;
-            }
-
-            // Real database failure (connection loss, foreign key, NOT NULL, schema error) -> propagate!
-            _logger.LogError(ex, "[CharacterActivityScheduler] Non-duplicate database failure saving activity for CharacterId={CharacterId}, TimeBucket={TimeBucket}",
-                character.Id, timeBucket);
-            throw;
-        }
-
-        // 5. If Visual Moment Accepted -> Map to SceneIntent and execute Scene Composition Pipeline
-        if (candidate.ShouldCreateVisualMoment)
-        {
-            try
-            {
-                var sceneIntent = CharacterActivitySceneIntentMapper.MapToSceneIntent(
-                    activity: activity,
-                    candidate: candidate,
-                    currentVisualState: currentVisualState,
-                    sessionId: null,
-                    turnId: null
-                );
-
-                activity.LinkSceneIntent(sceneIntent.Id);
-
-                var pipelineResult = await _sceneCompositionPipeline.ExecuteAsync(
-                    intent: sceneIntent,
-                    generationProfile: GenerationProfile.CreateDefault(),
-                    sceneRevision: sceneRevision,
-                    ct: ct
-                );
-
-                if (pipelineResult?.SceneSpecification != null)
-                {
-                    await _dbContext.SceneSpecifications.AddAsync(pipelineResult.SceneSpecification, ct);
-                    await _dbContext.SaveChangesAsync(ct);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[CharacterActivityScheduler] Visual moment composition failed for ActivityId={ActivityId}. Activity remains valid.", activity.Id);
-                // Generation failure does NOT corrupt or cancel the activity
-            }
-        }
-
-        return true;
+        var executionResult = await _executionService.ExecuteActivityAsync(executionRequest, ct);
+        return executionResult.Success && !executionResult.IsDuplicateSuppressed;
     }
 
     public static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
-        var inner = ex.InnerException;
-        while (inner != null)
-        {
-            // 1. Direct Typed Npgsql PostgresException Check
-            if (inner is Npgsql.PostgresException pg)
-            {
-                if (pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation)
-                {
-                    if (string.IsNullOrWhiteSpace(pg.ConstraintName) ||
-                        pg.ConstraintName.Contains("CharacterActivities", StringComparison.OrdinalIgnoreCase) ||
-                        pg.ConstraintName.Contains("TimeBucket", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            var sqlStateProp = inner.GetType().GetProperty("SqlState");
-            if (sqlStateProp != null)
-            {
-                var sqlState = sqlStateProp.GetValue(inner)?.ToString();
-                if (sqlState == Npgsql.PostgresErrorCodes.UniqueViolation || sqlState == "23505")
-                {
-                    return true;
-                }
-            }
-
-            var sqliteErrProp = inner.GetType().GetProperty("SqliteErrorCode");
-            if (sqliteErrProp != null)
-            {
-                var errCode = sqliteErrProp.GetValue(inner);
-                if (errCode is int code && code == 19) return true;
-            }
-
-            inner = inner.InnerException;
-        }
-
-        var msg = (ex.InnerException?.Message ?? "") + " " + (ex.Message ?? "");
-        if (msg.Contains("IX_CharacterActivities_CharacterId_TimeBucket", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("UNIQUE constraint failed: CharacterActivities.CharacterId, CharacterActivities.TimeBucket", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("unique constraint", StringComparison.OrdinalIgnoreCase) ||
-            (msg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) && msg.Contains("TimeBucket", StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
+        return Infrastructure.Services.Autonomous.ActivityExecutionService.IsUniqueConstraintViolation(ex);
     }
 
     public static string GetTimeBucket(DateTime time)

@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 
 namespace Domain.Policies;
@@ -13,11 +13,12 @@ public sealed record VisualMomentDecision(
 /// <summary>
 /// Authoritative policy evaluating whether a CharacterActivity qualifies as a visually meaningful moment
 /// worthy of triggering an autonomous image synthesis request.
-/// Enforces anti-spam cooldowns and activity significance filtering.
+/// Enforces anti-spam cooldowns, milestone completion overrides, and activity significance filtering.
 /// </summary>
 public static class VisualMomentPolicy
 {
     public static readonly TimeSpan DefaultVisualMomentCooldown = TimeSpan.FromHours(1);
+    public static readonly TimeSpan MilestoneOverrideMinInterval = TimeSpan.FromMinutes(15);
 
     public static VisualMomentDecision Evaluate(
         CharacterActivityType activityType,
@@ -25,11 +26,39 @@ public static class VisualMomentPolicy
         CharacterVisualState? currentVisualState,
         DateTime currentTime,
         DateTime? lastVisualGenerationAt,
+        bool isMilestoneCompleted = false,
+        bool isGoalCompleted = false,
         TimeSpan? customCooldown = null)
     {
         var cooldown = customCooldown ?? DefaultVisualMomentCooldown;
 
-        // 1. Visual Spam Protection Cooldown Check
+        // 1. Milestone / Goal Completion Override
+        if (isMilestoneCompleted || isGoalCompleted)
+        {
+            if (lastVisualGenerationAt.HasValue)
+            {
+                var elapsedSinceLast = currentTime - lastVisualGenerationAt.Value;
+                if (elapsedSinceLast < MilestoneOverrideMinInterval)
+                {
+                    var remaining = MilestoneOverrideMinInterval - elapsedSinceLast;
+                    return new VisualMomentDecision(
+                        ShouldGenerate: false,
+                        Priority: ActivityPriority.Low,
+                        Reason: $"Milestone anti-burst spam protection active ({remaining.TotalMinutes:F0} min remaining).",
+                        CooldownRemaining: remaining
+                    );
+                }
+            }
+
+            var eventDesc = isGoalCompleted ? "Long-term Goal completed" : "Milestone achieved";
+            return new VisualMomentDecision(
+                ShouldGenerate: true,
+                Priority: ActivityPriority.Critical,
+                Reason: $"{eventDesc}: Visual moment created to celebrate character achievement."
+            );
+        }
+
+        // 2. Visual Spam Protection Cooldown Check
         if (lastVisualGenerationAt.HasValue)
         {
             var elapsed = currentTime - lastVisualGenerationAt.Value;
@@ -45,7 +74,7 @@ public static class VisualMomentPolicy
             }
         }
 
-        // 2. New Location Detection
+        // 3. New Location Detection
         bool isNewLocation = currentVisualState != null && 
             !string.IsNullOrWhiteSpace(currentVisualState.Location) &&
             !string.Equals(currentVisualState.Location.Trim(), activityLocation.Trim(), StringComparison.OrdinalIgnoreCase);
@@ -59,7 +88,7 @@ public static class VisualMomentPolicy
             );
         }
 
-        // 3. Activity Significance Evaluation
+        // 4. Activity Significance Evaluation
         return activityType switch
         {
             CharacterActivityType.GettingReady => new VisualMomentDecision(

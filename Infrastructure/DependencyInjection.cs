@@ -208,6 +208,10 @@ public static class DependencyInjection
         services.AddScoped<ICharacterGoalRepository, Infrastructure.Persistence.Repositories.CharacterGoalRepository>();
         services.AddScoped<IGoalProgressService, Infrastructure.Services.Goals.GoalProgressService>();
 
+        // PR #35: Autonomous Character Decision & Goal-Driven Visual Loop
+        services.AddScoped<IAutonomousDecisionService, Application.Services.AutonomousDecisionService>();
+        services.AddScoped<IActivityExecutionService, Infrastructure.Services.Autonomous.ActivityExecutionService>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
