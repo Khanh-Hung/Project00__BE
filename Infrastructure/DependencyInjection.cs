@@ -196,6 +196,10 @@ public static class DependencyInjection
         services.AddScoped<Application.Services.SceneGenerationRequestMapper>();
         services.AddScoped<ISceneCompositionPipelineService, Application.Services.SceneCompositionPipelineService>();
 
+        // PR #32: Visual Continuity & Scene Evolution Subsystem
+        services.AddScoped<ISceneVisualStateReader, Infrastructure.Services.Scene.SceneVisualStateReader>();
+        services.AddScoped<IVisualContinuityResolver, Application.Services.VisualContinuityResolver>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();

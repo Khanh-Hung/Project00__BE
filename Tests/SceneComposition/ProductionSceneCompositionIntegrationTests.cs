@@ -71,29 +71,7 @@ public sealed class ProductionSceneCompositionIntegrationTests : IDisposable
         var profileService = new CharacterVisualProfileService(db, NullLogger<CharacterVisualProfileService>.Instance);
         var referenceService = new CharacterVisualReferenceService(db, profileService, NullLogger<CharacterVisualReferenceService>.Instance);
 
-        var profileReader = new CharacterVisualProfileReader(db);
-        var memoryReader = new VisualMemoryReader(db);
-        var canonicalReader = new CanonicalReferenceReader(db);
-        var previousSceneReader = new PreviousSceneReader(db);
-
-        var contextFactory = new SceneCompositionContextFactory(
-            profileReader, canonicalReader, memoryReader, previousSceneReader,
-            NullLogger<SceneCompositionContextFactory>.Instance
-        );
-
-        var composer = new SceneComposer(NullLogger<SceneComposer>.Instance);
-        var visualContextResolver = new VisualContextResolver(NullLogger<VisualContextResolver>.Instance);
-        var promptComposer = new ScenePromptComposer();
-        var requestMapper = new SceneGenerationRequestMapper();
-
-        var pipelineService = new SceneCompositionPipelineService(
-            contextFactory,
-            composer,
-            visualContextResolver,
-            promptComposer,
-            requestMapper,
-            NullLogger<SceneCompositionPipelineService>.Instance
-        );
+        var pipelineService = SceneCompositionTestHelper.CreatePipeline(db);
 
         var unitOfWork = new UnitOfWork(db);
         var visualStateResolver = new VisualStateResolver(

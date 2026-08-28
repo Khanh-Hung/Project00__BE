@@ -18,5 +18,10 @@ public enum SceneTransitionType
     /// <summary>
     /// Complete spatial transition to a new location (resets environment while preserving character identity and temporal progression).
     /// </summary>
-    LocationTransition = 2
+    LocationTransition = 2,
+
+    /// <summary>
+    /// Re-entry into a previously visited location (restores latest valid location-specific state and persistent world changes).
+    /// </summary>
+    SceneReentry = 3
 }

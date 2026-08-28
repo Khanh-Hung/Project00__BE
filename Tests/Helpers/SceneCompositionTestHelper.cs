@@ -1,4 +1,4 @@
-using Application.Interfaces;
+﻿using Application.Interfaces;
 using Application.Services;
 using Infrastructure.Persistence;
 using Infrastructure.Services.Scene;
@@ -20,6 +20,9 @@ namespace Tests
                 NullLogger<SceneCompositionContextFactory>.Instance
             );
 
+            var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var continuityResolver = new VisualContinuityResolver(stateReader, NullLogger<VisualContinuityResolver>.Instance);
+
             var composer = new SceneComposer(NullLogger<SceneComposer>.Instance);
             var visualContextResolver = new VisualContextResolver(NullLogger<VisualContextResolver>.Instance);
             var promptComposer = new ScenePromptComposer();
@@ -27,6 +30,7 @@ namespace Tests
 
             return new SceneCompositionPipelineService(
                 contextFactory,
+                continuityResolver,
                 composer,
                 visualContextResolver,
                 promptComposer,
