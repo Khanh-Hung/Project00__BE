@@ -401,7 +401,7 @@ public sealed class IdentityInvariantSystemTests
 
         var stateTracker = new DummySceneStateTracker();
         var profileProvider = new VisualGenerationProfileProvider();
-        var resolver = new VisualStateResolver(unitOfWork, stateTracker, profileProvider);
+        var resolver = new VisualStateResolver(unitOfWork, stateTracker, profileProvider, SceneCompositionTestHelper.CreatePipeline(db));
 
         // Turn 1: Cold Start in Armory
         stateTracker.NextDelta = new SceneStateDelta(LocationChange: "Armory");
@@ -513,7 +513,7 @@ public sealed class IdentityInvariantSystemTests
 
         var stateTracker = new DummySceneStateTracker();
         var profileProvider = new VisualGenerationProfileProvider();
-        var resolver = new VisualStateResolver(unitOfWork, stateTracker, profileProvider);
+        var resolver = new VisualStateResolver(unitOfWork, stateTracker, profileProvider, SceneCompositionTestHelper.CreatePipeline(db));
 
         // Resolve Turn 2 (Same-Scene in Armory)
         stateTracker.NextDelta = new SceneStateDelta(LocationChange: "Armory", ActionChange: "cleaning broadsword");

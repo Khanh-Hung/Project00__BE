@@ -98,7 +98,7 @@ public class VisualContinuity8TurnBenchmarkTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                new VisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx), NullLogger<VisualStateResolver>.Instance),
                 NullLogger<CharacterRuntime>.Instance
             );
 
@@ -359,7 +359,7 @@ public class VisualContinuity8TurnBenchmarkTests
         session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
 
         // 2. Turn 2 Commit: VisualStateResolver resolves and freezes predecessor
-        var resolver = new VisualStateResolver(uow, null);
+        var resolver = new VisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new ProjectDbContext(options)));
         var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(
             character,
             session,
@@ -428,7 +428,7 @@ public class VisualContinuity8TurnBenchmarkTests
         typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(session, sessionId);
         session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
 
-        var resolver = new VisualStateResolver(uow, null);
+        var resolver = new VisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new ProjectDbContext(options)));
 
         // Transaction 1: Turn 2 Resolves Turn 1 Predecessor
         var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(character, session, "Action 2", "Reply 2", CharacterMood.Happy, Guid.NewGuid());

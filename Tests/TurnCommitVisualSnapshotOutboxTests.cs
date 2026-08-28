@@ -72,7 +72,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            new VisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -309,7 +309,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            new VisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -372,7 +372,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(new UnitOfWork(ctx1), tracker1, NullLogger<VisualStateResolver>.Instance),
+            new VisualStateResolver(new UnitOfWork(ctx1), tracker1, SceneCompositionTestHelper.CreatePipeline(ctx1), NullLogger<VisualStateResolver>.Instance),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -398,7 +398,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(new UnitOfWork(ctx2), tracker2, NullLogger<VisualStateResolver>.Instance),
+            new VisualStateResolver(new UnitOfWork(ctx2), tracker2, SceneCompositionTestHelper.CreatePipeline(ctx2), NullLogger<VisualStateResolver>.Instance),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -479,7 +479,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                new VisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx), NullLogger<VisualStateResolver>.Instance),
                 NullLogger<CharacterRuntime>.Instance
             );
 
@@ -508,7 +508,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                new VisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx), NullLogger<VisualStateResolver>.Instance),
                 NullLogger<CharacterRuntime>.Instance
             );
 
@@ -539,7 +539,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                new VisualStateResolver(uow, tracker, NullLogger<VisualStateResolver>.Instance),
+                new VisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx), NullLogger<VisualStateResolver>.Instance),
                 NullLogger<CharacterRuntime>.Instance
             );
 
@@ -815,7 +815,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, sequentialTracker, NullLogger<VisualStateResolver>.Instance),
+            new VisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
             NullLogger<CharacterRuntime>.Instance
         );
 

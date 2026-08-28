@@ -231,7 +231,7 @@ public sealed class ProductionBenchmarkCompilerExporter
         List<ExportableTurnRequest> exportedList)
     {
         var tracker = new DummySceneStateTracker();
-        var resolver = new VisualStateResolver(unitOfWork, tracker, profileProvider);
+        var resolver = new VisualStateResolver(unitOfWork, tracker, profileProvider, SceneCompositionTestHelper.CreatePipeline(db));
 
         for (int i = 0; i < turns.Length; i++)
         {
