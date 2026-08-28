@@ -1,7 +1,8 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
+using Application.Contracts.Goals;
 using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
@@ -36,14 +37,14 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
         // 1. Generate base candidate pool based on time of day, personality, and world
         var pool = GenerateCandidatePool(request);
 
-        // 2. Adjust candidate weights based on Character State & Needs
+        // 2. Adjust candidate utility scores based on Character Physical & Psychological Needs
         ApplyStateAndNeedModifiers(pool, state, request.CurrentLocation);
 
-        // 3. Filter Incompatible States
+        // 3. Filter Incompatible Activities based on physical state
         var compatiblePool = FilterIncompatibleActivities(pool, state);
 
         // 4. Apply Goal Relevance & Priority Boost
-        ApplyGoalRelevanceBoost(compatiblePool, request.Goals);
+        ApplyGoalRelevanceBoost(compatiblePool, request.Goals, state);
 
         // 5. Filter by Cooldown and Anti-Repetition Policies
         var eligibleCandidates = new List<CandidateOption>();
@@ -68,35 +69,23 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
             eligibleCandidates.Add(new CandidateOption(
                 type: fallbackType,
                 location: request.CurrentLocation,
-                weight: 10,
+                score: 10,
                 actionHint: "resting quietly in place",
                 poseHint: "seated relaxed",
                 reason: "Cooldown and state constraints active; character taking a peaceful break."
             ));
         }
 
-        // 6. Deterministic Seed Generation (Reproducible)
-        var seedString = $"{charId:N}:{request.TimeBucket}:{request.SceneRevision}";
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(seedString));
-        var seed = BitConverter.ToUInt32(hashBytes, 0);
+        // 6. Deterministic Selection & Tie-Breaking (No Randomness)
+        // Order by: Score DESC -> GoalPriority DESC -> ActivityType (stable enum order) -> Location
+        var selected = eligibleCandidates
+            .OrderByDescending(c => c.Score)
+            .ThenByDescending(c => c.GoalPriority)
+            .ThenBy(c => (int)c.Type)
+            .ThenBy(c => c.Location, StringComparer.Ordinal)
+            .First();
 
-        // 7. Weighted Deterministic Selection
-        int totalWeight = eligibleCandidates.Sum(c => c.Weight);
-        uint roll = seed % (uint)Math.Max(1, totalWeight);
-
-        CandidateOption selected = eligibleCandidates[0];
-        int runningWeight = 0;
-        foreach (var cand in eligibleCandidates)
-        {
-            runningWeight += cand.Weight;
-            if (roll < runningWeight)
-            {
-                selected = cand;
-                break;
-            }
-        }
-
-        // 8. Evaluate Visual Moment Policy
+        // 7. Evaluate Visual Moment Policy
         var lastVisualMemory = request.RecentVisualMemories?.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
         DateTime? lastVisualAt = lastVisualMemory?.CreatedAt;
 
@@ -108,7 +97,7 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
             lastVisualGenerationAt: lastVisualAt
         );
 
-        // 9. Compute Decision Fingerprint
+        // 8. Compute Decision Fingerprint
         var fpBuilder = new StringBuilder();
         fpBuilder.Append(charId.ToString("N")).Append('|')
                  .Append(request.TimeBucket).Append('|')
@@ -144,8 +133,8 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
         var expectedDelta = CharacterActivityOutcomePolicy.CalculateDelta(selected.Type);
 
         _logger.LogInformation(
-            "[AutonomousDecisionService] Decided action for CharacterId={CharacterId}, Type={Type}, GoalId={GoalId}, VisualMoment={VisualMoment}, Fingerprint={Fingerprint}",
-            charId, candidate.ActivityType, candidate.GoalId, candidate.ShouldCreateVisualMoment, fingerprint);
+            "[AutonomousDecisionService] Decided action for CharacterId={CharacterId}, Type={Type}, Score={Score}, GoalId={GoalId}, VisualMoment={VisualMoment}, Fingerprint={Fingerprint}",
+            charId, candidate.ActivityType, selected.Score, candidate.GoalId, candidate.ShouldCreateVisualMoment, fingerprint);
 
         var result = new AutonomousDecisionResult(
             Action: AutonomousDecisionAction.PerformActivity,
@@ -162,7 +151,7 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
     {
         public CharacterActivityType Type { get; set; }
         public string Location { get; set; }
-        public int Weight { get; set; }
+        public int Score { get; set; }
         public string ActionHint { get; set; }
         public string PoseHint { get; set; }
         public string Reason { get; set; }
@@ -171,11 +160,12 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
         public string? GoalTitle { get; set; }
         public float? GoalRelevance { get; set; }
         public string? GoalReason { get; set; }
+        public int GoalPriority { get; set; }
 
         public CandidateOption(
             CharacterActivityType type,
             string location,
-            int weight,
+            int score,
             string actionHint,
             string poseHint,
             string reason,
@@ -183,11 +173,12 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
             Guid? goalId = null,
             string? goalTitle = null,
             float? goalRelevance = null,
-            string? goalReason = null)
+            string? goalReason = null,
+            int goalPriority = 0)
         {
             Type = type;
             Location = location;
-            Weight = weight;
+            Score = score;
             ActionHint = actionHint;
             PoseHint = poseHint;
             Reason = reason;
@@ -196,12 +187,13 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
             GoalTitle = goalTitle;
             GoalRelevance = goalRelevance;
             GoalReason = goalReason;
+            GoalPriority = goalPriority;
         }
     }
 
     private static void ApplyStateAndNeedModifiers(List<CandidateOption> pool, CharacterStateSnapshot state, string location)
     {
-        // 1. Low Energy -> Add/boost rest & sleep, reduce intense tasks
+        // 1. Low Energy -> Heavily prioritize Rest & Sleep
         if (state.Energy < 30)
         {
             var hasRest = pool.Any(opt => opt.Type == CharacterActivityType.Sleeping || opt.Type == CharacterActivityType.Relaxing);
@@ -210,7 +202,7 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
                 pool.Add(new CandidateOption(
                     type: CharacterActivityType.Relaxing,
                     location: location,
-                    weight: 250,
+                    score: 300,
                     actionHint: "resting quietly to recover energy",
                     poseHint: "seated or reclining comfortably",
                     reason: "Low energy detected; character taking a needed rest."
@@ -220,13 +212,13 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
             foreach (var opt in pool)
             {
                 if (opt.Type == CharacterActivityType.Sleeping || opt.Type == CharacterActivityType.Relaxing)
-                    opt.Weight += 250;
+                    opt.Score += 300;
                 else if (opt.Type == CharacterActivityType.Exercising || opt.Type == CharacterActivityType.Exploring || opt.Type == CharacterActivityType.Working)
-                    opt.Weight = Math.Max(1, opt.Weight / 5);
+                    opt.Score = Math.Max(1, opt.Score / 5);
             }
         }
 
-        // 2. High Hunger -> Add/boost eating/cooking
+        // 2. High Hunger -> Heavily prioritize Eating & Cooking
         if (state.Hunger > 60)
         {
             var hasFood = pool.Any(opt => opt.Type == CharacterActivityType.Eating || opt.Type == CharacterActivityType.Cooking);
@@ -235,7 +227,7 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
                 pool.Add(new CandidateOption(
                     type: CharacterActivityType.Eating,
                     location: location,
-                    weight: 200,
+                    score: 250,
                     actionHint: "having a nourishing meal",
                     poseHint: "seated at table enjoying food",
                     reason: "High hunger detected; character stopping for a meal."
@@ -245,11 +237,11 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
             foreach (var opt in pool)
             {
                 if (opt.Type == CharacterActivityType.Eating || opt.Type == CharacterActivityType.Cooking)
-                    opt.Weight += 250;
+                    opt.Score += 250;
             }
         }
 
-        // 3. High Social Need -> Add/boost socializing
+        // 3. High Social Need -> Heavily prioritize Socializing
         if (state.SocialNeed > 60)
         {
             var hasSocial = pool.Any(opt => opt.Type == CharacterActivityType.Socializing);
@@ -258,7 +250,7 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
                 pool.Add(new CandidateOption(
                     type: CharacterActivityType.Socializing,
                     location: location,
-                    weight: 200,
+                    score: 250,
                     actionHint: "conversing warmly with friends and companions",
                     poseHint: "standing or seated engaged in conversation",
                     reason: "High social need detected; character seeking company."
@@ -268,17 +260,30 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
             foreach (var opt in pool)
             {
                 if (opt.Type == CharacterActivityType.Socializing)
-                    opt.Weight += 300;
+                    opt.Score += 250;
             }
         }
 
-        // 4. High Stress -> Add/boost relaxing/bathing
+        // 4. High Stress -> Prioritize Relaxation & Bathing
         if (state.Stress > 70)
         {
+            var hasRelief = pool.Any(opt => opt.Type == CharacterActivityType.Relaxing || opt.Type == CharacterActivityType.Bathing);
+            if (!hasRelief)
+            {
+                pool.Add(new CandidateOption(
+                    type: CharacterActivityType.Relaxing,
+                    location: location,
+                    score: 200,
+                    actionHint: "taking a quiet moment to destress",
+                    poseHint: "seated peacefully",
+                    reason: "High stress detected; character taking time to unwind."
+                ));
+            }
+
             foreach (var opt in pool)
             {
                 if (opt.Type == CharacterActivityType.Relaxing || opt.Type == CharacterActivityType.Bathing)
-                    opt.Weight += 150;
+                    opt.Score += 200;
             }
         }
     }
@@ -288,7 +293,7 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
         var result = new List<CandidateOption>();
         foreach (var opt in pool)
         {
-            // Incompatibility 1: Exhausted (Energy < 20) cannot do physical exercise, expeditions, or heavy working
+            // Incompatibility 1: Exhausted (Energy < 20) cannot do intense physical exercise, expeditions, or heavy working
             if (state.Energy < 20 && (opt.Type == CharacterActivityType.Exercising || opt.Type == CharacterActivityType.Exploring || opt.Type == CharacterActivityType.Working))
             {
                 continue;
@@ -306,7 +311,10 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
         return result.Count > 0 ? result : pool;
     }
 
-    private static void ApplyGoalRelevanceBoost(List<CandidateOption> pool, IReadOnlyList<Application.Contracts.Goals.CharacterGoalSnapshot>? goals)
+    private static void ApplyGoalRelevanceBoost(
+        List<CandidateOption> pool,
+        IReadOnlyList<CharacterGoalSnapshot>? goals,
+        CharacterStateSnapshot state)
     {
         if (goals == null || goals.Count == 0)
             return;
@@ -314,6 +322,9 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
         var activeGoals = goals.Where(g => g.Status == CharacterGoalStatus.Active).ToList();
         if (activeGoals.Count == 0)
             return;
+
+        // If physical needs are in critical range (Energy < 20 or Hunger > 80), cap goal boost so survival needs win
+        bool criticalPhysicalNeed = state.Energy < 20 || state.Hunger > 80;
 
         foreach (var opt in pool)
         {
@@ -335,16 +346,20 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
                 int priorityMultiplier = bestGoalMatch.Goal.Priority switch
                 {
                     CharacterGoalPriority.Critical => 15,
-                    CharacterGoalPriority.High => 7,
+                    CharacterGoalPriority.High => 8,
                     CharacterGoalPriority.Normal => 4,
                     _ => 1
                 };
-                int goalBoost = (int)(bestGoalMatch.Relevance.Score * priorityMultiplier * 80);
-                opt.Weight += goalBoost;
+
+                int maxBoost = criticalPhysicalNeed ? 20 : 150;
+                int goalBoost = Math.Min(maxBoost, (int)(bestGoalMatch.Relevance.Score * priorityMultiplier * 15));
+
+                opt.Score += goalBoost;
                 opt.GoalId = bestGoalMatch.Goal.GoalId;
                 opt.GoalTitle = bestGoalMatch.Goal.Title;
                 opt.GoalRelevance = bestGoalMatch.Relevance.Score;
                 opt.GoalReason = bestGoalMatch.Relevance.Reason;
+                opt.GoalPriority = (int)bestGoalMatch.Goal.Priority;
             }
         }
     }
@@ -365,14 +380,14 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
         bool isGoalExplore = goals.Contains("explore") || goals.Contains("travel") || goals.Contains("discover");
         bool isGoalStudy = goals.Contains("study") || goals.Contains("research") || goals.Contains("investigate");
 
-        // Time-of-day candidate generation
+        // Time-of-day baseline candidate generation
         if (hour >= 23 || hour < 6)
         {
-            pool.Add(new CandidateOption(CharacterActivityType.Sleeping, loc, 60, "sleeping peacefully", "lying down relaxed", "Nighttime rest period", 360));
-            pool.Add(new CandidateOption(CharacterActivityType.Relaxing, loc, 25, "resting quietly by candlelight", "seated comfortably", "Late night quiet relaxation", 60));
+            pool.Add(new CandidateOption(CharacterActivityType.Sleeping, loc, 80, "sleeping peacefully", "lying down relaxed", "Nighttime rest period", 360));
+            pool.Add(new CandidateOption(CharacterActivityType.Relaxing, loc, 30, "resting quietly by candlelight", "seated comfortably", "Late night quiet relaxation", 60));
             if (isScholar)
             {
-                pool.Add(new CandidateOption(CharacterActivityType.Reading, loc, 35, "studying ancient manuscripts late into the night", "seated at study desk", "Late night scholarly study", 45));
+                pool.Add(new CandidateOption(CharacterActivityType.Reading, loc, 40, "studying ancient manuscripts late into the night", "seated at study desk", "Late night scholarly study", 45));
             }
         }
         else if (hour >= 6 && hour < 9)

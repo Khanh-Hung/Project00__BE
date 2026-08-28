@@ -1,5 +1,6 @@
 ﻿using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
+using Application.Contracts.Goals;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -40,17 +41,17 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteActivity_PersistsActivity_MutatesState_AndCascadesGoalProgress()
+    public async Task FullAutonomousChain_EndToEnd_FromDecisionToMilestoneToVisualMoment()
     {
         var charId = Guid.NewGuid();
-        var character = new Character("Valerius", "Alchemist", "http://avatar.png", "Scholar alchemist", "Hello", "Anime", worldDescription: "Arcane Lab")
+        var character = new Character("Valerius", "Chef", "http://avatar.png", "Passionate culinary master", "Hello", "SliceOfLife", worldDescription: "Royal Kitchen")
         {
             Id = charId
         };
 
-        var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 50);
-        var m1 = goal.AddMilestone("Basic Potions", 1, 20);
-        var m2 = goal.AddMilestone("Advanced Elixirs", 2, 30);
+        var goal = new CharacterGoal(charId, "Become Master Chef", CharacterGoalType.Career, 50);
+        var m1 = goal.AddMilestone("Learn Knife Skills", 1, 10);
+        var m2 = goal.AddMilestone("Master Sauces", 2, 40);
 
         using (var db = new ProjectDbContext(_options))
         {
@@ -59,38 +60,45 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
             await db.SaveChangesAsync();
         }
 
-        var candidate = new CharacterActivityCandidate(
-            ActivityType: CharacterActivityType.Cooking,
-            Location: "Arcane Kitchen",
-            Reason: "Brewing stamina potions for alchemy milestone",
-            Priority: ActivityPriority.Normal,
-            DurationMinutes: 40, // 40 min / 2 = 20 contribution
-            ShouldCreateVisualMoment: false,
-            Confidence: 0.95f,
-            ActionHint: "stirring bubbling cauldron",
-            PoseHint: "standing attentively",
-            OutfitHint: null,
-            EnvironmentHint: null,
-            DecisionFingerprint: "test-fingerprint-001",
-            GoalId: goal.Id,
-            GoalTitle: goal.Title,
-            GoalRelevance: 0.8f,
-            GoalReason: "Cooking aligns with alchemy brewing"
-        );
+        var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
+        var now = new DateTime(2026, 8, 28, 18, 30, 0, DateTimeKind.Utc); // Evening
+        var timeBucket = "2026-08-28T18:00";
 
-        var initialState = new CharacterStateSnapshot(energy: 80, hunger: 60, socialNeed: 30, stress: 30);
-        var now = new DateTime(2026, 8, 28, 11, 0, 0, DateTimeKind.Utc);
-        var timeBucket = "2026-08-28T11:00";
-
-        var execRequest = new ActivityExecutionRequest(
-            Character: character,
-            Candidate: candidate,
+        var decisionReq = new AutonomousDecisionRequest(
+            CharacterId: charId,
             CurrentTime: now,
+            CurrentLocation: "Royal Kitchen",
             TimeBucket: timeBucket,
-            CurrentState: initialState,
-            SceneRevision: 1
+            PersonalityPrompt: "Passionate culinary chef",
+            Goals: new[]
+            {
+                new CharacterGoalSnapshot(
+                    GoalId: goal.Id,
+                    CharacterId: charId,
+                    Title: goal.Title,
+                    GoalType: goal.GoalType,
+                    Priority: CharacterGoalPriority.High,
+                    Status: CharacterGoalStatus.Active,
+                    Progress: 0f,
+                    CurrentValue: 0,
+                    TargetValue: 50,
+                    CurrentMilestone: "Learn Knife Skills",
+                    MilestoneProgress: 0f
+                )
+            },
+            StateSnapshot: new CharacterStateSnapshot(energy: 80, hunger: 70, socialNeed: 20, stress: 20),
+            SceneRevision: 2
         );
 
+        // 1. Autonomous Decision
+        var decision = await decisionService.DecideNextActionAsync(decisionReq);
+
+        Assert.Equal(AutonomousDecisionAction.PerformActivity, decision.Action);
+        Assert.NotNull(decision.Candidate);
+        Assert.Equal(CharacterActivityType.Cooking, decision.Candidate.ActivityType);
+        Assert.Equal(goal.Id, decision.Candidate.GoalId);
+
+        // 2. Atomic Execution
         using (var db = new ProjectDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
@@ -98,26 +106,40 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
 
-            var result = await execService.ExecuteActivityAsync(execRequest);
+            var execRequest = new ActivityExecutionRequest(
+                Character: character,
+                Candidate: decision.Candidate,
+                CurrentTime: now,
+                TimeBucket: timeBucket,
+                CurrentState: new CharacterStateSnapshot(energy: 80, hunger: 70, socialNeed: 20, stress: 20),
+                SceneRevision: 2
+            );
 
-            Assert.True(result.Success);
-            Assert.False(result.IsDuplicateSuppressed);
-            Assert.NotNull(result.Activity);
-            Assert.NotNull(result.NewState);
-            Assert.NotNull(result.GoalResult);
+            var execResult = await execService.ExecuteActivityAsync(execRequest);
 
-            // Verify State Deltas applied
-            Assert.Equal(70, result.NewState.Energy); // 80 - 10
-            Assert.Equal(35, result.NewState.Hunger); // 60 - 25
-            Assert.Equal(CharacterMood.Happy, result.NewState.Mood);
+            Assert.True(execResult.Success);
+            Assert.False(execResult.IsDuplicateSuppressed);
+            Assert.NotNull(execResult.Activity);
+            Assert.NotNull(execResult.NewState);
+            Assert.NotNull(execResult.GoalResult);
 
-            // Verify Goal Progression
-            Assert.True(result.GoalResult.Success);
-            Assert.Equal(0.4f, result.GoalResult.NewProgress); // 20 / 50 = 0.4
-            Assert.True(result.GoalResult.MilestoneCompleted); // M1 achieved
+            // Assert State Consequences applied
+            Assert.Equal(70, execResult.NewState.Energy);   // 80 - 10
+            Assert.Equal(45, execResult.NewState.Hunger);   // 70 - 25
+            Assert.Equal(CharacterMood.Happy, execResult.NewState.Mood);
+
+            // Assert Goal & Milestone Progression
+            Assert.True(execResult.GoalResult.Success);
+            Assert.True(execResult.GoalResult.MilestoneCompleted); // M1 achieved!
+            Assert.False(execResult.GoalResult.GoalCompleted);
+
+            // Assert Visual Moment Triggered & Scene Composed
+            Assert.True(execResult.VisualMomentCreated);
+            Assert.NotNull(execResult.SceneIntentId);
+            Assert.NotNull(execResult.SceneSpecificationId);
         }
 
-        // Verify DB State
+        // 3. Assert Authoritative Database Invariants
         using (var db = new ProjectDbContext(_options))
         {
             var savedActivity = await db.CharacterActivities.FirstAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
@@ -125,11 +147,17 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
             Assert.Equal(CharacterActivityStatus.Completed, savedActivity.Status);
 
             var savedGoal = await db.CharacterGoals.Include(g => g.Milestones).FirstAsync(g => g.Id == goal.Id);
-            Assert.Equal(20, savedGoal.CurrentValue);
+            Assert.Equal(22.5, savedGoal.CurrentValue); // 45 min / 2 = 22.5
             var savedM1 = savedGoal.Milestones.First(m => m.Order == 1);
             var savedM2 = savedGoal.Milestones.First(m => m.Order == 2);
+
             Assert.Equal(CharacterGoalMilestoneStatus.Completed, savedM1.Status);
+            Assert.Equal(10, savedM1.CurrentValue);
             Assert.Equal(CharacterGoalMilestoneStatus.Active, savedM2.Status);
+            Assert.Equal(12.5, savedM2.CurrentValue);
+
+            var spec = await db.SceneSpecifications.FindAsync(db.SceneSpecifications.First().Id);
+            Assert.NotNull(spec);
         }
     }
 

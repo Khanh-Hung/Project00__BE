@@ -104,6 +104,14 @@ public sealed class SceneVisualStateReader : ISceneVisualStateReader
         }
         else
         {
+            // Guard: Older Scene Revision cannot overwrite Newer Authoritative Revision
+            if (state.SceneRevision < existingRecord.SceneRevision)
+            {
+                _logger.LogWarning("[SceneVisualStateReader] Stale scene revision rejected: incoming Revision={IncomingRevision} < authoritative Revision={CurrentRevision}",
+                    state.SceneRevision, existingRecord.SceneRevision);
+                return;
+            }
+
             // Authoritative CAS Update
             if (expectedVersion > 0 && existingRecord.Version != expectedVersion)
             {
