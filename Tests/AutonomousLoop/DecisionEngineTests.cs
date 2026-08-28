@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
 using Application.Contracts.Goals;
 using Application.Services;

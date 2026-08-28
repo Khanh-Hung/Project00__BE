@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
@@ -193,8 +193,10 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
 
     private static void ApplyStateAndNeedModifiers(List<CandidateOption> pool, CharacterStateSnapshot state, string location)
     {
-        // 1. Low Energy -> Heavily prioritize Rest & Sleep
-        if (state.Energy < 30)
+        // 1. Energy Tiers:
+        // Tier A: Critical Exhaustion (Energy < 20) -> Massive boost to Rest & Sleep (+300)
+        // Tier B: Mild Tiredness (20 <= Energy < 30) -> Moderate boost to Rest (+80)
+        if (state.Energy < 20)
         {
             var hasRest = pool.Any(opt => opt.Type == CharacterActivityType.Sleeping || opt.Type == CharacterActivityType.Relaxing);
             if (!hasRest)
@@ -205,7 +207,7 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
                     score: 300,
                     actionHint: "resting quietly to recover energy",
                     poseHint: "seated or reclining comfortably",
-                    reason: "Low energy detected; character taking a needed rest."
+                    reason: "Critical low energy detected; character taking a needed rest."
                 ));
             }
 
@@ -217,9 +219,32 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
                     opt.Score = Math.Max(1, opt.Score / 5);
             }
         }
+        else if (state.Energy < 30)
+        {
+            var hasRest = pool.Any(opt => opt.Type == CharacterActivityType.Sleeping || opt.Type == CharacterActivityType.Relaxing);
+            if (!hasRest)
+            {
+                pool.Add(new CandidateOption(
+                    type: CharacterActivityType.Relaxing,
+                    location: location,
+                    score: 80,
+                    actionHint: "taking a moment to relax",
+                    poseHint: "seated comfortably",
+                    reason: "Tiredness detected; character taking a rest."
+                ));
+            }
 
-        // 2. High Hunger -> Heavily prioritize Eating & Cooking
-        if (state.Hunger > 60)
+            foreach (var opt in pool)
+            {
+                if (opt.Type == CharacterActivityType.Sleeping || opt.Type == CharacterActivityType.Relaxing)
+                    opt.Score += 80;
+            }
+        }
+
+        // 2. Hunger Tiers:
+        // Tier A: Critical Hunger (Hunger > 80) -> Massive boost to Eating (+300)
+        // Tier B: High Hunger (60 < Hunger <= 80) -> Moderate boost to Eating (+80)
+        if (state.Hunger > 80)
         {
             var hasFood = pool.Any(opt => opt.Type == CharacterActivityType.Eating || opt.Type == CharacterActivityType.Cooking);
             if (!hasFood)
@@ -227,7 +252,28 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
                 pool.Add(new CandidateOption(
                     type: CharacterActivityType.Eating,
                     location: location,
-                    score: 250,
+                    score: 300,
+                    actionHint: "having an urgent meal",
+                    poseHint: "seated at table enjoying food",
+                    reason: "Critical hunger detected; character stopping for a meal."
+                ));
+            }
+
+            foreach (var opt in pool)
+            {
+                if (opt.Type == CharacterActivityType.Eating || opt.Type == CharacterActivityType.Cooking)
+                    opt.Score += 300;
+            }
+        }
+        else if (state.Hunger > 60)
+        {
+            var hasFood = pool.Any(opt => opt.Type == CharacterActivityType.Eating || opt.Type == CharacterActivityType.Cooking);
+            if (!hasFood)
+            {
+                pool.Add(new CandidateOption(
+                    type: CharacterActivityType.Eating,
+                    location: location,
+                    score: 80,
                     actionHint: "having a nourishing meal",
                     poseHint: "seated at table enjoying food",
                     reason: "High hunger detected; character stopping for a meal."
@@ -237,7 +283,7 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
             foreach (var opt in pool)
             {
                 if (opt.Type == CharacterActivityType.Eating || opt.Type == CharacterActivityType.Cooking)
-                    opt.Score += 250;
+                    opt.Score += 80;
             }
         }
 

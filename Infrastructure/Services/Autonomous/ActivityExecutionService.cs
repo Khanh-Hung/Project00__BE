@@ -1,4 +1,4 @@
-using Application.Contracts.Autonomous;
+﻿using Application.Contracts.Autonomous;
 using Application.Interfaces;
 using Application.Services;
 using Domain.Entities;
@@ -44,6 +44,7 @@ public sealed class ActivityExecutionService : IActivityExecutionService
         var candidate = request.Candidate;
         var now = request.CurrentTime;
         var timeBucket = request.TimeBucket;
+        var executionId = request.ExecutionId ?? Guid.NewGuid();
         var currentState = request.CurrentState ?? CharacterStateSnapshot.CreateDefault();
 
         // 1. Create CharacterActivity entity
@@ -74,14 +75,15 @@ public sealed class ActivityExecutionService : IActivityExecutionService
         {
             if (IsUniqueConstraintViolation(ex))
             {
-                _logger.LogInformation(ex, "[ActivityExecutionService] Idempotent duplicate activity suppressed for CharacterId={CharacterId}, TimeBucket={TimeBucket}",
-                    character.Id, timeBucket);
+                _logger.LogInformation(ex, "[ActivityExecutionService] Idempotent duplicate activity suppressed for ExecutionId={ExecutionId}, CharacterId={CharacterId}, TimeBucket={TimeBucket}",
+                    executionId, character.Id, timeBucket);
 
                 _dbContext.Entry(activity).State = EntityState.Detached;
 
                 return new ActivityExecutionResult(
                     Success: true,
                     IsDuplicateSuppressed: true,
+                    ExecutionId: executionId,
                     Activity: null,
                     NewState: currentState,
                     GoalResult: null,
@@ -92,8 +94,8 @@ public sealed class ActivityExecutionService : IActivityExecutionService
                 );
             }
 
-            _logger.LogError(ex, "[ActivityExecutionService] Non-duplicate database failure saving activity for CharacterId={CharacterId}, TimeBucket={TimeBucket}",
-                character.Id, timeBucket);
+            _logger.LogError(ex, "[ActivityExecutionService] Non-duplicate database failure saving activity for ExecutionId={ExecutionId}, CharacterId={CharacterId}, TimeBucket={TimeBucket}",
+                executionId, character.Id, timeBucket);
             throw;
         }
 
@@ -117,8 +119,8 @@ public sealed class ActivityExecutionService : IActivityExecutionService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[ActivityExecutionService] Failed recording goal contribution for GoalId={GoalId}, ActivityId={ActivityId}",
-                    candidate.GoalId.Value, activity.Id);
+                _logger.LogError(ex, "[ActivityExecutionService] Failed recording goal contribution for ExecutionId={ExecutionId}, GoalId={GoalId}, ActivityId={ActivityId}",
+                    executionId, candidate.GoalId.Value, activity.Id);
             }
         }
 
@@ -165,7 +167,7 @@ public sealed class ActivityExecutionService : IActivityExecutionService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[ActivityExecutionService] Visual moment composition failed for ActivityId={ActivityId}. Activity execution remains successful.", activity.Id);
+                _logger.LogError(ex, "[ActivityExecutionService] Visual moment composition failed for ExecutionId={ExecutionId}, ActivityId={ActivityId}. Activity execution remains successful.", executionId, activity.Id);
             }
         }
 
@@ -177,16 +179,17 @@ public sealed class ActivityExecutionService : IActivityExecutionService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[ActivityExecutionService] Non-critical warning completing activity record for ActivityId={ActivityId}", activity.Id);
+            _logger.LogWarning(ex, "[ActivityExecutionService] Non-critical warning completing activity record for ExecutionId={ExecutionId}, ActivityId={ActivityId}", executionId, activity.Id);
         }
 
         _logger.LogInformation(
-            "[ActivityExecutionService] Successfully executed activity for CharacterId={CharacterId}, Type={Type}, GoalUpdated={GoalUpdated}, VisualCreated={VisualCreated}",
-            character.Id, activity.ActivityType, goalResult?.Success == true, sceneSpecificationId.HasValue);
+            "[ActivityExecutionService] Successfully executed activity. ExecutionId={ExecutionId}, CharacterId={CharacterId}, ActivityType={ActivityType}, DecisionFingerprint={DecisionFingerprint}, GoalId={GoalId}, VisualMomentTriggered={VisualMomentTriggered}, SceneRevision={SceneRevision}, Outcome={Outcome}",
+            executionId, character.Id, activity.ActivityType, activity.DecisionFingerprint, candidate.GoalId, sceneSpecificationId.HasValue || sceneIntentId.HasValue, request.SceneRevision, "Success");
 
         return new ActivityExecutionResult(
             Success: true,
             IsDuplicateSuppressed: false,
+            ExecutionId: executionId,
             Activity: activity,
             NewState: newState,
             GoalResult: goalResult,

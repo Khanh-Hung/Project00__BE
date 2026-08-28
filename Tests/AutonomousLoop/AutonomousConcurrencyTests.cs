@@ -93,4 +93,81 @@ public sealed class AutonomousConcurrencyTests : IDisposable
             Assert.Equal(1, contribCount);
         }
     }
+
+    [Fact]
+    public async Task TenConcurrentWorkers_ExecutingVisualMomentActivity_CreatesExactlyOneVisualMomentAndNineSuppressed()
+    {
+        var charId = Guid.NewGuid();
+        var character = new Character("Valerius", "Explorer", "http://avatar.png", "Brave explorer", "Hello", "Anime", worldDescription: "Ancient Ruins")
+        {
+            Id = charId
+        };
+
+        using (var db = new ProjectDbContext(_options))
+        {
+            await db.Characters.AddAsync(character);
+            await db.SaveChangesAsync();
+        }
+
+        var candidate = new CharacterActivityCandidate(
+            ActivityType: CharacterActivityType.Exploring,
+            Location: "Ancient Temple Ruins",
+            Reason: "Surveying mysterious ancient inscriptions",
+            Priority: ActivityPriority.High,
+            DurationMinutes: 60,
+            ShouldCreateVisualMoment: true, // High value visual moment!
+            Confidence: 0.95f,
+            ActionHint: "holding a torch examining glyphs",
+            PoseHint: "standing attentively inspecting wall",
+            OutfitHint: "Exploration Attire",
+            EnvironmentHint: "Atmospheric torchlight",
+            DecisionFingerprint: "fingerprint-visual-concurrent-001"
+        );
+
+        var testTime = new DateTime(2026, 8, 28, 15, 0, 0, DateTimeKind.Utc);
+        var timeBucket = "2026-08-28T15:00";
+
+        // 10 concurrent workers directly dispatching the visual moment execution
+        var tasks = Enumerable.Range(1, 10).Select(async workerId =>
+        {
+            await using var workerDb = new ProjectDbContext(_options);
+            var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
+            var fakePipeline = new FakeSceneCompositionPipelineService();
+            var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
+            var execService = new ActivityExecutionService(workerDb, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+
+            var request = new ActivityExecutionRequest(
+                Character: character,
+                Candidate: candidate,
+                CurrentTime: testTime,
+                TimeBucket: timeBucket,
+                ExecutionId: Guid.NewGuid(),
+                CurrentVisualState: new CharacterVisualState(charId, "Ancient Ruins", sceneRevision: 1),
+                CurrentState: CharacterStateSnapshot.CreateDefault(),
+                SceneRevision: 1
+            );
+
+            return await execService.ExecuteActivityAsync(request);
+        }).ToList();
+
+        var results = await Task.WhenAll(tasks);
+
+        int winners = results.Count(r => r.Success && !r.IsDuplicateSuppressed && r.VisualMomentCreated);
+        int suppressed = results.Count(r => r.Success && r.IsDuplicateSuppressed && !r.VisualMomentCreated);
+
+        Assert.Equal(1, winners);
+        Assert.Equal(9, suppressed);
+
+        // Assert Database Authoritative Invariants
+        using (var db = new ProjectDbContext(_options))
+        {
+            // Exactly 1 CharacterActivity row in DB
+            var activityCount = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
+            Assert.Equal(1, activityCount);
+
+            // Exactly 1 SceneSpecification persisted in DB (no duplicate visual generations)
+            var specCount = await db.SceneSpecifications.CountAsync(s => s.CharacterId == charId);
+            Assert.Equal(1, specCount);
+        }
+    }
 }
