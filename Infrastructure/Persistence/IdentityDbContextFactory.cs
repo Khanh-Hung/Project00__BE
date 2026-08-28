@@ -4,9 +4,9 @@ using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure.Persistence;
 
-public class CoreDbContextFactory : IDesignTimeDbContextFactory<CoreDbContext>
+public class IdentityDbContextFactory : IDesignTimeDbContextFactory<IdentityDbContext>
 {
-    public CoreDbContext CreateDbContext(string[] args)
+    public IdentityDbContext CreateDbContext(string[] args)
     {
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
@@ -15,15 +15,15 @@ public class CoreDbContextFactory : IDesignTimeDbContextFactory<CoreDbContext>
             .AddEnvironmentVariables()
             .Build();
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = configuration.GetConnectionString("IdentityConnection");
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured in appsettings.json or environment variables.");
+            throw new InvalidOperationException("Connection string 'IdentityConnection' is not configured in appsettings.json or environment variables.");
         }
 
-        var optionsBuilder = new DbContextOptionsBuilder<CoreDbContext>();
+        var optionsBuilder = new DbContextOptionsBuilder<IdentityDbContext>();
         optionsBuilder.UseNpgsql(connectionString);
 
-        return new CoreDbContext(optionsBuilder.Options);
+        return new IdentityDbContext(optionsBuilder.Options);
     }
 }
