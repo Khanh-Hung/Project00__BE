@@ -42,6 +42,8 @@ public class ProjectDbContext : DbContext
     public DbSet<CharacterGoal> CharacterGoals { get; set; }
     public DbSet<CharacterGoalMilestone> CharacterGoalMilestones { get; set; }
     public DbSet<GoalActivityContribution> GoalActivityContributions { get; set; }
+    public DbSet<CharacterWorldEvent> CharacterWorldEvents { get; set; }
+    public DbSet<CharacterWorldEventReaction> CharacterWorldEventReactions { get; set; }
 
     private string NormalizeUserId()
     {

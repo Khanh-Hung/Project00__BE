@@ -1,4 +1,4 @@
-﻿using Domain.Enums;
+using Domain.Enums;
 
 namespace Domain.ValueObjects;
 
@@ -12,6 +12,7 @@ public sealed record CharacterStateSnapshot
     public int Stress { get; init; } = 10;
     public int Fitness { get; init; } = 50;
     public int Intellect { get; init; } = 50;
+    public int Confidence { get; init; } = 50;
 
     public CharacterStateSnapshot() { }
 
@@ -23,7 +24,8 @@ public sealed record CharacterStateSnapshot
         int socialNeed = 30,
         int stress = 10,
         int fitness = 50,
-        int intellect = 50)
+        int intellect = 50,
+        int confidence = 50)
     {
         Energy = Math.Clamp(energy, 0, 100);
         Mood = mood;
@@ -33,6 +35,7 @@ public sealed record CharacterStateSnapshot
         Stress = Math.Clamp(stress, 0, 100);
         Fitness = Math.Clamp(fitness, 0, 100);
         Intellect = Math.Clamp(intellect, 0, 100);
+        Confidence = Math.Clamp(confidence, 0, 100);
     }
 
     public static CharacterStateSnapshot CreateDefault() => new();
@@ -45,6 +48,7 @@ public sealed record CharacterStateSnapshot
         int fitnessDelta = 0,
         int intellectDelta = 0,
         int moodIntensityDelta = 0,
+        int confidenceDelta = 0,
         CharacterMood? newMood = null)
     {
         return new CharacterStateSnapshot(
@@ -55,7 +59,8 @@ public sealed record CharacterStateSnapshot
             socialNeed: SocialNeed + socialNeedDelta,
             stress: Stress + stressDelta,
             fitness: Fitness + fitnessDelta,
-            intellect: Intellect + intellectDelta
+            intellect: Intellect + intellectDelta,
+            confidence: Confidence + confidenceDelta
         );
     }
 }

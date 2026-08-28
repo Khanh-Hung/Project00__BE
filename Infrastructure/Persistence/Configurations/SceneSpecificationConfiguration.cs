@@ -50,6 +50,7 @@ public class SceneSpecificationConfiguration : IEntityTypeConfiguration<SceneSpe
             .HasFilter("\"SessionId\" IS NOT NULL AND \"TurnId\" IS NOT NULL")
             .IsUnique();
 
+        builder.HasIndex(x => new { x.CharacterId, x.SceneRevision });
         builder.HasIndex(x => x.SceneFingerprint);
         builder.HasIndex(x => x.CharacterId);
         builder.HasIndex(x => x.SessionId);
