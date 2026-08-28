@@ -1,4 +1,4 @@
-﻿using Application.Common.Exceptions;
+using Application.Common.Exceptions;
 using Application.DTOs;
 using Application.Interfaces;
 using Application.Services;
@@ -23,6 +23,11 @@ public sealed class VisualContinuityFailureTests
             throw new InvalidOperationException("Simulated catastrophic DB storage disconnection.");
         }
 
+        public Task<SceneVisualState?> GetLatestByCharacterIdAsync(Guid characterId, CancellationToken ct = default)
+        {
+            throw new InvalidOperationException("Simulated catastrophic DB storage disconnection.");
+        }
+
         public Task SaveStateAsync(SceneVisualState state, uint expectedVersion = 0, CancellationToken ct = default)
         {
             throw new InvalidOperationException("Simulated catastrophic DB storage disconnection.");
@@ -33,6 +38,7 @@ public sealed class VisualContinuityFailureTests
     {
         public Task<SceneVisualState?> GetLatestBySessionAsync(Guid sessionId, CancellationToken ct = default) => Task.FromResult<SceneVisualState?>(null);
         public Task<SceneVisualState?> GetLatestBySessionAndSceneKeyAsync(Guid sessionId, string sceneKey, CancellationToken ct = default) => Task.FromResult<SceneVisualState?>(null);
+        public Task<SceneVisualState?> GetLatestByCharacterIdAsync(Guid characterId, CancellationToken ct = default) => Task.FromResult<SceneVisualState?>(null);
         public Task SaveStateAsync(SceneVisualState state, uint expectedVersion = 0, CancellationToken ct = default) => Task.CompletedTask;
     }
 

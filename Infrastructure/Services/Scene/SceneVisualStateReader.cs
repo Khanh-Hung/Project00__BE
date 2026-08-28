@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Interfaces;
 using Domain.Entities;
 using Infrastructure.Persistence;
@@ -40,6 +40,22 @@ public sealed class SceneVisualStateReader : ISceneVisualStateReader
         var record = await _dbContext.SceneVisualStates
             .AsNoTracking()
             .Where(r => r.SessionId == sessionId && r.SceneKey == normKey)
+            .OrderByDescending(r => r.SceneRevision)
+            .ThenByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (record == null) return null;
+
+        return JsonSerializer.Deserialize<SceneVisualState>(record.StateJson);
+    }
+
+    public async Task<SceneVisualState?> GetLatestByCharacterIdAsync(Guid characterId, CancellationToken ct = default)
+    {
+        if (characterId == Guid.Empty) return null;
+
+        var record = await _dbContext.SceneVisualStates
+            .AsNoTracking()
+            .Where(r => r.CharacterId == characterId && r.ValidUntilTurnId == null)
             .OrderByDescending(r => r.SceneRevision)
             .ThenByDescending(r => r.CreatedAt)
             .FirstOrDefaultAsync(ct);

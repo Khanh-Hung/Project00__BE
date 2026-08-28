@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 
 namespace Application.Interfaces;
 
@@ -10,5 +10,6 @@ public interface ISceneVisualStateReader
 {
     Task<SceneVisualState?> GetLatestBySessionAsync(Guid sessionId, CancellationToken ct = default);
     Task<SceneVisualState?> GetLatestBySessionAndSceneKeyAsync(Guid sessionId, string sceneKey, CancellationToken ct = default);
+    Task<SceneVisualState?> GetLatestByCharacterIdAsync(Guid characterId, CancellationToken ct = default);
     Task SaveStateAsync(SceneVisualState state, uint expectedVersion = 0, CancellationToken ct = default);
 }

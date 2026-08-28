@@ -58,8 +58,8 @@ public sealed class SceneVisualState
         int? validUntilRevision = null,
         string? fingerprint = null,
         uint version = 1,
-        Guid? id = null,
-        DateTime? createdAt = null)
+        Guid id = default,
+        DateTime createdAt = default)
     {
         if (sessionId == Guid.Empty)
             throw new ArgumentException("SessionId cannot be empty.", nameof(sessionId));
@@ -75,7 +75,7 @@ public sealed class SceneVisualState
         if (sceneRevision < 1)
             throw new ArgumentOutOfRangeException(nameof(sceneRevision), "SceneRevision must be >= 1.");
 
-        Id = id ?? Guid.CreateVersion7();
+        Id = id != Guid.Empty ? id : Guid.CreateVersion7();
         SessionId = sessionId;
         CharacterId = characterId;
         Location = location.Trim();
@@ -117,7 +117,7 @@ public sealed class SceneVisualState
         ValidFromRevision = validFromRevision > 0 ? validFromRevision : sceneRevision;
         ValidUntilRevision = validUntilRevision;
         Version = version;
-        CreatedAt = createdAt ?? DateTime.UtcNow;
+        CreatedAt = createdAt != default ? createdAt : DateTime.UtcNow;
 
         Fingerprint = !string.IsNullOrWhiteSpace(fingerprint)
             ? fingerprint
