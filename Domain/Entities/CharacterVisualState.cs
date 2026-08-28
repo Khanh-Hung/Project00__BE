@@ -6,7 +6,7 @@ namespace Domain.Entities;
 /// <summary>
 /// Authoritative domain aggregate capturing the mutable visual state of a Character within a scene.
 /// Does NOT duplicate immutable core identity traits (eye color, facial structure) from PR30 CharacterVisualProfile.
-/// Supports temporal validity and evolution tracking across turns.
+/// Supports temporal validity and evolution tracking across monotonic scene revisions.
 /// </summary>
 public sealed class CharacterVisualState : BaseEntity
 {
@@ -23,6 +23,8 @@ public sealed class CharacterVisualState : BaseEntity
     public Guid? ValidFromTurnId { get; private set; }
     public Guid? ValidUntilTurnId { get; private set; }
     public Guid? SourceTurnId { get; private set; }
+    public int ValidFromRevision { get; private set; } = 1;
+    public int? ValidUntilRevision { get; private set; }
     public float Confidence { get; private set; } = 1.0f;
     public uint Version { get; private set; } = 1;
 
@@ -40,6 +42,8 @@ public sealed class CharacterVisualState : BaseEntity
         Guid? validFromTurnId = null,
         Guid? validUntilTurnId = null,
         Guid? sourceTurnId = null,
+        int validFromRevision = 1,
+        int? validUntilRevision = null,
         float confidence = 1.0f,
         uint version = 1,
         Guid? id = null,
@@ -72,34 +76,39 @@ public sealed class CharacterVisualState : BaseEntity
         ValidFromTurnId = validFromTurnId;
         ValidUntilTurnId = validUntilTurnId;
         SourceTurnId = sourceTurnId ?? validFromTurnId;
+        ValidFromRevision = validFromRevision > 0 ? validFromRevision : sceneRevision;
+        ValidUntilRevision = validUntilRevision;
         Confidence = confidence;
         Version = version;
         CreatedAt = createdAt ?? DateTime.UtcNow;
     }
 
-    public void EvolveOutfit(string newOutfit, Guid turnId)
+    public void EvolveOutfit(string newOutfit, Guid turnId, int revision)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(newOutfit, nameof(newOutfit));
         Outfit = newOutfit.Trim();
         SourceTurnId = turnId;
+        SceneRevision = revision;
         Version++;
         Touch();
     }
 
-    public void EvolveHairstyle(string newHairstyle, Guid turnId)
+    public void EvolveHairstyle(string newHairstyle, Guid turnId, int revision)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(newHairstyle, nameof(newHairstyle));
         Hairstyle = newHairstyle.Trim();
         SourceTurnId = turnId;
+        SceneRevision = revision;
         Version++;
         Touch();
     }
 
-    public void EvolvePoseAndAction(string? pose, string? action, Guid turnId)
+    public void EvolvePoseAndAction(string? pose, string? action, Guid turnId, int revision)
     {
         if (!string.IsNullOrWhiteSpace(pose)) Pose = pose.Trim();
         if (!string.IsNullOrWhiteSpace(action)) Action = action.Trim();
         SourceTurnId = turnId;
+        SceneRevision = revision;
         Version++;
         Touch();
     }
@@ -112,16 +121,21 @@ public sealed class CharacterVisualState : BaseEntity
         Touch();
     }
 
-    public void Invalidate(Guid supersededByTurnId)
+    public void Invalidate(Guid supersededByTurnId, int? supersededByRevision = null)
     {
         ValidUntilTurnId = supersededByTurnId;
+        if (supersededByRevision.HasValue)
+        {
+            ValidUntilRevision = supersededByRevision.Value;
+        }
         Version++;
         Touch();
     }
 
-    public bool IsActiveForTurn(Guid? turnId)
+    public bool IsActiveForRevision(int targetRevision)
     {
-        if (ValidUntilTurnId.HasValue) return false;
+        if (targetRevision < ValidFromRevision) return false;
+        if (ValidUntilRevision.HasValue && targetRevision >= ValidUntilRevision.Value) return false;
         return true;
     }
 }

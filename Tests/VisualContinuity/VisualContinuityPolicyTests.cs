@@ -93,4 +93,22 @@ public sealed class VisualContinuityPolicyTests
         Assert.Equal("White Gown", resolvedOutfit);
         Assert.DoesNotContain("Red", resolvedOutfit, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Hairstyle_CurrentIntent_OverridesPreviousStateAndMemory()
+    {
+        // Arrange
+        var intentHair = "Braided crown with silver pins";
+        var prevHair = "Loose flowing curls";
+        var memHair = "High ponytail";
+        var defaultHair = "Straight silver hair";
+
+        // Act
+        var (resolvedHair, source) = VisualContinuityPolicy.ResolveHairstyle(
+            intentHair, prevHair, memHair, defaultHair);
+
+        // Assert
+        Assert.Equal("Braided crown with silver pins", resolvedHair);
+        Assert.Equal("CurrentIntent", source);
+    }
 }

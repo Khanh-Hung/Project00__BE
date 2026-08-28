@@ -3,24 +3,46 @@ using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
+using Infrastructure.Persistence;
+using Infrastructure.Services.Scene;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Tests.VisualContinuity;
 
-public sealed class VisualStateEvolutionTests
+public sealed class VisualStateEvolutionTests : IDisposable
 {
-    private readonly VisualContinuityResolver _resolver;
+    private readonly SqliteConnection _connection;
+    private readonly DbContextOptions<ProjectDbContext> _options;
 
     public VisualStateEvolutionTests()
     {
-        _resolver = new VisualContinuityResolver(NullLogger<VisualContinuityResolver>.Instance);
+        _connection = new SqliteConnection("DataSource=:memory:");
+        _connection.Open();
+
+        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(_connection)
+            .Options;
+
+        using var db = new ProjectDbContext(_options);
+        db.Database.EnsureCreated();
+    }
+
+    public void Dispose()
+    {
+        _connection.Close();
+        _connection.Dispose();
     }
 
     [Fact]
     public async Task SameScene_PreservesEnvironmentAndOutfit_WhileUpdatingActionAndPose()
     {
-        // Arrange
+        await using var db = new ProjectDbContext(_options);
+        var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+        var resolver = new VisualContinuityResolver(stateReader, NullLogger<VisualContinuityResolver>.Instance);
+
         var charId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var prevTurnId = Guid.NewGuid();
@@ -60,7 +82,7 @@ public sealed class VisualStateEvolutionTests
         );
 
         // Act
-        var result = await _resolver.ResolveAsync(new VisualContinuityRequest(intent, context, 2));
+        var result = await resolver.ResolveAsync(new VisualContinuityRequest(intent, context, 2));
 
         // Assert
         Assert.Equal(SceneTransitionType.SameScene, result.TransitionType);
@@ -82,7 +104,10 @@ public sealed class VisualStateEvolutionTests
     [Fact]
     public async Task LocationTransition_ResetsLocationSpecificEnvironment_PreservesCharacterAppearance()
     {
-        // Arrange
+        await using var db = new ProjectDbContext(_options);
+        var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+        var resolver = new VisualContinuityResolver(stateReader, NullLogger<VisualContinuityResolver>.Instance);
+
         var charId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
 
@@ -114,7 +139,7 @@ public sealed class VisualStateEvolutionTests
         );
 
         // Act
-        var result = await _resolver.ResolveAsync(new VisualContinuityRequest(intent, context, 2));
+        var result = await resolver.ResolveAsync(new VisualContinuityRequest(intent, context, 2));
 
         // Assert
         Assert.Equal(SceneTransitionType.LocationTransition, result.TransitionType);
@@ -127,9 +152,12 @@ public sealed class VisualStateEvolutionTests
     }
 
     [Fact]
-    public async Task ExplicitOverride_ImmediatelyMutatesAppearance_WithoutContradiction()
+    public async Task ExplicitOverride_ImmediatelyMutatesAppearanceAndHairstyle()
     {
-        // Arrange
+        await using var db = new ProjectDbContext(_options);
+        var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+        var resolver = new VisualContinuityResolver(stateReader, NullLogger<VisualContinuityResolver>.Instance);
+
         var charId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
 
@@ -146,23 +174,28 @@ public sealed class VisualStateEvolutionTests
             CharacterId: charId,
             SessionId: sessionId,
             SceneRevision: 2,
-            PreviousScene: prevSpec
+            PreviousScene: prevSpec,
+            CharacterVisualProfile: new CharacterVisualProfile(charId, "Red Silk Nightgown", "Violet", "Silver", "Porcelain", "Scholar", "Loose flowing")
         );
 
         var intent = new SceneIntent(
             characterId: charId,
             locationHint: "Bedchamber",
-            actionHint: "changes attire for travel",
+            actionHint: "prepares for battle",
             outfitHint: "Leather Riding Coat with silver buckles",
+            hairstyleHint: "Tightly braided battle braid",
             sessionId: sessionId
         );
 
         // Act
-        var result = await _resolver.ResolveAsync(new VisualContinuityRequest(intent, context, 2));
+        var result = await resolver.ResolveAsync(new VisualContinuityRequest(intent, context, 2));
 
         // Assert
         Assert.Equal("Leather Riding Coat with silver buckles", result.SceneVisualState.CharacterState.Outfit);
+        Assert.Equal("Tightly braided battle braid", result.SceneVisualState.CharacterState.Hairstyle);
         Assert.Equal("CurrentIntent", result.Provenance.OutfitSource);
+        Assert.Equal("CurrentIntent", result.Provenance.HairstyleSource);
         Assert.Contains("Outfit", result.ChangedFields);
+        Assert.Contains("Hairstyle", result.ChangedFields);
     }
 }

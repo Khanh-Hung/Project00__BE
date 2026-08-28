@@ -29,15 +29,7 @@ public sealed class SceneVisualStateReader : ISceneVisualStateReader
 
         if (record == null) return null;
 
-        try
-        {
-            return JsonSerializer.Deserialize<SceneVisualState>(record.StateJson);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[SceneVisualStateReader] Failed to deserialize SceneVisualState from record Id={RecordId}", record.Id);
-            return null;
-        }
+        return JsonSerializer.Deserialize<SceneVisualState>(record.StateJson);
     }
 
     public async Task<SceneVisualState?> GetLatestBySessionAndSceneKeyAsync(Guid sessionId, string sceneKey, CancellationToken ct = default)
@@ -54,37 +46,65 @@ public sealed class SceneVisualStateReader : ISceneVisualStateReader
 
         if (record == null) return null;
 
-        try
-        {
-            return JsonSerializer.Deserialize<SceneVisualState>(record.StateJson);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[SceneVisualStateReader] Failed to deserialize SceneVisualState from record Id={RecordId}", record.Id);
-            return null;
-        }
+        return JsonSerializer.Deserialize<SceneVisualState>(record.StateJson);
     }
 
-    public async Task SaveStateAsync(SceneVisualState state, CancellationToken ct = default)
+    public async Task SaveStateAsync(SceneVisualState state, uint expectedVersion = 0, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(state, nameof(state));
 
         var stateJson = JsonSerializer.Serialize(state);
-        var record = new SceneVisualStateRecord(
-            sessionId: state.SessionId,
-            characterId: state.CharacterId,
-            sceneKey: state.SceneKey,
-            sceneRevision: state.SceneRevision,
-            stateJson: stateJson,
-            fingerprint: state.Fingerprint,
-            sourceTurnId: state.SourceTurnId,
-            validFromTurnId: state.ValidFromTurnId,
-            validUntilTurnId: state.ValidUntilTurnId,
-            version: state.Version,
-            now: state.CreatedAt
-        );
+        var existingRecord = await _dbContext.SceneVisualStates
+            .FirstOrDefaultAsync(r => r.SessionId == state.SessionId && r.SceneKey == state.SceneKey, ct);
 
-        await _dbContext.SceneVisualStates.AddAsync(record, ct);
-        await _dbContext.SaveChangesAsync(ct);
+        if (existingRecord == null)
+        {
+            // Initial insert for this (SessionId, SceneKey)
+            var newRecord = new SceneVisualStateRecord(
+                sessionId: state.SessionId,
+                characterId: state.CharacterId,
+                sceneKey: state.SceneKey,
+                sceneRevision: state.SceneRevision,
+                stateJson: stateJson,
+                fingerprint: state.Fingerprint,
+                sourceTurnId: state.SourceTurnId,
+                validFromTurnId: state.ValidFromTurnId,
+                validUntilTurnId: state.ValidUntilTurnId,
+                version: 1,
+                now: state.CreatedAt
+            );
+
+            try
+            {
+                await _dbContext.SceneVisualStates.AddAsync(newRecord, ct);
+                await _dbContext.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex)
+            {
+                // Unique constraint violation on (SessionId, SceneKey) due to race condition
+                _logger.LogWarning(ex, "[SceneVisualStateReader] Concurrent insert conflict for SessionId={SessionId}, SceneKey={SceneKey}", state.SessionId, state.SceneKey);
+                throw new DbUpdateConcurrencyException("Concurrent worker inserted authoritative scene state record.", ex);
+            }
+        }
+        else
+        {
+            // Authoritative CAS Update
+            if (expectedVersion > 0 && existingRecord.Version != expectedVersion)
+            {
+                _logger.LogWarning("[SceneVisualStateReader] Concurrency conflict: existing record Version={CurrentVersion} != expected Version={ExpectedVersion}",
+                    existingRecord.Version, expectedVersion);
+                throw new DbUpdateConcurrencyException($"Authoritative scene state version mismatch: current {existingRecord.Version} vs expected {expectedVersion}.");
+            }
+
+            existingRecord.UpdateState(
+                newStateJson: stateJson,
+                newFingerprint: state.Fingerprint,
+                newRevision: state.SceneRevision,
+                turnId: state.SourceTurnId ?? Guid.NewGuid(),
+                newVersion: existingRecord.Version + 1
+            );
+
+            await _dbContext.SaveChangesAsync(ct);
+        }
     }
 }

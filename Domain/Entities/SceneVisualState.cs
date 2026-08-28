@@ -7,7 +7,8 @@ namespace Domain.Entities;
 
 /// <summary>
 /// Authoritative domain aggregate representing the complete visual state of a scene across turns.
-/// Tracks characters, environment, props, persistent world changes, temporal validity, and deterministic content fingerprint.
+/// Tracks characters, environment, props, persistent world changes, temporal validity across monotonic scene revisions,
+/// and deterministic content fingerprint.
 /// </summary>
 public sealed class SceneVisualState : BaseEntity
 {
@@ -29,6 +30,9 @@ public sealed class SceneVisualState : BaseEntity
     public Guid? ValidFromTurnId { get; private set; }
     public Guid? ValidUntilTurnId { get; private set; }
     public Guid? SourceTurnId { get; private set; }
+    public int ValidFromRevision { get; private set; } = 1;
+    public int? ValidUntilRevision { get; private set; }
+
     public string Fingerprint { get; private set; }
     public uint Version { get; private set; } = 1;
 
@@ -49,6 +53,8 @@ public sealed class SceneVisualState : BaseEntity
         Guid? validFromTurnId = null,
         Guid? validUntilTurnId = null,
         Guid? sourceTurnId = null,
+        int validFromRevision = 1,
+        int? validUntilRevision = null,
         string? fingerprint = null,
         uint version = 1,
         Guid? id = null,
@@ -107,6 +113,8 @@ public sealed class SceneVisualState : BaseEntity
         ValidFromTurnId = validFromTurnId;
         ValidUntilTurnId = validUntilTurnId;
         SourceTurnId = sourceTurnId ?? validFromTurnId;
+        ValidFromRevision = validFromRevision > 0 ? validFromRevision : sceneRevision;
+        ValidUntilRevision = validUntilRevision;
         Version = version;
         CreatedAt = createdAt ?? DateTime.UtcNow;
 
@@ -173,7 +181,7 @@ public sealed class SceneVisualState : BaseEntity
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
-    public void ApplyWorldMutation(string item, string state, Guid turnId)
+    public void ApplyWorldMutation(string item, string state, Guid turnId, int revision)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(item, nameof(item));
         ArgumentException.ThrowIfNullOrWhiteSpace(state, nameof(state));
@@ -184,23 +192,29 @@ public sealed class SceneVisualState : BaseEntity
         };
         PersistentChanges = dict;
         SourceTurnId = turnId;
+        SceneRevision = revision;
         Fingerprint = ComputeFingerprint(CharacterId, Location, CharacterState.Outfit, CharacterState.Hairstyle, CharacterState.Pose,
             CharacterState.Action, TimeOfDay, Weather, Lighting, Atmosphere, Props, PersistentChanges, SceneRevision);
         Version++;
         Touch();
     }
 
-    public void Invalidate(Guid supersededByTurnId)
+    public void Invalidate(Guid supersededByTurnId, int? supersededByRevision = null)
     {
         ValidUntilTurnId = supersededByTurnId;
-        CharacterState.Invalidate(supersededByTurnId);
+        if (supersededByRevision.HasValue)
+        {
+            ValidUntilRevision = supersededByRevision.Value;
+        }
+        CharacterState.Invalidate(supersededByTurnId, supersededByRevision);
         Version++;
         Touch();
     }
 
-    public bool IsActiveForTurn(Guid? turnId)
+    public bool IsActiveForRevision(int targetRevision)
     {
-        if (ValidUntilTurnId.HasValue) return false;
+        if (targetRevision < ValidFromRevision) return false;
+        if (ValidUntilRevision.HasValue && targetRevision >= ValidUntilRevision.Value) return false;
         return true;
     }
 }

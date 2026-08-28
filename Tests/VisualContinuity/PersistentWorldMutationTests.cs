@@ -2,13 +2,39 @@
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
+using Infrastructure.Persistence;
+using Infrastructure.Services.Scene;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Tests.VisualContinuity;
 
-public sealed class PersistentWorldMutationTests
+public sealed class PersistentWorldMutationTests : IDisposable
 {
+    private readonly SqliteConnection _connection;
+    private readonly DbContextOptions<ProjectDbContext> _options;
+
+    public PersistentWorldMutationTests()
+    {
+        _connection = new SqliteConnection("DataSource=:memory:");
+        _connection.Open();
+
+        _options = new DbContextOptionsBuilder<ProjectDbContext>()
+            .UseSqlite(_connection)
+            .Options;
+
+        using var db = new ProjectDbContext(_options);
+        db.Database.EnsureCreated();
+    }
+
+    public void Dispose()
+    {
+        _connection.Close();
+        _connection.Dispose();
+    }
+
     [Fact]
     public void SceneVisualState_ApplyWorldMutation_UpdatesStateAndFingerprint()
     {
@@ -29,8 +55,8 @@ public sealed class PersistentWorldMutationTests
         var initialFingerprint = sceneState.Fingerprint;
 
         // Act: Apply mutation "Glass: BrokenOnFloor" and "Door: KickedOpen"
-        sceneState.ApplyWorldMutation("Glass", "BrokenOnFloor", turnId);
-        sceneState.ApplyWorldMutation("FrontDoor", "KickedOpen", turnId);
+        sceneState.ApplyWorldMutation("Glass", "BrokenOnFloor", turnId, revision: 1);
+        sceneState.ApplyWorldMutation("FrontDoor", "KickedOpen", turnId, revision: 1);
 
         // Assert
         Assert.Equal("BrokenOnFloor", sceneState.PersistentChanges["Glass"]);
@@ -48,7 +74,9 @@ public sealed class PersistentWorldMutationTests
         var turn1 = Guid.NewGuid();
         var turn2 = Guid.NewGuid();
 
-        var resolver = new VisualContinuityResolver(NullLogger<VisualContinuityResolver>.Instance);
+        await using var db = new ProjectDbContext(_options);
+        var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+        var resolver = new VisualContinuityResolver(stateReader, NullLogger<VisualContinuityResolver>.Instance);
 
         var charState1 = new CharacterVisualState(charId, "Alchemist Workshop", 1);
         var sceneState1 = new SceneVisualState(
@@ -61,8 +89,10 @@ public sealed class PersistentWorldMutationTests
             {
                 ["CrystalFlask"] = "ShatteredOnWorkbench",
                 ["Furnace"] = "BlazingBlueFlames"
-            }
+            },
+            sourceTurnId: turn1
         );
+        await stateReader.SaveStateAsync(sceneState1);
 
         var prevSpec = new SceneSpecification(
             characterId: charId,
@@ -94,5 +124,7 @@ public sealed class PersistentWorldMutationTests
 
         // Assert: SameScene transition preserves world mutations
         Assert.Equal(SceneTransitionType.SameScene, result.TransitionType);
+        Assert.Equal("ShatteredOnWorkbench", result.SceneVisualState.PersistentChanges["CrystalFlask"]);
+        Assert.Equal("BlazingBlueFlames", result.SceneVisualState.PersistentChanges["Furnace"]);
     }
 }

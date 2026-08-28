@@ -29,6 +29,31 @@ namespace Project.Infrastructure.Persistence.Migrations
                 type: "uuid",
                 nullable: true);
 
+            migrationBuilder.AddColumn<int>(
+                name: "ValidFromRevision",
+                table: "CharacterVisualMemories",
+                type: "integer",
+                nullable: false,
+                defaultValue: 1);
+
+            migrationBuilder.AddColumn<int>(
+                name: "ValidUntilRevision",
+                table: "CharacterVisualMemories",
+                type: "integer",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Outfit",
+                table: "CharacterVisualMemories",
+                type: "text",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Hairstyle",
+                table: "CharacterVisualMemories",
+                type: "text",
+                nullable: true);
+
             migrationBuilder.AddColumn<float>(
                 name: "Confidence",
                 table: "CharacterVisualMemories",
@@ -80,14 +105,15 @@ namespace Project.Infrastructure.Persistence.Migrations
                 column: "SessionId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_SceneVisualStates_SessionId_SceneKey",
+                table: "SceneVisualStates",
+                columns: new[] { "SessionId", "SceneKey" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_SceneVisualStates_SessionId_CharacterId_SceneRevision",
                 table: "SceneVisualStates",
                 columns: new[] { "SessionId", "CharacterId", "SceneRevision" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_SceneVisualStates_SessionId_SceneKey_SceneRevision",
-                table: "SceneVisualStates",
-                columns: new[] { "SessionId", "SceneKey", "SceneRevision" });
         }
 
         /// <inheritdoc />
@@ -106,6 +132,22 @@ namespace Project.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropColumn(
                 name: "ValidUntilTurnId",
+                table: "CharacterVisualMemories");
+
+            migrationBuilder.DropColumn(
+                name: "ValidFromRevision",
+                table: "CharacterVisualMemories");
+
+            migrationBuilder.DropColumn(
+                name: "ValidUntilRevision",
+                table: "CharacterVisualMemories");
+
+            migrationBuilder.DropColumn(
+                name: "Outfit",
+                table: "CharacterVisualMemories");
+
+            migrationBuilder.DropColumn(
+                name: "Hairstyle",
                 table: "CharacterVisualMemories");
 
             migrationBuilder.DropColumn(

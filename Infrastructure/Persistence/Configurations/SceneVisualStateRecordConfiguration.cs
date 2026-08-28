@@ -25,7 +25,8 @@ public class SceneVisualStateRecordConfiguration : IEntityTypeConfiguration<Scen
 
         builder.Property(x => x.Version).IsConcurrencyToken();
 
-        builder.HasIndex(x => new { x.SessionId, x.SceneKey, x.SceneRevision });
+        // Invariant: Unique authoritative current record per (SessionId, SceneKey)
+        builder.HasIndex(x => new { x.SessionId, x.SceneKey }).IsUnique();
         builder.HasIndex(x => new { x.SessionId, x.CharacterId, x.SceneRevision });
         builder.HasIndex(x => x.Fingerprint);
         builder.HasIndex(x => x.CharacterId);

@@ -6,59 +6,71 @@ namespace Tests.VisualContinuity;
 public sealed class TemporalVisualStateTests
 {
     [Fact]
-    public void CharacterVisualState_TracksTemporalValidity_AndInvalidatesCorrectly()
+    public void CharacterVisualState_TracksTemporalValidity_AcrossRevisionRanges()
     {
-        // Arrange
+        // Arrange: ValidFromRevision = 5, ValidUntilRevision = 10
         var charId = Guid.NewGuid();
-        var turn1 = Guid.NewGuid();
-        var turn5 = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
 
         var state = new CharacterVisualState(
             characterId: charId,
             location: "Sanctuary",
-            sceneRevision: 1,
+            sceneRevision: 5,
             outfit: "Ceremonial Silk Robe",
-            validFromTurnId: turn1
+            validFromTurnId: turnId,
+            validFromRevision: 5,
+            validUntilRevision: 10
         );
 
-        Assert.Equal(turn1, state.ValidFromTurnId);
-        Assert.Null(state.ValidUntilTurnId);
-        Assert.True(state.IsActiveForTurn(turn1));
+        // Before start: Revision 4 -> Inactive
+        Assert.False(state.IsActiveForRevision(4));
 
-        // Act: Invalidate on turn 5
-        state.Invalidate(turn5);
+        // Active range: Revision 5 to 9 -> Active
+        Assert.True(state.IsActiveForRevision(5));
+        Assert.True(state.IsActiveForRevision(7));
+        Assert.True(state.IsActiveForRevision(9));
 
-        // Assert: Expired state is no longer active
-        Assert.Equal(turn5, state.ValidUntilTurnId);
-        Assert.False(state.IsActiveForTurn(turn5));
+        // After invalidation: Revision 10 and beyond -> Inactive
+        Assert.False(state.IsActiveForRevision(10));
+        Assert.False(state.IsActiveForRevision(12));
     }
 
     [Fact]
-    public void CharacterVisualMemory_Invalidation_PreventsZombieResurrection()
+    public void CharacterVisualMemory_TemporalInvalidation_ExcludesHistoricalRevisions()
     {
-        // Arrange
         var charId = Guid.NewGuid();
+        var artifactId = Guid.NewGuid();
         var turn1 = Guid.NewGuid();
         var turn3 = Guid.NewGuid();
-        var artifactId = Guid.NewGuid();
 
         var memory = new CharacterVisualMemory(
             characterId: charId,
             visualProfileVersion: 1,
-            sceneRevision: 1,
+            sceneRevision: 2,
             artifactId: artifactId,
             context: "Red Silk Robe",
+            outfit: "Red Silk Robe",
             sourceTurnId: turn1,
-            validFromTurnId: turn1
+            validFromTurnId: turn1,
+            validFromRevision: 2
         );
 
-        Assert.True(memory.IsActiveForTurn(turn1));
+        // Active at revision 2 and 3
+        Assert.True(memory.IsActiveForRevision(2));
+        Assert.True(memory.IsActiveForRevision(3));
 
-        // Invalidate on turn 3
-        memory.Invalidate(turn3);
+        // Invalidate starting at revision 4
+        memory.Invalidate(turn3, supersededByRevision: 4);
 
-        // Assert: Cannot resurrect in turn 4
-        Assert.False(memory.IsActiveForTurn(Guid.NewGuid()));
-        Assert.Equal(turn3, memory.ValidUntilTurnId);
+        // Before start: Revision 1 -> Inactive
+        Assert.False(memory.IsActiveForRevision(1));
+
+        // Active range: Revision 2 and 3 -> Active
+        Assert.True(memory.IsActiveForRevision(2));
+        Assert.True(memory.IsActiveForRevision(3));
+
+        // After invalidation: Revision 4 and beyond -> Inactive
+        Assert.False(memory.IsActiveForRevision(4));
+        Assert.False(memory.IsActiveForRevision(5));
     }
 }

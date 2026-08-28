@@ -1,30 +1,26 @@
-using Application.Common.Exceptions;
+﻿using Application.Common.Exceptions;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.Policies;
 using Domain.ValueObjects.Scene;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Application.Services;
 
 public sealed class VisualContinuityResolver : IVisualContinuityResolver
 {
-    private readonly ISceneVisualStateReader? _stateReader;
+    private readonly ISceneVisualStateReader _stateReader;
     private readonly ILogger<VisualContinuityResolver> _logger;
 
     public VisualContinuityResolver(
-        ISceneVisualStateReader? stateReader,
+        ISceneVisualStateReader stateReader,
         ILogger<VisualContinuityResolver> logger)
     {
-        _stateReader = stateReader;
+        _stateReader = stateReader ?? throw new ArgumentNullException(nameof(stateReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
-    public VisualContinuityResolver(ILogger<VisualContinuityResolver> logger)
-        : this(null, logger)
-    {
     }
 
     public async Task<VisualContinuityResult> ResolveAsync(
@@ -42,24 +38,37 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
         var sceneLocation = new SceneLocation(locationStr);
         var sceneKey = SceneVisualState.NormalizeSceneKey(sceneLocation.Value);
 
-        // 1. Query State Reader if available for active session state & historical re-entry state
-        SceneVisualState? latestSessionState = null;
-        SceneVisualState? reenteredHistoricalState = null;
+        // 1. Authoritative DB Query: Query State Reader for active session state & historical re-entry state
+        SceneVisualState? latestSessionState;
+        SceneVisualState? reenteredHistoricalState;
 
-        if (_stateReader != null && intent.SessionId.HasValue)
+        try
         {
-            try
+            if (intent.SessionId.HasValue && intent.SessionId.Value != Guid.Empty)
             {
                 latestSessionState = await _stateReader.GetLatestBySessionAsync(intent.SessionId.Value, ct);
                 reenteredHistoricalState = await _stateReader.GetLatestBySessionAndSceneKeyAsync(intent.SessionId.Value, sceneKey, ct);
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogWarning(ex, "[VisualContinuityResolver] Failed to load state records from reader for SessionId={SessionId}. Using context fallback.", intent.SessionId);
+                latestSessionState = null;
+                reenteredHistoricalState = null;
             }
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[VisualContinuityResolver] Authoritative DB read failed for SessionId={SessionId}. Failing fast.", intent.SessionId);
+            throw new VisualContinuityResolutionException(
+                failureCategory: SceneCompositionFailureCategory.ContextResolutionFailure,
+                message: $"Failed to read authoritative visual continuity state for session '{intent.SessionId}': {ex.Message}",
+                sessionId: intent.SessionId,
+                turnId: intent.TurnId,
+                sceneRevision: targetRevision,
+                innerException: ex
+            );
+        }
 
-        // 2. Synthesize previous state from Context.PreviousScene if no DB record was found
+        // 2. Synthesize previous state from Context.PreviousScene ONLY IF no DB record was found (cold start / first revision)
         if (latestSessionState == null && context.PreviousScene != null)
         {
             var prevCharState = new CharacterVisualState(
@@ -71,7 +80,8 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
                 pose: context.PreviousScene.Pose,
                 action: context.PreviousScene.Action,
                 activeProps: context.PreviousScene.Environment?.Props,
-                sourceTurnId: context.TurnId
+                sourceTurnId: context.TurnId,
+                validFromRevision: context.PreviousScene.SceneRevision
             );
 
             latestSessionState = new SceneVisualState(
@@ -85,7 +95,8 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
                 lighting: context.PreviousScene.Lighting,
                 atmosphere: context.PreviousScene.Mood,
                 props: context.PreviousScene.Environment?.Props,
-                sourceTurnId: context.TurnId
+                sourceTurnId: context.TurnId,
+                validFromRevision: context.PreviousScene.SceneRevision
             );
         }
 
@@ -101,20 +112,22 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
             currentAction: intent.ActionHint
         );
 
-        // 4. Resolve Character Outfit (CurrentIntent > PreviousSceneState > ActiveVisualMemory > ProfileDefault)
-        var activeValidMemory = context.RelevantVisualMemories?.FirstOrDefault(m => m.ValidUntilTurnId == null) 
-                                ?? (context.PreviousAcceptedVisualMemory?.ValidUntilTurnId == null ? context.PreviousAcceptedVisualMemory : null);
+        // 4. Resolve Character Outfit (CurrentIntent > PreviousSceneState > ActiveVisualMemory.Outfit > ProfileDefault)
+        var activeValidMemory = context.RelevantVisualMemories?.FirstOrDefault(m => m.IsActiveForRevision(targetRevision))
+                                ?? (context.PreviousAcceptedVisualMemory?.IsActiveForRevision(targetRevision) == true ? context.PreviousAcceptedVisualMemory : null);
+
         var (outfit, outfitSource) = VisualContinuityPolicy.ResolveOutfit(
             intentOutfit: intent.OutfitHint,
             previousSceneOutfit: latestSessionState?.CharacterState.Outfit ?? context.PreviousScene?.OutfitContext,
-            activeMemoryContext: activeValidMemory?.Context,
+            activeMemoryOutfit: activeValidMemory?.Outfit,
             profileDefaultOutfit: context.CharacterVisualProfile?.CurrentOutfit
         );
 
-        // 5. Resolve Hairstyle
+        // 5. Resolve Character Hairstyle (CurrentIntent > PreviousSceneState > ActiveVisualMemory.Hairstyle > ProfileDefault)
         var (hairstyle, hairSource) = VisualContinuityPolicy.ResolveHairstyle(
-            intentHairstyle: null,
+            intentHairstyle: intent.HairstyleHint,
             previousSceneHairstyle: latestSessionState?.CharacterState.Hairstyle ?? context.CharacterVisualProfile?.Hairstyle,
+            activeMemoryHairstyle: activeValidMemory?.Hairstyle,
             profileDefaultHairstyle: context.CharacterVisualProfile?.Hairstyle
         );
 
@@ -163,6 +176,14 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
                 invalidatedFields.Add("PreviousOutfit");
             }
 
+            if (string.Equals(hairstyle, latestSessionState.CharacterState.Hairstyle, StringComparison.OrdinalIgnoreCase))
+                preservedFields.Add("Hairstyle");
+            else
+            {
+                changedFields.Add("Hairstyle");
+                invalidatedFields.Add("PreviousHairstyle");
+            }
+
             if (string.Equals(sceneLocation.Value, latestSessionState.Location, StringComparison.OrdinalIgnoreCase))
                 preservedFields.Add("Location");
             else
@@ -198,10 +219,13 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
         }
         else
         {
-            changedFields.AddRange(new[] { "Location", "Outfit", "Pose", "Action", "Weather", "TimeOfDay", "Lighting" });
+            changedFields.AddRange(new[] { "Location", "Outfit", "Hairstyle", "Pose", "Action", "Weather", "TimeOfDay", "Lighting" });
         }
 
         // 10. Construct Resolved CharacterVisualState and SceneVisualState
+        uint currentVersion = latestSessionState?.Version ?? 0;
+        uint nextVersion = currentVersion + 1;
+
         var characterVisualState = new CharacterVisualState(
             characterId: context.CharacterId,
             location: sceneLocation.Value,
@@ -214,7 +238,8 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
             activeProps: props,
             validFromTurnId: intent.TurnId,
             sourceTurnId: intent.TurnId,
-            version: (latestSessionState?.CharacterState.Version ?? 0) + 1
+            validFromRevision: targetRevision,
+            version: nextVersion
         );
 
         var sceneVisualState = new SceneVisualState(
@@ -232,7 +257,8 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
             persistentChanges: persistentChanges,
             validFromTurnId: intent.TurnId,
             sourceTurnId: intent.TurnId,
-            version: (latestSessionState?.Version ?? 0) + 1
+            validFromRevision: targetRevision,
+            version: nextVersion
         );
 
         // 11. Build Provenance Record
@@ -252,16 +278,30 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
             ResolvedAt: DateTime.UtcNow
         );
 
-        // 12. Persist record to DB via reader if available
-        if (_stateReader != null && intent.SessionId.HasValue && intent.SessionId.Value != Guid.Empty)
+        // 12. Authoritative Persistence with CAS Concurrency Check
+        if (intent.SessionId.HasValue && intent.SessionId.Value != Guid.Empty)
         {
             try
             {
-                await _stateReader.SaveStateAsync(sceneVisualState, ct);
+                await _stateReader.SaveStateAsync(sceneVisualState, expectedVersion: currentVersion, ct: ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _logger.LogWarning("[VisualContinuityResolver] Concurrency conflict persisting state for SessionId={SessionId}, SceneKey={SceneKey}",
+                    intent.SessionId, sceneKey);
+                throw;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[VisualContinuityResolver] Non-fatal state persistence failure for SessionId={SessionId}", intent.SessionId);
+                _logger.LogError(ex, "[VisualContinuityResolver] Authoritative persistence failed for SessionId={SessionId}. Failing fast.", intent.SessionId);
+                throw new VisualContinuityResolutionException(
+                    failureCategory: SceneCompositionFailureCategory.ContextResolutionFailure,
+                    message: $"Failed to persist authoritative visual continuity state for session '{intent.SessionId}': {ex.Message}",
+                    sessionId: intent.SessionId,
+                    turnId: intent.TurnId,
+                    sceneRevision: targetRevision,
+                    innerException: ex
+                );
             }
         }
 

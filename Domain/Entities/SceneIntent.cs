@@ -1,8 +1,9 @@
-namespace Domain.Entities;
+﻿namespace Domain.Entities;
 
 /// <summary>
 /// Raw unnormalized scene generation intent extracted from chat dialogue, character turns, or user commands.
 /// Decoupled from normalized SceneSpecification.
+/// Supports explicit outfit, hairstyle, pose, action, and environment hints.
 /// </summary>
 public sealed class SceneIntent
 {
@@ -21,6 +22,7 @@ public sealed class SceneIntent
     public string? TimeOfDayHint { get; private set; }
     public string? MoodHint { get; private set; }
     public string? OutfitHint { get; private set; }
+    public string? HairstyleHint { get; private set; }
 
     public IReadOnlyList<string> ObjectHints { get; private set; }
     public IReadOnlyList<string> AtmosphereHints { get; private set; }
@@ -39,6 +41,7 @@ public sealed class SceneIntent
         string? timeOfDayHint = null,
         string? moodHint = null,
         string? outfitHint = null,
+        string? hairstyleHint = null,
         IEnumerable<string>? objectHints = null,
         IEnumerable<string>? atmosphereHints = null)
     {
@@ -64,6 +67,7 @@ public sealed class SceneIntent
         TimeOfDayHint = timeOfDayHint?.Trim();
         MoodHint = moodHint?.Trim();
         OutfitHint = outfitHint?.Trim();
+        HairstyleHint = hairstyleHint?.Trim();
         ObjectHints = objectHints?.Where(o => !string.IsNullOrWhiteSpace(o)).Select(o => o.Trim()).ToList() ?? new List<string>();
         AtmosphereHints = atmosphereHints?.Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a.Trim()).ToList() ?? new List<string>();
     }

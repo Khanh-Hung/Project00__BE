@@ -47,7 +47,21 @@ public sealed class VisualMemoryInvalidationTests : IDisposable
             art1.PromoteToCurrent(1);
             await db.SceneImages.AddAsync(art1);
 
-            var mem1 = new CharacterVisualMemory(charId, 1, 1, art1.Id, "Red Silk Dress", "outfit", 0.9f, 0.9f, 0.9f, turn1, turn1);
+            var mem1 = new CharacterVisualMemory(
+                characterId: charId,
+                visualProfileVersion: 1,
+                sceneRevision: 1,
+                artifactId: art1.Id,
+                context: "Red Silk Dress",
+                tags: "outfit",
+                outfit: "Red Silk Dress",
+                qualityScore: 0.9f,
+                identityScore: 0.9f,
+                featureScore: 0.9f,
+                sourceTurnId: turn1,
+                validFromTurnId: turn1,
+                validFromRevision: 1
+            );
             await db.CharacterVisualMemories.AddAsync(mem1);
 
             // Seed Artifact 2 & Memory 2 (White Gown)
@@ -55,11 +69,25 @@ public sealed class VisualMemoryInvalidationTests : IDisposable
             art2.PromoteToCurrent(2);
             await db.SceneImages.AddAsync(art2);
 
-            var mem2 = new CharacterVisualMemory(charId, 1, 2, art2.Id, "White Flowing Gown", "outfit", 0.95f, 0.95f, 0.95f, turn2, turn2);
+            var mem2 = new CharacterVisualMemory(
+                characterId: charId,
+                visualProfileVersion: 1,
+                sceneRevision: 2,
+                artifactId: art2.Id,
+                context: "White Flowing Gown",
+                tags: "outfit",
+                outfit: "White Flowing Gown",
+                qualityScore: 0.95f,
+                identityScore: 0.95f,
+                featureScore: 0.95f,
+                sourceTurnId: turn2,
+                validFromTurnId: turn2,
+                validFromRevision: 2
+            );
             await db.CharacterVisualMemories.AddAsync(mem2);
 
-            // Invalidate Memory 1 (superseded by turn 2)
-            mem1.Invalidate(turn2);
+            // Invalidate Memory 1 (superseded starting at revision 2)
+            mem1.Invalidate(turn2, supersededByRevision: 2);
 
             await db.SaveChangesAsync();
         }
@@ -73,6 +101,7 @@ public sealed class VisualMemoryInvalidationTests : IDisposable
             // Assert: Only active Memory 2 (White Flowing Gown) is returned; Memory 1 is excluded
             Assert.Single(relevantMemories);
             Assert.Equal("White Flowing Gown", relevantMemories[0].Context);
+            Assert.Equal("White Flowing Gown", relevantMemories[0].Outfit);
             Assert.Null(relevantMemories[0].ValidUntilTurnId);
         }
     }

@@ -69,7 +69,7 @@ public static class VisualContinuityPolicy
     public static (string Outfit, string Source) ResolveOutfit(
         string? intentOutfit,
         string? previousSceneOutfit,
-        string? activeMemoryContext,
+        string? activeMemoryOutfit,
         string? profileDefaultOutfit)
     {
         if (!string.IsNullOrWhiteSpace(intentOutfit))
@@ -82,10 +82,9 @@ public static class VisualContinuityPolicy
             return (previousSceneOutfit.Trim(), "PreviousSceneState");
         }
 
-        if (!string.IsNullOrWhiteSpace(activeMemoryContext))
+        if (!string.IsNullOrWhiteSpace(activeMemoryOutfit))
         {
-            // Extract outfit from valid memory context if available
-            return (activeMemoryContext.Trim(), "ActiveVisualMemory");
+            return (activeMemoryOutfit.Trim(), "ActiveVisualMemory");
         }
 
         if (!string.IsNullOrWhiteSpace(profileDefaultOutfit))
@@ -97,11 +96,13 @@ public static class VisualContinuityPolicy
     }
 
     /// <summary>
-    /// Resolves character hairstyle applying Authority Hierarchy.
+    /// Resolves character hairstyle applying Authority Hierarchy:
+    /// Current Intent > Current Scene State > Recent Valid Visual Memory > Profile Default
     /// </summary>
     public static (string? Hairstyle, string Source) ResolveHairstyle(
         string? intentHairstyle,
         string? previousSceneHairstyle,
+        string? activeMemoryHairstyle,
         string? profileDefaultHairstyle)
     {
         if (!string.IsNullOrWhiteSpace(intentHairstyle))
@@ -112,6 +113,11 @@ public static class VisualContinuityPolicy
         if (!string.IsNullOrWhiteSpace(previousSceneHairstyle))
         {
             return (previousSceneHairstyle.Trim(), "PreviousSceneState");
+        }
+
+        if (!string.IsNullOrWhiteSpace(activeMemoryHairstyle))
+        {
+            return (activeMemoryHairstyle.Trim(), "ActiveVisualMemory");
         }
 
         if (!string.IsNullOrWhiteSpace(profileDefaultHairstyle))
