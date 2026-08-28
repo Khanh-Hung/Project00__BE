@@ -224,17 +224,17 @@ public sealed class ProductionSceneCompositionIntegrationTests : IDisposable
         Assert.Equal(1, imageService.CallCount);
 
         // 7. Verify DB State: ImageGenerationJob and SceneImage Artifact created and accepted
-        var job = await db.ImageGenerationJobs.FirstOrDefaultAsync(j => j.GenerationRequestId == generationRequestId);
+        var job = await db.ImageGenerationJobs.AsNoTracking().FirstOrDefaultAsync(j => j.GenerationRequestId == generationRequestId);
         Assert.NotNull(job);
         Assert.Equal(ImageJobStatus.Completed, job.Status);
         Assert.Equal(1, job.SceneRevision);
         Assert.NotNull(job.AcceptedAttemptId);
 
-        var acceptedAttempt = await db.ImageGenerationAttempts.FirstOrDefaultAsync(a => a.Id == job.AcceptedAttemptId);
+        var acceptedAttempt = await db.ImageGenerationAttempts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == job.AcceptedAttemptId);
         Assert.NotNull(acceptedAttempt);
         Assert.Equal(GenerationAttemptStatus.Succeeded, acceptedAttempt.Status);
 
-        var createdImage = await db.SceneImages.FirstOrDefaultAsync(img => img.GenerationRequestId == generationRequestId);
+        var createdImage = await db.SceneImages.AsNoTracking().FirstOrDefaultAsync(img => img.GenerationRequestId == generationRequestId);
         Assert.NotNull(createdImage);
         Assert.True(createdImage.IsCurrent);
         Assert.Equal(1, createdImage.SceneRevision);
@@ -242,7 +242,7 @@ public sealed class ProductionSceneCompositionIntegrationTests : IDisposable
         Assert.Equal(ArtifactLifecycleStatus.Current, createdImage.LifecycleStatus);
 
         // 8. Verify Character Visual Profile core identity remains unmutated (Strict Identity Isolation)
-        var profileAfter = await db.CharacterVisualProfiles.FirstAsync(p => p.CharacterId == lyraId);
+        var profileAfter = await db.CharacterVisualProfiles.AsNoTracking().FirstAsync(p => p.CharacterId == lyraId);
         Assert.Equal("Deep Violet", profileAfter.EyeColor);
         Assert.Equal("Silver Lilac", profileAfter.HairColor);
         Assert.Equal(2, profileAfter.VisualVersion);
