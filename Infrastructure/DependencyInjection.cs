@@ -200,6 +200,10 @@ public static class DependencyInjection
         services.AddScoped<ISceneVisualStateReader, Infrastructure.Services.Scene.SceneVisualStateReader>();
         services.AddScoped<IVisualContinuityResolver, Application.Services.VisualContinuityResolver>();
 
+        // PR #33: Autonomous Visual Moments & Character Activity
+        services.AddScoped<ICharacterActivityDecisionService, Application.Services.CharacterActivityDecisionService>();
+        services.AddScoped<Infrastructure.BackgroundJobs.CharacterActivityScheduler>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();

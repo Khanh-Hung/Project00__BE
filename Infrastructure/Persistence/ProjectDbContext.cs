@@ -38,6 +38,7 @@ public class ProjectDbContext : DbContext
     public DbSet<CharacterVisualMemory> CharacterVisualMemories { get; set; }
     public DbSet<SceneSpecification> SceneSpecifications { get; set; }
     public DbSet<SceneVisualStateRecord> SceneVisualStates { get; set; }
+    public DbSet<CharacterActivity> CharacterActivities { get; set; }
 
     private string NormalizeUserId()
     {
