@@ -95,17 +95,19 @@ public sealed class AutonomousConcurrencyTests : IDisposable
     }
 
     [Fact]
-    public async Task TenConcurrentWorkers_ExecutingVisualMomentActivity_CreatesExactlyOneVisualMomentAndNineSuppressed()
+    public async Task TenConcurrentWorkers_WithSameExecutionId_CreatesExactlyOneVisualMomentAndNineSuppressed()
     {
         var charId = Guid.NewGuid();
         var character = new Character("Valerius", "Explorer", "http://avatar.png", "Brave explorer", "Hello", "Anime", worldDescription: "Ancient Ruins")
         {
             Id = charId
         };
+        var goal = new CharacterGoal(charId, "Survey Ancient Ruins", CharacterGoalType.Exploration, 100);
 
         using (var db = new ProjectDbContext(_options))
         {
             await db.Characters.AddAsync(character);
+            await db.CharacterGoals.AddAsync(goal);
             await db.SaveChangesAsync();
         }
 
@@ -121,13 +123,17 @@ public sealed class AutonomousConcurrencyTests : IDisposable
             PoseHint: "standing attentively inspecting wall",
             OutfitHint: "Exploration Attire",
             EnvironmentHint: "Atmospheric torchlight",
-            DecisionFingerprint: "fingerprint-visual-concurrent-001"
+            DecisionFingerprint: "fingerprint-visual-concurrent-001",
+            GoalId: goal.Id
         );
 
         var testTime = new DateTime(2026, 8, 28, 15, 0, 0, DateTimeKind.Utc);
         var timeBucket = "2026-08-28T15:00";
 
-        // 10 concurrent workers directly dispatching the visual moment execution
+        // Shared caller-owned ExecutionId for this logical execution attempt
+        var sharedExecutionId = Guid.NewGuid();
+
+        // 10 concurrent workers directly dispatching the visual moment execution with the SAME ExecutionId
         var tasks = Enumerable.Range(1, 10).Select(async workerId =>
         {
             await using var workerDb = new ProjectDbContext(_options);
@@ -141,7 +147,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
                 Candidate: candidate,
                 CurrentTime: testTime,
                 TimeBucket: timeBucket,
-                ExecutionId: Guid.NewGuid(),
+                ExecutionId: sharedExecutionId, // Caller-owned shared execution ID
                 CurrentVisualState: new CharacterVisualState(charId, "Ancient Ruins", sceneRevision: 1),
                 CurrentState: CharacterStateSnapshot.CreateDefault(),
                 SceneRevision: 1
@@ -168,6 +174,111 @@ public sealed class AutonomousConcurrencyTests : IDisposable
             // Exactly 1 SceneSpecification persisted in DB (no duplicate visual generations)
             var specCount = await db.SceneSpecifications.CountAsync(s => s.CharacterId == charId);
             Assert.Equal(1, specCount);
+
+            // Exactly 1 Goal contribution
+            var contribCount = await db.GoalActivityContributions.CountAsync(c => c.GoalId == goal.Id);
+            Assert.Equal(1, contribCount);
+        }
+    }
+
+    [Fact]
+    public async Task ExplicitRetry_WithSameExecutionId_ReturnsDuplicateSuppressed_WithoutDuplicateEffects()
+    {
+        var charId = Guid.NewGuid();
+        var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime")
+        {
+            Id = charId
+        };
+        var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100);
+
+        using (var db = new ProjectDbContext(_options))
+        {
+            await db.Characters.AddAsync(character);
+            await db.CharacterGoals.AddAsync(goal);
+            await db.SaveChangesAsync();
+        }
+
+        var candidate = new CharacterActivityCandidate(
+            ActivityType: CharacterActivityType.Reading,
+            Location: "Grand Library",
+            Reason: "Deep research into potion recipes",
+            Priority: ActivityPriority.Normal,
+            DurationMinutes: 30, // 15 contribution
+            ShouldCreateVisualMoment: true,
+            Confidence: 0.95f,
+            ActionHint: "reading ancient texts",
+            PoseHint: "seated at desk",
+            OutfitHint: "Scholar Robes",
+            EnvironmentHint: "Sunlit Library",
+            DecisionFingerprint: "fingerprint-retry-001",
+            GoalId: goal.Id
+        );
+
+        var testTime = new DateTime(2026, 8, 28, 16, 0, 0, DateTimeKind.Utc);
+        var timeBucket = "2026-08-28T16:00";
+        var executionId = Guid.NewGuid();
+
+        var request = new ActivityExecutionRequest(
+            Character: character,
+            Candidate: candidate,
+            CurrentTime: testTime,
+            TimeBucket: timeBucket,
+            ExecutionId: executionId,
+            CurrentVisualState: new CharacterVisualState(charId, "Grand Library", sceneRevision: 1),
+            CurrentState: CharacterStateSnapshot.CreateDefault(),
+            SceneRevision: 1
+        );
+
+        // Attempt 1: First invocation -> Normal Success
+        using (var db = new ProjectDbContext(_options))
+        {
+            var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
+            var fakePipeline = new FakeSceneCompositionPipelineService();
+            var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+
+            var res1 = await execService.ExecuteActivityAsync(request);
+
+            Assert.True(res1.Success);
+            Assert.False(res1.IsDuplicateSuppressed);
+            Assert.Equal(executionId, res1.ExecutionId);
+            Assert.NotNull(res1.Activity);
+            Assert.NotNull(res1.GoalResult);
+            Assert.True(res1.VisualMomentCreated);
+        }
+
+        // Attempt 2: Explicit Retry with the SAME ExecutionId & Request -> Duplicate Suppressed
+        using (var db = new ProjectDbContext(_options))
+        {
+            var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
+            var fakePipeline = new FakeSceneCompositionPipelineService();
+            var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+
+            var res2 = await execService.ExecuteActivityAsync(request);
+
+            Assert.True(res2.Success);
+            Assert.True(res2.IsDuplicateSuppressed);
+            Assert.Equal(executionId, res2.ExecutionId);
+            Assert.Null(res2.Activity);
+            Assert.Null(res2.GoalResult);
+            Assert.False(res2.VisualMomentCreated);
+        }
+
+        // Assert DB Invariant: Exactly 1 row for each entity, exactly 15 units of goal progress
+        using (var db = new ProjectDbContext(_options))
+        {
+            var actCount = await db.CharacterActivities.CountAsync(a => a.CharacterId == charId && a.TimeBucket == timeBucket);
+            Assert.Equal(1, actCount);
+
+            var specCount = await db.SceneSpecifications.CountAsync(s => s.CharacterId == charId);
+            Assert.Equal(1, specCount);
+
+            var contribCount = await db.GoalActivityContributions.CountAsync(c => c.GoalId == goal.Id);
+            Assert.Equal(1, contribCount);
+
+            var savedGoal = await db.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
+            Assert.Equal(15, savedGoal.CurrentValue);
         }
     }
 }

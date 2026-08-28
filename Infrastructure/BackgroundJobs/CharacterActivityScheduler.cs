@@ -203,12 +203,14 @@ public sealed class CharacterActivityScheduler
             return false;
         }
 
-        // 3. Execute Activity via ActivityExecutionService
+        // 3. Execute Activity via ActivityExecutionService with caller-owned ExecutionId
+        var executionId = Guid.NewGuid();
         var executionRequest = new ActivityExecutionRequest(
             Character: character,
             Candidate: decision.Candidate,
             CurrentTime: now,
             TimeBucket: timeBucket,
+            ExecutionId: executionId,
             CurrentVisualState: currentVisualState,
             CurrentState: CharacterStateSnapshot.CreateDefault(),
             SceneRevision: sceneRevision
