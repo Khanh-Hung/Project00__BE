@@ -46,8 +46,8 @@ public sealed class CharacterGoal : BaseEntity
         if (string.IsNullOrWhiteSpace(title))
             throw new ArgumentException("Title cannot be empty.", nameof(title));
 
-        if (targetValue <= 0)
-            throw new ArgumentOutOfRangeException(nameof(targetValue), "TargetValue must be greater than zero.");
+        if (double.IsNaN(targetValue) || double.IsInfinity(targetValue) || targetValue <= 0)
+            throw new ArgumentOutOfRangeException(nameof(targetValue), "TargetValue must be a valid number greater than zero.");
 
         var time = now ?? DateTime.UtcNow;
 
@@ -117,11 +117,6 @@ public sealed class CharacterGoal : BaseEntity
         CurrentValue = Math.Max(CurrentValue, TargetValue);
         Progress = 1.0f;
 
-        foreach (var milestone in _milestones.Where(m => m.Status == CharacterGoalMilestoneStatus.Active))
-        {
-            milestone.Complete(CompletedAt);
-        }
-
         Version++;
         Touch();
     }
@@ -155,8 +150,15 @@ public sealed class CharacterGoal : BaseEntity
 
     public CharacterGoalMilestone AddMilestone(string title, int order, double targetValue, string? description = null)
     {
+        if (double.IsNaN(targetValue) || double.IsInfinity(targetValue) || targetValue <= 0)
+            throw new ArgumentOutOfRangeException(nameof(targetValue), "TargetValue must be a valid number greater than zero.");
+
         if (_milestones.Any(m => m.Order == order))
             throw new ArgumentException($"Milestone with order {order} already exists.", nameof(order));
+
+        var currentTotalMilestones = _milestones.Sum(m => m.TargetValue);
+        if (currentTotalMilestones + targetValue > TargetValue)
+            throw new InvalidOperationException($"Total milestone target ({currentTotalMilestones + targetValue}) cannot exceed goal TargetValue ({TargetValue}).");
 
         var milestone = new CharacterGoalMilestone(Id, title, order, targetValue, description);
         _milestones.Add(milestone);
@@ -179,8 +181,8 @@ public sealed class CharacterGoal : BaseEntity
         if (Status != CharacterGoalStatus.Active)
             throw new InvalidOperationException($"Cannot record progress on a goal with status '{Status}'.");
 
-        if (incrementValue < 0)
-            throw new ArgumentOutOfRangeException(nameof(incrementValue), "Progress increment cannot be negative.");
+        if (double.IsNaN(incrementValue) || double.IsInfinity(incrementValue) || incrementValue < 0)
+            throw new ArgumentOutOfRangeException(nameof(incrementValue), "Progress increment must be a valid non-negative number.");
 
         var time = now ?? DateTime.UtcNow;
         CurrentValue += incrementValue;

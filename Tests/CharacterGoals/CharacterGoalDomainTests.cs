@@ -88,13 +88,36 @@ public sealed class CharacterGoalDomainTests
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
     }
 
-    [Fact]
-    public void GoalProgress_NegativeTargetOrIncrement_ThrowsArgumentOutOfRangeException()
+    [Theory]
+    [InlineData(-10)]
+    [InlineData(0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GoalCreation_InvalidTargetValue_ThrowsArgumentOutOfRangeException(double invalidTarget)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            new CharacterGoal(Guid.NewGuid(), "Invalid", CharacterGoalType.Custom, -5));
+            new CharacterGoal(Guid.NewGuid(), "Invalid", CharacterGoalType.Custom, invalidTarget));
+    }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GoalProgress_InvalidIncrementValue_ThrowsArgumentOutOfRangeException(double invalidIncrement)
+    {
         var goal = new CharacterGoal(Guid.NewGuid(), "Valid", CharacterGoalType.Custom, 10);
-        Assert.Throws<ArgumentOutOfRangeException>(() => goal.RecordProgress(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => goal.RecordProgress(invalidIncrement));
+    }
+
+    [Fact]
+    public void AddMilestone_ExceedingGoalTargetValue_ThrowsInvalidOperationException()
+    {
+        var goal = new CharacterGoal(Guid.NewGuid(), "Mastery", CharacterGoalType.SkillDevelopment, 100);
+        goal.AddMilestone("Step 1", 1, 60);
+
+        // Step 2 with 50 exceeds remaining 40 (60 + 50 = 110 > 100)
+        Assert.Throws<InvalidOperationException>(() => goal.AddMilestone("Step 2", 2, 50));
     }
 }

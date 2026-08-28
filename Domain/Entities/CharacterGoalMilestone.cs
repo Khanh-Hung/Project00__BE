@@ -1,4 +1,4 @@
-using Domain.Common;
+﻿using Domain.Common;
 using Domain.Enums;
 
 namespace Domain.Entities;
@@ -33,8 +33,8 @@ public sealed class CharacterGoalMilestone : BaseEntity
         if (string.IsNullOrWhiteSpace(title))
             throw new ArgumentException("Title cannot be empty.", nameof(title));
 
-        if (targetValue <= 0)
-            throw new ArgumentOutOfRangeException(nameof(targetValue), "TargetValue must be greater than zero.");
+        if (double.IsNaN(targetValue) || double.IsInfinity(targetValue) || targetValue <= 0)
+            throw new ArgumentOutOfRangeException(nameof(targetValue), "TargetValue must be a valid number greater than zero.");
 
         if (order < 0)
             throw new ArgumentOutOfRangeException(nameof(order), "Order cannot be negative.");
@@ -62,8 +62,8 @@ public sealed class CharacterGoalMilestone : BaseEntity
         if (Status == CharacterGoalMilestoneStatus.Completed)
             return;
 
-        if (amount < 0)
-            throw new ArgumentOutOfRangeException(nameof(amount), "Progress amount cannot be negative.");
+        if (double.IsNaN(amount) || double.IsInfinity(amount) || amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Progress amount must be a valid non-negative number.");
 
         CurrentValue += amount;
         if (CurrentValue >= TargetValue)

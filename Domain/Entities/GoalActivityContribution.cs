@@ -23,8 +23,8 @@ public sealed class GoalActivityContribution : BaseEntity
         if (activityId == Guid.Empty)
             throw new ArgumentException("ActivityId cannot be empty.", nameof(activityId));
 
-        if (contributionValue <= 0)
-            throw new ArgumentOutOfRangeException(nameof(contributionValue), "ContributionValue must be greater than zero.");
+        if (double.IsNaN(contributionValue) || double.IsInfinity(contributionValue) || contributionValue <= 0)
+            throw new ArgumentOutOfRangeException(nameof(contributionValue), "ContributionValue must be a valid number greater than zero.");
 
         GoalId = goalId;
         ActivityId = activityId;

@@ -70,6 +70,27 @@ public sealed class CharacterGoalMilestoneTests
         Assert.Equal(100, goal.CurrentValue);
     }
 
+    [Theory]
+    [InlineData(-10)]
+    [InlineData(0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void MilestoneCreation_InvalidTarget_ThrowsArgumentOutOfRangeException(double invalidTarget)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new CharacterGoalMilestone(Guid.NewGuid(), "Milestone", 1, invalidTarget));
+    }
+
+    [Theory]
+    [InlineData(-5)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void MilestoneProgress_InvalidAmount_ThrowsArgumentOutOfRangeException(double invalidAmount)
+    {
+        var m = new CharacterGoalMilestone(Guid.NewGuid(), "Milestone", 1, 10);
+        Assert.Throws<ArgumentOutOfRangeException>(() => m.RecordProgress(invalidAmount));
+    }
+
     [Fact]
     public void DuplicateMilestoneOrder_ThrowsArgumentException()
     {
