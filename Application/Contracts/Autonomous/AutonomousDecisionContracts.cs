@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Goals;
 using Domain.Entities;
 using Domain.Policies;
@@ -25,7 +25,8 @@ public sealed record AutonomousDecisionRequest(
     string? WorldDescription = null,
     IReadOnlyList<string>? ActiveGoals = null,
     IReadOnlyList<CharacterGoalSnapshot>? Goals = null,
-    int SceneRevision = 1
+    int SceneRevision = 1,
+    CharacterInternalExperienceSnapshot? InternalExperience = null
 );
 
 public sealed record AutonomousDecisionResult(
