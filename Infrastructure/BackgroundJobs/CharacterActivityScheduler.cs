@@ -53,6 +53,7 @@ public sealed class CharacterActivityScheduler
                 new Infrastructure.Services.Goals.GoalProgressService(dbContext, NullLogger<Infrastructure.Services.Goals.GoalProgressService>.Instance),
                 sceneCompositionPipeline,
                 visualStateReader,
+                new Infrastructure.Services.State.CharacterStateTransitionService(dbContext, NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance),
                 NullLogger<Infrastructure.Services.Autonomous.ActivityExecutionService>.Instance),
             visualStateReader,
             logger)
@@ -179,13 +180,24 @@ public sealed class CharacterActivityScheduler
             }
         }
 
+        // Authoritative state requirement: load persisted state or initialize new persistent entity
+        var stateEntity = await _dbContext.CharacterStates
+            .FirstOrDefaultAsync(s => s.CharacterId == character.Id, ct);
+        if (stateEntity == null)
+        {
+            stateEntity = new CharacterState(character.Id, initializedAtUtc: now);
+            await _dbContext.CharacterStates.AddAsync(stateEntity, ct);
+            await _dbContext.SaveChangesAsync(ct);
+        }
+        var stateSnapshot = stateEntity.ToSnapshot();
+
         var decisionRequest = new AutonomousDecisionRequest(
             CharacterId: character.Id,
             CurrentTime: now,
             CurrentLocation: currentLocation,
             TimeBucket: timeBucket,
             CurrentVisualState: currentVisualState,
-            StateSnapshot: CharacterStateSnapshot.CreateDefault(),
+            StateSnapshot: stateSnapshot,
             RecentActivities: recentActivities,
             RecentVisualMemories: recentMemories,
             PersonalityPrompt: character.PersonalityPrompt,
@@ -212,7 +224,7 @@ public sealed class CharacterActivityScheduler
             TimeBucket: timeBucket,
             ExecutionId: executionId,
             CurrentVisualState: currentVisualState,
-            CurrentState: CharacterStateSnapshot.CreateDefault(),
+            CurrentState: stateSnapshot,
             SceneRevision: sceneRevision
         );
 

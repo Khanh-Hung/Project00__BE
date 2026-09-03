@@ -166,7 +166,8 @@ public static class DependencyInjection
         services.AddScoped<IArtifactAcceptanceService, Infrastructure.Services.ArtifactAcceptanceService>();
         services.AddScoped<IOutboxLifecycleEventDispatcher, Infrastructure.Services.OutboxLifecycleEventDispatcher>();
         services.AddScoped<IImageGenerationOrchestrator, Infrastructure.Services.ImageGenerationOrchestrator>();
-        services.AddScoped<IImageGenerationJobHandler, Infrastructure.Services.ImageGenerationJobHandler>();
+        services.AddScoped<IImageGenerationJobHandler>(sp =>
+            new Infrastructure.Services.ImageGenerationJobHandler(sp.GetRequiredService<IImageGenerationOrchestrator>()));
 
         // PR #26: Generation Queue, Recovery, Cancellation & Reliability Services
         services.AddSingleton<IGenerationJobQueue, GenerationQueue>();
@@ -216,7 +217,13 @@ public static class DependencyInjection
 
         // PR #33: Autonomous Visual Moments & Character Activity
         services.AddScoped<ICharacterActivityDecisionService, Application.Services.CharacterActivityDecisionService>();
-        services.AddScoped<Infrastructure.BackgroundJobs.CharacterActivityScheduler>();
+        services.AddScoped<Infrastructure.BackgroundJobs.CharacterActivityScheduler>(sp =>
+            new Infrastructure.BackgroundJobs.CharacterActivityScheduler(
+                sp.GetRequiredService<Infrastructure.Persistence.CoreDbContext>(),
+                sp.GetRequiredService<Application.Interfaces.IAutonomousDecisionService>(),
+                sp.GetRequiredService<Application.Interfaces.IActivityExecutionService>(),
+                sp.GetRequiredService<Application.Interfaces.ISceneVisualStateReader>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Infrastructure.BackgroundJobs.CharacterActivityScheduler>>()));
 
         // PR #34: Character Goals & Long-term State
         services.AddScoped<ICharacterGoalRepository, Infrastructure.Persistence.Repositories.CharacterGoalRepository>();
@@ -232,6 +239,13 @@ public static class DependencyInjection
         // PR #37: Autonomous Character Lifecycle Orchestrator
         services.AddScoped<IAutonomousCharacterContextLoader, Infrastructure.Services.Autonomy.AutonomousCharacterContextLoader>();
         services.AddScoped<IAutonomousCharacterLifecycleOrchestrator, Infrastructure.Services.Autonomy.AutonomousCharacterLifecycleOrchestrator>();
+
+        // PR #38: Persistent Character State & Needs Engine
+        services.AddSingleton<Domain.Policies.ICharacterStateEvolutionPolicy, Domain.Policies.CharacterStateEvolutionPolicy>();
+        services.AddScoped<Infrastructure.Services.State.CharacterStateTransitionService>();
+        services.AddScoped<ICharacterStateTransitionService>(sp => sp.GetRequiredService<Infrastructure.Services.State.CharacterStateTransitionService>());
+        services.AddScoped<ICharacterStateTransitionStager>(sp => sp.GetRequiredService<Infrastructure.Services.State.CharacterStateTransitionService>());
+        services.AddScoped<ICharacterStateService, Infrastructure.Services.State.CharacterStateService>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();

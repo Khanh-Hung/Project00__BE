@@ -67,7 +67,7 @@ public sealed class AutonomousFailureMatrixTests : IDisposable
         var goalService = new GoalProgressService(brokenDb, NullLogger<GoalProgressService>.Instance);
         var fakePipeline = new FakeSceneCompositionPipelineService();
         var stateReader = new SceneVisualStateReader(brokenDb, NullLogger<SceneVisualStateReader>.Instance);
-        var execService = new ActivityExecutionService(brokenDb, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+        var execService = new ActivityExecutionService(brokenDb, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(brokenDb, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
 
         var character = new Character("Valerius", "Alchemist", "http://avatar.png", "Scholar", "Hello", "Anime");
         var candidate = new CharacterActivityCandidate(
@@ -130,7 +130,7 @@ public sealed class AutonomousFailureMatrixTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execService.ExecuteActivityAsync(request, cts.Token));
         }

@@ -17,6 +17,7 @@ public sealed class ActivityExecutionService : IActivityExecutionService
     private readonly IGoalProgressService _goalProgressService;
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
     private readonly ISceneVisualStateReader _visualStateReader;
+    private readonly ICharacterStateTransitionStager _stateTransitionService;
     private readonly ILogger<ActivityExecutionService> _logger;
 
     public ActivityExecutionService(
@@ -24,12 +25,14 @@ public sealed class ActivityExecutionService : IActivityExecutionService
         IGoalProgressService goalProgressService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
+        ICharacterStateTransitionStager stateTransitionService,
         ILogger<ActivityExecutionService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _goalProgressService = goalProgressService ?? throw new ArgumentNullException(nameof(goalProgressService));
         _sceneCompositionPipeline = sceneCompositionPipeline ?? throw new ArgumentNullException(nameof(sceneCompositionPipeline));
         _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
+        _stateTransitionService = stateTransitionService ?? throw new ArgumentNullException(nameof(stateTransitionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -45,7 +48,18 @@ public sealed class ActivityExecutionService : IActivityExecutionService
         var now = request.CurrentTime;
         var timeBucket = request.TimeBucket;
         var executionId = request.ExecutionId ?? Guid.NewGuid();
-        var currentState = request.CurrentState ?? CharacterStateSnapshot.CreateDefault();
+
+        // Authoritative state requirement: load persisted state or initialize new persistent entity
+        var persistedState = await _dbContext.CharacterStates
+            .FirstOrDefaultAsync(s => s.CharacterId == character.Id, ct);
+
+        if (persistedState == null)
+        {
+            persistedState = new CharacterState(character.Id, initializedAtUtc: now);
+            await _dbContext.CharacterStates.AddAsync(persistedState, ct);
+        }
+
+        var currentState = persistedState.ToSnapshot();
 
         // 1. Create CharacterActivity entity
         var activity = new CharacterActivity(
@@ -65,42 +79,93 @@ public sealed class ActivityExecutionService : IActivityExecutionService
             now: now
         );
 
-        // 2. Persist Activity with Distributed Concurrency Guard
+        // 0. Pre-check idempotency on read-only path before opening transaction
+        var existingActivity = await _dbContext.CharacterActivities
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.CharacterId == character.Id && a.TimeBucket == timeBucket, ct);
+
+        var existingTransition = await _dbContext.CharacterStateTransitions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.CharacterId == character.Id && t.ExecutionId == executionId, ct);
+
+        if (existingActivity != null || existingTransition != null)
+        {
+            var refreshedState = await _dbContext.CharacterStates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.CharacterId == character.Id, ct);
+
+            return new ActivityExecutionResult(
+                Success: true,
+                IsDuplicateSuppressed: true,
+                ExecutionId: executionId,
+                Activity: null,
+                NewState: refreshedState?.ToSnapshot() ?? currentState,
+                GoalResult: null,
+                VisualMomentCreated: false,
+                SceneIntentId: null,
+                SceneSpecificationId: null,
+                Message: "Idempotent duplicate activity suppressed."
+            );
+        }
+
+        // P0-2: ATOMIC TRANSACTION BOUNDARY: Activity + State Transition commit together
+        var isOuterTx = _dbContext.Database.CurrentTransaction == null;
+        await using var tx = isOuterTx ? await _dbContext.Database.BeginTransactionAsync(ct) : null;
+
         try
         {
+            // Stage activity entity
             await _dbContext.CharacterActivities.AddAsync(activity, ct);
+
+            // Stage state transition
+            var outcomeDelta = CharacterActivityOutcomeStatePolicy.CalculateOutcomeDelta(candidate.ActivityType);
+            var transitionContext = new Application.Common.StateTransitionContext(
+                ExecutionId: executionId,
+                SourceType: "ActivityOutcome",
+                SourceId: activity.Id.ToString(),
+                Reason: $"Completed activity {candidate.ActivityType}"
+            );
+
+            _stateTransitionService.StageTransition(persistedState, outcomeDelta, transitionContext, now);
+
+            // Commit atomic boundary
             await _dbContext.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex)
-        {
-            if (IsUniqueConstraintViolation(ex))
+            if (tx != null)
             {
-                _logger.LogInformation(ex, "[ActivityExecutionService] Idempotent duplicate activity suppressed for ExecutionId={ExecutionId}, CharacterId={CharacterId}, TimeBucket={TimeBucket}",
-                    executionId, character.Id, timeBucket);
-
-                _dbContext.Entry(activity).State = EntityState.Detached;
-
-                return new ActivityExecutionResult(
-                    Success: true,
-                    IsDuplicateSuppressed: true,
-                    ExecutionId: executionId,
-                    Activity: null,
-                    NewState: currentState,
-                    GoalResult: null,
-                    VisualMomentCreated: false,
-                    SceneIntentId: null,
-                    SceneSpecificationId: null,
-                    Message: "Idempotent duplicate activity suppressed."
-                );
+                await tx.CommitAsync(ct);
             }
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            if (tx != null) await tx.RollbackAsync(ct);
+            _dbContext.ChangeTracker.Clear();
 
-            _logger.LogError(ex, "[ActivityExecutionService] Non-duplicate database failure saving activity for ExecutionId={ExecutionId}, CharacterId={CharacterId}, TimeBucket={TimeBucket}",
+            _logger.LogInformation(
+                ex,
+                "[ActivityExecutionService] Idempotent duplicate activity suppressed for ExecutionId={ExecutionId}, CharacterId={CharacterId}, TimeBucket={TimeBucket}",
                 executionId, character.Id, timeBucket);
+
+            return new ActivityExecutionResult(
+                Success: true,
+                IsDuplicateSuppressed: true,
+                ExecutionId: executionId,
+                Activity: null,
+                NewState: currentState,
+                GoalResult: null,
+                VisualMomentCreated: false,
+                SceneIntentId: null,
+                SceneSpecificationId: null,
+                Message: "Idempotent duplicate activity suppressed."
+            );
+        }
+        catch
+        {
+            if (tx != null) await tx.RollbackAsync(ct);
+            _dbContext.ChangeTracker.Clear();
             throw;
         }
 
-        // 3. Apply Deterministic State Outcome
-        var newState = CharacterActivityOutcomePolicy.ApplyOutcome(currentState, candidate.ActivityType);
+        var newState = persistedState.ToSnapshot();
 
         // 4. Record Goal Progress if GoalId is attached
         GoalProgressResult? goalResult = null;
@@ -202,61 +267,19 @@ public sealed class ActivityExecutionService : IActivityExecutionService
 
     public static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
-        var inner = ex.InnerException;
-        while (inner != null)
-        {
-            if (inner is Npgsql.PostgresException pg)
-            {
-                if (pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation)
-                {
-                    if (string.IsNullOrWhiteSpace(pg.ConstraintName) ||
-                        pg.ConstraintName.Contains("CharacterActivities", StringComparison.OrdinalIgnoreCase) ||
-                        pg.ConstraintName.Contains("TimeBucket", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            var sqlStateProp = inner.GetType().GetProperty("SqlState");
-            if (sqlStateProp != null)
-            {
-                var sqlState = sqlStateProp.GetValue(inner)?.ToString();
-                if (sqlState == Npgsql.PostgresErrorCodes.UniqueViolation || sqlState == "23505")
-                {
-                    return true;
-                }
-            }
-
-            var sqliteErrProp = inner.GetType().GetProperty("SqliteErrorCode");
-            if (sqliteErrProp != null)
-            {
-                var errCode = sqliteErrProp.GetValue(inner);
-                if (errCode is int code && code == 19)
-                {
-                    var innerMsg = inner.Message ?? "";
-                    if (innerMsg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) &&
-                        (innerMsg.Contains("CharacterActivities", StringComparison.OrdinalIgnoreCase) || innerMsg.Contains("TimeBucket", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            inner = inner.InnerException;
-        }
-
-        var msg = (ex.InnerException?.Message ?? "") + " " + (ex.Message ?? "");
-        if (msg.Contains("IX_CharacterActivities_CharacterId_TimeBucket", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("UNIQUE constraint failed: CharacterActivities.CharacterId, CharacterActivities.TimeBucket", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("unique constraint", StringComparison.OrdinalIgnoreCase) ||
-            (msg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) && msg.Contains("TimeBucket", StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
+        return DbConstraintClassifier.IsUniqueViolation(
+            ex,
+            expectedPostgresConstraints:
+            [
+                "IX_CharacterActivities_CharacterId_TimeBucket",
+                "IX_CharacterStateTransitions_CharacterId_ExecutionId"
+            ],
+            expectedSqliteTable: "CharacterActivities",
+            expectedSqliteColumns: ["CharacterId", "TimeBucket"])
+            || DbConstraintClassifier.IsUniqueViolation(
+                ex,
+                expectedPostgresConstraints: ["IX_CharacterStateTransitions_CharacterId_ExecutionId"],
+                expectedSqliteTable: "CharacterStateTransitions",
+                expectedSqliteColumns: ["CharacterId", "ExecutionId"]);
     }
 }

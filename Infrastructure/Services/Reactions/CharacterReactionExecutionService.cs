@@ -21,6 +21,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
     private readonly IActivityExecutionService _activityExecutionService;
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
     private readonly ISceneVisualStateReader _visualStateReader;
+    private readonly ICharacterStateTransitionStager _stateTransitionService;
     private readonly ILogger<CharacterReactionExecutionService> _logger;
 
     public CharacterReactionExecutionService(
@@ -29,6 +30,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         IActivityExecutionService activityExecutionService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
+        ICharacterStateTransitionStager stateTransitionService,
         ILogger<CharacterReactionExecutionService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -36,6 +38,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         _activityExecutionService = activityExecutionService ?? throw new ArgumentNullException(nameof(activityExecutionService));
         _sceneCompositionPipeline = sceneCompositionPipeline ?? throw new ArgumentNullException(nameof(sceneCompositionPipeline));
         _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
+        _stateTransitionService = stateTransitionService ?? throw new ArgumentNullException(nameof(stateTransitionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -50,7 +53,17 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         var worldEvent = request.WorldEvent;
         var executionId = request.ExecutionId;
         var now = request.CurrentTime;
-        var currentState = request.CurrentState ?? CharacterStateSnapshot.CreateDefault();
+
+        // Authoritative state requirement: load persisted state from database or initialize persistent entity
+        var persistedState = await _dbContext.CharacterStates
+            .FirstOrDefaultAsync(s => s.CharacterId == character.Id, ct);
+        if (persistedState == null)
+        {
+            persistedState = new CharacterState(character.Id, initializedAtUtc: now);
+            await _dbContext.CharacterStates.AddAsync(persistedState, ct);
+        }
+
+        var currentState = persistedState.ToSnapshot();
 
         // 1. Evaluate Pure Perception & Pure Reaction Policies
         var perception = CharacterPerceptionPolicy.EvaluatePerception(
@@ -93,55 +106,111 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
             processedAt: now
         );
 
-        // 3. Persist Reaction with Database Unique Constraint Idempotency Guard
+        // 0. Pre-check idempotency on read-only path before opening transaction
+        var existingReaction = await _dbContext.CharacterWorldEventReactions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.CharacterId == character.Id && r.WorldEventId == worldEvent.Id, ct);
+
+        var existingTransition = await _dbContext.CharacterStateTransitions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.CharacterId == character.Id && t.ExecutionId == executionId, ct);
+
+        if (existingReaction != null || existingTransition != null)
+        {
+            var refreshedState = await _dbContext.CharacterStates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.CharacterId == character.Id, ct);
+
+            return new ReactionExecutionResult(
+                Success: true,
+                IsDuplicateSuppressed: true,
+                ExecutionId: executionId,
+                Reaction: null,
+                NewState: refreshedState?.ToSnapshot() ?? currentState,
+                MemoryCreated: false,
+                MemoryId: null,
+                GoalContributed: false,
+                GoalId: null,
+                GoalContributionValue: null,
+                VisualMomentCreated: false,
+                SceneIntentId: null,
+                SceneSpecificationId: null,
+                ActivityTriggered: false,
+                Message: "Idempotent duplicate reaction suppressed."
+            );
+        }
+
+        // P0-2: ATOMIC TRANSACTION BOUNDARY: Reaction + State Transition commit together
+        var isOuterTx = _dbContext.Database.CurrentTransaction == null;
+        await using var tx = isOuterTx ? await _dbContext.Database.BeginTransactionAsync(ct) : null;
+
         try
         {
+            // Stage reaction entity
             await _dbContext.CharacterWorldEventReactions.AddAsync(reactionEntity, ct);
+
+            // Stage state transition
+            var stateDelta = new CharacterStateDelta(
+                hungerDelta: reaction.HungerDelta,
+                energyDelta: reaction.EnergyDelta,
+                moodDelta: reaction.MoodDelta != 0 ? reaction.MoodDelta : (reaction.MoodIntensityDelta != 0 ? reaction.MoodIntensityDelta : 0m),
+                stressDelta: reaction.StressDelta,
+                socialNeedDelta: reaction.SocialNeedDelta,
+                comfortDelta: 0m
+            );
+
+            var transitionContext = new Application.Common.StateTransitionContext(
+                ExecutionId: executionId,
+                SourceType: "Reaction",
+                SourceId: worldEvent.Id.ToString(),
+                Reason: reaction.ReactionReason
+            );
+
+            _stateTransitionService.StageTransition(persistedState, stateDelta, transitionContext, now);
+
+            // Commit atomic boundary
             await _dbContext.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex)
-        {
-            if (IsUniqueConstraintViolation(ex))
+            if (tx != null)
             {
-                _logger.LogInformation(ex, "[CharacterReactionExecutionService] Idempotent duplicate reaction suppressed for ExecutionId={ExecutionId}, CharacterId={CharacterId}, WorldEventId={WorldEventId}",
-                    executionId, character.Id, worldEvent.Id);
-
-                _dbContext.Entry(reactionEntity).State = EntityState.Detached;
-
-                return new ReactionExecutionResult(
-                    Success: true,
-                    IsDuplicateSuppressed: true,
-                    ExecutionId: executionId,
-                    Reaction: null,
-                    NewState: currentState,
-                    MemoryCreated: false,
-                    MemoryId: null,
-                    GoalContributed: false,
-                    GoalId: null,
-                    GoalContributionValue: null,
-                    VisualMomentCreated: false,
-                    SceneIntentId: null,
-                    SceneSpecificationId: null,
-                    ActivityTriggered: false,
-                    Message: "Idempotent duplicate reaction suppressed."
-                );
+                await tx.CommitAsync(ct);
             }
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            if (tx != null) await tx.RollbackAsync(ct);
+            _dbContext.ChangeTracker.Clear();
 
-            _logger.LogError(ex, "[CharacterReactionExecutionService] Database failure processing reaction for ExecutionId={ExecutionId}, CharacterId={CharacterId}, WorldEventId={WorldEventId}",
+            _logger.LogInformation(
+                ex,
+                "[CharacterReactionExecutionService] Idempotent duplicate reaction suppressed for ExecutionId={ExecutionId}, CharacterId={CharacterId}, WorldEventId={WorldEventId}",
                 executionId, character.Id, worldEvent.Id);
+
+            return new ReactionExecutionResult(
+                Success: true,
+                IsDuplicateSuppressed: true,
+                ExecutionId: executionId,
+                Reaction: null,
+                NewState: currentState,
+                MemoryCreated: false,
+                MemoryId: null,
+                GoalContributed: false,
+                GoalId: null,
+                GoalContributionValue: null,
+                VisualMomentCreated: false,
+                SceneIntentId: null,
+                SceneSpecificationId: null,
+                ActivityTriggered: false,
+                Message: "Idempotent duplicate reaction suppressed."
+            );
+        }
+        catch
+        {
+            if (tx != null) await tx.RollbackAsync(ct);
+            _dbContext.ChangeTracker.Clear();
             throw;
         }
 
-        // 4. Winner applies state delta
-        var newState = currentState.ApplyDelta(
-            energyDelta: reaction.EnergyDelta,
-            hungerDelta: reaction.HungerDelta,
-            socialNeedDelta: reaction.SocialNeedDelta,
-            stressDelta: reaction.StressDelta,
-            confidenceDelta: reaction.ConfidenceDelta,
-            moodIntensityDelta: reaction.MoodIntensityDelta,
-            newMood: reaction.NewMood
-        );
+        var newState = persistedState.ToSnapshot();
 
         // 5. Memory Candidate Formation (reusing existing CharacterMemory)
         Guid? memoryId = null;
@@ -291,61 +360,19 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
 
     public static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
-        var inner = ex.InnerException;
-        while (inner != null)
-        {
-            if (inner is Npgsql.PostgresException pg)
-            {
-                if (pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation)
-                {
-                    if (string.IsNullOrWhiteSpace(pg.ConstraintName) ||
-                        pg.ConstraintName.Contains("CharacterWorldEventReactions", StringComparison.OrdinalIgnoreCase) ||
-                        pg.ConstraintName.Contains("WorldEventId_CharacterId", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            var sqlStateProp = inner.GetType().GetProperty("SqlState");
-            if (sqlStateProp != null)
-            {
-                var sqlState = sqlStateProp.GetValue(inner)?.ToString();
-                if (sqlState == Npgsql.PostgresErrorCodes.UniqueViolation || sqlState == "23505")
-                {
-                    return true;
-                }
-            }
-
-            var sqliteErrProp = inner.GetType().GetProperty("SqliteErrorCode");
-            if (sqliteErrProp != null)
-            {
-                var errCode = sqliteErrProp.GetValue(inner);
-                if (errCode is int code && code == 19)
-                {
-                    var innerMsg = inner.Message ?? "";
-                    if (innerMsg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) &&
-                        (innerMsg.Contains("CharacterWorldEventReactions", StringComparison.OrdinalIgnoreCase) ||
-                         innerMsg.Contains("WorldEventId", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            inner = inner.InnerException;
-        }
-
-        var msg = (ex.InnerException?.Message ?? "") + " " + (ex.Message ?? "");
-        if (msg.Contains("IX_CharacterWorldEventReactions_WorldEventId_CharacterId", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("UNIQUE constraint failed: CharacterWorldEventReactions.WorldEventId, CharacterWorldEventReactions.CharacterId", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
-            (msg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) && msg.Contains("CharacterWorldEventReactions", StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
+        return DbConstraintClassifier.IsUniqueViolation(
+            ex,
+            expectedPostgresConstraints:
+            [
+                "IX_CharacterWorldEventReactions_WorldEventId_CharacterId",
+                "IX_CharacterStateTransitions_CharacterId_ExecutionId"
+            ],
+            expectedSqliteTable: "CharacterWorldEventReactions",
+            expectedSqliteColumns: ["WorldEventId", "CharacterId"])
+            || DbConstraintClassifier.IsUniqueViolation(
+                ex,
+                expectedPostgresConstraints: ["IX_CharacterStateTransitions_CharacterId_ExecutionId"],
+                expectedSqliteTable: "CharacterStateTransitions",
+                expectedSqliteColumns: ["CharacterId", "ExecutionId"]);
     }
 }
