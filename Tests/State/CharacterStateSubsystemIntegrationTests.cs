@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Autonomous;
 using Application.Contracts.Autonomy;
 using Application.Contracts.Reactions;
@@ -161,7 +161,7 @@ public sealed class CharacterStateSubsystemIntegrationTests : IDisposable
     {
         var charId = Guid.NewGuid();
         var t0 = new DateTime(2026, 9, 3, 6, 0, 0, DateTimeKind.Utc);
-        var t1 = t0.AddHours(10); // 10 hours later: Energy -50 => Energy drops from 80 to 30, Hunger +40 => 60
+        var t1 = t0.AddHours(12); // 12 hours later: Energy 80 -> 20 (< 30), Hunger 20 -> 68 (> 60)
 
         var character = new Character("Ronan", "Ranger", "avatar.png", "Quiet", "Hello", "Anime") { Id = charId };
 

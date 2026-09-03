@@ -4,7 +4,6 @@ using Application.Interfaces;
 using Application.Services;
 using Domain.Common.DateTimes;
 using Infrastructure.Persistence;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services;
@@ -16,7 +15,6 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
 {
     private readonly IImageGenerationOrchestrator _orchestrator;
 
-    [ActivatorUtilitiesConstructor]
     public ImageGenerationJobHandler(IImageGenerationOrchestrator orchestrator)
     {
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
