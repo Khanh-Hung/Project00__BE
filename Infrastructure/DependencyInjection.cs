@@ -250,6 +250,10 @@ public static class DependencyInjection
         // PR #39: Character Perception & Internal Experience
         services.AddSingleton<Domain.Policies.ICharacterInternalExperiencePolicy, Domain.Policies.CharacterInternalExperiencePolicy>();
 
+        // PR #40: Emotion & Appraisal Engine
+        services.AddSingleton<Domain.Policies.ICharacterAppraisalPolicy, Domain.Policies.CharacterAppraisalPolicy>();
+        services.AddSingleton<Domain.Policies.ICharacterEmotionPolicy, Domain.Policies.CharacterEmotionPolicy>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
