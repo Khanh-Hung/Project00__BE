@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Goals;
 using Application.Services;
 using Domain.Enums;
@@ -19,7 +19,7 @@ public sealed class GoalPriorityTests
     [Fact]
     public async Task CriticalPriorityGoal_OutranksNormalPriorityGoal_ForActivitySelection()
     {
-        var charId = Guid.NewGuid();
+        var charId = Guid.Parse("00000000-0000-0000-0000-000000000001");
         var afternoonTime = new DateTime(2026, 8, 28, 15, 0, 0, DateTimeKind.Utc); // 15:00
 
         var normalGoal = new CharacterGoalSnapshot(

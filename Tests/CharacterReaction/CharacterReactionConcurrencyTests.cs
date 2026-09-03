@@ -67,8 +67,8 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(workerDb, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
-            var reactionService = new CharacterReactionExecutionService(workerDb, goalService, execService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+            var execService = new ActivityExecutionService(workerDb, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(workerDb, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(workerDb, goalService, execService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(workerDb, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<CharacterReactionExecutionService>.Instance);
 
             return await reactionService.ExecuteReactionAsync(request);
         }).ToList();
@@ -127,8 +127,8 @@ public sealed class CharacterReactionConcurrencyTests : IDisposable
             var goalService = new GoalProgressService(workerDb, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(workerDb, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
-            var reactionService = new CharacterReactionExecutionService(workerDb, goalService, execService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+            var execService = new ActivityExecutionService(workerDb, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(workerDb, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(workerDb, goalService, execService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(workerDb, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<CharacterReactionExecutionService>.Instance);
 
             return await reactionService.ExecuteReactionAsync(request);
         }).ToList();

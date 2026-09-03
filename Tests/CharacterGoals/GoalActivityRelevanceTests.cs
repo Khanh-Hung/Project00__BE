@@ -1,4 +1,4 @@
-﻿using Application.Contracts.Activities;
+using Application.Contracts.Activities;
 using Application.Contracts.Goals;
 using Application.Services;
 using Domain.Entities;
@@ -30,7 +30,7 @@ public sealed class GoalActivityRelevanceTests
     [Fact]
     public async Task ActiveCulinaryGoal_BiasesDecisionTowardsCookingInEvening()
     {
-        var charId = Guid.NewGuid();
+        var charId = new Guid("11111111-2222-3333-4444-555555555555");
         var eveningTime = new DateTime(2026, 8, 28, 19, 0, 0, DateTimeKind.Utc); // 19:00
 
         var goal = new CharacterGoalSnapshot(

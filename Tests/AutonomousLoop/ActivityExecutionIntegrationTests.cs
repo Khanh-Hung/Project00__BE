@@ -56,6 +56,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
+            await db.CharacterStates.AddAsync(new CharacterState(charId, DateTime.UtcNow, hunger: 70m, energy: 80m, stress: 20m, socialNeed: 20m));
             await db.CharacterGoals.AddAsync(goal);
             await db.SaveChangesAsync();
         }
@@ -104,7 +105,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
 
             var execRequest = new ActivityExecutionRequest(
                 Character: character,
@@ -211,7 +212,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
 
             var res1 = await execService.ExecuteActivityAsync(execRequest);
             Assert.True(res1.Success);
@@ -224,7 +225,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
 
             var res2 = await execService.ExecuteActivityAsync(execRequest);
             Assert.True(res2.Success);

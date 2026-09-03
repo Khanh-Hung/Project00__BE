@@ -72,10 +72,10 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, new Infrastructure.Services.State.CharacterStateService(db, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), new Domain.Policies.CharacterStateEvolutionPolicy(), Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
-            var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
-            var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+            var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 db,
@@ -103,10 +103,10 @@ public sealed class AutonomyTickIdempotencyRetryTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, NullLogger<AutonomousCharacterContextLoader>.Instance);
+            var contextLoader = new AutonomousCharacterContextLoader(db, stateReader, new Infrastructure.Services.State.CharacterStateService(db, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), new Domain.Policies.CharacterStateEvolutionPolicy(), Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<AutonomousCharacterContextLoader>.Instance);
             var decisionService = new AutonomousDecisionService(NullLogger<AutonomousDecisionService>.Instance);
-            var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
-            var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+            var activityExecService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(db, goalService, activityExecService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<CharacterReactionExecutionService>.Instance);
 
             var orchestrator = new AutonomousCharacterLifecycleOrchestrator(
                 db,

@@ -45,6 +45,6 @@ namespace Project.Tests
 {
     public static class SceneCompositionTestHelper
     {
-        public static ISceneCompositionPipelineService CreatePipeline(CoreDbContext db) => Tests.SceneCompositionTestHelper.CreatePipeline(db);
+        public static ISceneCompositionPipelineService CreatePipeline(CoreDbContext db) => global::Tests.SceneCompositionTestHelper.CreatePipeline(db);
     }
 }

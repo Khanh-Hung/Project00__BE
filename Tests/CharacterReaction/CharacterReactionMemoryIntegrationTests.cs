@@ -47,6 +47,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
+            await db.CharacterStates.AddAsync(new CharacterState(charId, DateTime.UtcNow));
             await db.SaveChangesAsync();
         }
 
@@ -68,8 +69,8 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
                 var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
                 var fakePipeline = new FakeSceneCompositionPipelineService();
                 var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-                var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
-                var reactionService = new CharacterReactionExecutionService(db, goalService, execService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+                var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
+                var reactionService = new CharacterReactionExecutionService(db, goalService, execService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<CharacterReactionExecutionService>.Instance);
 
                 var request = new ReactionExecutionRequest(rainEvent, character, Guid.NewGuid(), DateTime.UtcNow);
                 var result = await reactionService.ExecuteReactionAsync(request);
@@ -103,6 +104,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
+            await db.CharacterStates.AddAsync(new CharacterState(charId, DateTime.UtcNow));
             await db.CharacterWorldEvents.AddAsync(loveEvent);
             await db.SaveChangesAsync();
         }
@@ -116,8 +118,8 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
-            var reactionService = new CharacterReactionExecutionService(db, goalService, execService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(db, goalService, execService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<CharacterReactionExecutionService>.Instance);
 
             var res1 = await reactionService.ExecuteReactionAsync(request);
             Assert.True(res1.Success);
@@ -125,14 +127,14 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
             Assert.NotNull(res1.MemoryId);
         }
 
-        // Attempt 2: Sequential retry -> Duplicate suppressed, zero new memory created
+        // Attempt 2: Duplicate invocation with exact same (CharacterId, WorldEventId) -> Idempotency kicks in
         using (var db = new CoreDbContext(_options))
         {
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
-            var reactionService = new CharacterReactionExecutionService(db, goalService, execService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(db, goalService, execService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<CharacterReactionExecutionService>.Instance);
 
             var res2 = await reactionService.ExecuteReactionAsync(request);
             Assert.True(res2.Success);
@@ -160,6 +162,7 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
         using (var db = new CoreDbContext(_options))
         {
             await db.Characters.AddAsync(character);
+            await db.CharacterStates.AddAsync(new CharacterState(charId, DateTime.UtcNow));
             await db.CharacterWorldEvents.AddRangeAsync(event1, event2);
             await db.SaveChangesAsync();
         }
@@ -169,8 +172,8 @@ public sealed class CharacterReactionMemoryIntegrationTests : IDisposable
             var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
             var fakePipeline = new FakeSceneCompositionPipelineService();
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, NullLogger<ActivityExecutionService>.Instance);
-            var reactionService = new CharacterReactionExecutionService(db, goalService, execService, fakePipeline, stateReader, NullLogger<CharacterReactionExecutionService>.Instance);
+            var execService = new ActivityExecutionService(db, goalService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<ActivityExecutionService>.Instance);
+            var reactionService = new CharacterReactionExecutionService(db, goalService, execService, fakePipeline, stateReader, new Infrastructure.Services.State.CharacterStateTransitionService(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance), Microsoft.Extensions.Logging.Abstractions.NullLogger<CharacterReactionExecutionService>.Instance);
 
             var res1 = await reactionService.ExecuteReactionAsync(new ReactionExecutionRequest(event1, character, Guid.NewGuid(), DateTime.UtcNow));
             var res2 = await reactionService.ExecuteReactionAsync(new ReactionExecutionRequest(event2, character, Guid.NewGuid(), DateTime.UtcNow));
