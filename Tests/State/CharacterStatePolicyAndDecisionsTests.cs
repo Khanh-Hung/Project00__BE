@@ -1,4 +1,4 @@
-﻿using Domain.Enums;
+using Domain.Enums;
 using Domain.Policies;
 using Xunit;
 
@@ -48,5 +48,20 @@ public sealed class CharacterStatePolicyAndDecisionsTests
         // Low comfort boosts relaxation/rest
         int comfortMod = CharacterNeedsDecisionPolicy.EvaluateComfortModifier(15m, CharacterActivityType.Relaxing);
         Assert.Equal(150, comfortMod);
+    }
+
+    [Fact]
+    public async Task AutonomousDecisionService_ThrowsArgumentException_WhenStateSnapshotIsNull()
+    {
+        var service = new Application.Services.AutonomousDecisionService(Microsoft.Extensions.Logging.Abstractions.NullLogger<Application.Services.AutonomousDecisionService>.Instance);
+        var request = new Application.Contracts.Autonomous.AutonomousDecisionRequest(
+            CharacterId: Guid.NewGuid(),
+            CurrentTime: DateTime.UtcNow,
+            CurrentLocation: "Sanctuary",
+            TimeBucket: "2026-09-03T12:00",
+            StateSnapshot: null!
+        );
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.DecideNextActionAsync(request));
     }
 }

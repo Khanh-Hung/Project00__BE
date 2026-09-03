@@ -30,7 +30,10 @@ public sealed class AutonomousDecisionService : IAutonomousDecisionService
 
         var charId = request.CharacterId;
         var time = request.CurrentTime;
-        var state = request.StateSnapshot ?? CharacterStateSnapshot.CreateDefault();
+        var state = request.StateSnapshot
+            ?? throw new ArgumentException(
+                "Authoritative StateSnapshot is required for autonomous decisions.",
+                nameof(request));
         var recentActs = request.RecentActivities ?? Array.Empty<CharacterActivity>();
         var recentActTypes = recentActs.Select(a => a.ActivityType).ToList();
 
