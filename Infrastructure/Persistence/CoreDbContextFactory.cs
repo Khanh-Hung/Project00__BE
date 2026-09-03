@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
 
@@ -15,10 +15,10 @@ public class CoreDbContextFactory : IDesignTimeDbContextFactory<CoreDbContext>
             .AddEnvironmentVariables()
             .Build();
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = configuration.GetConnectionString("CoreConnection");
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured in appsettings.json or environment variables.");
+            throw new InvalidOperationException("Connection string 'CoreConnection' is not configured in appsettings.json or environment variables.");
         }
 
         var optionsBuilder = new DbContextOptionsBuilder<CoreDbContext>();

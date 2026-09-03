@@ -72,7 +72,7 @@ public sealed class OutboxReliabilityAndOrderingTests
 
     private static string? GetPostgresConnectionString()
     {
-        var envConn = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+        var envConn = Environment.GetEnvironmentVariable("ConnectionStrings__CoreConnection");
         if (!string.IsNullOrWhiteSpace(envConn)) return envConn;
 
         var devSettingsPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "appsettings.Development.json");
@@ -81,7 +81,7 @@ public sealed class OutboxReliabilityAndOrderingTests
             var json = File.ReadAllText(devSettingsPath);
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("ConnectionStrings", out var connSection) &&
-                connSection.TryGetProperty("DefaultConnection", out var connProp))
+                connSection.TryGetProperty("CoreConnection", out var connProp))
             {
                 return connProp.GetString();
             }

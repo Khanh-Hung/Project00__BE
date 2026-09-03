@@ -20,7 +20,7 @@ public sealed class IdentityQualityGuardDependencyInjectionTests
             ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
             ["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] = "DevelopmentStub",
             ["AiProviders:ImageGeneration:QualityGuard:AllowStubEvaluatorInProduction"] = "false",
-            ["ConnectionStrings:DefaultConnection"] = "DataSource=:memory:"
+            ["ConnectionStrings:CoreConnection"] = "DataSource=:memory:"
         };
 
         IConfiguration config = new ConfigurationBuilder()
@@ -43,7 +43,7 @@ public sealed class IdentityQualityGuardDependencyInjectionTests
             ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
             ["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] = "DevelopmentStub",
             ["AiProviders:ImageGeneration:QualityGuard:AllowStubEvaluatorInProduction"] = "true",
-            ["ConnectionStrings:DefaultConnection"] = "DataSource=:memory:",
+            ["ConnectionStrings:CoreConnection"] = "DataSource=:memory:",
             ["AiProviders:ImageProvider"] = "ComfyUI"
         };
 
@@ -69,7 +69,7 @@ public sealed class IdentityQualityGuardDependencyInjectionTests
             ["ASPNETCORE_ENVIRONMENT"] = "Production",
             ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
             ["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] = "Clip",
-            ["ConnectionStrings:DefaultConnection"] = "DataSource=:memory:",
+            ["ConnectionStrings:CoreConnection"] = "DataSource=:memory:",
             ["AiProviders:ImageProvider"] = "ComfyUI"
         };
 

@@ -15,7 +15,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = configuration.GetConnectionString("CoreConnection");
         var identityConnectionString = configuration.GetConnectionString("IdentityConnection");
 
         services.AddDbContext<IdentityDbContext>(options =>
@@ -39,7 +39,7 @@ public static class DependencyInjection
             }
             else
             {
-                options.UseInMemoryDatabase("ProjectDb");
+                options.UseInMemoryDatabase("CoreDb");
             }
             options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
         });
