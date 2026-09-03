@@ -29,10 +29,19 @@ public static class GoalActivityRelevancePolicy
         string reason = $"Activity {activityType} evaluated for goal '{title}'.";
 
         // 1. Keyword Overrides for High Direct Relevance
-        if ((text.Contains("cook") || text.Contains("baking") || text.Contains("culinary") || text.Contains("recipe") || text.Contains("chef") || text.Contains("kitchen") || text.Contains("food") || text.Contains("dish") || text.Contains("meal")) &&
+        if (text.Contains("cook") || text.Contains("baking") || text.Contains("culinary") || text.Contains("chef") ||
+            (text.Contains("recipe") && (text.Contains("food") || text.Contains("meal") || text.Contains("dish") || text.Contains("kitchen"))))
+        {
+            if (activityType == CharacterActivityType.Cooking)
+                return new GoalRelevanceResult(0.95f, $"Cooking directly advances culinary goal '{title}'.");
+            return new GoalRelevanceResult(0.0f, $"Activity {activityType} does not advance culinary skill.");
+        }
+
+        if ((text.Contains("food") || text.Contains("dish") || text.Contains("meal") || text.Contains("kitchen")) &&
             (activityType == CharacterActivityType.Cooking || activityType == CharacterActivityType.Eating))
         {
-            return new GoalRelevanceResult(0.95f, $"Culinary activity directly advances goal '{title}'.");
+            float scoreVal = activityType == CharacterActivityType.Cooking ? 0.90f : 0.60f;
+            return new GoalRelevanceResult(scoreVal, $"Culinary activity directly advances goal '{title}'.");
         }
 
         if ((text.Contains("paint") || text.Contains("drawing") || text.Contains("art") || text.Contains("sculpt") || text.Contains("write") || text.Contains("book") || text.Contains("craft") || text.Contains("music")) &&
@@ -53,7 +62,7 @@ public static class GoalActivityRelevancePolicy
             return new GoalRelevanceResult(0.95f, $"Exploration directly advances discovery goal '{title}'.");
         }
 
-        if ((text.Contains("study") || text.Contains("learn") || text.Contains("research") || text.Contains("read") || text.Contains("scholar") || text.Contains("alchemy") || text.Contains("academic") || text.Contains("lore")) &&
+        if ((text.Contains("study") || text.Contains("learn") || text.Contains("research") || text.Contains("read") || text.Contains("scholar") || text.Contains("alchemy") || text.Contains("academic") || text.Contains("ancient lore") || text.Contains(" lore")) &&
             (activityType == CharacterActivityType.Reading || activityType == CharacterActivityType.Working))
         {
             return new GoalRelevanceResult(0.95f, $"Study and research directly advance intellectual goal '{title}'.");

@@ -44,6 +44,8 @@ public class CoreDbContext : DbContext
     public DbSet<CharacterWorldEvent> CharacterWorldEvents { get; set; }
     public DbSet<CharacterWorldEventReaction> CharacterWorldEventReactions { get; set; }
     public DbSet<CharacterAutonomyTick> CharacterAutonomyTicks { get; set; }
+    public DbSet<CharacterState> CharacterStates { get; set; }
+    public DbSet<CharacterStateTransition> CharacterStateTransitions { get; set; }
 
     private string NormalizeUserId()
     {

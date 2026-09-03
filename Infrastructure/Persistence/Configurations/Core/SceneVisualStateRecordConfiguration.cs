@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -10,6 +10,7 @@ public class SceneVisualStateRecordConfiguration : IEntityTypeConfiguration<Scen
     {
         builder.ToTable("SceneVisualStates");
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).ValueGeneratedNever();
 
         builder.Property(x => x.SessionId).IsRequired();
         builder.Property(x => x.CharacterId).IsRequired();

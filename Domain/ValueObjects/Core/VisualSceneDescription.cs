@@ -18,6 +18,27 @@ public sealed record VisualSceneDescription
     public string? Atmosphere { get; init; }
     public ImmutableArray<string> EnglishPromptTags { get; init; }
 
+    [System.Text.Json.Serialization.JsonConstructor]
+    public VisualSceneDescription(
+        string? shotType,
+        string? cameraAngle,
+        string? subjectPlacement,
+        string? detailedAction,
+        string? detailedEnvironment,
+        string? lightingStyle,
+        string? atmosphere,
+        ImmutableArray<string> englishPromptTags)
+    {
+        ShotType = shotType;
+        CameraAngle = cameraAngle;
+        SubjectPlacement = subjectPlacement;
+        DetailedAction = detailedAction;
+        DetailedEnvironment = detailedEnvironment;
+        LightingStyle = lightingStyle;
+        Atmosphere = atmosphere;
+        EnglishPromptTags = englishPromptTags.IsDefault ? ImmutableArray<string>.Empty : englishPromptTags;
+    }
+
     public VisualSceneDescription(
         string? shotType = null,
         string? cameraAngle = null,
@@ -27,17 +48,18 @@ public sealed record VisualSceneDescription
         string? lightingStyle = null,
         string? atmosphere = null,
         IEnumerable<string>? englishPromptTags = null)
+        : this(
+            shotType,
+            cameraAngle,
+            subjectPlacement,
+            detailedAction,
+            detailedEnvironment,
+            lightingStyle,
+            atmosphere,
+            englishPromptTags != null
+                ? englishPromptTags.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToImmutableArray()
+                : ImmutableArray<string>.Empty)
     {
-        ShotType = shotType;
-        CameraAngle = cameraAngle;
-        SubjectPlacement = subjectPlacement;
-        DetailedAction = detailedAction;
-        DetailedEnvironment = detailedEnvironment;
-        LightingStyle = lightingStyle;
-        Atmosphere = atmosphere;
-        EnglishPromptTags = englishPromptTags != null
-            ? englishPromptTags.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToImmutableArray()
-            : ImmutableArray<string>.Empty;
     }
 
     /// <summary>
