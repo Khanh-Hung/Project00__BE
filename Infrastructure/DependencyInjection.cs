@@ -248,7 +248,7 @@ public static class DependencyInjection
         services.AddScoped<ICharacterStateService, Infrastructure.Services.State.CharacterStateService>();
 
         // PR #39: Character Perception & Internal Experience
-        services.AddSingleton<Domain.Policies.ICharacterPerceptionPolicy, Domain.Policies.CharacterPerceptionPolicy>();
+        services.AddSingleton<Domain.Policies.ICharacterInternalExperiencePolicy, Domain.Policies.CharacterInternalExperiencePolicy>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();

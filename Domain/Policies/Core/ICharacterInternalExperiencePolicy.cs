@@ -2,10 +2,10 @@
 
 namespace Domain.Policies;
 
-public interface ICharacterPerceptionPolicy
+public interface ICharacterInternalExperiencePolicy
 {
     CharacterInternalExperience Evaluate(
         CharacterStateSnapshot state,
-        PsychologyProfile? psychology = null,
-        CharacterPerceptionContext? context = null);
+        CharacterPerceptionContext context,
+        PsychologyProfile? psychology = null);
 }

@@ -2,7 +2,7 @@
 
 public sealed record CharacterPerceptionContext(
     DateTime EvaluatedAtUtc,
-    Guid? CharacterId = null,
+    Guid CharacterId,
     string? CurrentActivity = null,
     string? Location = null
 );

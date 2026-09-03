@@ -16,11 +16,11 @@ public readonly record struct PerceptionIntensity
             throw new ArgumentOutOfRangeException(nameof(value), value, "Perception intensity must be bounded in [0.0, 1.0].");
         }
 
-        Value = Math.Round(value, 4);
+        Value = value;
     }
 
     public static implicit operator double(PerceptionIntensity intensity) => intensity.Value;
     public static explicit operator PerceptionIntensity(double value) => new(value);
 
-    public override string ToString() => Value.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+    public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
