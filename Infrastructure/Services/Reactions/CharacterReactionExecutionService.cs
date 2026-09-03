@@ -21,7 +21,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
     private readonly IActivityExecutionService _activityExecutionService;
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
     private readonly ISceneVisualStateReader _visualStateReader;
-    private readonly ICharacterStateTransitionService _stateTransitionService;
+    private readonly ICharacterStateTransitionStager _stateTransitionService;
     private readonly ILogger<CharacterReactionExecutionService> _logger;
 
     public CharacterReactionExecutionService(
@@ -30,7 +30,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         IActivityExecutionService activityExecutionService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
-        ICharacterStateTransitionService stateTransitionService,
+        ICharacterStateTransitionStager stateTransitionService,
         ILogger<CharacterReactionExecutionService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));

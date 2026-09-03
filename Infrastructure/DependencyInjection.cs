@@ -242,8 +242,9 @@ public static class DependencyInjection
 
         // PR #38: Persistent Character State & Needs Engine
         services.AddSingleton<Domain.Policies.ICharacterStateEvolutionPolicy, Domain.Policies.CharacterStateEvolutionPolicy>();
-        services.AddScoped<ICharacterStateTransitionService, Infrastructure.Services.State.CharacterStateTransitionService>();
-        services.AddScoped<ICharacterStateTransitionStager>(sp => sp.GetRequiredService<ICharacterStateTransitionService>());
+        services.AddScoped<Infrastructure.Services.State.CharacterStateTransitionService>();
+        services.AddScoped<ICharacterStateTransitionService>(sp => sp.GetRequiredService<Infrastructure.Services.State.CharacterStateTransitionService>());
+        services.AddScoped<ICharacterStateTransitionStager>(sp => sp.GetRequiredService<Infrastructure.Services.State.CharacterStateTransitionService>());
         services.AddScoped<ICharacterStateService, Infrastructure.Services.State.CharacterStateService>();
 
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)

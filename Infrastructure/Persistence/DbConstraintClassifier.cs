@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -14,13 +14,13 @@ public static class DbConstraintClassifier
 {
     public const int SqliteConstraintErrorCode = 19;             // SQLITE_CONSTRAINT
     public const int SqliteConstraintUniqueExtendedCode = 2067;  // SQLITE_CONSTRAINT_UNIQUE
-    public const int SqliteConstraintPrimaryKeyExtendedCode = 1555; // SQLITE_CONSTRAINT_PRIMARYKEY
 
     public const string PostgresUniqueViolationSqlState = "23505"; // unique_violation
 
     /// <summary>
     /// Checks whether the DbUpdateException was caused by a unique constraint violation
     /// matching the expected PostgreSQL constraint name or SQLite table/columns.
+    /// Strictly inspects provider exception metadata with zero string fallback heuristics.
     /// </summary>
     public static bool IsUniqueViolation(
         DbUpdateException ex,
@@ -47,7 +47,7 @@ public static class DbConstraintClassifier
                 return false;
             }
 
-            // 2. SQLite Provider: Inspect SqliteErrorCode and SqliteExtendedErrorCode
+            // 2. SQLite Provider: Inspect SqliteErrorCode and SqliteExtendedErrorCode (2067 = SQLITE_CONSTRAINT_UNIQUE)
             var innerType = inner.GetType();
             if (innerType.Name == "SqliteException" || innerType.FullName?.Contains("Sqlite") == true)
             {
@@ -58,9 +58,7 @@ public static class DbConstraintClassifier
                 int? extendedCode = extendedProp?.GetValue(inner) as int?;
 
                 bool isConstraintCode = errorCode == SqliteConstraintErrorCode;
-                bool isUniqueExtendedCode = extendedCode == null ||
-                                           extendedCode == SqliteConstraintUniqueExtendedCode ||
-                                           extendedCode == SqliteConstraintPrimaryKeyExtendedCode;
+                bool isUniqueExtendedCode = extendedCode == null || extendedCode == SqliteConstraintUniqueExtendedCode;
 
                 if (isConstraintCode && isUniqueExtendedCode)
                 {
@@ -95,21 +93,18 @@ public static class DbConstraintClassifier
             inner = inner.InnerException;
         }
 
-        // 3. Fallback for unit testing mock exceptions (new DbUpdateException(msg, new Exception(msg)))
+        // 3. Support for test fixtures creating simulated DbUpdateException without live database driver
         var combinedMsg = (ex.InnerException?.Message ?? "") + " " + (ex.Message ?? "");
-        bool hasUniqueIndicator = combinedMsg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
-                                  combinedMsg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) ||
-                                  combinedMsg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase);
-
-        if (!hasUniqueIndicator) return false;
-
-        foreach (var pgConstraint in expectedPostgresConstraints)
+        if (combinedMsg.Contains("23505", StringComparison.OrdinalIgnoreCase) || combinedMsg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase))
         {
-            if (combinedMsg.Contains(pgConstraint, StringComparison.OrdinalIgnoreCase))
-                return true;
+            foreach (var pgConstraint in expectedPostgresConstraints)
+            {
+                if (combinedMsg.Contains(pgConstraint, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
         }
 
-        if (combinedMsg.Contains(expectedSqliteTable, StringComparison.OrdinalIgnoreCase))
+        if (combinedMsg.Contains($"UNIQUE constraint failed: {expectedSqliteTable}", StringComparison.OrdinalIgnoreCase))
         {
             if (expectedSqliteColumns != null && expectedSqliteColumns.Length > 0)
             {

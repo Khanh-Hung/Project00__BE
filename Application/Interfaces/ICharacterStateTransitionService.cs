@@ -31,9 +31,10 @@ public interface ICharacterStateTransitionStager
 
 /// <summary>
 /// Canonical business operation service for persistent character state transitions.
-/// Manages standalone state transitions with atomic transaction semantics.
+/// Manages standalone state transitions with self-contained atomic transaction semantics.
+/// Callers requiring internal staging within an outer transaction must use ICharacterStateTransitionStager.
 /// </summary>
-public interface ICharacterStateTransitionService : ICharacterStateTransitionStager
+public interface ICharacterStateTransitionService
 {
     /// <summary>
     /// Executes a standalone state transition atomically.

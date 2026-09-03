@@ -17,7 +17,7 @@ public sealed class ActivityExecutionService : IActivityExecutionService
     private readonly IGoalProgressService _goalProgressService;
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
     private readonly ISceneVisualStateReader _visualStateReader;
-    private readonly ICharacterStateTransitionService _stateTransitionService;
+    private readonly ICharacterStateTransitionStager _stateTransitionService;
     private readonly ILogger<ActivityExecutionService> _logger;
 
     public ActivityExecutionService(
@@ -25,7 +25,7 @@ public sealed class ActivityExecutionService : IActivityExecutionService
         IGoalProgressService goalProgressService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
-        ICharacterStateTransitionService stateTransitionService,
+        ICharacterStateTransitionStager stateTransitionService,
         ILogger<ActivityExecutionService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));

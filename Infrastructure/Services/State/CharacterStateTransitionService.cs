@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services.State;
 
-public sealed class CharacterStateTransitionService : ICharacterStateTransitionService
+public sealed class CharacterStateTransitionService : ICharacterStateTransitionService, ICharacterStateTransitionStager
 {
     private readonly CoreDbContext _dbContext;
     private readonly ILogger<CharacterStateTransitionService> _logger;
