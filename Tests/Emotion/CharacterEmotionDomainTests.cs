@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Domain.Enums;
@@ -17,6 +17,12 @@ public sealed class CharacterEmotionDomainTests
     private static CharacterPerceptionContext CreateContext(Guid? id = null) =>
         new(new DateTime(2026, 9, 3, 16, 0, 0, DateTimeKind.Utc), id ?? Guid.NewGuid());
 
+    private CharacterEmotion EvaluateDominant(CharacterInternalExperience exp, CharacterBlueprint? blueprint = null)
+    {
+        var dominantAppraisal = _appraisalPolicy.Evaluate(exp, blueprint);
+        return _emotionPolicy.Evaluate(dominantAppraisal, blueprint);
+    }
+
     #region 1. Emotion Mapping from Appraisals Tests
 
     [Fact]
@@ -24,7 +30,6 @@ public sealed class CharacterEmotionDomainTests
     {
         var appraisal = new CharacterAppraisal(AppraisalType.PhysicalDeprivation, AppraisalPolarity.Negative, 0.85, AppraisalSource.Hunger);
 
-        // Direct appraisal evaluation without needing CharacterInternalExperience
         var emotion = _emotionPolicy.Evaluate(appraisal);
 
         Assert.Equal(EmotionType.Frustration, emotion.Type);
@@ -69,13 +74,40 @@ public sealed class CharacterEmotionDomainTests
     }
 
     [Fact]
-    public void SocialConnection_MapsTo_Joy_WhenHigh_And_Content_WhenModerate()
+    public void Recovery_MapsTo_Joy_WhenHigh_And_Relief_WhenModerate()
     {
-        var highConn = new CharacterAppraisal(AppraisalType.SocialConnection, AppraisalPolarity.Positive, 0.85, AppraisalSource.SocialNeed);
-        var modConn = new CharacterAppraisal(AppraisalType.SocialConnection, AppraisalPolarity.Positive, 0.50, AppraisalSource.SocialNeed);
+        var highRecovery = new CharacterAppraisal(AppraisalType.Recovery, AppraisalPolarity.Positive, 0.85, AppraisalSource.Energy);
+        var modRecovery = new CharacterAppraisal(AppraisalType.Recovery, AppraisalPolarity.Positive, 0.50, AppraisalSource.Energy);
 
-        var highEmotion = _emotionPolicy.Evaluate(highConn);
-        var modEmotion = _emotionPolicy.Evaluate(modConn);
+        var highEmotion = _emotionPolicy.Evaluate(highRecovery);
+        var modEmotion = _emotionPolicy.Evaluate(modRecovery);
+
+        Assert.Equal(EmotionType.Joy, highEmotion.Type);
+        Assert.Equal(EmotionalValence.Positive, highEmotion.Valence);
+
+        Assert.Equal(EmotionType.Relief, modEmotion.Type);
+        Assert.Equal(EmotionalValence.Positive, modEmotion.Valence);
+    }
+
+    [Fact]
+    public void Comfort_MapsTo_ContentEmotion()
+    {
+        var appraisal = new CharacterAppraisal(AppraisalType.Comfort, AppraisalPolarity.Positive, 0.80, AppraisalSource.Comfort);
+
+        var emotion = _emotionPolicy.Evaluate(appraisal);
+
+        Assert.Equal(EmotionType.Content, emotion.Type);
+        Assert.Equal(EmotionalValence.Positive, emotion.Valence);
+    }
+
+    [Fact]
+    public void PositiveMood_MapsTo_Joy_WhenHigh_And_Content_WhenModerate()
+    {
+        var highMood = new CharacterAppraisal(AppraisalType.PositiveMood, AppraisalPolarity.Positive, 0.75, AppraisalSource.Mood);
+        var modMood = new CharacterAppraisal(AppraisalType.PositiveMood, AppraisalPolarity.Positive, 0.40, AppraisalSource.Mood);
+
+        var highEmotion = _emotionPolicy.Evaluate(highMood);
+        var modEmotion = _emotionPolicy.Evaluate(modMood);
 
         Assert.Equal(EmotionType.Joy, highEmotion.Type);
         Assert.Equal(EmotionalValence.Positive, highEmotion.Valence);
@@ -114,12 +146,13 @@ public sealed class CharacterEmotionDomainTests
     [Fact]
     public void NeutralPolarity_OrZeroIntensity_MapsTo_NeutralEmotion()
     {
-        var appraisal = new CharacterAppraisal(AppraisalType.PhysicalRestoration, AppraisalPolarity.Neutral, 0.0, AppraisalSource.Hunger);
+        var physicalRestoration = new CharacterAppraisal(AppraisalType.PhysicalRestoration, AppraisalPolarity.Neutral, 0.0, AppraisalSource.Hunger);
+        var socialConnection = new CharacterAppraisal(AppraisalType.SocialConnection, AppraisalPolarity.Neutral, 0.0, AppraisalSource.SocialNeed);
+        var safety = new CharacterAppraisal(AppraisalType.Safety, AppraisalPolarity.Neutral, 0.0, AppraisalSource.Stress);
 
-        var emotion = _emotionPolicy.Evaluate(appraisal);
-
-        Assert.Equal(EmotionType.Neutral, emotion.Type);
-        Assert.Equal(EmotionalValence.Neutral, emotion.Valence);
+        Assert.Equal(EmotionType.Neutral, _emotionPolicy.Evaluate(physicalRestoration).Type);
+        Assert.Equal(EmotionType.Neutral, _emotionPolicy.Evaluate(socialConnection).Type);
+        Assert.Equal(EmotionType.Neutral, _emotionPolicy.Evaluate(safety).Type);
     }
 
     #endregion
@@ -127,13 +160,13 @@ public sealed class CharacterEmotionDomainTests
     #region 2. Dominant Emotion Integration Tests (P0 Regression Tests)
 
     [Fact]
-    public void EvaluateDominant_ResolvesPositiveEmotion_WhenPositiveIntensityIsHigherThanNegative()
+    public void Pipeline_ResolvesPositiveEmotion_WhenPositiveIntensityIsHigherThanNegative()
     {
         // Energy = 90 -> Recovery (Positive 0.90) > StressPressure (Negative 0.25)
         var state = new CharacterStateSnapshot(energy: 90, stress: 25, hunger: 10);
         var exp = _experiencePolicy.Evaluate(state, CreateContext());
 
-        var emotion = _emotionPolicy.EvaluateDominant(exp);
+        var emotion = EvaluateDominant(exp);
 
         Assert.Equal(EmotionType.Joy, emotion.Type);
         Assert.Equal(EmotionalValence.Positive, emotion.Valence);
@@ -141,13 +174,13 @@ public sealed class CharacterEmotionDomainTests
     }
 
     [Fact]
-    public void EvaluateDominant_ResolvesNegativeEmotion_WhenNegativeIntensityIsHigherThanPositive()
+    public void Pipeline_ResolvesNegativeEmotion_WhenNegativeIntensityIsHigherThanPositive()
     {
         // Stress = 85 -> StressPressure (Negative 0.85) > Comfort (Positive 0.50)
         var state = new CharacterStateSnapshot(stress: 85, comfort: 50, energy: 50);
         var exp = _experiencePolicy.Evaluate(state, CreateContext());
 
-        var emotion = _emotionPolicy.EvaluateDominant(exp);
+        var emotion = EvaluateDominant(exp);
 
         Assert.Equal(EmotionType.Stress, emotion.Type);
         Assert.Equal(EmotionalValence.Negative, emotion.Valence);
@@ -155,36 +188,36 @@ public sealed class CharacterEmotionDomainTests
     }
 
     [Fact]
-    public void EvaluateDominant_ResolvesFrustration_WhenHungerDominates()
+    public void Pipeline_ResolvesFrustration_WhenHungerDominates()
     {
         var state = new CharacterStateSnapshot(hunger: 90, energy: 50, stress: 10);
         var exp = _experiencePolicy.Evaluate(state, CreateContext());
 
-        var emotion = _emotionPolicy.EvaluateDominant(exp);
+        var emotion = EvaluateDominant(exp);
 
         Assert.Equal(EmotionType.Frustration, emotion.Type);
         Assert.Equal(EmotionalValence.Negative, emotion.Valence);
     }
 
     [Fact]
-    public void EvaluateDominant_ResolvesFatigue_WhenEnergyIsExhausted()
+    public void Pipeline_ResolvesFatigue_WhenEnergyIsExhausted()
     {
         var state = new CharacterStateSnapshot(hunger: 20, energy: 10, stress: 10);
         var exp = _experiencePolicy.Evaluate(state, CreateContext());
 
-        var emotion = _emotionPolicy.EvaluateDominant(exp);
+        var emotion = EvaluateDominant(exp);
 
         Assert.Equal(EmotionType.Fatigue, emotion.Type);
         Assert.Equal(EmotionalValence.Negative, emotion.Valence);
     }
 
     [Fact]
-    public void EvaluateDominant_ResolvesLoneliness_WhenSocialNeedDominates()
+    public void Pipeline_ResolvesLoneliness_WhenSocialNeedDominates()
     {
         var state = new CharacterStateSnapshot(hunger: 20, energy: 50, socialNeed: 90, stress: 10);
         var exp = _experiencePolicy.Evaluate(state, CreateContext());
 
-        var emotion = _emotionPolicy.EvaluateDominant(exp);
+        var emotion = EvaluateDominant(exp);
 
         Assert.Equal(EmotionType.Loneliness, emotion.Type);
         Assert.Equal(EmotionalValence.Negative, emotion.Valence);
@@ -257,8 +290,7 @@ public sealed class CharacterEmotionDomainTests
     [Fact]
     public void Evaluate_ThrowsArgumentNullException_OnNullInputs()
     {
-        Assert.Throws<ArgumentNullException>(() => _emotionPolicy.Evaluate((CharacterAppraisal)null!));
-        Assert.Throws<ArgumentNullException>(() => _emotionPolicy.EvaluateDominant(null!));
+        Assert.Throws<ArgumentNullException>(() => _emotionPolicy.Evaluate(null!));
     }
 
     #endregion
@@ -272,11 +304,11 @@ public sealed class CharacterEmotionDomainTests
         var exp = _experiencePolicy.Evaluate(state, CreateContext());
         var blueprint = new CharacterBlueprint(Psychology: new PsychologyProfile(MoodReactivity: 1.2m));
 
-        var baseline = _emotionPolicy.EvaluateDominant(exp, blueprint);
+        var baseline = EvaluateDominant(exp, blueprint);
 
         for (int i = 0; i < 100; i++)
         {
-            var next = _emotionPolicy.EvaluateDominant(exp, blueprint);
+            var next = EvaluateDominant(exp, blueprint);
             Assert.Equal(baseline, next);
         }
     }
@@ -288,11 +320,11 @@ public sealed class CharacterEmotionDomainTests
         var exp = _experiencePolicy.Evaluate(state, CreateContext());
         var blueprint = new CharacterBlueprint(Psychology: new PsychologyProfile(MoodReactivity: 1.1m));
 
-        var baseline = _emotionPolicy.EvaluateDominant(exp, blueprint);
+        var baseline = EvaluateDominant(exp, blueprint);
 
         var tasks = Enumerable.Range(0, 20).Select(_ => Task.Run(() =>
         {
-            return _emotionPolicy.EvaluateDominant(exp, blueprint);
+            return EvaluateDominant(exp, blueprint);
         }));
 
         var results = await Task.WhenAll(tasks);

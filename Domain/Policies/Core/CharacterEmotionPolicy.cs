@@ -6,17 +6,11 @@ namespace Domain.Policies;
 
 /// <summary>
 /// Pure, deterministic domain policy that converts CharacterAppraisals into distinct CharacterEmotions.
-/// Zero side-effects, zero LLM, zero DB, zero random, zero clock.
+/// Completely decoupled: receives CharacterAppraisal, returns CharacterEmotion.
+/// Zero dependencies, zero side-effects, zero LLM, zero DB, zero random, zero clock.
 /// </summary>
 public sealed class CharacterEmotionPolicy : ICharacterEmotionPolicy
 {
-    private readonly ICharacterAppraisalPolicy _appraisalPolicy;
-
-    public CharacterEmotionPolicy(ICharacterAppraisalPolicy? appraisalPolicy = null)
-    {
-        _appraisalPolicy = appraisalPolicy ?? new CharacterAppraisalPolicy();
-    }
-
     public CharacterEmotion Evaluate(
         CharacterAppraisal appraisal,
         CharacterBlueprint? blueprint = null)
@@ -41,30 +35,11 @@ public sealed class CharacterEmotionPolicy : ICharacterEmotionPolicy
         );
     }
 
-    public CharacterEmotion Evaluate(
-        CharacterInternalExperience experience,
-        CharacterAppraisal appraisal,
-        CharacterBlueprint? blueprint = null)
-    {
-        ArgumentNullException.ThrowIfNull(experience, nameof(experience));
-        return Evaluate(appraisal, blueprint);
-    }
-
-    public CharacterEmotion EvaluateDominant(
-        CharacterInternalExperience experience,
-        CharacterBlueprint? blueprint = null)
-    {
-        ArgumentNullException.ThrowIfNull(experience, nameof(experience));
-
-        var dominantAppraisal = _appraisalPolicy.Evaluate(experience, blueprint);
-        return Evaluate(dominantAppraisal, blueprint);
-    }
-
     private static (EmotionType Type, EmotionalValence Valence) MapAppraisalToEmotion(
         CharacterAppraisal appraisal,
         double intensity)
     {
-        // Neutral or zero intensity default
+        // Neutral or zero intensity default (also cleanly handles neutral baseline markers: Safety, SocialConnection, PhysicalRestoration)
         if (appraisal.Polarity == AppraisalPolarity.Neutral || intensity == 0.0)
         {
             return (EmotionType.Neutral, EmotionalValence.Neutral);
@@ -72,6 +47,7 @@ public sealed class CharacterEmotionPolicy : ICharacterEmotionPolicy
 
         return appraisal.Type switch
         {
+            // Negative Appraisals -> Negative Emotions
             AppraisalType.PhysicalDeprivation =>
                 intensity >= 0.60
                     ? (EmotionType.Frustration, EmotionalValence.Negative)
@@ -83,34 +59,27 @@ public sealed class CharacterEmotionPolicy : ICharacterEmotionPolicy
             AppraisalType.SocialDeprivation =>
                 (EmotionType.Loneliness, EmotionalValence.Negative),
 
-            AppraisalType.SocialConnection =>
-                intensity >= 0.70
-                    ? (EmotionType.Joy, EmotionalValence.Positive)
-                    : (EmotionType.Content, EmotionalValence.Positive),
-
             AppraisalType.StressPressure =>
                 intensity >= 0.60
                     ? (EmotionType.Stress, EmotionalValence.Negative)
                     : (EmotionType.Anxiety, EmotionalValence.Negative),
 
-            AppraisalType.Safety =>
-                (EmotionType.Content, EmotionalValence.Positive),
-
             AppraisalType.Discomfort =>
                 (EmotionType.Discomfort, EmotionalValence.Negative),
-
-            AppraisalType.Comfort =>
-                (EmotionType.Content, EmotionalValence.Positive),
-
-            AppraisalType.PhysicalRestoration or AppraisalType.Recovery =>
-                intensity >= 0.70
-                    ? (EmotionType.Joy, EmotionalValence.Positive)
-                    : (EmotionType.Relief, EmotionalValence.Positive),
 
             AppraisalType.NegativeMood =>
                 intensity >= 0.60
                     ? (EmotionType.Sadness, EmotionalValence.Negative)
                     : (EmotionType.Concern, EmotionalValence.Negative),
+
+            // Positive Appraisals -> Positive Emotions
+            AppraisalType.Recovery =>
+                intensity >= 0.70
+                    ? (EmotionType.Joy, EmotionalValence.Positive)
+                    : (EmotionType.Relief, EmotionalValence.Positive),
+
+            AppraisalType.Comfort =>
+                (EmotionType.Content, EmotionalValence.Positive),
 
             AppraisalType.PositiveMood =>
                 intensity >= 0.60
