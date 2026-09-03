@@ -23,6 +23,7 @@ appsettings*.Development.json
 
 # Benchmark and Python artifacts
 benchmark_outputs/
+eval_artifacts_*/**/*.png
 __pycache__/
 *.pyc
 
