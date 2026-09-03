@@ -7,8 +7,8 @@
     "Location": "Sanctuary (Standing Window)",
     "Action": "standing",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, standing, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing]. [Pose: standing naturally]. [Outfit: white and gold silk priestess dress]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Lyra_tight_face.png",
     "TargetActionPrompt": "an anime girl standing beside an arched window",
     "NegativeActionPrompts": [
@@ -26,7 +26,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "8341e1eb323b32b920e862521dba310cba3916dd04a3260e69a8f5e0ed13dc76"
+        "Fingerprint": "a7c321fe247fc28c9c0cc3ea77c668acdf4cf4ea73bec9a4e6b3fe27d14917c5"
       },
       {
         "AttemptNumber": 2,
@@ -37,7 +37,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "266994503996dee631feb114f710c88914cbfe032ce4e02d7d1b080860ae3193"
+        "Fingerprint": "80c2c98afc118ff4df7471712e1668b8874758a65a1e530be089790b5e1b9326"
       },
       {
         "AttemptNumber": 3,
@@ -48,7 +48,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "500eb2cde6ce3ef3999bf22ac5ee9efc24be6c434729eb66373c9267547bc532"
+        "Fingerprint": "bcdfddfad4fe1db619192e309ab1e92e123d2ae06370827f480a94de1fa60124"
       }
     ]
   },
@@ -60,8 +60,8 @@
     "Location": "Sanctuary (Walking Altar)",
     "Action": "walking",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, walking, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: walking]. [Pose: mid-stride dynamic movement]. [Outfit: white and gold silk priestess dress]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, walking, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Lyra_tight_face.png",
     "TargetActionPrompt": "an anime girl walking along an aisle holding a book",
     "NegativeActionPrompts": [
@@ -79,7 +79,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "f49bde5720903f90c8a4044f9a30050ecdb17cd9173ded41553182547bb4d459"
+        "Fingerprint": "06a24912a30b4a4763b372a2e50b5263539ce3c35afd3c4aeae20366ec6d86b8"
       },
       {
         "AttemptNumber": 2,
@@ -90,7 +90,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "4dbb1c44d7fc065bec4f32f5b20948e8a3a5431ce10031909f3569b7e5e48c41"
+        "Fingerprint": "28aa8ecd103764b4875b41232a6f7645b773764261cd6e8fdd46cee0f46f86d4"
       },
       {
         "AttemptNumber": 3,
@@ -101,7 +101,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "f8befae3e8a2500aeac069a916ed37b52bb009e31969acf61e58daa2c59ce709"
+        "Fingerprint": "1e421ec6e44e4c4708ebad3c6ec0d74f973d761afeab247cf3ede2ab435b7a88"
       }
     ]
   },
@@ -113,8 +113,8 @@
     "Location": "Sanctuary (Kneeling Prayer)",
     "Action": "kneeling",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, kneeling, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: kneeling]. [Pose: mid-stride dynamic movement]. [Outfit: white and gold silk priestess dress]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, kneeling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Lyra_tight_face.png",
     "TargetActionPrompt": "an anime girl kneeling in prayer before an altar hands clasped",
     "NegativeActionPrompts": [
@@ -132,7 +132,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "76b5f807c1ad1de22228d5521274ed8d7150b6937b7704072e8118a651e17537"
+        "Fingerprint": "59868dea977c8f2c1fe2f030a432c8230eef3e6a393c66d0a723871920b3dedb"
       },
       {
         "AttemptNumber": 2,
@@ -143,7 +143,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "19b5d449f2239837adfaf52ad176e951d39124d6c4c62661222120f9683939b9"
+        "Fingerprint": "e07acc72d4dc546a29fbb82f80f9bbded1d744bbac83fb4e047e46b63c8804fe"
       },
       {
         "AttemptNumber": 3,
@@ -154,7 +154,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "dc63d54aacc93a21f3b86fab664d11846e0853a20e50f7aa48c6355fe4176981"
+        "Fingerprint": "7d020d9bef26a55ce7e98851574cd863a8ee93db0b2773d4b86d34f3dccd520f"
       }
     ]
   },
@@ -166,8 +166,8 @@
     "Location": "Sanctuary (Smiling Turn)",
     "Action": "standing/smiling",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing/smiling]. [Pose: mid-stride dynamic movement]. [Outfit: white and gold silk priestess dress]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Sanctuary, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Lyra_tight_face.png",
     "TargetActionPrompt": "an anime girl standing and smiling warmly looking at viewer",
     "NegativeActionPrompts": [
@@ -185,7 +185,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "de58fd0a98781036d7645903a8912e88529723728a766672af99fde014edceaf"
+        "Fingerprint": "6414b391d03767d8fd344515a0fafa8e30beca0b43f131e19c36e7066beb61db"
       },
       {
         "AttemptNumber": 2,
@@ -196,7 +196,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "864af78f2a6a93b0606671d3cb9c6bc95104495ab670a3f952d3937645de24d0"
+        "Fingerprint": "47365b0fc9dd90a1d6cc3f2cdbff75ade68a375b33642f1750230eda8edd07a1"
       },
       {
         "AttemptNumber": 3,
@@ -207,7 +207,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "0fb12846ae91572a39f124676eccf4b2304a31865ecb09ad6ace6674099d7fa5"
+        "Fingerprint": "85a2ab95f32777cc129bf105058e1e722e7c6779cc6ce548c926597c5a2eb416"
       }
     ]
   },
@@ -219,8 +219,8 @@
     "Location": "Library (Sitting Tea)",
     "Action": "sitting",
     "IsTransition": true,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Library, Daytime, Peaceful, Neutral, Graceful posture, sitting, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: sitting]. [Pose: seated naturally]. [Outfit: white and gold silk priestess dress]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Library, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Lyra_tight_face.png",
     "TargetActionPrompt": "an anime girl sitting at a wooden table drinking tea",
     "NegativeActionPrompts": [
@@ -238,7 +238,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "65d646f0ce7e4183b3c71a39c2d2798f9194ab4dd544c9774ed6ffa2e6cdaa27"
+        "Fingerprint": "254167c6c3816200b789a312998392b27a1ed611c9720cb01b06d44391d30023"
       },
       {
         "AttemptNumber": 2,
@@ -249,7 +249,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "eed6b1639b6b0b3559ec83adfdc368e8daf8cce8d0be65b1fccea87f9c3b04ce"
+        "Fingerprint": "d9fc0c2cec7a6eed9e09bef087c88a5a3327871d9314b4f84345acaeb352b522"
       },
       {
         "AttemptNumber": 3,
@@ -260,7 +260,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "d561098863ad7b7c3124d98940b7aac4f78b9d751c4abe7698fe30a214c96ec7"
+        "Fingerprint": "68df49b23c4034b71b9cdb685b5b9ce2c1bcec3ed5c45dc89c8c4b0eb81b78b7"
       }
     ]
   },
@@ -272,8 +272,8 @@
     "Location": "Library (Reading Grimoire)",
     "Action": "reading/leaning",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Library, Daytime, Peaceful, Neutral, Graceful posture, reading/leaning, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: reading/leaning]. [Pose: seated naturally]. [Outfit: white and gold silk priestess dress]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Library, Daytime, Peaceful, Neutral, Graceful posture, reading/leaning, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Lyra_tight_face.png",
     "TargetActionPrompt": "an anime girl leaning over an open book reading a grimoire",
     "NegativeActionPrompts": [
@@ -291,7 +291,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "0052c03740d0ea8afb8a1386ad354c850769e1d86a8bb33d2848e1633104964a"
+        "Fingerprint": "916ea4fcf9f5fa1e2217df8b236eccf7ff0a24fe118b13c9f15dbbe7d7df57a8"
       },
       {
         "AttemptNumber": 2,
@@ -302,7 +302,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "4a74584a7760c493f8ed8076e2647836f8df34291a3ec6fc0a5b4a10a9ade0c3"
+        "Fingerprint": "8bcb726db95391c9d8e4746957e792b94dbab1bc1deddba5b8d6bebe32b1c613"
       },
       {
         "AttemptNumber": 3,
@@ -313,7 +313,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "a0230591af2fbc9d7a397690425a937cb9d3db3eaec68f26f1b3233358dd5c6c"
+        "Fingerprint": "26bc0add4cc88aa1b8fd8421bbf5029abeafacf381539d64d68a95001602c169"
       }
     ]
   },
@@ -325,8 +325,8 @@
     "Location": "Balcony (Twilight Walk)",
     "Action": "walking",
     "IsTransition": true,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Balcony, Daytime, Peaceful, Neutral, Graceful posture, walking, medium cinematic shot, eye-level angle, centered subject placement, natural diffused daylight, [Character: character visual identity]. [Action: walking]. [Pose: mid-stride dynamic movement]. [Outfit: white and gold silk priestess dress]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: natural diffused daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Balcony, Daytime, Peaceful, Neutral, Graceful posture, walking, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Lyra_tight_face.png",
     "TargetActionPrompt": "an anime girl walking on an outdoor stone balcony at twilight",
     "NegativeActionPrompts": [
@@ -343,7 +343,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "c835009686dbe1aa82a1153f83e8c2dd88cd044ced796eef9006d71bffca9133"
+        "Fingerprint": "dd14fa138c05d3c934790bf57e1b814ae7576118f08fc95a89e16feb05868746"
       },
       {
         "AttemptNumber": 2,
@@ -354,7 +354,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "238039a24fd6f7df9ee2a65a77d1c27f0ac5289301d8feaf9212abb32a20ee57"
+        "Fingerprint": "0fadb8ad0f2672647bbc9f3fc00628e0c42c844b30e1697c532727e870b0b002"
       },
       {
         "AttemptNumber": 3,
@@ -365,7 +365,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "b67423c41a76cb6270958b27ffb0362a440ae8f0c477689269ecfa6086add3b8"
+        "Fingerprint": "64fce51822d2dd38c400adedc182937f746e7f03e83b22733344d334d6c5a4f1"
       }
     ]
   },
@@ -377,8 +377,8 @@
     "Location": "Balcony (Night Stars)",
     "Action": "leaning/gazing",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Balcony, Daytime, Peaceful, Neutral, Graceful posture, leaning/gazing, medium cinematic shot, eye-level angle, centered subject placement, natural diffused daylight, [Character: character visual identity]. [Action: leaning/gazing]. [Pose: mid-stride dynamic movement]. [Outfit: white and gold silk priestess dress]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: natural diffused daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, long silver white hair, striking crimson red eyes, delicate porcelain skin, sharp black dragon horns with glowing red accents on head, wearing white and gold silk priestess dress, at Central Area, in Balcony, Daytime, Peaceful, Neutral, Graceful posture, leaning/gazing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, deformed horns, missing horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Lyra_tight_face.png",
     "TargetActionPrompt": "an anime girl leaning against a stone balustrade looking at distance",
     "NegativeActionPrompts": [
@@ -395,7 +395,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "bb125c188cf0c4a0b05e543147802f4df0cabd54ecf43db077da3aaeeb5f5e37"
+        "Fingerprint": "a3830b8334754c70cd2163f8024aa37de9d006dcc04e49b093cf297e10e3c20a"
       },
       {
         "AttemptNumber": 2,
@@ -406,7 +406,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "b85e667f84b5bb58db4ce3e7fd37c4b4ff10fd2fc9da50679d4d1133eb096205"
+        "Fingerprint": "e92cb19cd05ec4d9b416877c6d52aa6152fd5307b7a6c1b0ee6ba7593291da92"
       },
       {
         "AttemptNumber": 3,
@@ -417,7 +417,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "30ebe5b1016aeb9239de65500f9bd6cbba93ced4aa4581cfc0dee06445c54a69"
+        "Fingerprint": "57c42e5d63bb7d11fc22728e15dd6d89d8a1463f5399ebb1bfa3b617be99b0c9"
       }
     ]
   },
@@ -429,8 +429,8 @@
     "Location": "Academy (Standing Desk)",
     "Action": "standing",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, standing, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing]. [Pose: standing naturally]. [Outfit: scholarly white and gold academy robes]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Elysia_tight_face.png",
     "TargetActionPrompt": "an elf girl standing in an academy classroom beside a desk",
     "NegativeActionPrompts": [
@@ -448,7 +448,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "115ad4ad0a5bf665ca6f29d512f98a0758833dc8d5e58cdc8875f33ea092239f"
+        "Fingerprint": "c822d0df0e79d07444b82f046a1cadb4ddcdfab8c5f368d51e11c6c08f181c2d"
       },
       {
         "AttemptNumber": 2,
@@ -459,7 +459,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "e0e72d20bf3fb7ead13b193cabd9f534c16e311217cd87deab759eba4a1dfa0e"
+        "Fingerprint": "2773500ad188a584acaabbbf6a601e55ef794942244612d37d7a2418fbd1fa5d"
       },
       {
         "AttemptNumber": 3,
@@ -470,7 +470,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "06b4baf7aa334466ceaa14b4e00bf37ef30bde350eef20c1457765866ade960d"
+        "Fingerprint": "91273c6e59d5eb2993d4af9f8de48f396e3709c19b92db61ac1383ba0c9181dd"
       }
     ]
   },
@@ -482,8 +482,8 @@
     "Location": "Academy (Walking Shelf)",
     "Action": "walking",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, walking, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: walking]. [Pose: mid-stride dynamic movement]. [Outfit: scholarly white and gold academy robes]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, walking, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Elysia_tight_face.png",
     "TargetActionPrompt": "an elf girl walking between tall bookshelves reaching for a book",
     "NegativeActionPrompts": [
@@ -501,7 +501,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "d09e15339c5a4e901cbf47d32885f2c145d57b620daebee64ecfcf6bbfd216dd"
+        "Fingerprint": "263789841454a9f8e11b162cfcd89adf8ea53e8cb42897a69acd3a5e9d47d1b3"
       },
       {
         "AttemptNumber": 2,
@@ -512,7 +512,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "7cb08743bc9955a77c09e503b49eac9a68aec3953175079d4425ad0ea43e2789"
+        "Fingerprint": "72b831919d6b7af6cefed8cc7c2f891f0d2fd9173ad491dfa0332f6c6aec13af"
       },
       {
         "AttemptNumber": 3,
@@ -523,7 +523,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "0df5f5675915dbe883f38294ef9198155e2d24e622b1133bf5e56488e47c3541"
+        "Fingerprint": "4f020561afbf3f960338edbbfbce92ec82f97f6d1993c9014f5959803abc4f9f"
       }
     ]
   },
@@ -535,8 +535,8 @@
     "Location": "Academy (Sitting Desk)",
     "Action": "sitting",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, sitting, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: sitting]. [Pose: seated naturally]. [Outfit: scholarly white and gold academy robes]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Elysia_tight_face.png",
     "TargetActionPrompt": "an elf girl sitting at a desk writing on parchment with a quill",
     "NegativeActionPrompts": [
@@ -554,7 +554,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "fe823c405630d69a77f684db6af5fe5b3a58ecf17ea53497dab7a6e885390521"
+        "Fingerprint": "aaa85059fb272ed7714014943b69367ea5b8f75e96162b25247ccc4f8063ea25"
       },
       {
         "AttemptNumber": 2,
@@ -565,7 +565,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "63f69febe20aede03b239619612d001c6fa0c846efd88d39765e6a273f06c19f"
+        "Fingerprint": "2be887ff09010a4faa753bebded56b586865e1a0cba4aa9642f3aae0a66ae4cd"
       },
       {
         "AttemptNumber": 3,
@@ -576,7 +576,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "a8a00c3304522af01ea7b503f6638ac63cd2cb7cda48bd88c24f999c40098e0d"
+        "Fingerprint": "0786c3280b4883cf51c64348ad0e5846c591e3d7163702d153c89c638645f9c0"
       }
     ]
   },
@@ -588,8 +588,8 @@
     "Location": "Academy (Kneeling Sorting)",
     "Action": "kneeling",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, kneeling, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: kneeling]. [Pose: seated naturally]. [Outfit: scholarly white and gold academy robes]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Academy, Daytime, Peaceful, Neutral, Graceful posture, kneeling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Elysia_tight_face.png",
     "TargetActionPrompt": "an elf girl kneeling on the carpet organizing ancient scrolls",
     "NegativeActionPrompts": [
@@ -607,7 +607,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "f0e1c4eee8e6004da01870dbf184803d23326ed89514f4c55b89802438cc0c47"
+        "Fingerprint": "18a497311cb3f9b6e80cdac4bf8d39bc926f7bdaa41256740466f01b1b249a4e"
       },
       {
         "AttemptNumber": 2,
@@ -618,7 +618,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "66ad59735226145b3420a15b80dc9a73d7f805b6dfa68e2eeb230d12e9b1e6c1"
+        "Fingerprint": "51ef7006e6d1c1858cdd324611a1a7935363c7f8c2fd97716dc502c1c6615d23"
       },
       {
         "AttemptNumber": 3,
@@ -629,7 +629,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "b2d20f1ac548febf51755a4d1d6dedaa5ee8be3692378869b67411ffd8153e03"
+        "Fingerprint": "858147607b3de76fc4db30ac14e6a2b809456a1ff36744d27bb7048c81e0f7b1"
       }
     ]
   },
@@ -641,8 +641,8 @@
     "Location": "Botanical Garden (Standing Flower)",
     "Action": "standing/smiling",
     "IsTransition": true,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Botanical Garden, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, medium cinematic shot, eye-level angle, centered subject placement, natural diffused daylight, [Character: character visual identity]. [Action: standing/smiling]. [Pose: standing naturally]. [Outfit: scholarly white and gold academy robes]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: natural diffused daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Botanical Garden, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Elysia_tight_face.png",
     "TargetActionPrompt": "an elf girl standing among glowing flowers in a greenhouse",
     "NegativeActionPrompts": [
@@ -660,7 +660,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "5718e1bb43dcf7567ef180bd978519ef217059a680e5a1c87980093bafe13aad"
+        "Fingerprint": "6552de4ec2f20fb784c5e392c14917123e033195875b4d77ff5a783886fa8626"
       },
       {
         "AttemptNumber": 2,
@@ -671,7 +671,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "ac461237d669184e6ede7a43735e7914923c42dd5d7a08bbda4202006f89f0bf"
+        "Fingerprint": "5af679e6febd9224612772b273889203b66b62cfc7d1e3c3c692c9eb0b3ca11b"
       },
       {
         "AttemptNumber": 3,
@@ -682,7 +682,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "9aadc5a773b36cfc2f72fd18a0cd9052318a41b78002735e07393263e57707f1"
+        "Fingerprint": "9657319fd8921235b0fd26e90264886322009ad5578d372cc3e66def60846a06"
       }
     ]
   },
@@ -694,8 +694,8 @@
     "Location": "Botanical Garden (Sitting Bench)",
     "Action": "sitting",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Botanical Garden, Daytime, Peaceful, Neutral, Graceful posture, sitting, medium cinematic shot, eye-level angle, centered subject placement, natural diffused daylight, [Character: character visual identity]. [Action: sitting]. [Pose: seated naturally]. [Outfit: scholarly white and gold academy robes]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: natural diffused daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Botanical Garden, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Elysia_tight_face.png",
     "TargetActionPrompt": "an elf girl sitting on a garden bench sketching botanical plants",
     "NegativeActionPrompts": [
@@ -713,7 +713,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "2af65b12ea6ffccac40aab05ce321f02ce4be50272af2da025e7085a8d4091e8"
+        "Fingerprint": "87a57559e03a8f8151b1737a2bea94c1999538d9fa0c296400b0eb66d59064ab"
       },
       {
         "AttemptNumber": 2,
@@ -724,7 +724,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "a990daa934191284611cdf27057885aedd582e9e4cfdecdb3ae6ea021ec8d940"
+        "Fingerprint": "ff0aa1753fb6615f41a32eaf5ba19b8e997924978fe4d3f315f070ca40ccb22c"
       },
       {
         "AttemptNumber": 3,
@@ -735,7 +735,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "cd1012d6c494e542e87312f94b4707a26470c45913c0f41d24dc260ebc876bf5"
+        "Fingerprint": "5ed87959cecd224019f542e1764df8572f5762903b9219f1e5db6a4d58b9ecea"
       }
     ]
   },
@@ -747,8 +747,8 @@
     "Location": "Observatory (Standing Telescope)",
     "Action": "standing/leaning",
     "IsTransition": true,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Observatory, Daytime, Peaceful, Neutral, Graceful posture, standing/leaning, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing/leaning]. [Pose: standing naturally]. [Outfit: scholarly white and gold academy robes]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Observatory, Daytime, Peaceful, Neutral, Graceful posture, standing/leaning, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Elysia_tight_face.png",
     "TargetActionPrompt": "an elf girl leaning against a brass astronomical telescope at night",
     "NegativeActionPrompts": [
@@ -765,7 +765,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "dc3d5b192c4d26f2f4b4efc286b4e27ab94c04fe84f6c6adfd1b595e3204aa58"
+        "Fingerprint": "00263217abc8c102d754e3c0ef072efb509a440d0b2f5a0c68f4dfb6dad7d653"
       },
       {
         "AttemptNumber": 2,
@@ -776,7 +776,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "48ca82cf457f5ab93c882e401f0602dae0c0a4b56020af13bb42a62f7e898f9d"
+        "Fingerprint": "8fec7e462a2f8d3941f79fe158d16a6dc70263e00b2904679edc900707879dff"
       },
       {
         "AttemptNumber": 3,
@@ -787,7 +787,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "c626f4bc99e6b53ed59256fcf0867d2df13efeded70839002dd08d58e26724cd"
+        "Fingerprint": "86ea1ab10617ae5bf3bb14d256adce079013111c2ef39267d604c65660687d40"
       }
     ]
   },
@@ -799,8 +799,8 @@
     "Location": "Observatory (Looking Sky)",
     "Action": "standing/smiling",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Observatory, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing/smiling]. [Pose: standing naturally]. [Outfit: scholarly white and gold academy robes]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1girl, female, feminine face, wavy pastel pink hair, crystal clear sapphire blue eyes, fair skin, long elegant pointed elf ears, wearing scholarly white and gold academy robes, at Central Area, in Observatory, Daytime, Peaceful, Neutral, Graceful posture, standing/smiling, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1man, anime man, male, boy, masculine face, facial hair, beard, mustache, human round ears, missing ears, extra ears, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Elysia_tight_face.png",
     "TargetActionPrompt": "an elf girl looking up at the starry night sky with wonder",
     "NegativeActionPrompts": [
@@ -817,7 +817,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "d181336c850294ba1de0b66ea4a0b42edcb799e6359751593916598239d80028"
+        "Fingerprint": "1471663cea880d59f2086845261f292cae81d033a0763865db3ccefbcab4e102"
       },
       {
         "AttemptNumber": 2,
@@ -828,7 +828,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "f884373ee4f4f990c8187ed76bbe25eae4301c9c37cda72679174c1b3951bff7"
+        "Fingerprint": "7f58cb929019e28218354f26f3a5e1fb6ccaeb48d636f342de88f72453dd4fb2"
       },
       {
         "AttemptNumber": 3,
@@ -839,7 +839,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "5d822d77e76e1b46b03f2205e5b75377cbd5f26ffb8097138257916c0a5a281d"
+        "Fingerprint": "cf2080a03a7e0910ab59fb31b0baa593f5c3a458b4e0f006a4eec2788b66c9ce"
       }
     ]
   },
@@ -851,8 +851,8 @@
     "Location": "Armory (Inspecting Blade)",
     "Action": "standing",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Armory, Daytime, Peaceful, Neutral, Graceful posture, standing, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing]. [Pose: standing naturally]. [Outfit: dark steel knight commander armor with silver trims]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Armory, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Valerius_tight_face.png",
     "TargetActionPrompt": "an anime knight man standing holding a sheathed sword",
     "NegativeActionPrompts": [
@@ -870,7 +870,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "0cc7891fb150e607bc69042d983bff871eb25c310a144764fd0c91d6d6597980"
+        "Fingerprint": "fb53376138909851a17001c24bf069ac59e4799d4885889ed40958c3c39a3246"
       },
       {
         "AttemptNumber": 2,
@@ -881,7 +881,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "0f248055a6b25c4e77487a675077ea2378ef15a536aeb6c1bed4af46353f03cc"
+        "Fingerprint": "e95e9fff31495da3bb69abcaa56ef0bf72baee1f163d591c8a73ea3b9362cda1"
       },
       {
         "AttemptNumber": 3,
@@ -892,7 +892,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "011f2d3d0c4fb6d031546c8a394d636d09e112be3accfc54bb248caa2cfeb3a7"
+        "Fingerprint": "3a1a6f7361606133bc5f18a72c747a9122dde80b5451b4eaa28cbc898588a465"
       }
     ]
   },
@@ -904,8 +904,8 @@
     "Location": "Armory (Polishing Armor)",
     "Action": "sitting",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Armory, Daytime, Peaceful, Neutral, Graceful posture, sitting, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: sitting]. [Pose: seated naturally]. [Outfit: dark steel knight commander armor with silver trims]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Armory, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Valerius_tight_face.png",
     "TargetActionPrompt": "an anime knight man sitting at a workbench maintaining equipment",
     "NegativeActionPrompts": [
@@ -923,7 +923,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "bdf05b1255378ded49e04f60b8c7721c428fa46dc34e7fdf3bb1a354f9f0abd5"
+        "Fingerprint": "9375476ecd4e83c3a5886d7461f09feee8820d89e8a13c198c6b4ad396ffe394"
       },
       {
         "AttemptNumber": 2,
@@ -934,7 +934,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "fa1eae4bff9eb86cc661ef1ff8d8bf9b6dd0c236ac5d38af9b0511ab2c2d6f5b"
+        "Fingerprint": "02f242fb4e07d3bfb345a5d727a16439fab63a84d6c88e12c019e357ea64444a"
       },
       {
         "AttemptNumber": 3,
@@ -945,7 +945,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "860f4336671edc13e7d2bd57989299105112976db99fa1118cb732b55891321a"
+        "Fingerprint": "caa4320398dcc023c1650a1e4029eb39e0cbb91149f184fb0bd79a478fd49ab5"
       }
     ]
   },
@@ -957,8 +957,8 @@
     "Location": "War Room (Studying Map)",
     "Action": "leaning",
     "IsTransition": true,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, leaning, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: leaning]. [Pose: standing naturally]. [Outfit: dark steel knight commander armor with silver trims]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, leaning, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Valerius_tight_face.png",
     "TargetActionPrompt": "an anime knight man leaning over a war map planning strategy",
     "NegativeActionPrompts": [
@@ -976,7 +976,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "784bfd12dd04fc527e58750d3d745131693522a25d62feb392d1030db293303e"
+        "Fingerprint": "88e033389e215607ba07243fbaeacca6f935a45e4e284a8fcd0489fa115eca58"
       },
       {
         "AttemptNumber": 2,
@@ -987,7 +987,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "ae8521bb523f8d2786885ebc75fedcf1bf56c422712598b8b59b45de9dcfc6ac"
+        "Fingerprint": "0596d0e88b648bd8f96f2c86040c8d5993b615972baa21969236057b8f4d51bd"
       },
       {
         "AttemptNumber": 3,
@@ -998,7 +998,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "9c887d325802cabd248f3054e1a7a048613f09d2b659184c79367802b9e8621b"
+        "Fingerprint": "1c0c9e8d7e5318c064cc3b90e43ec54b010debe1eeda0beee89e96d96c37a20b"
       }
     ]
   },
@@ -1010,8 +1010,8 @@
     "Location": "War Room (Standing Briefing)",
     "Action": "standing",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, standing, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing]. [Pose: standing naturally]. [Outfit: dark steel knight commander armor with silver trims]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Valerius_tight_face.png",
     "TargetActionPrompt": "an anime knight man standing giving a briefing",
     "NegativeActionPrompts": [
@@ -1029,7 +1029,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "5eca73fae5c061c1ab3d9ffb5a5f653cbe97a97a599aff49bd292e51cccd1bb6"
+        "Fingerprint": "e9e051a8b06e98d69193b65ec21f3b4478d0c00bce9b8270e499704de9d9f11b"
       },
       {
         "AttemptNumber": 2,
@@ -1040,7 +1040,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "3f72292ae6a675e37a5903b4b6acef22fdbdb987af6fb81070795fe07a6f667a"
+        "Fingerprint": "090134cddbe2f4ab7c135e6a764f2ceaf274104e5f58d158f9ed9cfb595af76e"
       },
       {
         "AttemptNumber": 3,
@@ -1051,7 +1051,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "9c12de2f07a7357b5927d5366c168c1820df523932f5e52b7922959ce7467dab"
+        "Fingerprint": "64c4a8fe1256e4ec89c6e8980f1d499a7d4445ea879a9b1b22440450ba08bc88"
       }
     ]
   },
@@ -1063,8 +1063,8 @@
     "Location": "War Room (Wine Cup Rest)",
     "Action": "sitting",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, sitting, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: sitting]. [Pose: seated naturally]. [Outfit: dark steel knight commander armor with silver trims]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in War Room, Daytime, Peaceful, Neutral, Graceful posture, sitting, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Valerius_tight_face.png",
     "TargetActionPrompt": "an anime knight man sitting in a heavy chair holding a metal goblet",
     "NegativeActionPrompts": [
@@ -1082,7 +1082,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "d2fbeca96eed5e991fc5c0dc125585fb03b4e7d1c9da66d742b82aa717f1774e"
+        "Fingerprint": "4e2a6998129ce340d6d53bc93367e2b20db79f7661c1e5d39c3f25d9ac88da58"
       },
       {
         "AttemptNumber": 2,
@@ -1093,7 +1093,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "1816e2b4ea2fbff0b6cc932613de3f1deadbd27536b0687e820d1f64966af7c5"
+        "Fingerprint": "89c4e4e023e77e5a31eeffaf4e43cd56a07a318a170090fe73779e53a1a7ebcf"
       },
       {
         "AttemptNumber": 3,
@@ -1104,7 +1104,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "133f911570e4c18111fe40adbb3bed9bbdd9d2681fa1c68c923c04f0c9e7306f"
+        "Fingerprint": "373e0e06a8b2ea9965f9d4d11b6c239ab6f6f87c038a43951a66348c04dedcfb"
       }
     ]
   },
@@ -1116,8 +1116,8 @@
     "Location": "Battlements (Gazing Kingdom)",
     "Action": "standing/leaning",
     "IsTransition": true,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, standing/leaning, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing/leaning]. [Pose: standing naturally]. [Outfit: dark steel knight commander armor with silver trims]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: new location setting]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, standing/leaning, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Valerius_tight_face.png",
     "TargetActionPrompt": "an anime knight man standing on fortress battlements looking at the kingdom",
     "NegativeActionPrompts": [
@@ -1134,7 +1134,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "0f74b2be82dad25188e47593237dfabf88830f5c6223a84ab2521b1185bdd904"
+        "Fingerprint": "fd0e19e88f53b73be99f93b078c69b6aa28d34d090231d2f107651919b0e44d5"
       },
       {
         "AttemptNumber": 2,
@@ -1145,7 +1145,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "332cfd5aabf10acad25fdaeca34699d78311a03e11dc84e64ed957c9b915010e"
+        "Fingerprint": "5197ec317275ac7286bcc37bc175c157e9593799592d5959ed9d9432fb7d04ec"
       },
       {
         "AttemptNumber": 3,
@@ -1156,7 +1156,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "bb6faa9d718025ba39ef280351677c40334d0e89b00c5d508cae9da4812031b6"
+        "Fingerprint": "1084e0315a8bff474cc7a9a006d6f672260bfc1c2745be32502f7d1de07b0bdc"
       }
     ]
   },
@@ -1168,8 +1168,8 @@
     "Location": "Battlements (Night Patrol Walk)",
     "Action": "walking",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, walking, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: walking]. [Pose: mid-stride dynamic movement]. [Outfit: dark steel knight commander armor with silver trims]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, walking, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Valerius_tight_face.png",
     "TargetActionPrompt": "an anime knight man walking along the ramparts carrying a torch",
     "NegativeActionPrompts": [
@@ -1187,7 +1187,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "41dfdfcbbfaa66adac4567b6d828f69d314f25a98f79a057f278d31d6b5c4f9e"
+        "Fingerprint": "55f82addb97cc58e3b1e42baf27a39f39826c5975823b95628fc257d9f0309c7"
       },
       {
         "AttemptNumber": 2,
@@ -1198,7 +1198,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "ddb57462bd6aeb26aa8b08c4a4e46fd3389b8b32b533e197a92c6e3ab80dfdde"
+        "Fingerprint": "cc03b83a547a0c1e34c88160eeb9f172970c1f0fec0ca530b095e4c9bbd187ac"
       },
       {
         "AttemptNumber": 3,
@@ -1209,7 +1209,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "2b1d493b47556a0b34820256d6d495892533c5ffbb7f464557630c2a54557f17"
+        "Fingerprint": "d4a6b4f2d75b19d763ae91aae6052d93889209f8f928dfa1485896eba3748029"
       }
     ]
   },
@@ -1221,8 +1221,8 @@
     "Location": "Battlements (Salute to Dawn)",
     "Action": "standing",
     "IsTransition": false,
-    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, standing, medium cinematic shot, eye-level angle, centered subject placement, ambient interior lighting mixed with soft window daylight, [Character: character visual identity]. [Action: standing]. [Pose: mid-stride dynamic movement]. [Outfit: dark steel knight commander armor with silver trims]. [Environment: Peaceful]. [Camera: medium cinematic shot, centered subject placement]. [Lighting: ambient interior lighting mixed with soft window daylight]. [Weather: Clear]. [Time: Daytime]. [Mood: Neutral]. [Continuity: seamless visual continuation of previous scene]., cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
-    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed limbs, mutated hands",
+    "CompiledPrompt": "masterpiece, best quality, solo, 1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest, short textured jet black hair, sharp piercing golden amber eyes, chiseled handsome jawline, dark steel knight commander armor with silver trims, wearing dark steel knight commander armor with silver trims, at Central Area, in Battlements, Daytime, Peaceful, Neutral, Graceful posture, standing, cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending",
+    "CompiledNegative": "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, 1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face, casual t-shirt, swimsuit, deformed horns, extra horns, asymmetrical malformed horns",
     "IdentityReferenceUrl": "Valerius_tight_face.png",
     "TargetActionPrompt": "an anime knight man standing saluting the rising sun with drawn sword",
     "NegativeActionPrompts": [
@@ -1240,7 +1240,7 @@
         "Slot2EndAt": 0.25,
         "WeightType": "style transfer",
         "MitigationAction": "Pass",
-        "Fingerprint": "362ce198fa27606b6d8cad3cd7ab261263ee16d34157095ff24be9e27915f849"
+        "Fingerprint": "2fb459770e6cfd52d07f5784355f43a708bfc6bfae9058213b3ee88573c939a9"
       },
       {
         "AttemptNumber": 2,
@@ -1251,7 +1251,7 @@
         "Slot2EndAt": 0.15,
         "WeightType": "style transfer",
         "MitigationAction": "RetryAttenuated",
-        "Fingerprint": "876423e4e27ce5bf2da6401c81fc4d46c09153bd26caa4ae7f21730f293cecb4"
+        "Fingerprint": "669f20de7aa2ea4a0d74a5b238ae5c9f48a443874b8d85bd76a303bb74c3027a"
       },
       {
         "AttemptNumber": 3,
@@ -1262,7 +1262,7 @@
         "Slot2EndAt": 0,
         "WeightType": "style transfer",
         "MitigationAction": "RetryIsolated",
-        "Fingerprint": "014e0d808157a963c102f8a0d0139180e6c475b1a6bc6820cbd9e5c92f4738f1"
+        "Fingerprint": "b15785c3e66c5dfe4605c317e0f7178834e01a589f50679f4fb1ed5dd0e74371"
       }
     ]
   }

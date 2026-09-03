@@ -301,15 +301,10 @@ public sealed class CharacterActivityDecisionService : ICharacterActivityDecisio
                 pool.Add(new CandidateOption(CharacterActivityType.Exploring, loc, 80, "exploring new wings and uncharted territory", "navigating through scenic arches", "Afternoon expedition", 90));
 
             if (isScholar || isGoalStudy)
-            {
-                pool.Add(new CandidateOption(CharacterActivityType.Reading, loc, 70, "deeply engrossed in reading scholarly volumes", "seated beside window reading", "Afternoon study", 60));
-                pool.Add(new CandidateOption(CharacterActivityType.Working, loc, 50, "tending to ongoing research", "actively engaged in task", "Afternoon work", 60));
-            }
-            else
-            {
-                pool.Add(new CandidateOption(CharacterActivityType.Working, loc, 30, "tending to ongoing responsibilities", "actively engaged in task", "Afternoon work", 60));
-                pool.Add(new CandidateOption(CharacterActivityType.Exercising, loc, 25, "practicing tactical forms and stretching", "dynamic balanced athletic pose", "Physical practice", 45));
-            }
+                pool.Add(new CandidateOption(CharacterActivityType.Reading, loc, 50, "deeply engrossed in reading scholarly volumes", "seated beside window reading", "Afternoon study", 60));
+
+            pool.Add(new CandidateOption(CharacterActivityType.Working, loc, 30, "tending to ongoing responsibilities", "actively engaged in task", "Afternoon work", 60));
+            pool.Add(new CandidateOption(CharacterActivityType.Exercising, loc, 25, "practicing tactical forms and stretching", "dynamic balanced athletic pose", "Physical practice", 45));
         }
         else if (hour >= 18 && hour < 21)
         {

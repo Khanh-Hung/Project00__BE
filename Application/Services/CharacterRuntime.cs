@@ -138,10 +138,6 @@ public sealed class CharacterRuntime : ICharacterRuntime
         var userMsg = session.AddUserMessage(request.UserMessage);
         var assistantMessage = session.AddAssistantMessage(aiTurn.Reply);
 
-        var messageRepo = _unitOfWork.GetRepository<ChatMessage>();
-        await messageRepo.AddAsync(userMsg, ct);
-        await messageRepo.AddAsync(assistantMessage, ct);
-
         var (effectiveSceneState, effectiveTransientState, visualSnapshot) = await BuildTurnVisualStateAndSnapshotAsync(
             character,
             session,
@@ -150,6 +146,10 @@ public sealed class CharacterRuntime : ICharacterRuntime
             aiTurn.Mood,
             turnId,
             ct);
+
+        var messageRepo = _unitOfWork.GetRepository<ChatMessage>();
+        await messageRepo.AddAsync(userMsg, ct);
+        await messageRepo.AddAsync(assistantMessage, ct);
 
         var relationshipRepo = _unitOfWork.GetRepository<CharacterRelationship>();
         int appliedDelta = 0;
