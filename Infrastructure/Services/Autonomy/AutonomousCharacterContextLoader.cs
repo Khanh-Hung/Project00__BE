@@ -20,15 +20,18 @@ public sealed class AutonomousCharacterContextLoader : IAutonomousCharacterConte
 {
     private readonly CoreDbContext _dbContext;
     private readonly ISceneVisualStateReader _visualStateReader;
+    private readonly ICharacterStateService _stateService;
     private readonly ILogger<AutonomousCharacterContextLoader> _logger;
 
     public AutonomousCharacterContextLoader(
         CoreDbContext dbContext,
         ISceneVisualStateReader visualStateReader,
+        ICharacterStateService stateService,
         ILogger<AutonomousCharacterContextLoader> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
+        _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -52,10 +55,12 @@ public sealed class AutonomousCharacterContextLoader : IAutonomousCharacterConte
             : "Sanctuary";
         int sceneRevision = latestVisualState != null ? latestVisualState.SceneRevision : 1;
 
-        // Baseline character state snapshot (Scheduled to be sourced from PR #38 Persistent Character State Engine)
-        var currentState = CharacterStateSnapshot.CreateDefault();
+        // Authoritative persistent state evolved to current evaluation tick time (PR #38)
+        var evolutionResult = await _stateService.EvolveToAsync(character.Id, currentTime, ct);
+        var currentState = evolutionResult.Snapshot 
+            ?? await _stateService.GetOrCreateInitialStateAsync(character.Id, currentTime, ct);
 
-        // 2. Recent Activities (Recent history relative to evaluation window)
+        // 2. Recent Activities: Strictly enforce temporal filter (P1-4: No future data leakage)
         var recentActivities = await _dbContext.CharacterActivities
             .AsNoTracking()
             .Where(a => a.CharacterId == character.Id && a.CreatedAt <= currentTime)
@@ -63,34 +68,13 @@ public sealed class AutonomousCharacterContextLoader : IAutonomousCharacterConte
             .Take(5)
             .ToListAsync(ct);
 
-        // Fallback to recent activities without temporal filter if none before currentTime (e.g. synthetic test clock)
-        if (recentActivities.Count == 0)
-        {
-            recentActivities = await _dbContext.CharacterActivities
-                .AsNoTracking()
-                .Where(a => a.CharacterId == character.Id)
-                .OrderByDescending(a => a.CreatedAt)
-                .Take(5)
-                .ToListAsync(ct);
-        }
-
-        // 3. Active Visual Memories
+        // 3. Active Visual Memories: Strictly enforce temporal filter (P1-4: No future data leakage)
         var recentMemories = await _dbContext.CharacterVisualMemories
             .AsNoTracking()
             .Where(m => m.CharacterId == character.Id && m.ValidUntilTurnId == null && m.CreatedAt <= currentTime)
             .OrderByDescending(m => m.CreatedAt)
             .Take(5)
             .ToListAsync(ct);
-
-        if (recentMemories.Count == 0)
-        {
-            recentMemories = await _dbContext.CharacterVisualMemories
-                .AsNoTracking()
-                .Where(m => m.CharacterId == character.Id && m.ValidUntilTurnId == null)
-                .OrderByDescending(m => m.CreatedAt)
-                .Take(5)
-                .ToListAsync(ct);
-        }
 
         // 4. Active Goals
         var dbGoals = await _dbContext.CharacterGoals

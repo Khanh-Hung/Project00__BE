@@ -113,7 +113,7 @@ public sealed class SceneVisualStateReader : ISceneVisualStateReader
             }
 
             // Authoritative CAS Update
-            if (expectedVersion > 0 && existingRecord.Version != expectedVersion)
+            if (existingRecord.Version != expectedVersion)
             {
                 _logger.LogWarning("[SceneVisualStateReader] Concurrency conflict: existing record Version={CurrentVersion} != expected Version={ExpectedVersion}",
                     existingRecord.Version, expectedVersion);

@@ -99,6 +99,26 @@ public sealed class VisualStateResolver : IVisualStateResolver
             isColdStart: isColdStart
         );
 
+        string? frozenPreviousSceneImageUrl = null;
+        Guid? frozenPredecessorSceneImageId = null;
+        int? predecessorRevision = targetRevision > 1 ? targetRevision - 1 : null;
+        if (predecessorRevision.HasValue)
+        {
+            try
+            {
+                var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
+                var lastCommittedImage = await sceneImageRepo.GetAsync(
+                    img => img.SessionId == session.Id && img.SceneRevision == predecessorRevision.Value && img.IsCurrent,
+                    ct);
+                frozenPreviousSceneImageUrl = lastCommittedImage?.ImageUrl;
+                frozenPredecessorSceneImageId = lastCommittedImage?.Id;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to resolve predecessor scene image for Revision {Rev} during turn commit.", predecessorRevision.Value);
+            }
+        }
+
         // Authoritative Scene Composition Pipeline Execution
         try
         {
@@ -141,7 +161,20 @@ public sealed class VisualStateResolver : IVisualStateResolver
             var specRepo = _unitOfWork.GetRepository<SceneSpecification>();
             await specRepo.AddAsync(pipelineResult.SceneSpecification, ct);
 
-            return (updatedSceneState, transientState, pipelineResult.VisualSnapshot);
+            var resolvedSnapshot = pipelineResult.VisualSnapshot with
+            {
+                VisualIdentity = pipelineResult.VisualSnapshot.VisualIdentity ?? character.VisualIdentity,
+                IdentityReferenceUrl = pipelineResult.VisualSnapshot.IdentityReferenceUrl 
+                    ?? character.VisualIdentity?.CanonicalReferenceUrl 
+                    ?? character.AvatarUrl,
+                PreviousSceneImageUrl = pipelineResult.VisualSnapshot.PreviousSceneImageUrl ?? frozenPreviousSceneImageUrl,
+                PredecessorSceneImageId = pipelineResult.VisualSnapshot.PredecessorSceneImageId ?? frozenPredecessorSceneImageId,
+                PredecessorSceneRevision = pipelineResult.VisualSnapshot.PredecessorSceneRevision ?? predecessorRevision,
+                SceneState = updatedSceneState,
+                TransientState = transientState
+            };
+
+            return (updatedSceneState, transientState, resolvedSnapshot);
         }
         catch (SceneCompositionException)
         {

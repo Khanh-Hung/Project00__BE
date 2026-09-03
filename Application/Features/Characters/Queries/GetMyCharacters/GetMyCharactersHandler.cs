@@ -12,11 +12,16 @@ public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuer
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserProvider _currentUserProvider;
+    private readonly IIdentityUnitOfWork? _identityUnitOfWork;
 
-    public GetMyCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetMyCharactersHandler(
+        IUnitOfWork unitOfWork,
+        ICurrentUserProvider currentUserProvider,
+        IIdentityUnitOfWork? identityUnitOfWork = null)
     {
         _unitOfWork = unitOfWork;
         _currentUserProvider = currentUserProvider;
+        _identityUnitOfWork = identityUnitOfWork;
     }
 
     public async Task<Result<IReadOnlyList<CharacterDto>>> Handle(GetMyCharactersQuery query, CancellationToken cancellationToken)
@@ -32,10 +37,10 @@ public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuer
             c => c.CreatedBy == currentUserId,
             cancellationToken);
 
-        var userRepo = _unitOfWork.GetRepository<User>();
         User? creator = null;
-        if (Guid.TryParse(currentUserId, out var creatorGuid))
+        if (Guid.TryParse(currentUserId, out var creatorGuid) && _identityUnitOfWork != null)
         {
+            var userRepo = _identityUnitOfWork.GetRepository<User>();
             creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
         }
 

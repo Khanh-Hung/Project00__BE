@@ -158,10 +158,11 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
                 var worldEvent = await _dbContext.CharacterWorldEvents.FindAsync(new object?[] { request.WorldEventId.Value }, ct);
                 if (worldEvent != null)
                 {
+                    var reactionExecutionId = DeriveSubExecutionId(request.ExecutionId, 0x01);
                     var reactionRequest = new ReactionExecutionRequest(
                         WorldEvent: worldEvent,
                         Character: context.Character,
-                        ExecutionId: request.ExecutionId,
+                        ExecutionId: reactionExecutionId,
                         CurrentTime: now,
                         CurrentState: currentState,
                         CurrentVisualState: context.CurrentVisualState,
@@ -203,12 +204,13 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
             // 5. Execute Activity (if decided)
             if (decision.Action == AutonomousDecisionAction.PerformActivity && decision.Candidate != null)
             {
+                var activityExecutionId = request.ExecutionId;
                 var executionRequest = new ActivityExecutionRequest(
                     Character: context.Character,
                     Candidate: decision.Candidate,
                     CurrentTime: now,
                     TimeBucket: request.TimeBucket,
-                    ExecutionId: request.ExecutionId,
+                    ExecutionId: activityExecutionId,
                     CurrentVisualState: context.CurrentVisualState,
                     CurrentState: currentState,
                     SceneRevision: context.SceneRevision
@@ -329,5 +331,12 @@ public sealed class AutonomousCharacterLifecycleOrchestrator : IAutonomousCharac
         }
 
         return false;
+    }
+
+    private static Guid DeriveSubExecutionId(Guid baseId, byte discriminator)
+    {
+        var bytes = baseId.ToByteArray();
+        bytes[15] = (byte)(bytes[15] ^ discriminator);
+        return new Guid(bytes);
     }
 }
