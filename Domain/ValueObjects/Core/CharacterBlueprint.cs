@@ -6,8 +6,17 @@ public sealed record PsychologyProfile(
     string? Insecurities = null,
     string? CoreBeliefs = null,
     string? InternalConflicts = null,
-    string? Values = null
-);
+    string? Values = null,
+    decimal HungerSensitivity = 1.0m,
+    decimal FatigueSensitivity = 1.0m,
+    decimal StressSensitivity = 1.0m,
+    decimal SocialSensitivity = 1.0m,
+    decimal ComfortSensitivity = 1.0m,
+    decimal MoodReactivity = 1.0m
+)
+{
+    public static PsychologyProfile Default { get; } = new();
+}
 
 public sealed record BehaviorProfile(
     string? WhenHappy = null,
