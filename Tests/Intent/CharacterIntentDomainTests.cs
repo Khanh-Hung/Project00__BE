@@ -39,15 +39,40 @@ public sealed class CharacterIntentDomainTests
         return _intentPolicy.Evaluate(desire, intentContext ?? CreateContext());
     }
 
+    private static (DesireSource Source, MotivationType Motivation) GetDefaultGroundedSemantics(DesireType type) =>
+        type switch
+        {
+            DesireType.NeedFood => (DesireSource.Hunger, MotivationType.HungerDriven),
+            DesireType.NeedRest => (DesireSource.Energy, MotivationType.RestorationDriven),
+            DesireType.NeedReduceStress => (DesireSource.Stress, MotivationType.StressReliefDriven),
+            DesireType.NeedSocialConnection => (DesireSource.SocialNeed, MotivationType.ConnectionDriven),
+            DesireType.NeedComfort => (DesireSource.Comfort, MotivationType.ComfortDriven),
+            DesireType.NeedSafety => (DesireSource.Stress, MotivationType.SafetyDriven),
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
+        };
+
+    private static CharacterDesire CreateDesire(
+        DesireType type,
+        double intensity,
+        DesireSource? source = null,
+        MotivationType? motivationType = null)
+    {
+        var (defaultSource, defaultMotivation) = GetDefaultGroundedSemantics(type);
+        var actualSource = source ?? defaultSource;
+        var actualMotivation = motivationType ?? defaultMotivation;
+        var motivation = new CharacterMotivation(actualMotivation, intensity, actualSource);
+        return new CharacterDesire(type, intensity, actualSource, motivation);
+    }
+
     private static CharacterDesireEvaluation CreateDesireEvaluation(
         DesireType dominantType,
         double intensity,
-        MotivationType motivationType,
+        MotivationType? motivationType = null,
+        DesireSource? source = null,
         int stateVersion = 1,
         Guid? characterId = null)
     {
-        var motivation = new CharacterMotivation(motivationType, intensity, DesireSource.Hunger);
-        var dominantDesire = new CharacterDesire(dominantType, intensity, DesireSource.Hunger, motivation);
+        var dominantDesire = CreateDesire(dominantType, intensity, source, motivationType);
         var desires = new List<CharacterDesire> { dominantDesire };
 
         return new CharacterDesireEvaluation(
@@ -99,7 +124,7 @@ public sealed class CharacterIntentDomainTests
     [Fact]
     public void Evaluate_ThrowsArgumentNullException_OnNullInputs()
     {
-        var desire = CreateDesireEvaluation(DesireType.NeedFood, 0.8, MotivationType.HungerDriven);
+        var desire = CreateDesireEvaluation(DesireType.NeedFood, 0.8);
         var context = CreateContext();
 
         Assert.Throws<ArgumentNullException>(() => _intentPolicy.Evaluate(null!, context));
@@ -111,20 +136,24 @@ public sealed class CharacterIntentDomainTests
     #region 2. Explicit Desire -> Intent Mapping Tests
 
     [Theory]
-    [InlineData(DesireType.NeedFood, IntentType.SeekFood)]
-    [InlineData(DesireType.NeedRest, IntentType.SeekRest)]
-    [InlineData(DesireType.NeedReduceStress, IntentType.ReduceStress)]
-    [InlineData(DesireType.NeedSocialConnection, IntentType.SeekSocialConnection)]
-    [InlineData(DesireType.NeedComfort, IntentType.SeekComfort)]
-    [InlineData(DesireType.NeedSafety, IntentType.SeekSafety)]
-    public void Desire_MapsExactly_ToExpectedIntentType(DesireType desireType, IntentType expectedIntentType)
+    [InlineData(DesireType.NeedFood, IntentType.SeekFood, MotivationType.HungerDriven)]
+    [InlineData(DesireType.NeedRest, IntentType.SeekRest, MotivationType.RestorationDriven)]
+    [InlineData(DesireType.NeedReduceStress, IntentType.ReduceStress, MotivationType.StressReliefDriven)]
+    [InlineData(DesireType.NeedSocialConnection, IntentType.SeekSocialConnection, MotivationType.ConnectionDriven)]
+    [InlineData(DesireType.NeedComfort, IntentType.SeekComfort, MotivationType.ComfortDriven)]
+    [InlineData(DesireType.NeedSafety, IntentType.SeekSafety, MotivationType.SafetyDriven)]
+    public void Desire_MapsExactly_ToExpectedIntentType(
+        DesireType desireType,
+        IntentType expectedIntentType,
+        MotivationType expectedMotivationType)
     {
-        var desire = CreateDesireEvaluation(desireType, 0.75, MotivationType.HungerDriven);
+        var desire = CreateDesireEvaluation(desireType, 0.75);
         var evaluation = _intentPolicy.Evaluate(desire, CreateContext());
 
         Assert.NotNull(evaluation.Intent);
         Assert.Equal(expectedIntentType, evaluation.Intent.Type);
         Assert.Equal(desireType, evaluation.Intent.SourceDesire);
+        Assert.Equal(expectedMotivationType, evaluation.Intent.Motivation);
     }
 
     #endregion
@@ -138,7 +167,7 @@ public sealed class CharacterIntentDomainTests
     [InlineData(1.0)]
     public void Intensity_IsPreservedExactly_WithoutRounding(double expectedIntensity)
     {
-        var desire = CreateDesireEvaluation(DesireType.NeedFood, expectedIntensity, MotivationType.HungerDriven);
+        var desire = CreateDesireEvaluation(DesireType.NeedFood, expectedIntensity);
         var evaluation = _intentPolicy.Evaluate(desire, CreateContext());
 
         Assert.NotNull(evaluation.Intent);
@@ -148,7 +177,7 @@ public sealed class CharacterIntentDomainTests
     [Fact]
     public void Motivation_IsPreservedDirectly_FromAuthoritativeDesire()
     {
-        var desire = CreateDesireEvaluation(DesireType.NeedFood, 0.85, MotivationType.HungerDriven);
+        var desire = CreateDesireEvaluation(DesireType.NeedFood, 0.85);
         var evaluation = _intentPolicy.Evaluate(desire, CreateContext());
 
         Assert.NotNull(evaluation.Intent);
@@ -161,7 +190,7 @@ public sealed class CharacterIntentDomainTests
         var charId = Guid.NewGuid();
         const int stateVersion = 42;
 
-        var desire = CreateDesireEvaluation(DesireType.NeedRest, 0.70, MotivationType.RestorationDriven, stateVersion, charId);
+        var desire = CreateDesireEvaluation(DesireType.NeedRest, 0.70, stateVersion: stateVersion, characterId: charId);
         var evaluation = _intentPolicy.Evaluate(desire, CreateContext());
 
         Assert.Equal(charId, evaluation.CharacterId);
@@ -180,7 +209,7 @@ public sealed class CharacterIntentDomainTests
     public void NoDesire_ProducesNullIntent_WithoutFakeActionOrIdle()
     {
         // Dominant desire with 0 intensity represents no meaningful desire
-        var desire = CreateDesireEvaluation(DesireType.NeedFood, 0.0, MotivationType.HungerDriven);
+        var desire = CreateDesireEvaluation(DesireType.NeedFood, 0.0);
         var evaluation = _intentPolicy.Evaluate(desire, CreateContext());
 
         // Must be null, NOT a fake intent
@@ -201,12 +230,38 @@ public sealed class CharacterIntentDomainTests
 
     #endregion
 
-    #region 5. Dominant Desire Integration & Deterministic Tie-Breaking Tests
+    #region 5. Authoritative Dominant Desire Respect & Pipeline Integration Tests
 
     [Fact]
-    public void Intent_FollowsDominantDesire_WhenHungerDominatesRest()
+    public void Intent_FaithfullyRespects_AuthoritativeDominantDesire_DirectEvaluation()
     {
-        // Hunger 90 > Energy 70 (Fatigue 0.30)
+        // When PR41 outputs an authoritative DominantDesire, PR42 must directly map that DominantDesire
+        // into the Intent without attempting to re-evaluate, re-score, or re-rank the desires list.
+        var restDesire = CreateDesire(DesireType.NeedRest, 0.80);
+        var foodDesire = CreateDesire(DesireType.NeedFood, 0.80);
+
+        // Explicitly set NeedFood as authoritative DominantDesire from PR41
+        var desireEvaluation = new CharacterDesireEvaluation(
+            Guid.NewGuid(),
+            stateVersion: 3,
+            desires: new List<CharacterDesire> { restDesire, foodDesire },
+            dominantDesire: foodDesire
+        );
+
+        var evaluation = _intentPolicy.Evaluate(desireEvaluation, CreateContext());
+
+        Assert.NotNull(evaluation.Intent);
+        Assert.Equal(IntentType.SeekFood, evaluation.Intent.Type);
+        Assert.Equal(DesireType.NeedFood, evaluation.Intent.SourceDesire);
+        Assert.Equal(MotivationType.HungerDriven, evaluation.Intent.Motivation);
+        Assert.Equal(0.80, evaluation.Intent.Intensity);
+    }
+
+    [Fact]
+    public void PipelineIntegration_IntentFollowsDominantDesire_WhenHungerDominatesRest()
+    {
+        // In the full upstream pipeline, PR41 selects NeedFood when Hunger (0.90) > Fatigue (0.30).
+        // PR42 faithfully transforms that authoritative dominant desire into SeekFood intent.
         var state = new CharacterStateSnapshot(hunger: 90, energy: 70, stress: 10);
         var evaluation = RunFullPipeline(state);
 
@@ -217,10 +272,11 @@ public sealed class CharacterIntentDomainTests
     }
 
     [Fact]
-    public void Intent_ResolvesTies_ByPrecedence_FoodOverRest()
+    public void PipelineIntegration_IntentReflects_UpstreamAuthoritativeTieBreak_FoodOverRest()
     {
-        // Equal intensity: Hunger 80 (0.80) vs Energy 20 (Fatigue 0.80)
-        // PR41 Precedence: NeedFood > NeedRest
+        // Equal intensity: Hunger 80 (0.80) vs Energy 20 (Fatigue 0.80).
+        // Upstream PR41 is responsible for resolving the tie (Precedence: NeedFood > NeedRest).
+        // PR42 does not resolve ties; it faithfully maps PR41's authoritative dominant desire to SeekFood.
         var state = new CharacterStateSnapshot(hunger: 80, energy: 20, stress: 10);
         var evaluation = RunFullPipeline(state);
 
@@ -230,10 +286,11 @@ public sealed class CharacterIntentDomainTests
     }
 
     [Fact]
-    public void Intent_ResolvesTies_ByPrecedence_RestOverStress()
+    public void PipelineIntegration_IntentReflects_UpstreamAuthoritativeTieBreak_RestOverStress()
     {
-        // Equal intensity: Energy 20 (Fatigue 0.80) vs Stress 80 (0.80)
-        // PR41 Precedence: NeedRest > NeedReduceStress
+        // Equal intensity: Energy 20 (Fatigue 0.80) vs Stress 80 (0.80).
+        // Upstream PR41 resolves the tie by precedence (NeedRest > NeedReduceStress).
+        // PR42 faithfully maps PR41's authoritative dominant desire to SeekRest.
         var state = new CharacterStateSnapshot(energy: 20, stress: 80, hunger: 10);
         var exp = _experiencePolicy.Evaluate(state, CreatePerceptionContext());
         var neutralAppraisal = new CharacterAppraisal(AppraisalType.Fatigue, AppraisalPolarity.Negative, 0.80, AppraisalSource.Energy);
