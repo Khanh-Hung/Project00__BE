@@ -1,15 +1,47 @@
-using System;
+﻿using System;
 using Application.Contracts.ActionExecution;
 using Domain.Entities;
 using Domain.ValueObjects;
 
 namespace Application.Contracts.CognitiveCycle;
 
+public enum CognitiveEventType
+{
+    UserMessage = 1,
+    WorldEvent = 2
+}
+
+public abstract record CharacterCognitiveEvent(
+    Guid EventId,
+    Guid CharacterId,
+    CognitiveEventType EventType,
+    DateTimeOffset OccurredAtUtc,
+    string Source
+);
+
+public sealed record UserMessageCognitiveEvent(
+    Guid EventId,
+    Guid CharacterId,
+    DateTimeOffset OccurredAtUtc,
+    string Source,
+    string Message
+) : CharacterCognitiveEvent(EventId, CharacterId, CognitiveEventType.UserMessage, OccurredAtUtc, Source);
+
+public sealed record WorldCognitiveEvent(
+    Guid EventId,
+    Guid CharacterId,
+    DateTimeOffset OccurredAtUtc,
+    string Source,
+    string EventName,
+    string? Category = null
+) : CharacterCognitiveEvent(EventId, CharacterId, CognitiveEventType.WorldEvent, OccurredAtUtc, Source);
+
 public sealed record CharacterCognitiveCycleContext(
     Guid CycleId,
     Guid ExecutionId,
     Guid CharacterId,
     DateTimeOffset TriggeredAtUtc,
+    CharacterCognitiveEvent? Event = null,
     CharacterPerceptionContext? PerceptionContext = null,
     CharacterBlueprint? Blueprint = null
 );
@@ -33,6 +65,7 @@ public sealed record CharacterCognitiveCycleResult(
     DateTimeOffset TriggeredAtUtc,
     CharacterCognitiveCycleStatus Status,
     int StateVersionAtStart,
+    CharacterCognitiveEvent? Event = null,
     CharacterInternalExperience? Experience = null,
     CharacterAppraisal? Appraisal = null,
     CharacterEmotion? Emotion = null,
@@ -62,7 +95,8 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterDesireEvaluation desires,
         CharacterIntentEvaluation intent,
         CharacterActionProposalEvaluation actionProposal,
-        CharacterActionExecutionResult actionExecution) =>
+        CharacterActionExecutionResult actionExecution,
+        CharacterCognitiveEvent? @event = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -70,6 +104,7 @@ public sealed record CharacterCognitiveCycleResult(
             TriggeredAtUtc: triggeredAtUtc,
             Status: CharacterCognitiveCycleStatus.CompletedWithAction,
             StateVersionAtStart: stateVersionAtStart,
+            Event: @event,
             Experience: experience,
             Appraisal: appraisal,
             Emotion: emotion,
@@ -91,6 +126,7 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterDesireEvaluation? desires = null,
         CharacterIntentEvaluation? intent = null,
         CharacterActionProposalEvaluation? actionProposal = null,
+        CharacterCognitiveEvent? @event = null,
         string? message = null) =>
         new(
             CycleId: cycleId,
@@ -99,6 +135,7 @@ public sealed record CharacterCognitiveCycleResult(
             TriggeredAtUtc: triggeredAtUtc,
             Status: CharacterCognitiveCycleStatus.CompletedWithoutAction,
             StateVersionAtStart: stateVersionAtStart,
+            Event: @event,
             Experience: experience,
             Appraisal: appraisal,
             Emotion: emotion,
@@ -121,7 +158,8 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterDesireEvaluation desires,
         CharacterIntentEvaluation intent,
         CharacterActionProposalEvaluation actionProposal,
-        CharacterActionExecutionResult actionExecution) =>
+        CharacterActionExecutionResult actionExecution,
+        CharacterCognitiveEvent? @event = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -129,6 +167,7 @@ public sealed record CharacterCognitiveCycleResult(
             TriggeredAtUtc: triggeredAtUtc,
             Status: CharacterCognitiveCycleStatus.AlreadyExecuted,
             StateVersionAtStart: stateVersionAtStart,
+            Event: @event,
             Experience: experience,
             Appraisal: appraisal,
             Emotion: emotion,
@@ -152,6 +191,7 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterIntentEvaluation? intent = null,
         CharacterActionProposalEvaluation? actionProposal = null,
         CharacterActionExecutionResult? actionExecution = null,
+        CharacterCognitiveEvent? @event = null,
         string? message = null) =>
         new(
             CycleId: cycleId,
@@ -160,6 +200,7 @@ public sealed record CharacterCognitiveCycleResult(
             TriggeredAtUtc: triggeredAtUtc,
             Status: CharacterCognitiveCycleStatus.ConcurrencyConflict,
             StateVersionAtStart: stateVersionAtStart,
+            Event: @event,
             Experience: experience,
             Appraisal: appraisal,
             Emotion: emotion,
@@ -183,6 +224,7 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterIntentEvaluation? intent = null,
         CharacterActionProposalEvaluation? actionProposal = null,
         CharacterActionExecutionResult? actionExecution = null,
+        CharacterCognitiveEvent? @event = null,
         string? message = null) =>
         new(
             CycleId: cycleId,
@@ -191,6 +233,7 @@ public sealed record CharacterCognitiveCycleResult(
             TriggeredAtUtc: triggeredAtUtc,
             Status: CharacterCognitiveCycleStatus.IdempotencyConflict,
             StateVersionAtStart: stateVersionAtStart,
+            Event: @event,
             Experience: experience,
             Appraisal: appraisal,
             Emotion: emotion,
@@ -206,7 +249,8 @@ public sealed record CharacterCognitiveCycleResult(
         Guid executionId,
         Guid characterId,
         DateTimeOffset triggeredAtUtc,
-        string message) =>
+        string message,
+        CharacterCognitiveEvent? @event = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -214,6 +258,7 @@ public sealed record CharacterCognitiveCycleResult(
             TriggeredAtUtc: triggeredAtUtc,
             Status: CharacterCognitiveCycleStatus.InvalidInput,
             StateVersionAtStart: 0,
+            Event: @event,
             Message: message
         );
 
@@ -222,7 +267,8 @@ public sealed record CharacterCognitiveCycleResult(
         Guid executionId,
         Guid characterId,
         DateTimeOffset triggeredAtUtc,
-        string message) =>
+        string message,
+        CharacterCognitiveEvent? @event = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -230,6 +276,7 @@ public sealed record CharacterCognitiveCycleResult(
             TriggeredAtUtc: triggeredAtUtc,
             Status: CharacterCognitiveCycleStatus.NotFound,
             StateVersionAtStart: 0,
+            Event: @event,
             Message: message
         );
 
@@ -240,6 +287,7 @@ public sealed record CharacterCognitiveCycleResult(
         DateTimeOffset triggeredAtUtc,
         int stateVersionAtStart,
         CharacterActionExecutionResult? actionExecution = null,
+        CharacterCognitiveEvent? @event = null,
         string? message = null) =>
         new(
             CycleId: cycleId,
@@ -248,6 +296,7 @@ public sealed record CharacterCognitiveCycleResult(
             TriggeredAtUtc: triggeredAtUtc,
             Status: CharacterCognitiveCycleStatus.Failed,
             StateVersionAtStart: stateVersionAtStart,
+            Event: @event,
             ActionExecution: actionExecution,
             Message: message ?? "Cognitive cycle failed during action execution."
         );
