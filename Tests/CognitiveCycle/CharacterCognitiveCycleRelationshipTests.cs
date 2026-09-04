@@ -19,6 +19,7 @@ using Infrastructure.Services.CognitiveCycle;
 using Infrastructure.Services.State;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -970,14 +971,17 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
         var charId = await SeedCharacterStateAsync();
         var targetId = Guid.NewGuid();
 
-        // 1. Two separate DbContext instances
-        await using var dbWinner = new CoreDbContext(_options);
-        await using var dbLoser = new CoreDbContext(_options);
+        // 1. Configure an interceptor on dbLoser that simulates the exact race:
+        // After dbLoser's initial lookup (which returns null because no row exists yet),
+        // and right before dbLoser executes its INSERT inside SaveChangesAsync,
+        // another worker concurrently inserts and commits the exact same (charId, targetType, targetId).
+        var interceptor = new ConcurrentRelationshipInsertInterceptor(charId, targetId);
+        var loserOptions = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
 
-        // Pre-create the winner's relationship in the database
-        var winnerRepo = new Infrastructure.Persistence.Repositories.CharacterRelationshipRepository(dbWinner);
-        var winnerRel = await winnerRepo.GetOrCreateByTargetAsync(charId, RelationshipTargetType.User, targetId);
-        Assert.NotNull(winnerRel);
+        await using var dbLoser = new CoreDbContext(loserOptions);
 
         // Loser context tracks an unrelated entity to prove ChangeTracker is NOT indiscriminately cleared
         var executionId = Guid.NewGuid();
@@ -998,30 +1002,38 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
         );
         await dbLoser.CharacterRelationshipTransitions.AddAsync(transition);
 
-        // 2. Loser calls GetOrCreateByTargetAsync for the same (charId, targetType, targetId).
-        // It must catch DbUpdateException, detach ONLY the locally added duplicate, and return authoritative record
+        // 2. Loser calls GetOrCreateByTargetAsync for (charId, User, targetId).
+        // - Initial lookup finds NULL (because winner has NOT inserted yet).
+        // - Local newRelationship is created and added to ChangeTracker (EntityState.Added).
+        // - dbLoser calls SaveChangesAsync.
+        // - Interceptor fires in SavingChangesAsync and inserts the winner's relationship row into the DB.
+        // - dbLoser attempts to insert newRelationship -> SQLite throws UNIQUE constraint violation -> EF throws DbUpdateException.
+        // - catch (DbUpdateException) catches the exception, detaches ONLY newRelationship, and reloads the authoritative winner.
         var loserRepo = new Infrastructure.Persistence.Repositories.CharacterRelationshipRepository(dbLoser);
         var resolvedRel = await loserRepo.GetOrCreateByTargetAsync(charId, RelationshipTargetType.User, targetId);
 
-        // Assert: Authoritative relationship is returned
-        Assert.NotNull(resolvedRel);
-        Assert.Equal(winnerRel.Id, resolvedRel.Id);
+        // Assert 1: The interceptor actually injected the concurrent row right during SaveChangesAsync
+        Assert.True(interceptor.WasInjected);
 
-        // Assert: No CharacterRelationship in dbLoser remains in EntityState.Added
+        // Assert 2: Authoritative winner relationship is returned
+        Assert.NotNull(resolvedRel);
+        Assert.Equal(targetId, resolvedRel.TargetId);
+        Assert.Equal(interceptor.InjectedRelationshipId, resolvedRel.Id);
+
+        // Assert 3: The locally-created loser relationship is DETACHED (no CharacterRelationship left in Added state)
         var addedRelationships = dbLoser.ChangeTracker.Entries<CharacterRelationship>()
             .Where(e => e.State == EntityState.Added)
             .ToList();
         Assert.Empty(addedRelationships);
 
-        // Assert: The unrelated entity is STILL tracked as Added (not cleared!)
+        // Assert 4: The unrelated entity is STILL tracked as Added (proves ChangeTracker.Clear() was NOT called)
         var transitionEntry = dbLoser.Entry(transition);
         Assert.Equal(EntityState.Added, transitionEntry.State);
 
-        // 3. Subsequent SaveChangesAsync on the same dbLoser context does NOT attempt to re-insert the duplicate
-        // and successfully commits the unrelated entity!
+        // Assert 5: A subsequent SaveChangesAsync on the same dbLoser succeeds (proves it doesn't re-insert the duplicate)
         await dbLoser.SaveChangesAsync();
 
-        // 4. Verify in independent context: Exactly 1 relationship exists, and 1 transition was committed
+        // Assert 6 & 7: Verify in independent context: Exactly 1 relationship exists, and the unrelated entity was committed
         await using var verifyDb = new CoreDbContext(_options);
         var relCount = await verifyDb.CharacterRelationships.CountAsync(r => r.CharacterId == charId && r.TargetId == targetId);
         Assert.Equal(1, relCount);
@@ -1082,6 +1094,88 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
             CancellationToken ct = default)
         {
             throw new InvalidOperationException("Simulated database connection loss during relationship feedback.");
+        }
+    }
+
+    private sealed class ConcurrentRelationshipInsertInterceptor : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private readonly Guid _charId;
+        private readonly Guid _targetId;
+        public bool WasInjected { get; private set; }
+        public Guid InjectedRelationshipId { get; private set; }
+
+        public ConcurrentRelationshipInsertInterceptor(Guid charId, Guid targetId)
+        {
+            _charId = charId;
+            _targetId = targetId;
+        }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!WasInjected && eventData.Context != null)
+            {
+                WasInjected = true;
+                InjectedRelationshipId = Guid.NewGuid();
+
+                using var cmd = eventData.Context.Database.GetDbConnection().CreateCommand();
+                if (eventData.Context.Database.CurrentTransaction != null)
+                {
+                    cmd.Transaction = eventData.Context.Database.CurrentTransaction.GetDbTransaction();
+                }
+
+                cmd.CommandText = @"
+                    INSERT INTO ""CharacterRelationships"" (
+                        ""Id"", ""CharacterId"", ""TargetType"", ""TargetId"", ""RelationshipType"",
+                        ""Trust"", ""Affection"", ""Familiarity"", ""UserId"", ""AffectionScore"",
+                        ""CurrentMood"", ""MoodIntensity"", ""LastInteractedAt"", ""Version"", ""EventsJson"", ""CreatedAt"", ""IsSoftDeleted""
+                    ) VALUES (
+                        @id, @charId, @targetType, @targetId, @relType,
+                        0, 0, 0, @userId, 0,
+                        'Neutral', 20, @now, 1, '[]', @now, 0
+                    );";
+
+                var pId = cmd.CreateParameter();
+                pId.ParameterName = "@id";
+                pId.Value = InjectedRelationshipId;
+                cmd.Parameters.Add(pId);
+
+                var pCharId = cmd.CreateParameter();
+                pCharId.ParameterName = "@charId";
+                pCharId.Value = _charId;
+                cmd.Parameters.Add(pCharId);
+
+                var pTargetType = cmd.CreateParameter();
+                pTargetType.ParameterName = "@targetType";
+                pTargetType.Value = nameof(RelationshipTargetType.User);
+                cmd.Parameters.Add(pTargetType);
+
+                var pTargetId = cmd.CreateParameter();
+                pTargetId.ParameterName = "@targetId";
+                pTargetId.Value = _targetId;
+                cmd.Parameters.Add(pTargetId);
+
+                var pRelType = cmd.CreateParameter();
+                pRelType.ParameterName = "@relType";
+                pRelType.Value = nameof(RelationshipType.Stranger);
+                cmd.Parameters.Add(pRelType);
+
+                var pUserId = cmd.CreateParameter();
+                pUserId.ParameterName = "@userId";
+                pUserId.Value = _targetId;
+                cmd.Parameters.Add(pUserId);
+
+                var pNow = cmd.CreateParameter();
+                pNow.ParameterName = "@now";
+                pNow.Value = DateTime.UtcNow.ToString("O");
+                cmd.Parameters.Add(pNow);
+
+                cmd.ExecuteNonQuery();
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
 

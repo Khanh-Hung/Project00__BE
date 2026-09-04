@@ -29,7 +29,7 @@ public sealed class CharacterRelationshipConfiguration : IEntityTypeConfiguratio
         builder.Property(r => r.CurrentMood).IsRequired().HasConversion<string>().HasMaxLength(50);
         builder.Property(r => r.MoodIntensity).IsRequired().HasDefaultValue(20);
         builder.Property(r => r.LastInteractedAt).IsRequired();
-        builder.Property(r => r.Version).IsConcurrencyToken().IsRequired();
+        builder.Property(r => r.Version).IsConcurrencyToken().IsRequired().HasDefaultValue(1u);
 
         var eventsComparer = new ValueComparer<IReadOnlyCollection<RelationshipEvent>>(
             (c1, c2) => (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.SequenceEqual(c2)),
