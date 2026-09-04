@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -11,6 +11,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services.CognitiveCycle;
 
+/// <summary>
+/// Infrastructure service providing contextual memory retrieval for the cognitive cycle.
+/// Current implementation implements deterministic character-scoped contextual memory retrieval (Importance DESC, CreatedAt DESC, Id ASC).
+/// Semantic relevance based on perceptionContext (embeddings/vector search) is intentionally deferred to a later Memory Retrieval enhancement.
+/// </summary>
 public sealed class CharacterMemoryRetrievalService : ICharacterMemoryRetrievalService
 {
     private readonly CoreDbContext _dbContext;

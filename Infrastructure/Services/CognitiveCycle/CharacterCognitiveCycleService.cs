@@ -168,6 +168,19 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
 
         int stateVersionAtStart = state.Version;
 
+        // Validate caller did not attempt to inject MemoryContext via PerceptionContext
+        if (context.PerceptionContext?.MemoryContext != null)
+        {
+            _logger.LogWarning(
+                "[CharacterCognitiveCycleService] Caller attempted to inject MemoryContext via PerceptionContext for CharacterId={CharacterId}, CycleId={CycleId}. Rejecting invalid input.",
+                characterId, cycleId);
+
+            return CharacterCognitiveCycleResult.InvalidInput(
+                cycleId, executionId, characterId, triggeredAtUtc,
+                message: "PerceptionContext.MemoryContext cannot be pre-populated by caller. Memory retrieval is managed authoritatively by the cognitive cycle.",
+                @event: cognitiveEvent);
+        }
+
         // 2. Perception & Stimulus Mapping (PR39/PR46: Map event to normalized Domain stimulus)
         var basePerceptionContext = context.PerceptionContext != null
             ? (stimulus != null ? context.PerceptionContext with { Stimulus = stimulus } : context.PerceptionContext)
@@ -178,16 +191,9 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             );
 
         // 3. Memory Retrieval (PR47: Contextual knowledge, graceful degradation to empty)
+        // Authoritative memory retrieval boundary: caller cannot bypass or inject arbitrary memories.
         CharacterMemoryContext memoryContext;
-        if (context.MemoryContext != null)
-        {
-            memoryContext = context.MemoryContext;
-        }
-        else if (basePerceptionContext.MemoryContext != null)
-        {
-            memoryContext = basePerceptionContext.MemoryContext;
-        }
-        else if (_memoryRetrievalService != null)
+        if (_memoryRetrievalService != null)
         {
             try
             {
@@ -340,6 +346,30 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             {
                 return result with { MemoryFeedback = feedback };
             }
+        }
+        catch (CharacterMemoryIdempotencyConflictException ex)
+        {
+            _logger.LogWarning(ex,
+                "[CharacterCognitiveCycleService] Idempotency conflict detected in memory feedback for CharacterId={CharacterId}, ExecutionId={ExecutionId}. {Message}",
+                context.CharacterId, context.ExecutionId, ex.Message);
+
+            return CharacterCognitiveCycleResult.IdempotencyConflict(
+                context.CycleId,
+                context.ExecutionId,
+                context.CharacterId,
+                context.TriggeredAtUtc,
+                result.StateVersionAtStart,
+                result.Experience,
+                result.Appraisal,
+                result.Emotion,
+                result.Desires,
+                result.Intent,
+                result.ActionProposal,
+                result.ActionExecution,
+                result.Event,
+                result.MemoryContext,
+                memoryFeedback: null,
+                message: ex.Message);
         }
         catch (Exception ex)
         {

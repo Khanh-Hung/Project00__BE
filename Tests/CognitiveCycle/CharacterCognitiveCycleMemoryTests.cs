@@ -151,8 +151,7 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         Guid? executionId = null,
         DateTimeOffset? triggeredAtUtc = null,
         CharacterCognitiveEvent? cognitiveEvent = null,
-        CharacterPerceptionContext? perceptionContext = null,
-        CharacterMemoryContext? memoryContext = null)
+        CharacterPerceptionContext? perceptionContext = null)
     {
         return new CharacterCognitiveCycleContext(
             CycleId: cycleId ?? Guid.NewGuid(),
@@ -160,8 +159,7 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
             CharacterId: characterId,
             TriggeredAtUtc: triggeredAtUtc ?? FixedNow,
             Event: cognitiveEvent,
-            PerceptionContext: perceptionContext,
-            MemoryContext: memoryContext
+            PerceptionContext: perceptionContext
         );
     }
 
@@ -239,6 +237,39 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result.Status);
         Assert.NotNull(result.MemoryContext);
         Assert.Empty(result.MemoryContext.RelevantMemories);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenCallerInjectsMemoryContextViaPerceptionContext_ReturnsInvalidInput()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var injectedMemory = new CharacterMemoryItem(Guid.NewGuid(), MemoryType.Fact, "Fake injected memory", 5, FixedNow);
+        var injectedContext = new CharacterMemoryContext(new[] { injectedMemory });
+
+        var perceptionWithMemory = new CharacterPerceptionContext(
+            EvaluatedAtUtc: FixedNow.UtcDateTime,
+            CharacterId: charId,
+            MemoryContext: injectedContext
+        );
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+        var context = CreateContext(charId, perceptionContext: perceptionWithMemory);
+
+        var result = await service.RunAsync(context);
+
+        // Invariant: Caller cannot inject MemoryContext to bypass authoritative memory retrieval
+        Assert.NotNull(result);
+        Assert.Equal(CharacterCognitiveCycleStatus.InvalidInput, result.Status);
+        Assert.Contains("PerceptionContext.MemoryContext cannot be pre-populated by caller", result.Message);
+    }
+
+    [Fact]
+    public void CharacterCognitiveCycleContext_DoesNotExposeMemoryContextProperty()
+    {
+        // Invariant: MemoryContext is not a caller-accessible property on CharacterCognitiveCycleContext
+        var property = typeof(CharacterCognitiveCycleContext).GetProperty("MemoryContext");
+        Assert.Null(property);
     }
 
     #endregion
@@ -355,28 +386,97 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_SameExecutionId_IsIdempotent_CreatesExactlyOneMemoryFeedback()
+    public async Task RunAsync_SameExecutionId_WithSameSemanticPayload_IsIdempotent_ReusesFeedback()
     {
         var charId = await SeedCharacterStateAsync(hunger: 90m);
         var sharedExecutionId = Guid.NewGuid();
         var sharedCycleId = Guid.NewGuid();
 
-        // Run 5 times with exact same executionId
-        for (int i = 0; i < 5; i++)
+        Guid firstMemoryId;
+        await using (var db = new CoreDbContext(_options))
         {
-            await using var db = new CoreDbContext(_options);
             var service = CreateService(db);
             var context = CreateContext(charId, cycleId: sharedCycleId, executionId: sharedExecutionId);
             var result = await service.RunAsync(context);
 
-            Assert.NotNull(result);
+            Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result.Status);
             Assert.NotNull(result.MemoryFeedback);
+            firstMemoryId = result.MemoryFeedback.MemoryId;
+        }
+
+        // Retry with same ExecutionId simulating AlreadyExecuted response (idempotent replay)
+        await using (var db = new CoreDbContext(_options))
+        {
+            var alreadyExecutedService = new AlreadyExecutedActionExecutionService();
+            var service = CreateService(db, actionExecutionService: alreadyExecutedService);
+            var context = CreateContext(charId, cycleId: sharedCycleId, executionId: sharedExecutionId);
+            var result = await service.RunAsync(context);
+
+            Assert.Equal(CharacterCognitiveCycleStatus.AlreadyExecuted, result.Status);
+            Assert.NotNull(result.MemoryFeedback);
+            Assert.Equal(firstMemoryId, result.MemoryFeedback.MemoryId);
+            Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, result.MemoryFeedback.Type);
         }
 
         // Assert: Exactly 1 row in CharacterMemories for this execution
         await using var verifyDb = new CoreDbContext(_options);
         var count = await verifyDb.CharacterMemories.CountAsync(m => m.SourceSessionId == sharedExecutionId);
         Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task RunAsync_SameExecutionId_WithDifferentSemanticOutcome_ReturnsIdempotencyConflict()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var sharedExecutionId = Guid.NewGuid();
+        var cycleId1 = Guid.NewGuid();
+        var cycleId2 = Guid.NewGuid();
+
+        // Run 1: Succeeded with Eat
+        await using (var db1 = new CoreDbContext(_options))
+        {
+            var service1 = CreateService(db1);
+            var context1 = CreateContext(charId, cycleId: cycleId1, executionId: sharedExecutionId);
+            var result1 = await service1.RunAsync(context1);
+
+            Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result1.Status);
+            Assert.NotNull(result1.MemoryFeedback);
+        }
+
+        // Run 2: Same ExecutionId, but different semantic outcome (FailingActionExecutionService)
+        await using (var db2 = new CoreDbContext(_options))
+        {
+            var failingExecService = new FailingActionExecutionService();
+            var service2 = CreateService(db2, actionExecutionService: failingExecService);
+            var context2 = CreateContext(charId, cycleId: cycleId2, executionId: sharedExecutionId);
+            var result2 = await service2.RunAsync(context2);
+
+            // Invariant: Same ExecutionId with conflicting semantic feedback produces IdempotencyConflict!
+            Assert.Equal(CharacterCognitiveCycleStatus.IdempotencyConflict, result2.Status);
+            Assert.Contains("already been processed with a different feedback payload", result2.Message);
+        }
+
+        // Invariant: Database still has exactly 1 memory row (from Run 1)
+        await using var verifyDb = new CoreDbContext(_options);
+        var count = await verifyDb.CharacterMemories.CountAsync(m => m.SourceSessionId == sharedExecutionId);
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExistingFeedback_TypeMatchesVerifiedSemanticPayload_NotStringParsing()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var sharedExecutionId = Guid.NewGuid();
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+        var context = CreateContext(charId, executionId: sharedExecutionId);
+        var res = await service.RunAsync(context);
+
+        Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, res.Status);
+        Assert.NotNull(res.MemoryFeedback);
+        // Type is ActionCompleted from semantic payload, not parsed from Content string prefix
+        Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, res.MemoryFeedback.Type);
     }
 
     [Fact]
@@ -582,6 +682,22 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
                 proposal: null,
                 evaluatedAtUtc: context.EvaluatedAtUtc
             );
+        }
+    }
+
+    private sealed class AlreadyExecutedActionExecutionService : ICharacterActionExecutionService
+    {
+        public Task<CharacterActionExecutionResult> ExecuteAsync(
+            Guid characterId,
+            CharacterActionProposal proposal,
+            CharacterActionExecutionContext context,
+            CancellationToken ct = default)
+        {
+            var snapshot = new CharacterStateSnapshot(
+                energy: 80, hunger: 20, version: 2);
+
+            return Task.FromResult(CharacterActionExecutionResult.AlreadyExecuted(
+                context.ExecutionId, characterId, proposal, 1, 2, CharacterStateDelta.Zero, snapshot));
         }
     }
 

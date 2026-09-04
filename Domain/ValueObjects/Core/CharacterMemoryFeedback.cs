@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Domain.ValueObjects;
 
@@ -11,7 +11,8 @@ public enum CharacterMemoryFeedbackType
 }
 
 /// <summary>
-/// Immutable value object representing a normalized memory feedback record generated after a cognitive cycle.
+/// CharacterMemoryFeedback is an immutable result describing the persisted CharacterMemory created by the feedback operation.
+/// It is not a separately persisted entity, and MemoryId identifies the resulting CharacterMemory.
 /// Captures narrative outcome of the cycle without serializing raw internal state or execution graphs.
 /// </summary>
 public sealed record CharacterMemoryFeedback(

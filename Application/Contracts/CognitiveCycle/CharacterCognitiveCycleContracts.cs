@@ -50,8 +50,7 @@ public sealed record CharacterCognitiveCycleContext(
     DateTimeOffset TriggeredAtUtc,
     CharacterCognitiveEvent? Event = null,
     CharacterPerceptionContext? PerceptionContext = null,
-    CharacterBlueprint? Blueprint = null,
-    CharacterMemoryContext? MemoryContext = null
+    CharacterBlueprint? Blueprint = null
 );
 
 public enum CharacterCognitiveCycleStatus
@@ -338,4 +337,14 @@ public sealed record CharacterCognitiveCycleResult(
             MemoryFeedback: memoryFeedback,
             Message: message ?? "Cognitive cycle failed during action execution."
         );
+}
+
+/// <summary>
+/// Exception thrown when memory feedback persistence detects that the specified ExecutionId
+/// was already recorded with different semantic payload/feedback for the character.
+/// </summary>
+public sealed class CharacterMemoryIdempotencyConflictException : InvalidOperationException
+{
+    public CharacterMemoryIdempotencyConflictException(string message) : base(message) { }
+    public CharacterMemoryIdempotencyConflictException(string message, Exception inner) : base(message, inner) { }
 }

@@ -12,6 +12,22 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services.CognitiveCycle;
 
+/// <summary>
+/// Infrastructure service for recording cognitive cycle outcome feedback into the memory system.
+/// 
+/// Idempotency Invariant:
+/// - same CharacterId + same ExecutionId + same semantic feedback = idempotent replay (existing memory reused)
+/// - same CharacterId + same ExecutionId + different semantic feedback = idempotency conflict (throws CharacterMemoryIdempotencyConflictException)
+/// 
+/// Database-Level Uniqueness Guarantee:
+/// Physical uniqueness is enforced by the Primary Key constraint on CharacterMemory.Id (PK_CharacterMemories in PostgreSQL).
+/// Because MemoryId is deterministically derived via SHA-256(CharacterId + ExecutionId), any concurrent race on the same ExecutionId
+/// results in a physical PK violation (DbUpdateException), which is caught and safely reconciled.
+/// 
+/// Semantics:
+/// CharacterMemoryFeedback is an immutable result describing the persisted CharacterMemory created by the feedback operation.
+/// It is not a separately persisted entity, and MemoryId identifies the resulting CharacterMemory.
+/// </summary>
 public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackService
 {
     private readonly CoreDbContext _dbContext;
@@ -44,13 +60,27 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
 
         try
         {
-            // Idempotency check: see if memory for this character and execution was already recorded
+            // Idempotency check: see if memory for this character and execution was already recorded.
+            // Invariant:
+            // same CharacterId + same ExecutionId + same semantic feedback = idempotent replay
+            // same CharacterId + same ExecutionId + different semantic feedback = idempotency conflict
             var existing = await _dbContext.CharacterMemories
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.Id == memoryId || (m.CharacterId == cycleContext.CharacterId && m.SourceSessionId == cycleContext.ExecutionId), ct);
 
             if (existing != null)
             {
+                // Validate semantic consistency
+                if (existing.CharacterId != cycleContext.CharacterId || existing.Content != content)
+                {
+                    _logger.LogWarning(
+                        "[CharacterMemoryFeedbackService] Idempotency conflict for CharacterId={CharacterId}, ExecutionId={ExecutionId}. Existing content '{Existing}' != incoming content '{Incoming}'.",
+                        cycleContext.CharacterId, cycleContext.ExecutionId, existing.Content, content);
+
+                    throw new CharacterMemoryIdempotencyConflictException(
+                        $"ExecutionId '{cycleContext.ExecutionId}' has already been processed with a different feedback payload.");
+                }
+
                 _logger.LogInformation(
                     "[CharacterMemoryFeedbackService] Memory feedback already exists for CharacterId={CharacterId}, ExecutionId={ExecutionId}. Idempotently reusing MemoryId={MemoryId}.",
                     cycleContext.CharacterId, cycleContext.ExecutionId, existing.Id);
@@ -62,7 +92,7 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
                     EventId: cycleContext.Event?.EventId,
                     ExecutionId: cycleContext.ExecutionId,
                     OccurredAtUtc: new DateTimeOffset(existing.CreatedAt, TimeSpan.Zero),
-                    Type: DetermineFeedbackTypeFromContent(existing.Content, feedbackType),
+                    Type: feedbackType,
                     Content: existing.Content
                 );
             }
@@ -96,6 +126,10 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
                 Content: content
             );
         }
+        catch (CharacterMemoryIdempotencyConflictException)
+        {
+            throw;
+        }
         catch (DbUpdateException ex)
         {
             _logger.LogWarning(ex,
@@ -108,6 +142,12 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
 
             if (existing != null)
             {
+                if (existing.CharacterId != cycleContext.CharacterId || existing.Content != content)
+                {
+                    throw new CharacterMemoryIdempotencyConflictException(
+                        $"ExecutionId '{cycleContext.ExecutionId}' has already been processed with a different feedback payload.");
+                }
+
                 return new CharacterMemoryFeedback(
                     MemoryId: existing.Id,
                     CharacterId: existing.CharacterId,
@@ -115,7 +155,7 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
                     EventId: cycleContext.Event?.EventId,
                     ExecutionId: cycleContext.ExecutionId,
                     OccurredAtUtc: new DateTimeOffset(existing.CreatedAt, TimeSpan.Zero),
-                    Type: DetermineFeedbackTypeFromContent(existing.Content, feedbackType),
+                    Type: feedbackType,
                     Content: existing.Content
                 );
             }
@@ -130,19 +170,6 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
 
             return null;
         }
-    }
-
-    private static CharacterMemoryFeedbackType DetermineFeedbackTypeFromContent(string content, CharacterMemoryFeedbackType fallback)
-    {
-        if (content.StartsWith("Performed action", StringComparison.OrdinalIgnoreCase))
-            return CharacterMemoryFeedbackType.ActionCompleted;
-        if (content.StartsWith("Attempted action", StringComparison.OrdinalIgnoreCase))
-            return CharacterMemoryFeedbackType.ActionFailed;
-        if (content.StartsWith("Experienced", StringComparison.OrdinalIgnoreCase))
-            return CharacterMemoryFeedbackType.EventExperienced;
-        if (content.StartsWith("Completed cognitive cycle", StringComparison.OrdinalIgnoreCase))
-            return CharacterMemoryFeedbackType.NoActionTaken;
-        return fallback;
     }
 
     private static (CharacterMemoryFeedbackType Type, string Content) DetermineFeedback(CharacterCognitiveCycleResult result)
