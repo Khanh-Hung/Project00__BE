@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Application.Contracts.ActionExecution;
 using Domain.Entities;
 using Domain.ValueObjects;
@@ -11,8 +11,7 @@ public sealed record CharacterCognitiveCycleContext(
     Guid CharacterId,
     DateTimeOffset TriggeredAtUtc,
     CharacterPerceptionContext? PerceptionContext = null,
-    CharacterBlueprint? Blueprint = null,
-    CharacterStateSnapshot? InitialState = null
+    CharacterBlueprint? Blueprint = null
 );
 
 public enum CharacterCognitiveCycleStatus

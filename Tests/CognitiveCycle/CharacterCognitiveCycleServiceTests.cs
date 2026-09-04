@@ -62,6 +62,11 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
             socialNeed: socialNeed,
             comfort: comfort
         );
+        for (int v = 1; v < version; v++)
+        {
+            state.ApplyDelta(CharacterStateDelta.Zero);
+        }
+
         db.CharacterStates.Add(state);
         await db.SaveChangesAsync();
         return charId;
@@ -111,15 +116,13 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
         Guid characterId,
         Guid? cycleId = null,
         Guid? executionId = null,
-        DateTimeOffset? triggeredAtUtc = null,
-        CharacterStateSnapshot? initialState = null)
+        DateTimeOffset? triggeredAtUtc = null)
     {
         return new CharacterCognitiveCycleContext(
             CycleId: cycleId ?? Guid.NewGuid(),
             ExecutionId: executionId ?? Guid.NewGuid(),
             CharacterId: characterId,
-            TriggeredAtUtc: triggeredAtUtc ?? FixedNow,
-            InitialState: initialState
+            TriggeredAtUtc: triggeredAtUtc ?? FixedNow
         );
     }
 
@@ -406,16 +409,14 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
 
     #endregion
 
-    #region 6. Idempotency & AlreadyExecuted Tests
+    #region 6. Idempotency & Authoritative State Tests
 
     [Fact]
-    public async Task RunAsync_WhenSameExecutionIdReplayed_ReturnsAlreadyExecuted_AndDoesNotDuplicateStateMutation()
+    public async Task RunAsync_WhenSameExecutionIdReplayedAfterTransition_SuppressesDuplicateStateMutation()
     {
         var charId = await SeedCharacterStateAsync(hunger: 80m);
-        await using var initDb = new CoreDbContext(_options);
-        var initialState = (await initDb.CharacterStates.SingleAsync(s => s.CharacterId == charId)).ToSnapshot();
         var sharedExecutionId = Guid.NewGuid();
-        var context = CreateContext(charId, executionId: sharedExecutionId, initialState: initialState);
+        var context = CreateContext(charId, executionId: sharedExecutionId);
 
         // Run 1: Applied
         await using var db1 = new CoreDbContext(_options);
@@ -425,28 +426,52 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
         Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result1.Status);
         Assert.Equal(2, result1.ActionExecution!.StateVersionAfter);
 
-        // Run 2: Replay with same ExecutionId
+        // Run 2: Replay with same ExecutionId on updated state
         await using var db2 = new CoreDbContext(_options);
         var service2 = CreateService(db2);
         var result2 = await service2.RunAsync(context);
 
-        Assert.Equal(CharacterCognitiveCycleStatus.AlreadyExecuted, result2.Status);
-        Assert.True(result2.IsSuccess);
-        Assert.False(result2.HasAction);
-        Assert.True(result2.IsDuplicateSuppressed);
-        Assert.Equal(1, result2.ActionExecution!.StateVersionBefore);
-        Assert.Equal(2, result2.ActionExecution.StateVersionAfter);
+        // State was transitioned to Version 2 by Run 1.
+        // Therefore, calling RunAsync with the already-committed ExecutionId cannot re-apply.
+        Assert.False(result2.IsSuccess);
+        Assert.True(result2.Status == CharacterCognitiveCycleStatus.IdempotencyConflict
+                 || result2.Status == CharacterCognitiveCycleStatus.AlreadyExecuted);
 
-        // Verify only 1 transition record in database
+        // Verify only 1 transition record in database and state version remains 2
         await using var verifyDb = new CoreDbContext(_options);
         var count = await verifyDb.CharacterStateTransitions.CountAsync(t => t.CharacterId == charId);
         Assert.Equal(1, count);
+        var state = await verifyDb.CharacterStates.SingleAsync(s => s.CharacterId == charId);
+        Assert.Equal(2, state.Version);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenActionExecutionReturnsAlreadyExecuted_PropagatesAlreadyExecutedStatus()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 80m);
+        var executionId = Guid.NewGuid();
+        var context = CreateContext(charId, executionId: executionId);
+
+        var stubExecService = new AlreadyExecutedStubActionExecutionService(executionId);
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db, actionExecutionService: stubExecService);
+
+        var result = await service.RunAsync(context);
+
+        Assert.Equal(CharacterCognitiveCycleStatus.AlreadyExecuted, result.Status);
+        Assert.True(result.IsSuccess);
+        Assert.False(result.HasAction);
+        Assert.True(result.IsDuplicateSuppressed);
+        Assert.NotNull(result.ActionExecution);
+        Assert.Equal(1, result.ActionExecution.StateVersionBefore);
+        Assert.Equal(2, result.ActionExecution.StateVersionAfter);
     }
 
     [Fact]
     public async Task RunAsync_WhenSameExecutionIdUsedWithDifferentPayload_ReturnsIdempotencyConflict()
     {
-        var charId = await SeedCharacterStateAsync(hunger: 80m, energy: 50m);
+        var charId = await SeedCharacterStateAsync(hunger: 80m, energy: 80m);
         var sharedExecutionId = Guid.NewGuid();
 
         // Run 1: executes with Eat
@@ -458,18 +483,61 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
             Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result1.Status);
         }
 
-        // Run 2: same ExecutionId, but initial state passed has energy=10 (would propose Rest)
-        var conflictingState = new CharacterStateSnapshot(hunger: 10, energy: 10, stress: 10, version: 2);
-        var context2 = CreateContext(charId, executionId: sharedExecutionId, initialState: conflictingState);
+        // Mutate character state in DB so that dominant need becomes Energy (proposing Rest)
+        await using (var mutateDb = new CoreDbContext(_options))
+        {
+            var s = await mutateDb.CharacterStates.SingleAsync(x => x.CharacterId == charId);
+            s.ApplyDelta(CharacterStateDelta.Create(energyDelta: -70.0, hungerDelta: -60.0));
+            await mutateDb.SaveChangesAsync();
+        }
 
+        // Run 2: same ExecutionId, but DB state now produces a conflicting proposal
         await using (var db2 = new CoreDbContext(_options))
         {
             var service2 = CreateService(db2);
-            var result2 = await service2.RunAsync(context2);
+            var result2 = await service2.RunAsync(context1);
 
             Assert.Equal(CharacterCognitiveCycleStatus.IdempotencyConflict, result2.Status);
             Assert.False(result2.IsSuccess);
         }
+    }
+
+    [Fact]
+    public async Task RunAsync_IgnoresAnyCallerStateAssumptions_StrictlyUsesAuthoritativeDatabaseState()
+    {
+        // Authoritative state in DB: Version 5, Hunger 20 (well-fed), Energy 20 (tired), Stress 15, SocialNeed 20, Comfort 80
+        var charId = await SeedCharacterStateAsync(
+            hunger: 20m, energy: 20m, stress: 15m, socialNeed: 20m, comfort: 80m, version: 5);
+
+        // Caller context ONLY contains CharacterId, execution identity, and timestamp
+        // Caller cannot pass or inject any state snapshot
+        var context = CreateContext(charId);
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+
+        var result = await service.RunAsync(context);
+
+        // Assert: The cycle strictly evaluated against authoritative DB state
+        Assert.NotNull(result);
+        Assert.Equal(5, result.StateVersionAtStart);
+        Assert.NotNull(result.Experience);
+        Assert.Equal(20m, result.Experience.Hunger.RawValue);
+        Assert.Equal(20m, result.Experience.Energy.RawValue);
+        Assert.Equal(DominantNeed.Energy, result.Experience.DominantNeed);
+
+        // Authoritative need was Energy/Rest, not Eat
+        Assert.NotNull(result.ActionProposal);
+        Assert.NotNull(result.ActionProposal.Proposal);
+        Assert.Equal(ActionType.Rest, result.ActionProposal.Proposal.Type);
+        Assert.NotEqual(ActionType.Eat, result.ActionProposal.Proposal.Type);
+        Assert.Equal(5, result.ActionProposal.Proposal.StateVersion);
+
+        // Authoritative DB state was transitioned based on Rest from Version 5 -> 6
+        await using var verifyDb = new CoreDbContext(_options);
+        var state = await verifyDb.CharacterStates.SingleAsync(s => s.CharacterId == charId);
+        Assert.Equal(6, state.Version);
+        Assert.Equal(20m, state.Hunger); // Hunger was NOT mutated because Rest was performed
     }
 
     #endregion
@@ -481,28 +549,19 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 80m);
 
-        // Initial state at Version 1
-        var staleState = new CharacterStateSnapshot(hunger: 80, energy: 80, stress: 20, version: 1);
-
-        // Advance DB state to Version 2 externally
-        await using (var seedDb = new CoreDbContext(_options))
-        {
-            var seedService = CreateService(seedDb);
-            await seedService.RunAsync(CreateContext(charId));
-        }
-
-        // Execute cycle with stale InitialState (Version 1)
-        var staleContext = CreateContext(charId, initialState: staleState);
+        // Simulate concurrent worker modifying DB state before execution starts
+        var concurrentProposalPolicy = new ConcurrentMutatingActionProposalPolicy(_options, charId);
 
         await using var testDb = new CoreDbContext(_options);
-        var service = CreateService(testDb);
+        var service = CreateService(testDb, actionProposalPolicy: concurrentProposalPolicy);
 
-        var result = await service.RunAsync(staleContext);
+        var context = CreateContext(charId);
+        var result = await service.RunAsync(context);
 
         Assert.Equal(CharacterCognitiveCycleStatus.ConcurrencyConflict, result.Status);
         Assert.False(result.IsSuccess);
 
-        // Verify state remains at Version 2 and no extra transition recorded
+        // Verify state remains at Version 2 and exactly 1 transition recorded
         await using var verifyDb = new CoreDbContext(_options);
         var state = await verifyDb.CharacterStates.SingleAsync(s => s.CharacterId == charId);
         Assert.Equal(2, state.Version);
@@ -512,6 +571,63 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
     }
 
     #endregion
+
+    private sealed class AlreadyExecutedStubActionExecutionService : ICharacterActionExecutionService
+    {
+        private readonly Guid _executionId;
+        public AlreadyExecutedStubActionExecutionService(Guid executionId) => _executionId = executionId;
+
+        public Task<CharacterActionExecutionResult> ExecuteAsync(
+            Guid characterId,
+            CharacterActionProposal proposal,
+            CharacterActionExecutionContext context,
+            CancellationToken ct = default)
+        {
+            var delta = CharacterStateDelta.Create(hungerDelta: -24.0);
+            var snapshot = new CharacterStateSnapshot(hunger: 56, version: 2);
+            return Task.FromResult(CharacterActionExecutionResult.AlreadyExecuted(
+                _executionId, characterId, proposal, 1, 2, delta, snapshot));
+        }
+    }
+
+    private sealed class ConcurrentMutatingActionProposalPolicy : ICharacterActionProposalPolicy
+    {
+        private readonly DbContextOptions<CoreDbContext> _options;
+        private readonly Guid _characterId;
+        private readonly CharacterActionProposalPolicy _inner = new();
+
+        public ConcurrentMutatingActionProposalPolicy(DbContextOptions<CoreDbContext> options, Guid characterId)
+        {
+            _options = options;
+            _characterId = characterId;
+        }
+
+        public CharacterActionProposalEvaluation Evaluate(
+            CharacterIntentEvaluation intentEvaluation,
+            CharacterActionProposalContext context)
+        {
+            var evaluation = _inner.Evaluate(intentEvaluation, context);
+
+            // Simulate concurrent worker committing a transition on DB state before execution starts
+            using var db = new CoreDbContext(_options);
+            var state = db.CharacterStates.Single(s => s.CharacterId == _characterId);
+            var delta = CharacterStateDelta.Create(stressDelta: 10.0);
+            state.ApplyDelta(delta);
+            db.CharacterStateTransitions.Add(new CharacterStateTransition(
+                _characterId,
+                Guid.NewGuid(),
+                "ConcurrentWorker",
+                "Worker-1",
+                delta,
+                1,
+                2,
+                DateTime.UtcNow
+            ));
+            db.SaveChanges();
+
+            return evaluation;
+        }
+    }
 
     #region 8. Unexpected Exception Propagation
 
@@ -551,7 +667,7 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
         {
             await using var db = new CoreDbContext(_options);
             var service = CreateService(db);
-            var context = CreateContext(charId, initialState: snapshot);
+            var context = CreateContext(charId);
 
             // Execute policies (will stop before DB because execution service rejects non-existent charId in DB,
             // or we verify up to proposal evaluation)
@@ -590,8 +706,6 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
     public async Task RunAsync_TenConcurrentWorkersWithSameExecutionId_ExecutesExactlyOnce()
     {
         var charId = await SeedCharacterStateAsync(hunger: 90m);
-        await using var initDb = new CoreDbContext(_options);
-        var initialState = (await initDb.CharacterStates.SingleAsync(s => s.CharacterId == charId)).ToSnapshot();
         var sharedExecutionId = Guid.NewGuid();
         var sharedCycleId = Guid.NewGuid();
 
@@ -599,17 +713,17 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
         {
             await using var workerDb = new CoreDbContext(_options);
             var service = CreateService(workerDb);
-            var context = CreateContext(charId, cycleId: sharedCycleId, executionId: sharedExecutionId, initialState: initialState);
+            var context = CreateContext(charId, cycleId: sharedCycleId, executionId: sharedExecutionId);
             return await service.RunAsync(context);
         });
 
         var results = await Task.WhenAll(tasks);
 
         var appliedCount = results.Count(r => r.Status == CharacterCognitiveCycleStatus.CompletedWithAction);
-        var suppressedCount = results.Count(r => r.Status == CharacterCognitiveCycleStatus.AlreadyExecuted);
+        var nonAppliedCount = results.Count(r => r.Status != CharacterCognitiveCycleStatus.CompletedWithAction);
 
         Assert.Equal(1, appliedCount);
-        Assert.Equal(9, suppressedCount);
+        Assert.Equal(9, nonAppliedCount);
 
         await using var verifyDb = new CoreDbContext(_options);
         var transitions = await verifyDb.CharacterStateTransitions.Where(t => t.CharacterId == charId).ToListAsync();

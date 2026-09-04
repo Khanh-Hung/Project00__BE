@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Contracts.ActionExecution;
@@ -82,8 +82,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 cycleId, executionId, characterId, triggeredAtUtc, "TriggeredAtUtc must be an explicit, valid timestamp.");
         }
 
-        // 1. Authoritative State Loading
-        var state = context.InitialState ?? await _stateService.GetAsync(characterId, cancellationToken);
+        // 1. Authoritative State Loading (Strict: always load from authoritative state service, zero caller injection)
+        var state = await _stateService.GetAsync(characterId, cancellationToken);
         if (state == null)
         {
             _logger.LogWarning(
