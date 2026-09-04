@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Application.Contracts.ActionExecution;
 using Application.Contracts.CognitiveCycle;
 using Application.Interfaces;
+using Domain.Enums;
 using Domain.Policies;
 using Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
@@ -57,29 +58,92 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         var executionId = context.ExecutionId;
         var characterId = context.CharacterId;
         var triggeredAtUtc = context.TriggeredAtUtc;
+        var cognitiveEvent = context.Event;
 
         if (cycleId == Guid.Empty)
         {
             return CharacterCognitiveCycleResult.InvalidInput(
-                cycleId, executionId, characterId, triggeredAtUtc, "CycleId cannot be empty.");
+                cycleId, executionId, characterId, triggeredAtUtc, "CycleId cannot be empty.", cognitiveEvent);
         }
 
         if (executionId == Guid.Empty)
         {
             return CharacterCognitiveCycleResult.InvalidInput(
-                cycleId, executionId, characterId, triggeredAtUtc, "ExecutionId cannot be empty.");
+                cycleId, executionId, characterId, triggeredAtUtc, "ExecutionId cannot be empty.", cognitiveEvent);
         }
 
         if (characterId == Guid.Empty)
         {
             return CharacterCognitiveCycleResult.InvalidInput(
-                cycleId, executionId, characterId, triggeredAtUtc, "CharacterId cannot be empty.");
+                cycleId, executionId, characterId, triggeredAtUtc, "CharacterId cannot be empty.", cognitiveEvent);
         }
 
         if (triggeredAtUtc == default)
         {
             return CharacterCognitiveCycleResult.InvalidInput(
-                cycleId, executionId, characterId, triggeredAtUtc, "TriggeredAtUtc must be an explicit, valid timestamp.");
+                cycleId, executionId, characterId, triggeredAtUtc, "TriggeredAtUtc must be an explicit, valid timestamp.", cognitiveEvent);
+        }
+
+        // Event Consistency & Invariant Validation
+        CharacterPerceptionStimulus? stimulus = null;
+        if (cognitiveEvent != null)
+        {
+            if (cognitiveEvent.CharacterId != characterId)
+            {
+                return CharacterCognitiveCycleResult.InvalidInput(
+                    cycleId, executionId, characterId, triggeredAtUtc,
+                    $"Event CharacterId '{cognitiveEvent.CharacterId}' does not match context CharacterId '{characterId}'.",
+                    cognitiveEvent);
+            }
+
+            if (cognitiveEvent.EventId == Guid.Empty)
+            {
+                return CharacterCognitiveCycleResult.InvalidInput(
+                    cycleId, executionId, characterId, triggeredAtUtc,
+                    "Event EventId cannot be empty.",
+                    cognitiveEvent);
+            }
+
+            if (cognitiveEvent.OccurredAtUtc == default)
+            {
+                return CharacterCognitiveCycleResult.InvalidInput(
+                    cycleId, executionId, characterId, triggeredAtUtc,
+                    "Event OccurredAtUtc must be an explicit, valid timestamp.",
+                    cognitiveEvent);
+            }
+
+            if (string.IsNullOrWhiteSpace(cognitiveEvent.Source))
+            {
+                return CharacterCognitiveCycleResult.InvalidInput(
+                    cycleId, executionId, characterId, triggeredAtUtc,
+                    "Event Source cannot be empty.",
+                    cognitiveEvent);
+            }
+
+            switch (cognitiveEvent)
+            {
+                case UserMessageCognitiveEvent userMsg when string.IsNullOrWhiteSpace(userMsg.Message):
+                    return CharacterCognitiveCycleResult.InvalidInput(
+                        cycleId, executionId, characterId, triggeredAtUtc,
+                        "UserMessage message cannot be empty.",
+                        cognitiveEvent);
+
+                case WorldCognitiveEvent worldEvt when string.IsNullOrWhiteSpace(worldEvt.EventName):
+                    return CharacterCognitiveCycleResult.InvalidInput(
+                        cycleId, executionId, characterId, triggeredAtUtc,
+                        "WorldEvent eventName cannot be empty.",
+                        cognitiveEvent);
+            }
+
+            stimulus = MapToPerceptionStimulus(cognitiveEvent);
+
+            if (context.PerceptionContext?.Stimulus != null && !context.PerceptionContext.Stimulus.Equals(stimulus))
+            {
+                return CharacterCognitiveCycleResult.InvalidInput(
+                    cycleId, executionId, characterId, triggeredAtUtc,
+                    "Conflicting stimulus detected: When an Event is provided, it is the sole source of external stimulus for the cycle. PerceptionContext.Stimulus must either be null or match the mapped Event.",
+                    cognitiveEvent);
+            }
         }
 
         // 1. Authoritative State Loading (Strict: always load from authoritative state service, zero caller injection)
@@ -92,16 +156,20 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
 
             return CharacterCognitiveCycleResult.NotFound(
                 cycleId, executionId, characterId, triggeredAtUtc,
-                $"Authoritative character state for CharacterId {characterId} not found.");
+                $"Authoritative character state for CharacterId {characterId} not found.",
+                cognitiveEvent);
         }
 
         int stateVersionAtStart = state.Version;
 
-        // 2. Perception & Internal Experience (PR39)
-        var perceptionContext = context.PerceptionContext ?? new CharacterPerceptionContext(
-            EvaluatedAtUtc: triggeredAtUtc.UtcDateTime,
-            CharacterId: characterId
-        );
+        // 2. Perception & Internal Experience (PR39/PR46: Map event to normalized Domain stimulus)
+        var perceptionContext = context.PerceptionContext != null
+            ? (stimulus != null ? context.PerceptionContext with { Stimulus = stimulus } : context.PerceptionContext)
+            : new CharacterPerceptionContext(
+                EvaluatedAtUtc: triggeredAtUtc.UtcDateTime,
+                CharacterId: characterId,
+                Stimulus: stimulus
+            );
 
         var experience = _experiencePolicy.Evaluate(state, perceptionContext, context.Blueprint?.Psychology);
 
@@ -128,6 +196,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             return CharacterCognitiveCycleResult.CompletedWithoutAction(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience: experience, appraisal: appraisal, emotion: emotion, desires: desires, intent: intent,
+                @event: cognitiveEvent,
                 message: "No actionable intent formed from desires.");
         }
 
@@ -146,6 +215,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience: experience, appraisal: appraisal, emotion: emotion, desires: desires, intent: intent,
                 actionProposal: actionProposal,
+                @event: cognitiveEvent,
                 message: "No actionable proposal formed from intent.");
         }
 
@@ -167,30 +237,62 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         {
             CharacterActionExecutionStatus.Applied => CharacterCognitiveCycleResult.CompletedWithAction(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
-                experience, appraisal, emotion, desires, intent, actionProposal, executionResult),
+                experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
+                @event: cognitiveEvent),
 
             CharacterActionExecutionStatus.AlreadyExecuted => CharacterCognitiveCycleResult.AlreadyExecuted(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
-                experience, appraisal, emotion, desires, intent, actionProposal, executionResult),
+                experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
+                @event: cognitiveEvent),
 
             CharacterActionExecutionStatus.ConcurrencyConflict => CharacterCognitiveCycleResult.ConcurrencyConflict(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
-                executionResult.Message),
+                @event: cognitiveEvent,
+                message: executionResult.Message),
 
             CharacterActionExecutionStatus.IdempotencyConflict => CharacterCognitiveCycleResult.IdempotencyConflict(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
-                executionResult.Message),
+                @event: cognitiveEvent,
+                message: executionResult.Message),
 
             CharacterActionExecutionStatus.NotFound => CharacterCognitiveCycleResult.NotFound(
                 cycleId, executionId, characterId, triggeredAtUtc,
-                executionResult.Message ?? $"Character {characterId} not found during action execution."),
+                executionResult.Message ?? $"Character {characterId} not found during action execution.",
+                cognitiveEvent),
 
             _ => CharacterCognitiveCycleResult.Failed(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 actionExecution: executionResult,
+                @event: cognitiveEvent,
                 message: executionResult.Message ?? "Action execution failed.")
+        };
+    }
+
+    private static CharacterPerceptionStimulus? MapToPerceptionStimulus(CharacterCognitiveEvent? cognitiveEvent)
+    {
+        if (cognitiveEvent == null)
+        {
+            return null;
+        }
+
+        return cognitiveEvent switch
+        {
+            UserMessageCognitiveEvent userMsg => new CharacterPerceptionStimulus(
+                type: PerceptionStimulusType.UserMessage,
+                source: userMsg.Source,
+                content: userMsg.Message,
+                occurredAtUtc: userMsg.OccurredAtUtc
+            ),
+            WorldCognitiveEvent worldEvt => new CharacterPerceptionStimulus(
+                type: PerceptionStimulusType.WorldEvent,
+                source: worldEvt.Source,
+                content: worldEvt.EventName,
+                occurredAtUtc: worldEvt.OccurredAtUtc,
+                category: worldEvt.Category
+            ),
+            _ => throw new NotSupportedException($"Unsupported cognitive event type: {cognitiveEvent.GetType().Name}")
         };
     }
 }
