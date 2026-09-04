@@ -27,7 +27,7 @@ public sealed class CharacterDesireDomainTests
         var exp = _experiencePolicy.Evaluate(state, ctx, blueprint?.Psychology);
         var appraisal = _appraisalPolicy.Evaluate(exp, blueprint);
         var emotion = _emotionPolicy.Evaluate(appraisal, blueprint);
-        return _desirePolicy.Evaluate(exp, appraisal, emotion, blueprint);
+        return _desirePolicy.Evaluate(exp, appraisal, emotion);
     }
 
     #region 1. Value Object & Invariant Validation Tests
@@ -154,9 +154,37 @@ public sealed class CharacterDesireDomainTests
         Assert.True(comfortDesire.Intensity >= 0.80);
     }
 
+    [Fact]
+    public void Energy_And_Comfort_ExplicitBoundarySemantics()
+    {
+        // 1. Energy = 0 -> Fatigue = 1.0 -> NeedRest = 1.0
+        var exhaustedState = new CharacterStateSnapshot(energy: 0, hunger: 10, stress: 10, comfort: 100);
+        var exhaustedResult = RunPipeline(exhaustedState);
+        var restDesireExhausted = exhaustedResult.Desires.First(d => d.Type == DesireType.NeedRest);
+        Assert.Equal(1.0, restDesireExhausted.Intensity);
+
+        // 2. Energy = 100 -> Fatigue = 0.0 -> NeedRest = 0.0
+        var energizedState = new CharacterStateSnapshot(energy: 100, hunger: 10, stress: 10, comfort: 100);
+        var energizedResult = RunPipeline(energizedState);
+        var restDesireEnergized = energizedResult.Desires.First(d => d.Type == DesireType.NeedRest);
+        Assert.Equal(0.0, restDesireEnergized.Intensity);
+
+        // 3. Comfort = 0 -> Discomfort = 1.0 -> NeedComfort = 1.0
+        var uncomfortableState = new CharacterStateSnapshot(comfort: 0, energy: 100, hunger: 10, stress: 10);
+        var uncomfortableResult = RunPipeline(uncomfortableState);
+        var comfortDesireUncomfortable = uncomfortableResult.Desires.First(d => d.Type == DesireType.NeedComfort);
+        Assert.Equal(1.0, comfortDesireUncomfortable.Intensity);
+
+        // 4. Comfort = 100 -> Discomfort = 0.0 -> NeedComfort = 0.0
+        var comfortableState = new CharacterStateSnapshot(comfort: 100, energy: 100, hunger: 10, stress: 10);
+        var comfortableResult = RunPipeline(comfortableState);
+        var comfortDesireComfortable = comfortableResult.Desires.First(d => d.Type == DesireType.NeedComfort);
+        Assert.Equal(0.0, comfortDesireComfortable.Intensity);
+    }
+
     #endregion
 
-    #region 3. Emotion Influence Tests (Amplification & Suppression)
+    #region 3. Emotion Influence Tests (Amplification, Suppression & No Double-Counting)
 
     [Fact]
     public void Frustration_Amplifies_FoodDesire_WhenHungerIsPresent()
@@ -176,6 +204,30 @@ public sealed class CharacterDesireDomainTests
 
         Assert.True(amplifiedFood.Intensity > unamplifiedFood.Intensity);
         Assert.Equal(0.60 + (0.15 * 0.80), amplifiedFood.Intensity, 3);
+    }
+
+    [Fact]
+    public void EmotionModulation_DoesNotDoubleCount_OrBleedIntoUnrelatedDesires()
+    {
+        // Hunger is 60, SocialNeed is 50, Energy is 70
+        var state = new CharacterStateSnapshot(hunger: 60, socialNeed: 50, energy: 70, stress: 10);
+        var exp = _experiencePolicy.Evaluate(state, CreateContext());
+
+        var hungerAppraisal = new CharacterAppraisal(AppraisalType.PhysicalDeprivation, AppraisalPolarity.Negative, 0.60, AppraisalSource.Hunger);
+        var frustration = new CharacterEmotion(EmotionType.Frustration, 0.80, EmotionalValence.Negative, hungerAppraisal);
+
+        var result = _desirePolicy.Evaluate(exp, hungerAppraisal, frustration);
+
+        var food = result.Desires.First(d => d.Type == DesireType.NeedFood);
+        var social = result.Desires.First(d => d.Type == DesireType.NeedSocialConnection);
+        var rest = result.Desires.First(d => d.Type == DesireType.NeedRest);
+
+        // Only Hunger is amplified
+        Assert.Equal(0.60 + (0.15 * 0.80), food.Intensity, 3);
+
+        // Unrelated desires remain strictly at their base level without contamination
+        Assert.Equal(0.50, social.Intensity, 3);
+        Assert.Equal(0.30, rest.Intensity, 3); // (100 - 70)/100 = 0.30
     }
 
     [Fact]

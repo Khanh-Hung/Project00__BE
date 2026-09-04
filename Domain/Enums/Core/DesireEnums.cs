@@ -7,8 +7,7 @@ public enum DesireType
     NeedReduceStress,
     NeedComfort,
     NeedSocialConnection,
-    NeedSafety,
-    NeedPhysicalRecovery
+    NeedSafety
 }
 
 public enum DesireSource
@@ -17,9 +16,7 @@ public enum DesireSource
     Energy,
     Stress,
     SocialNeed,
-    Comfort,
-    Mood,
-    Emotion
+    Comfort
 }
 
 public enum MotivationType
@@ -29,6 +26,5 @@ public enum MotivationType
     StressReliefDriven,
     ConnectionDriven,
     ComfortDriven,
-    SafetyDriven,
-    RecoveryDriven
+    SafetyDriven
 }

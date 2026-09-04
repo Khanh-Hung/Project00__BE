@@ -7,6 +7,5 @@ public interface ICharacterDesirePolicy
     CharacterDesireEvaluation Evaluate(
         CharacterInternalExperience experience,
         CharacterAppraisal appraisal,
-        CharacterEmotion emotion,
-        CharacterBlueprint? blueprint = null);
+        CharacterEmotion emotion);
 }
