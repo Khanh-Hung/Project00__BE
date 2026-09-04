@@ -15,10 +15,4 @@ public interface ICharacterMemoryFeedbackService
         CharacterCognitiveCycleContext cycleContext,
         CharacterCognitiveCycleResult cycleResult,
         CancellationToken ct = default);
-
-    Task<CharacterMemoryFeedback?> RecordFeedbackAsync(
-        CharacterCognitiveCycleContext cycleContext,
-        CharacterCognitiveCycleResult cycleResult,
-        int importance,
-        CancellationToken ct = default) => RecordFeedbackAsync(cycleContext, cycleResult, ct);
 }

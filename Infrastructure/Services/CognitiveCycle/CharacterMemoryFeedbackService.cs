@@ -27,7 +27,8 @@ namespace Infrastructure.Services.CognitiveCycle;
 /// results in a physical PK violation (DbUpdateException), which is caught and safely reconciled.
 /// 
 /// Persisted Semantics & Limitation Documentation:
-/// In PR47, CharacterMemory natively stores FeedbackType and FeedbackFingerprint in dedicated columns,
+/// In PR47, CharacterMemory natively stores ExecutionId, FeedbackType, and FeedbackFingerprint in dedicated columns,
+/// completely separate from SourceSessionId (reserved strictly for chat/dialogue session identities) and
 /// completely independent of Importance (which represents memory salience / decay score in range [1..5]).
 /// It does not have separate columns for CycleId or EventId.
 /// Therefore, the canonical semantic fingerprint covers (CharacterId, ExecutionId, FeedbackType, Content).
@@ -40,6 +41,8 @@ namespace Infrastructure.Services.CognitiveCycle;
 /// </summary>
 public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackService
 {
+    private const int DefaultFeedbackImportance = 3;
+
     private readonly CoreDbContext _dbContext;
     private readonly ILogger<CharacterMemoryFeedbackService> _logger;
 
@@ -54,15 +57,6 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
     public async Task<CharacterMemoryFeedback?> RecordFeedbackAsync(
         CharacterCognitiveCycleContext cycleContext,
         CharacterCognitiveCycleResult cycleResult,
-        CancellationToken ct = default)
-    {
-        return await RecordFeedbackAsync(cycleContext, cycleResult, importance: 3, ct);
-    }
-
-    public async Task<CharacterMemoryFeedback?> RecordFeedbackAsync(
-        CharacterCognitiveCycleContext cycleContext,
-        CharacterCognitiveCycleResult cycleResult,
-        int importance = 3,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(cycleContext);
@@ -90,7 +84,7 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
             // same CharacterId + same ExecutionId + different semantic fingerprint = idempotency conflict
             var existing = await _dbContext.CharacterMemories
                 .AsNoTracking()
-                .FirstOrDefaultAsync(m => m.Id == memoryId || (m.CharacterId == cycleContext.CharacterId && m.SourceSessionId == cycleContext.ExecutionId), ct);
+                .FirstOrDefaultAsync(m => m.Id == memoryId || (m.CharacterId == cycleContext.CharacterId && m.ExecutionId == cycleContext.ExecutionId), ct);
 
             if (existing != null)
             {
@@ -107,7 +101,7 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
                 var existingFeedbackType = existing.FeedbackType.Value;
                 var existingFingerprint = existing.FeedbackFingerprint ?? CanonicalFeedbackFingerprint.Compute(
                     existing.CharacterId,
-                    existing.SourceSessionId ?? cycleContext.ExecutionId,
+                    existing.ExecutionId ?? cycleContext.ExecutionId,
                     existingFeedbackType,
                     existing.Content);
 
@@ -143,11 +137,13 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
                 userId: cycleContext.CharacterId,
                 content: content,
                 type: Domain.Enums.MemoryType.Event,
-                importance: importance, // Independent salience score (1..5), NOT coupled to FeedbackType!
+                importance: DefaultFeedbackImportance, // Independent salience score (1..5), NOT coupled to FeedbackType!
                 confidence: 1.0m,
-                sourceSessionId: cycleContext.ExecutionId,
+                sourceSessionId: null, // SourceSessionId is strictly for chat sessions; NOT overloaded with ExecutionId!
+                embeddingJson: null,
                 feedbackType: feedbackType, // Persisted natively in CharacterMemory.FeedbackType
-                feedbackFingerprint: incomingFingerprint // Persisted canonical fingerprint
+                feedbackFingerprint: incomingFingerprint, // Persisted canonical fingerprint
+                executionId: cycleContext.ExecutionId // Persisted natively in CharacterMemory.ExecutionId!
             );
             memory.Id = memoryId;
 
@@ -181,7 +177,7 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
 
             var existing = await _dbContext.CharacterMemories
                 .AsNoTracking()
-                .FirstOrDefaultAsync(m => m.Id == memoryId || (m.CharacterId == cycleContext.CharacterId && m.SourceSessionId == cycleContext.ExecutionId), ct);
+                .FirstOrDefaultAsync(m => m.Id == memoryId || (m.CharacterId == cycleContext.CharacterId && m.ExecutionId == cycleContext.ExecutionId), ct);
 
             if (existing != null)
             {
@@ -194,7 +190,7 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
                 var existingFeedbackType = existing.FeedbackType.Value;
                 var existingFingerprint = existing.FeedbackFingerprint ?? CanonicalFeedbackFingerprint.Compute(
                     existing.CharacterId,
-                    existing.SourceSessionId ?? cycleContext.ExecutionId,
+                    existing.ExecutionId ?? cycleContext.ExecutionId,
                     existingFeedbackType,
                     existing.Content);
 

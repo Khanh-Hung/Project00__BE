@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,6 +11,12 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<Guid>(
+                name: "ExecutionId",
+                table: "CharacterMemories",
+                type: "uuid",
+                nullable: true);
+
             migrationBuilder.AddColumn<string>(
                 name: "FeedbackFingerprint",
                 table: "CharacterMemories",
@@ -23,11 +30,24 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                 type: "character varying(50)",
                 maxLength: 50,
                 nullable: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CharacterMemories_CharacterId_ExecutionId",
+                table: "CharacterMemories",
+                columns: new[] { "CharacterId", "ExecutionId" });
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_CharacterMemories_CharacterId_ExecutionId",
+                table: "CharacterMemories");
+
+            migrationBuilder.DropColumn(
+                name: "ExecutionId",
+                table: "CharacterMemories");
+
             migrationBuilder.DropColumn(
                 name: "FeedbackFingerprint",
                 table: "CharacterMemories");

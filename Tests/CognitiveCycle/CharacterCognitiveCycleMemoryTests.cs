@@ -354,6 +354,8 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         var memoryInDb = await verifyDb.CharacterMemories.FirstOrDefaultAsync(m => m.Id == result.MemoryFeedback.MemoryId);
         Assert.NotNull(memoryInDb);
         Assert.Equal(charId, memoryInDb.CharacterId);
+        Assert.Equal(executionId, memoryInDb.ExecutionId);
+        Assert.Null(memoryInDb.SourceSessionId);
         Assert.Contains("Performed action", memoryInDb.Content);
     }
 
@@ -437,7 +439,7 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
 
         // Assert: Exactly 1 row in CharacterMemories for this execution
         await using var verifyDb = new CoreDbContext(_options);
-        var count = await verifyDb.CharacterMemories.CountAsync(m => m.SourceSessionId == sharedExecutionId);
+        var count = await verifyDb.CharacterMemories.CountAsync(m => m.ExecutionId == sharedExecutionId);
         Assert.Equal(1, count);
     }
 
@@ -475,7 +477,7 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
 
         // Invariant: Database still has exactly 1 memory row (from Run 1)
         await using var verifyDb = new CoreDbContext(_options);
-        var count = await verifyDb.CharacterMemories.CountAsync(m => m.SourceSessionId == sharedExecutionId);
+        var count = await verifyDb.CharacterMemories.CountAsync(m => m.ExecutionId == sharedExecutionId);
         Assert.Equal(1, count);
     }
 
@@ -530,10 +532,12 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         // Verify DB directly
         await using (var verifyDb = new CoreDbContext(_options))
         {
-            var memory = await verifyDb.CharacterMemories.SingleAsync(m => m.SourceSessionId == sharedExecutionId);
+            var memory = await verifyDb.CharacterMemories.SingleAsync(m => m.ExecutionId == sharedExecutionId);
             // Invariant: Importance is independent memory salience (default 3), NOT coupled to FeedbackType!
             Assert.Equal(3, memory.Importance);
             Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, memory.FeedbackType);
+            Assert.Equal(sharedExecutionId, memory.ExecutionId);
+            Assert.Null(memory.SourceSessionId);
             Assert.NotNull(memory.FeedbackFingerprint);
 
             // Replay with AlreadyExecuted
@@ -569,9 +573,10 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
                 type: MemoryType.Event,
                 importance: 5, // High salience (5)
                 confidence: 1.0m,
-                sourceSessionId: sharedExecutionId,
+                sourceSessionId: null,
                 feedbackType: CharacterMemoryFeedbackType.ActionFailed,
-                feedbackFingerprint: fp
+                feedbackFingerprint: fp,
+                executionId: sharedExecutionId
             );
             memory.Id = memoryId;
             await seedDb.CharacterMemories.AddAsync(memory);
@@ -613,9 +618,10 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
                 type: MemoryType.Event,
                 importance: 1, // Low salience (1)
                 confidence: 1.0m,
-                sourceSessionId: sharedExecutionId,
+                sourceSessionId: null,
                 feedbackType: CharacterMemoryFeedbackType.ActionCompleted,
-                feedbackFingerprint: fp
+                feedbackFingerprint: fp,
+                executionId: sharedExecutionId
             );
             memory.Id = memoryId;
             await seedDb.CharacterMemories.AddAsync(memory);
@@ -655,9 +661,10 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
                 type: MemoryType.Event,
                 importance: 3,
                 confidence: 1.0m,
-                sourceSessionId: sharedExecutionId,
+                sourceSessionId: null,
                 feedbackType: CharacterMemoryFeedbackType.ActionCompleted,
-                feedbackFingerprint: CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Eat: HungerDriven.")
+                feedbackFingerprint: CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Eat: HungerDriven."),
+                executionId: sharedExecutionId
             );
             memory.Id = memoryId;
             await seedDb.CharacterMemories.AddAsync(memory);
@@ -695,9 +702,10 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
                 type: MemoryType.Event,
                 importance: 3,
                 confidence: 1.0m,
-                sourceSessionId: sharedExecutionId,
+                sourceSessionId: null,
                 feedbackType: CharacterMemoryFeedbackType.ActionCompleted,
-                feedbackFingerprint: CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Sleep: Tired.")
+                feedbackFingerprint: CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Sleep: Tired."),
+                executionId: sharedExecutionId
             );
             memory.Id = memoryId;
             await seedDb.CharacterMemories.AddAsync(memory);
@@ -737,9 +745,10 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
                 type: MemoryType.Event,
                 importance: 4,
                 confidence: 1.0m,
-                sourceSessionId: sharedExecutionId,
+                sourceSessionId: null,
                 feedbackType: CharacterMemoryFeedbackType.ActionFailed, // In DB: ActionFailed!
-                feedbackFingerprint: fp
+                feedbackFingerprint: fp,
+                executionId: sharedExecutionId
             );
             memory.Id = memoryId;
             await seedDb.CharacterMemories.AddAsync(memory);
@@ -810,11 +819,87 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         }
 
         await using var verifyDb = new CoreDbContext(_options);
-        var count1 = await verifyDb.CharacterMemories.CountAsync(m => m.SourceSessionId == executionId1);
-        var count2 = await verifyDb.CharacterMemories.CountAsync(m => m.SourceSessionId == executionId2);
+        var count1 = await verifyDb.CharacterMemories.CountAsync(m => m.ExecutionId == executionId1);
+        var count2 = await verifyDb.CharacterMemories.CountAsync(m => m.ExecutionId == executionId2);
 
         Assert.Equal(1, count1);
         Assert.Equal(1, count2);
+    }
+
+    [Fact]
+    public async Task FeedbackMemory_PersistsExecutionIdNatively_LeavesSourceSessionIdUnpolluted_AndPreservesSessionQueries()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var chatSessionId = Guid.NewGuid();
+        var cycleExecutionId = Guid.NewGuid();
+
+        // 1. Seed a regular dialogue/chat session memory (which uses SourceSessionId)
+        await using (var seedDb = new CoreDbContext(_options))
+        {
+            var chatMemory = CharacterMemory.Create(
+                characterId: charId,
+                userId: charId,
+                content: "User said: Let us go on an adventure!",
+                type: MemoryType.Event,
+                importance: 3,
+                confidence: 0.95m,
+                sourceSessionId: chatSessionId,
+                embeddingJson: null,
+                feedbackType: null,
+                feedbackFingerprint: null,
+                executionId: null
+            );
+            await seedDb.CharacterMemories.AddAsync(chatMemory);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // 2. Run cognitive cycle with cycleExecutionId
+        await using (var db = new CoreDbContext(_options))
+        {
+            var service = CreateService(db);
+            var context = CreateContext(charId, executionId: cycleExecutionId);
+            var result = await service.RunAsync(context);
+
+            Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result.Status);
+            Assert.NotNull(result.MemoryFeedback);
+            Assert.Equal(cycleExecutionId, result.MemoryFeedback.ExecutionId);
+        }
+
+        // 3. Verify database isolation between SourceSessionId (chat) and ExecutionId (cognitive cycle)
+        await using (var verifyDb = new CoreDbContext(_options))
+        {
+            // The feedback memory has ExecutionId set, but SourceSessionId is strictly null
+            var feedbackMemory = await verifyDb.CharacterMemories
+                .SingleAsync(m => m.ExecutionId == cycleExecutionId);
+
+            Assert.Equal(cycleExecutionId, feedbackMemory.ExecutionId);
+            Assert.Null(feedbackMemory.SourceSessionId); // Invariant: unpolluted!
+            Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, feedbackMemory.FeedbackType);
+
+            // A chat session query for chatSessionId returns ONLY the chat memory, completely unaffected by cognitive cycle
+            var sessionMemories = await verifyDb.CharacterMemories
+                .Where(m => m.SourceSessionId == chatSessionId)
+                .ToListAsync();
+
+            Assert.Single(sessionMemories);
+            Assert.Equal(chatSessionId, sessionMemories[0].SourceSessionId);
+            Assert.Null(sessionMemories[0].ExecutionId);
+            Assert.Null(sessionMemories[0].FeedbackType);
+
+            // A chat session query for cycleExecutionId returns 0 (cognitive cycle memory is NOT stored in SourceSessionId)
+            var pollutedMemories = await verifyDb.CharacterMemories
+                .Where(m => m.SourceSessionId == cycleExecutionId)
+                .ToListAsync();
+
+            Assert.Empty(pollutedMemories);
+
+            // Total memories for character is exactly 2 (1 chat + 1 cognitive feedback)
+            var totalMemories = await verifyDb.CharacterMemories
+                .Where(m => m.CharacterId == charId)
+                .CountAsync();
+
+            Assert.Equal(2, totalMemories);
+        }
     }
 
     [Fact]
@@ -934,7 +1019,7 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         Assert.Single(transitions);
 
         // Invariant: Exactly 1 memory feedback recorded in DB
-        var memories = await verifyDb.CharacterMemories.Where(m => m.SourceSessionId == sharedExecutionId).ToListAsync();
+        var memories = await verifyDb.CharacterMemories.Where(m => m.ExecutionId == sharedExecutionId).ToListAsync();
         Assert.Single(memories);
     }
 

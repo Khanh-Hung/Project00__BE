@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Project.Infrastructure.Persistence.Migrations.Core
 {
     [DbContext(typeof(CoreDbContext))]
-    [Migration("20260904082032_AddFeedbackColumnsToCharacterMemories")]
+    [Migration("20260904083618_AddFeedbackColumnsToCharacterMemories")]
     partial class AddFeedbackColumnsToCharacterMemories
     {
         /// <inheritdoc />
@@ -589,6 +589,9 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                     b.Property<string>("EmbeddingJson")
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid?>("ExecutionId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("FeedbackFingerprint")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -625,6 +628,9 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CharacterId", "ExecutionId")
+                        .HasDatabaseName("IX_CharacterMemories_CharacterId_ExecutionId");
 
                     b.HasIndex("UserId", "CharacterId")
                         .HasDatabaseName("IX_CharacterMemories_UserId_CharacterId");

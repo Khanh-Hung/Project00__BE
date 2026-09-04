@@ -17,6 +17,7 @@ public sealed class CharacterMemory : BaseEntity
     public DateTime? LastAccessedAt { get; private set; }
     public string? EmbeddingJson { get; private set; }
 
+    public Guid? ExecutionId { get; private set; }
     public CharacterMemoryFeedbackType? FeedbackType { get; private set; }
     public string? FeedbackFingerprint { get; private set; }
 
@@ -32,7 +33,8 @@ public sealed class CharacterMemory : BaseEntity
         Guid? sourceSessionId = null,
         string? embeddingJson = null,
         CharacterMemoryFeedbackType? feedbackType = null,
-        string? feedbackFingerprint = null)
+        string? feedbackFingerprint = null,
+        Guid? executionId = null)
     {
         CharacterId = characterId;
         UserId = userId;
@@ -44,6 +46,7 @@ public sealed class CharacterMemory : BaseEntity
         EmbeddingJson = embeddingJson;
         FeedbackType = feedbackType;
         FeedbackFingerprint = feedbackFingerprint;
+        ExecutionId = executionId;
     }
 
     public static CharacterMemory Create(
@@ -56,7 +59,8 @@ public sealed class CharacterMemory : BaseEntity
         Guid? sourceSessionId = null,
         string? embeddingJson = null,
         CharacterMemoryFeedbackType? feedbackType = null,
-        string? feedbackFingerprint = null)
+        string? feedbackFingerprint = null,
+        Guid? executionId = null)
     {
         if (characterId == Guid.Empty)
         {
@@ -99,7 +103,8 @@ public sealed class CharacterMemory : BaseEntity
             sourceSessionId,
             embeddingJson,
             feedbackType,
-            feedbackFingerprint?.Trim()
+            feedbackFingerprint?.Trim(),
+            executionId
         );
     }
 
