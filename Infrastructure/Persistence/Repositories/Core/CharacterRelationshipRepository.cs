@@ -1,3 +1,7 @@
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Application.Abstractions.Data;
 using Domain.Entities;
 using Domain.Enums;
@@ -49,5 +53,71 @@ public sealed class CharacterRelationshipRepository : GenericRepository<Characte
 
         await DbContext.CharacterRelationships.AddAsync(newRelationship, ct);
         return newRelationship;
+    }
+
+    public async Task<CharacterRelationship?> GetByTargetAsync(
+        Guid characterId,
+        RelationshipTargetType targetType,
+        Guid targetId,
+        CancellationToken ct = default)
+    {
+        var local = DbContext.ChangeTracker.Entries<CharacterRelationship>()
+            .Select(e => e.Entity)
+            .FirstOrDefault(r => r.CharacterId == characterId && r.TargetType == targetType && r.TargetId == targetId && !r.IsSoftDeleted);
+
+        if (local != null)
+        {
+            return local;
+        }
+
+        return await DbContext.CharacterRelationships
+            .FirstOrDefaultAsync(r => r.CharacterId == characterId && r.TargetType == targetType && r.TargetId == targetId && !r.IsSoftDeleted, ct);
+    }
+
+    public async Task<CharacterRelationship> GetOrCreateByTargetAsync(
+        Guid characterId,
+        RelationshipTargetType targetType,
+        Guid targetId,
+        CancellationToken ct = default)
+    {
+        var existing = await GetByTargetAsync(characterId, targetType, targetId, ct);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var newRelationship = CharacterRelationship.Create(
+            characterId: characterId,
+            targetType: targetType,
+            targetId: targetId,
+            relationshipType: RelationshipType.Stranger,
+            trust: 0,
+            affection: 0,
+            familiarity: 0);
+
+        try
+        {
+            await DbContext.CharacterRelationships.AddAsync(newRelationship, ct);
+            await DbContext.SaveChangesAsync(ct);
+            return newRelationship;
+        }
+        catch (DbUpdateException)
+        {
+            // Clean up locally created entity so it does not linger in EntityState.Added
+            DbContext.Entry(newRelationship).State = EntityState.Detached;
+
+            // Race-safe fallback: If another execution concurrently created the relationship,
+            // query the authoritative record from DB.
+            var concurrent = await DbContext.CharacterRelationships
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r => r.CharacterId == characterId && r.TargetType == targetType && r.TargetId == targetId && !r.IsSoftDeleted, ct);
+
+            if (concurrent != null)
+            {
+                return concurrent;
+            }
+
+            throw;
+        }
     }
 }

@@ -6,5 +6,6 @@ public sealed record CharacterPerceptionContext(
     string? CurrentActivity = null,
     string? Location = null,
     CharacterPerceptionStimulus? Stimulus = null,
-    CharacterMemoryContext? MemoryContext = null
+    CharacterMemoryContext? MemoryContext = null,
+    CharacterRelationshipContext? RelationshipContext = null
 );
