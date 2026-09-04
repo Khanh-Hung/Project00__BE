@@ -5,5 +5,6 @@ public sealed record CharacterPerceptionContext(
     Guid CharacterId,
     string? CurrentActivity = null,
     string? Location = null,
-    CharacterPerceptionStimulus? Stimulus = null
+    CharacterPerceptionStimulus? Stimulus = null,
+    CharacterMemoryContext? MemoryContext = null
 );

@@ -1,0 +1,272 @@
+using System;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Application.Contracts.CognitiveCycle;
+using Domain.Common;
+using Domain.Entities;
+using Domain.Enums;
+using Domain.ValueObjects;
+using Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace Infrastructure.Services.CognitiveCycle;
+
+/// <summary>
+/// Infrastructure service for recording cognitive cycle outcome feedback into the memory system.
+/// 
+/// Idempotency Invariant:
+/// - same CharacterId + same ExecutionId + same semantic fingerprint = idempotent replay (existing memory reused)
+/// - same CharacterId + same ExecutionId + different semantic fingerprint = idempotency conflict (throws CharacterMemoryIdempotencyConflictException)
+/// 
+/// Database-Level Uniqueness Guarantee:
+/// Physical uniqueness is enforced by the Primary Key constraint on CharacterMemory.Id (PK_CharacterMemories in PostgreSQL).
+/// Because MemoryId is deterministically derived via SHA-256(CharacterId + ExecutionId), any concurrent race on the same ExecutionId
+/// results in a physical PK violation (DbUpdateException), which is caught and safely reconciled.
+/// 
+/// Persisted Semantics & Limitation Documentation:
+/// In PR47, CharacterMemory natively stores ExecutionId, FeedbackType, and FeedbackFingerprint in dedicated columns,
+/// completely separate from SourceSessionId (reserved strictly for chat/dialogue session identities) and
+/// completely independent of Importance (which represents memory salience / decay score in range [1..5]).
+/// It does not have separate columns for CycleId or EventId.
+/// Therefore, the canonical semantic fingerprint covers (CharacterId, ExecutionId, FeedbackType, Content).
+/// Multiple retries for the same ExecutionId must share the same semantic feedback payload to be idempotent.
+/// Full independent persistence of CycleId and EventId is deferred to a future dedicated Feedback entity.
+/// 
+/// Semantics:
+/// CharacterMemoryFeedback is an immutable result describing the persisted CharacterMemory created by the feedback operation.
+/// It is not a separately persisted entity, and MemoryId identifies the resulting CharacterMemory.
+/// </summary>
+public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackService
+{
+    private const int DefaultFeedbackImportance = 3;
+
+    private readonly CoreDbContext _dbContext;
+    private readonly ILogger<CharacterMemoryFeedbackService> _logger;
+
+    public CharacterMemoryFeedbackService(
+        CoreDbContext dbContext,
+        ILogger<CharacterMemoryFeedbackService> logger)
+    {
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async Task<CharacterMemoryFeedback?> RecordFeedbackAsync(
+        CharacterCognitiveCycleContext cycleContext,
+        CharacterCognitiveCycleResult cycleResult,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(cycleContext);
+        ArgumentNullException.ThrowIfNull(cycleResult);
+
+        // Disregard non-actionable input validation failures or not-founds
+        if (cycleResult.Status is CharacterCognitiveCycleStatus.InvalidInput or CharacterCognitiveCycleStatus.NotFound)
+        {
+            return null;
+        }
+
+        var (feedbackType, content) = DetermineFeedback(cycleResult);
+        var memoryId = CreateDeterministicMemoryId(cycleContext.CharacterId, cycleContext.ExecutionId);
+        var incomingFingerprint = CanonicalFeedbackFingerprint.Compute(
+            cycleContext.CharacterId,
+            cycleContext.ExecutionId,
+            feedbackType,
+            content);
+
+        try
+        {
+            // Idempotency check: see if memory for this character and execution was already recorded.
+            // Invariant:
+            // same CharacterId + same ExecutionId + same semantic fingerprint = idempotent replay
+            // same CharacterId + same ExecutionId + different semantic fingerprint = idempotency conflict
+            var existing = await _dbContext.CharacterMemories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == memoryId || (m.CharacterId == cycleContext.CharacterId && m.ExecutionId == cycleContext.ExecutionId), ct);
+
+            if (existing != null)
+            {
+                if (!existing.FeedbackType.HasValue)
+                {
+                    _logger.LogWarning(
+                        "[CharacterMemoryFeedbackService] Existing memory {MemoryId} for ExecutionId={ExecutionId} does not have feedback semantics.",
+                        existing.Id, cycleContext.ExecutionId);
+
+                    throw new CharacterMemoryIdempotencyConflictException(
+                        $"ExecutionId '{cycleContext.ExecutionId}' references a memory without feedback semantics.");
+                }
+
+                var existingFeedbackType = existing.FeedbackType.Value;
+                var existingFingerprint = existing.FeedbackFingerprint ?? CanonicalFeedbackFingerprint.Compute(
+                    existing.CharacterId,
+                    existing.ExecutionId ?? cycleContext.ExecutionId,
+                    existingFeedbackType,
+                    existing.Content);
+
+                // Validate semantic consistency via deterministic fingerprint and explicit type comparison
+                if (existingFeedbackType != feedbackType || existingFingerprint != incomingFingerprint)
+                {
+                    _logger.LogWarning(
+                        "[CharacterMemoryFeedbackService] Semantic idempotency conflict for CharacterId={CharacterId}, ExecutionId={ExecutionId}. Existing: (Type={ExistingType}, Fp='{ExistingFp}') != Incoming: (Type={IncomingType}, Fp='{IncomingFp}').",
+                        cycleContext.CharacterId, cycleContext.ExecutionId, existingFeedbackType, existingFingerprint, feedbackType, incomingFingerprint);
+
+                    throw new CharacterMemoryIdempotencyConflictException(
+                        $"ExecutionId '{cycleContext.ExecutionId}' has already been processed with a different semantic feedback payload.");
+                }
+
+                _logger.LogInformation(
+                    "[CharacterMemoryFeedbackService] Memory feedback already exists for CharacterId={CharacterId}, ExecutionId={ExecutionId}. Idempotently reusing MemoryId={MemoryId}.",
+                    cycleContext.CharacterId, cycleContext.ExecutionId, existing.Id);
+
+                return new CharacterMemoryFeedback(
+                    MemoryId: existing.Id,
+                    CharacterId: existing.CharacterId,
+                    CycleId: cycleContext.CycleId,
+                    EventId: cycleContext.Event?.EventId,
+                    ExecutionId: cycleContext.ExecutionId,
+                    OccurredAtUtc: new DateTimeOffset(existing.CreatedAt, TimeSpan.Zero),
+                    Type: existingFeedbackType, // Recovered directly from persisted entity's FeedbackType column!
+                    Content: existing.Content   // Recovered directly from persisted entity's Content column!
+                );
+            }
+
+            var memory = CharacterMemory.Create(
+                characterId: cycleContext.CharacterId,
+                userId: cycleContext.CharacterId,
+                content: content,
+                type: Domain.Enums.MemoryType.Event,
+                importance: DefaultFeedbackImportance, // Independent salience score (1..5), NOT coupled to FeedbackType!
+                confidence: 1.0m,
+                sourceSessionId: null, // SourceSessionId is strictly for chat sessions; NOT overloaded with ExecutionId!
+                embeddingJson: null,
+                feedbackType: feedbackType, // Persisted natively in CharacterMemory.FeedbackType
+                feedbackFingerprint: incomingFingerprint, // Persisted canonical fingerprint
+                executionId: cycleContext.ExecutionId // Persisted natively in CharacterMemory.ExecutionId!
+            );
+            memory.Id = memoryId;
+
+            await _dbContext.CharacterMemories.AddAsync(memory, ct);
+            await _dbContext.SaveChangesAsync(ct);
+
+            _logger.LogInformation(
+                "[CharacterMemoryFeedbackService] Successfully persisted memory feedback MemoryId={MemoryId} for CharacterId={CharacterId}, CycleId={CycleId}.",
+                memoryId, cycleContext.CharacterId, cycleContext.CycleId);
+
+            return new CharacterMemoryFeedback(
+                MemoryId: memoryId,
+                CharacterId: cycleContext.CharacterId,
+                CycleId: cycleContext.CycleId,
+                EventId: cycleContext.Event?.EventId,
+                ExecutionId: cycleContext.ExecutionId,
+                OccurredAtUtc: cycleContext.TriggeredAtUtc,
+                Type: feedbackType,
+                Content: content
+            );
+        }
+        catch (CharacterMemoryIdempotencyConflictException)
+        {
+            throw;
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex,
+                "[CharacterMemoryFeedbackService] Concurrency race detected when saving memory feedback. Querying existing record for MemoryId={MemoryId}.",
+                memoryId);
+
+            var existing = await _dbContext.CharacterMemories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == memoryId || (m.CharacterId == cycleContext.CharacterId && m.ExecutionId == cycleContext.ExecutionId), ct);
+
+            if (existing != null)
+            {
+                if (!existing.FeedbackType.HasValue)
+                {
+                    throw new CharacterMemoryIdempotencyConflictException(
+                        $"ExecutionId '{cycleContext.ExecutionId}' references a memory without feedback semantics.");
+                }
+
+                var existingFeedbackType = existing.FeedbackType.Value;
+                var existingFingerprint = existing.FeedbackFingerprint ?? CanonicalFeedbackFingerprint.Compute(
+                    existing.CharacterId,
+                    existing.ExecutionId ?? cycleContext.ExecutionId,
+                    existingFeedbackType,
+                    existing.Content);
+
+                if (existingFeedbackType != feedbackType || existingFingerprint != incomingFingerprint)
+                {
+                    throw new CharacterMemoryIdempotencyConflictException(
+                        $"ExecutionId '{cycleContext.ExecutionId}' has already been processed with a different semantic feedback payload.");
+                }
+
+                return new CharacterMemoryFeedback(
+                    MemoryId: existing.Id,
+                    CharacterId: existing.CharacterId,
+                    CycleId: cycleContext.CycleId,
+                    EventId: cycleContext.Event?.EventId,
+                    ExecutionId: cycleContext.ExecutionId,
+                    OccurredAtUtc: new DateTimeOffset(existing.CreatedAt, TimeSpan.Zero),
+                    Type: existingFeedbackType, // Recovered directly from persisted entity's FeedbackType column!
+                    Content: existing.Content   // Recovered directly from persisted entity's Content column!
+                );
+            }
+
+            // Distinguish reconciled PK race from unexpected persistence failure
+            _logger.LogError(ex,
+                "[CharacterMemoryFeedbackService] CRITICAL: Database update failed for MemoryId={MemoryId} (CharacterId={CharacterId}, ExecutionId={ExecutionId}) but existing record was NOT found. Unreconciled feedback loss occurred. State transition remains committed.",
+                memoryId, cycleContext.CharacterId, cycleContext.ExecutionId);
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "[CharacterMemoryFeedbackService] Non-fatal error persisting memory feedback for CharacterId={CharacterId}, CycleId={CycleId}. Action state remains committed.",
+                cycleContext.CharacterId, cycleContext.CycleId);
+
+            return null;
+        }
+    }
+
+    private static (CharacterMemoryFeedbackType Type, string Content) DetermineFeedback(CharacterCognitiveCycleResult result)
+    {
+        return result.Status switch
+        {
+            CharacterCognitiveCycleStatus.CompletedWithAction or CharacterCognitiveCycleStatus.AlreadyExecuted =>
+                (CharacterMemoryFeedbackType.ActionCompleted,
+                 $"Performed action {result.ActionProposal?.Proposal?.Type}: {result.ActionProposal?.Proposal?.Motivation}."),
+
+            CharacterCognitiveCycleStatus.Failed or CharacterCognitiveCycleStatus.ConcurrencyConflict or CharacterCognitiveCycleStatus.IdempotencyConflict =>
+                (CharacterMemoryFeedbackType.ActionFailed,
+                 $"Attempted action {result.ActionProposal?.Proposal?.Type} but execution failed: {result.Message}."),
+
+            CharacterCognitiveCycleStatus.CompletedWithoutAction when result.Event != null =>
+                (CharacterMemoryFeedbackType.EventExperienced,
+                 $"Experienced {result.Event.EventType} from {result.Event.Source}: {GetEventContent(result.Event)}."),
+
+            _ =>
+                (CharacterMemoryFeedbackType.NoActionTaken,
+                 $"Completed cognitive cycle with no actionable proposal.")
+        };
+    }
+
+    private static string GetEventContent(CharacterCognitiveEvent cognitiveEvent)
+    {
+        return cognitiveEvent switch
+        {
+            UserMessageCognitiveEvent userMsg => userMsg.Message,
+            WorldCognitiveEvent worldEvt => worldEvt.EventName,
+            _ => "Unknown event"
+        };
+    }
+
+    private static Guid CreateDeterministicMemoryId(Guid characterId, Guid executionId)
+    {
+        var canonical = $"MemoryFeedback:{characterId:D}:{executionId:D}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+        Span<byte> guidBytes = stackalloc byte[16];
+        hash.AsSpan(0, 16).CopyTo(guidBytes);
+        return new Guid(guidBytes);
+    }
+}

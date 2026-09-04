@@ -21,6 +21,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
     private readonly ICharacterIntentPolicy _intentPolicy;
     private readonly ICharacterActionProposalPolicy _actionProposalPolicy;
     private readonly ICharacterActionExecutionService _actionExecutionService;
+    private readonly ICharacterMemoryRetrievalService? _memoryRetrievalService;
+    private readonly ICharacterMemoryFeedbackService? _memoryFeedbackService;
     private readonly ILogger<CharacterCognitiveCycleService> _logger;
 
     public CharacterCognitiveCycleService(
@@ -32,7 +34,9 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         ICharacterIntentPolicy intentPolicy,
         ICharacterActionProposalPolicy actionProposalPolicy,
         ICharacterActionExecutionService actionExecutionService,
-        ILogger<CharacterCognitiveCycleService> logger)
+        ILogger<CharacterCognitiveCycleService> logger,
+        ICharacterMemoryRetrievalService? memoryRetrievalService = null,
+        ICharacterMemoryFeedbackService? memoryFeedbackService = null)
     {
         _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
         _experiencePolicy = experiencePolicy ?? throw new ArgumentNullException(nameof(experiencePolicy));
@@ -43,6 +47,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         _actionProposalPolicy = actionProposalPolicy ?? throw new ArgumentNullException(nameof(actionProposalPolicy));
         _actionExecutionService = actionExecutionService ?? throw new ArgumentNullException(nameof(actionExecutionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _memoryRetrievalService = memoryRetrievalService;
+        _memoryFeedbackService = memoryFeedbackService;
     }
 
     public async Task<CharacterCognitiveCycleResult> RunAsync(
@@ -162,8 +168,21 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
 
         int stateVersionAtStart = state.Version;
 
-        // 2. Perception & Internal Experience (PR39/PR46: Map event to normalized Domain stimulus)
-        var perceptionContext = context.PerceptionContext != null
+        // Validate caller did not attempt to inject MemoryContext via PerceptionContext
+        if (context.PerceptionContext?.MemoryContext != null)
+        {
+            _logger.LogWarning(
+                "[CharacterCognitiveCycleService] Caller attempted to inject MemoryContext via PerceptionContext for CharacterId={CharacterId}, CycleId={CycleId}. Rejecting invalid input.",
+                characterId, cycleId);
+
+            return CharacterCognitiveCycleResult.InvalidInput(
+                cycleId, executionId, characterId, triggeredAtUtc,
+                message: "PerceptionContext.MemoryContext cannot be pre-populated by caller. Memory retrieval is managed authoritatively by the cognitive cycle.",
+                @event: cognitiveEvent);
+        }
+
+        // 2. Perception & Stimulus Mapping (PR39/PR46: Map event to normalized Domain stimulus)
+        var basePerceptionContext = context.PerceptionContext != null
             ? (stimulus != null ? context.PerceptionContext with { Stimulus = stimulus } : context.PerceptionContext)
             : new CharacterPerceptionContext(
                 EvaluatedAtUtc: triggeredAtUtc.UtcDateTime,
@@ -171,18 +190,43 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 Stimulus: stimulus
             );
 
+        // 3. Memory Retrieval (PR47: Contextual knowledge, graceful degradation to empty)
+        // Authoritative memory retrieval boundary: caller cannot bypass or inject arbitrary memories.
+        CharacterMemoryContext memoryContext;
+        if (_memoryRetrievalService != null)
+        {
+            try
+            {
+                memoryContext = await _memoryRetrievalService.RetrieveRelevantAsync(characterId, basePerceptionContext, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[CharacterCognitiveCycleService] Failed to retrieve memories for CharacterId={CharacterId}. Gracefully falling back to empty memory context.",
+                    characterId);
+                memoryContext = CharacterMemoryContext.Empty;
+            }
+        }
+        else
+        {
+            memoryContext = CharacterMemoryContext.Empty;
+        }
+
+        var perceptionContext = basePerceptionContext with { MemoryContext = memoryContext };
+
+        // 4. Internal Experience (PR39)
         var experience = _experiencePolicy.Evaluate(state, perceptionContext, context.Blueprint?.Psychology);
 
-        // 3. Appraisal (PR40)
+        // 5. Appraisal (PR40)
         var appraisal = _appraisalPolicy.Evaluate(experience, context.Blueprint);
 
-        // 4. Emotion (PR40)
+        // 6. Emotion (PR40)
         var emotion = _emotionPolicy.Evaluate(appraisal, context.Blueprint);
 
-        // 5. Desire (PR41)
+        // 7. Desire (PR41)
         var desires = _desirePolicy.Evaluate(experience, appraisal, emotion);
 
-        // 6. Intent (PR42)
+        // 8. Intent (PR42)
         var intentContext = new CharacterIntentContext(triggeredAtUtc);
         var intent = _intentPolicy.Evaluate(desireEvaluation: desires, context: intentContext);
 
@@ -193,14 +237,17 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 "[CharacterCognitiveCycleService] No actionable intent formed for CharacterId={CharacterId}, CycleId={CycleId}. Cycle stopping without action.",
                 characterId, cycleId);
 
-            return CharacterCognitiveCycleResult.CompletedWithoutAction(
+            var noIntentResult = CharacterCognitiveCycleResult.CompletedWithoutAction(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience: experience, appraisal: appraisal, emotion: emotion, desires: desires, intent: intent,
                 @event: cognitiveEvent,
+                memoryContext: memoryContext,
                 message: "No actionable intent formed from desires.");
+
+            return await AttachMemoryFeedbackAsync(context, noIntentResult, cancellationToken);
         }
 
-        // 7. Action Proposal (PR43)
+        // 9. Action Proposal (PR43)
         var proposalContext = new CharacterActionProposalContext(triggeredAtUtc);
         var actionProposal = _actionProposalPolicy.Evaluate(intent, proposalContext);
 
@@ -211,15 +258,18 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 "[CharacterCognitiveCycleService] No actionable proposal formed for CharacterId={CharacterId}, CycleId={CycleId}. Cycle stopping without action.",
                 characterId, cycleId);
 
-            return CharacterCognitiveCycleResult.CompletedWithoutAction(
+            var noProposalResult = CharacterCognitiveCycleResult.CompletedWithoutAction(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience: experience, appraisal: appraisal, emotion: emotion, desires: desires, intent: intent,
                 actionProposal: actionProposal,
                 @event: cognitiveEvent,
+                memoryContext: memoryContext,
                 message: "No actionable proposal formed from intent.");
+
+            return await AttachMemoryFeedbackAsync(context, noProposalResult, cancellationToken);
         }
 
-        // 8. Action Execution (PR44)
+        // 10. Action Execution (PR44)
         var executionContext = new CharacterActionExecutionContext(
             ExecutionId: executionId,
             ExecutedAtUtc: triggeredAtUtc
@@ -232,42 +282,103 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             ct: cancellationToken
         );
 
-        // 9. Map ActionExecutionResult to CognitiveCycleResult
-        return executionResult.Status switch
+        // 11. Map ActionExecutionResult to CognitiveCycleResult
+        var cycleResult = executionResult.Status switch
         {
             CharacterActionExecutionStatus.Applied => CharacterCognitiveCycleResult.CompletedWithAction(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
-                @event: cognitiveEvent),
+                @event: cognitiveEvent,
+                memoryContext: memoryContext),
 
             CharacterActionExecutionStatus.AlreadyExecuted => CharacterCognitiveCycleResult.AlreadyExecuted(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
-                @event: cognitiveEvent),
+                @event: cognitiveEvent,
+                memoryContext: memoryContext),
 
             CharacterActionExecutionStatus.ConcurrencyConflict => CharacterCognitiveCycleResult.ConcurrencyConflict(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
                 @event: cognitiveEvent,
+                memoryContext: memoryContext,
                 message: executionResult.Message),
 
             CharacterActionExecutionStatus.IdempotencyConflict => CharacterCognitiveCycleResult.IdempotencyConflict(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
                 @event: cognitiveEvent,
+                memoryContext: memoryContext,
                 message: executionResult.Message),
 
             CharacterActionExecutionStatus.NotFound => CharacterCognitiveCycleResult.NotFound(
                 cycleId, executionId, characterId, triggeredAtUtc,
                 executionResult.Message ?? $"Character {characterId} not found during action execution.",
-                cognitiveEvent),
+                cognitiveEvent,
+                memoryContext: memoryContext),
 
             _ => CharacterCognitiveCycleResult.Failed(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 actionExecution: executionResult,
                 @event: cognitiveEvent,
+                memoryContext: memoryContext,
                 message: executionResult.Message ?? "Action execution failed.")
         };
+
+        // 12. Persist Memory Feedback (PR47: Independent identity, error does not roll back state)
+        return await AttachMemoryFeedbackAsync(context, cycleResult, cancellationToken);
+    }
+
+    private async Task<CharacterCognitiveCycleResult> AttachMemoryFeedbackAsync(
+        CharacterCognitiveCycleContext context,
+        CharacterCognitiveCycleResult result,
+        CancellationToken ct)
+    {
+        if (_memoryFeedbackService == null)
+        {
+            return result;
+        }
+
+        try
+        {
+            var feedback = await _memoryFeedbackService.RecordFeedbackAsync(context, result, ct);
+            if (feedback != null)
+            {
+                return result with { MemoryFeedback = feedback };
+            }
+        }
+        catch (CharacterMemoryIdempotencyConflictException ex)
+        {
+            _logger.LogWarning(ex,
+                "[CharacterCognitiveCycleService] Idempotency conflict detected in memory feedback for CharacterId={CharacterId}, ExecutionId={ExecutionId}. {Message}",
+                context.CharacterId, context.ExecutionId, ex.Message);
+
+            return CharacterCognitiveCycleResult.IdempotencyConflict(
+                context.CycleId,
+                context.ExecutionId,
+                context.CharacterId,
+                context.TriggeredAtUtc,
+                result.StateVersionAtStart,
+                result.Experience,
+                result.Appraisal,
+                result.Emotion,
+                result.Desires,
+                result.Intent,
+                result.ActionProposal,
+                result.ActionExecution,
+                result.Event,
+                result.MemoryContext,
+                memoryFeedback: null,
+                message: ex.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[CharacterCognitiveCycleService] Failed to record memory feedback for CharacterId={CharacterId}, CycleId={CycleId}. State transition remains committed.",
+                context.CharacterId, context.CycleId);
+        }
+
+        return result;
     }
 
     private static CharacterPerceptionStimulus? MapToPerceptionStimulus(CharacterCognitiveEvent? cognitiveEvent)

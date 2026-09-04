@@ -17,6 +17,10 @@ public sealed class CharacterMemory : BaseEntity
     public DateTime? LastAccessedAt { get; private set; }
     public string? EmbeddingJson { get; private set; }
 
+    public Guid? ExecutionId { get; private set; }
+    public CharacterMemoryFeedbackType? FeedbackType { get; private set; }
+    public string? FeedbackFingerprint { get; private set; }
+
     private CharacterMemory() { } // EF Core
 
     private CharacterMemory(
@@ -27,7 +31,10 @@ public sealed class CharacterMemory : BaseEntity
         int importance,
         decimal confidence,
         Guid? sourceSessionId = null,
-        string? embeddingJson = null)
+        string? embeddingJson = null,
+        CharacterMemoryFeedbackType? feedbackType = null,
+        string? feedbackFingerprint = null,
+        Guid? executionId = null)
     {
         CharacterId = characterId;
         UserId = userId;
@@ -37,6 +44,9 @@ public sealed class CharacterMemory : BaseEntity
         Confidence = confidence;
         SourceSessionId = sourceSessionId;
         EmbeddingJson = embeddingJson;
+        FeedbackType = feedbackType;
+        FeedbackFingerprint = feedbackFingerprint;
+        ExecutionId = executionId;
     }
 
     public static CharacterMemory Create(
@@ -47,7 +57,10 @@ public sealed class CharacterMemory : BaseEntity
         int importance = 3,
         decimal confidence = 0.9m,
         Guid? sourceSessionId = null,
-        string? embeddingJson = null)
+        string? embeddingJson = null,
+        CharacterMemoryFeedbackType? feedbackType = null,
+        string? feedbackFingerprint = null,
+        Guid? executionId = null)
     {
         if (characterId == Guid.Empty)
         {
@@ -88,7 +101,10 @@ public sealed class CharacterMemory : BaseEntity
             importance,
             confidence,
             sourceSessionId,
-            embeddingJson
+            embeddingJson,
+            feedbackType,
+            feedbackFingerprint?.Trim(),
+            executionId
         );
     }
 
