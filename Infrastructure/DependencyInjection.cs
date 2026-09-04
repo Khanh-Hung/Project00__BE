@@ -254,6 +254,9 @@ public static class DependencyInjection
         services.AddSingleton<Domain.Policies.ICharacterAppraisalPolicy, Domain.Policies.CharacterAppraisalPolicy>();
         services.AddSingleton<Domain.Policies.ICharacterEmotionPolicy, Domain.Policies.CharacterEmotionPolicy>();
 
+        // PR #41: Desire & Motivation Engine
+        services.AddSingleton<Domain.Policies.ICharacterDesirePolicy, Domain.Policies.CharacterDesirePolicy>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
