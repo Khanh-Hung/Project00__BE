@@ -37,6 +37,13 @@ public sealed class CharacterStateTransitionService : ICharacterStateTransitionS
         if (context.ExecutionId == Guid.Empty)
             throw new ArgumentException("ExecutionId cannot be empty.", nameof(context));
 
+        if (context.ExpectedStateVersion.HasValue && state.Version != context.ExpectedStateVersion.Value)
+        {
+            return StateTransitionResult.ConcurrencyConflict(
+                state.Version,
+                $"Expected state version {context.ExpectedStateVersion.Value}, but authoritative state is at version {state.Version}.");
+        }
+
         int versionBefore = state.Version;
         state.ApplyDelta(delta);
         int versionAfter = state.Version;
@@ -93,6 +100,17 @@ public sealed class CharacterStateTransitionService : ICharacterStateTransitionS
                     $"ExecutionId '{context.ExecutionId}' has already been processed with a different payload.");
             }
 
+            if (context.ExpectedStateVersion.HasValue && existingTransition.VersionBefore != context.ExpectedStateVersion.Value)
+            {
+                _logger.LogWarning(
+                    "[CharacterStateTransitionService] State version mismatch for existing transition CharacterId={CharacterId}, ExecutionId={ExecutionId}. Recorded VersionBefore={RecordedVersion}, ExpectedVersion={ExpectedVersion}",
+                    characterId, context.ExecutionId, existingTransition.VersionBefore, context.ExpectedStateVersion.Value);
+
+                return StateTransitionResult.ConcurrencyConflict(
+                    existingTransition.VersionBefore,
+                    $"ExecutionId '{context.ExecutionId}' was recorded at state version {existingTransition.VersionBefore}, but incoming context expected version {context.ExpectedStateVersion.Value}.");
+            }
+
             _logger.LogInformation(
                 "[CharacterStateTransitionService] Idempotent duplicate transition suppressed for CharacterId={CharacterId}, ExecutionId={ExecutionId}, SourceType={SourceType}",
                 characterId, context.ExecutionId, context.SourceType);
@@ -109,6 +127,7 @@ public sealed class CharacterStateTransitionService : ICharacterStateTransitionS
 
             return StateTransitionResult.AlreadyApplied(
                 currentState.ToSnapshot(),
+                existingTransition.VersionBefore,
                 existingTransition.VersionAfter);
         }
 
@@ -124,6 +143,17 @@ public sealed class CharacterStateTransitionService : ICharacterStateTransitionS
 
             return StateTransitionResult.NotFound(
                 $"Authoritative character state for CharacterId {characterId} does not exist. Explicit initialization required.");
+        }
+
+        if (context.ExpectedStateVersion.HasValue && state.Version != context.ExpectedStateVersion.Value)
+        {
+            _logger.LogWarning(
+                "[CharacterStateTransitionService] State version mismatch for CharacterId={CharacterId}, ExecutionId={ExecutionId}. Authoritative Version={CurrentVersion}, ExpectedVersion={ExpectedVersion}",
+                characterId, context.ExecutionId, state.Version, context.ExpectedStateVersion.Value);
+
+            return StateTransitionResult.ConcurrencyConflict(
+                state.Version,
+                $"Expected state version {context.ExpectedStateVersion.Value}, but authoritative state is at version {state.Version}.");
         }
 
         int versionBefore = state.Version;
@@ -168,6 +198,13 @@ public sealed class CharacterStateTransitionService : ICharacterStateTransitionS
                     $"ExecutionId '{context.ExecutionId}' already committed with different payload.");
             }
 
+            if (reloadedTransition != null && context.ExpectedStateVersion.HasValue && reloadedTransition.VersionBefore != context.ExpectedStateVersion.Value)
+            {
+                return StateTransitionResult.ConcurrencyConflict(
+                    reloadedTransition.VersionBefore,
+                    $"ExecutionId '{context.ExecutionId}' was recorded at state version {reloadedTransition.VersionBefore}, but incoming context expected version {context.ExpectedStateVersion.Value}.");
+            }
+
             var reloadedState = await _dbContext.CharacterStates
                 .AsNoTracking()
                 .FirstOrDefaultAsync(s => s.CharacterId == characterId, ct);
@@ -180,6 +217,7 @@ public sealed class CharacterStateTransitionService : ICharacterStateTransitionS
 
             return StateTransitionResult.AlreadyApplied(
                 reloadedState.ToSnapshot(),
+                reloadedTransition?.VersionBefore ?? reloadedState.Version,
                 reloadedTransition?.VersionAfter ?? reloadedState.Version);
         }
         catch (DbUpdateConcurrencyException ex)

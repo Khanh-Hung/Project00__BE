@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Common;
 using Application.Contracts.ActionExecution;
 using Application.Enums;
 using Application.Interfaces;
+using Domain.Common;
 using Domain.Policies;
 using Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
@@ -47,6 +48,12 @@ public sealed class CharacterActionExecutionService : ICharacterActionExecutionS
                 executionId, characterId, proposal, "ExecutionId cannot be empty.");
         }
 
+        if (context.ExecutedAtUtc == default)
+        {
+            return CharacterActionExecutionResult.InvalidProposal(
+                executionId, characterId, proposal, "ExecutedAtUtc must be an explicit, valid timestamp.");
+        }
+
         if (proposal == null)
         {
             return CharacterActionExecutionResult.InvalidProposal(
@@ -58,21 +65,24 @@ public sealed class CharacterActionExecutionService : ICharacterActionExecutionS
         {
             delta = _executionPolicy.CalculateDelta(proposal);
         }
-        catch (Exception ex)
+        catch (ArgumentException ex)
         {
-            _logger.LogError(ex, "Failed to calculate delta for proposal {ProposalType} on Character {CharacterId}", proposal.Type, characterId);
+            _logger.LogWarning(ex, "Validation failure calculating delta for proposal {ProposalType} on Character {CharacterId}", proposal.Type, characterId);
             return CharacterActionExecutionResult.InvalidProposal(
                 context.ExecutionId, characterId, proposal, ex.Message);
         }
 
+        var sourceId = CanonicalTransitionFingerprint.CreateActionProposalSourceId(proposal);
+
         var transitionContext = new StateTransitionContext(
             ExecutionId: context.ExecutionId,
             SourceType: "CharacterActionProposal",
-            SourceId: $"{proposal.Type}:{proposal.SourceIntent}:{proposal.Motivation}:{proposal.StateVersion}",
-            Reason: $"Action proposal {proposal.Type} executed (Intent: {proposal.SourceIntent}, Motivation: {proposal.Motivation})"
+            SourceId: sourceId,
+            Reason: $"Action proposal {proposal.Type} executed (Intent: {proposal.SourceIntent}, Motivation: {proposal.Motivation})",
+            ExpectedStateVersion: proposal.StateVersion
         );
 
-        var nowUtc = context.ExecutedAtUtc?.UtcDateTime ?? DateTime.UtcNow;
+        var nowUtc = context.ExecutedAtUtc.UtcDateTime;
 
         var transitionResult = await _stateTransitionService.TransitionAsync(
             characterId,
@@ -96,6 +106,7 @@ public sealed class CharacterActionExecutionService : ICharacterActionExecutionS
                 context.ExecutionId,
                 characterId,
                 proposal,
+                transitionResult.VersionBefore,
                 transitionResult.VersionAfter,
                 delta,
                 transitionResult.Snapshot!),

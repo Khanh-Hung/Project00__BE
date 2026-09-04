@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Domain.ValueObjects;
@@ -36,5 +36,25 @@ public static class CanonicalTransitionFingerprint
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexStringLower(hash);
+    }
+
+    /// <summary>
+    /// Creates the canonical source identifier representing a CharacterActionProposal's execution provenance.
+    /// Format: ActionProposal:{Type}:{Intensity}:{SourceIntent}:{Motivation}:{StateVersion}
+    /// Captures all semantic attributes of the proposal influencing execution.
+    /// </summary>
+    public static string CreateActionProposalSourceId(CharacterActionProposal proposal)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+
+        return string.Join(
+            ":",
+            "ActionProposal",
+            proposal.Type.ToString(),
+            proposal.Intensity.ToString("F4", CultureInfo.InvariantCulture),
+            proposal.SourceIntent.ToString(),
+            proposal.Motivation.ToString(),
+            proposal.StateVersion.ToString(CultureInfo.InvariantCulture)
+        );
     }
 }

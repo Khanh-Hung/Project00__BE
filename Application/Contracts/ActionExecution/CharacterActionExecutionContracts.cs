@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Domain.Enums;
 using Domain.ValueObjects;
 
@@ -6,7 +6,7 @@ namespace Application.Contracts.ActionExecution;
 
 public sealed record CharacterActionExecutionContext(
     Guid ExecutionId,
-    DateTimeOffset? ExecutedAtUtc = null
+    DateTimeOffset ExecutedAtUtc
 );
 
 public enum CharacterActionExecutionStatus
@@ -64,7 +64,8 @@ public sealed record CharacterActionExecutionResult(
         Guid executionId,
         Guid characterId,
         CharacterActionProposal proposal,
-        int version,
+        int versionBefore,
+        int versionAfter,
         CharacterStateDelta delta,
         CharacterStateSnapshot snapshot) =>
         new(
@@ -75,8 +76,8 @@ public sealed record CharacterActionExecutionResult(
             Intensity: proposal.Intensity,
             SourceIntent: proposal.SourceIntent,
             Motivation: proposal.Motivation,
-            StateVersionBefore: version,
-            StateVersionAfter: version,
+            StateVersionBefore: versionBefore,
+            StateVersionAfter: versionAfter,
             AppliedDelta: delta,
             Snapshot: snapshot,
             Message: "Action execution already applied for this execution ID."

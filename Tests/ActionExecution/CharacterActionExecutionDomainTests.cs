@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Domain.Enums;
 using Domain.Policies;
 using Domain.ValueObjects;
@@ -150,6 +150,51 @@ public sealed class CharacterActionExecutionDomainTests
             Assert.Equal(baseline.SocialNeedDelta, next.SocialNeedDelta);
             Assert.Equal(baseline.ComfortDelta, next.ComfortDelta);
         }
+    }
+
+    #endregion
+
+    #region 4. Canonical SourceId & Fingerprint Tests
+
+    [Fact]
+    public void CreateActionProposalSourceId_CapturesAllSemanticProperties()
+    {
+        var proposal = new CharacterActionProposal(
+            type: ActionType.Eat,
+            intensity: 0.75,
+            sourceIntent: IntentType.SeekFood,
+            motivation: MotivationType.HungerDriven,
+            stateVersion: 4
+        );
+
+        var sourceId = Domain.Common.CanonicalTransitionFingerprint.CreateActionProposalSourceId(proposal);
+
+        Assert.Equal("ActionProposal:Eat:0.7500:SeekFood:HungerDriven:4", sourceId);
+    }
+
+    [Fact]
+    public void CreateActionProposalSourceId_DifferentiatesChangesInAnyProperty()
+    {
+        var baseProposal = new CharacterActionProposal(
+            ActionType.Eat, 0.5, IntentType.SeekFood, MotivationType.HungerDriven, 1);
+
+        var diffIntensity = new CharacterActionProposal(
+            ActionType.Eat, 0.6, IntentType.SeekFood, MotivationType.HungerDriven, 1);
+
+        var diffVersion = new CharacterActionProposal(
+            ActionType.Eat, 0.5, IntentType.SeekFood, MotivationType.HungerDriven, 2);
+
+        var diffAction = new CharacterActionProposal(
+            ActionType.Rest, 0.5, IntentType.SeekRest, MotivationType.RestorationDriven, 1);
+
+        var baseSourceId = Domain.Common.CanonicalTransitionFingerprint.CreateActionProposalSourceId(baseProposal);
+        var diffIntensitySourceId = Domain.Common.CanonicalTransitionFingerprint.CreateActionProposalSourceId(diffIntensity);
+        var diffVersionSourceId = Domain.Common.CanonicalTransitionFingerprint.CreateActionProposalSourceId(diffVersion);
+        var diffActionSourceId = Domain.Common.CanonicalTransitionFingerprint.CreateActionProposalSourceId(diffAction);
+
+        Assert.NotEqual(baseSourceId, diffIntensitySourceId);
+        Assert.NotEqual(baseSourceId, diffVersionSourceId);
+        Assert.NotEqual(baseSourceId, diffActionSourceId);
     }
 
     #endregion

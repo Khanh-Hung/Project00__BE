@@ -1,4 +1,4 @@
-﻿using Application.Enums;
+using Application.Enums;
 using Domain.ValueObjects;
 
 namespace Application.Common;
@@ -20,6 +20,9 @@ public sealed record StateTransitionResult(
 
     public static StateTransitionResult AlreadyApplied(CharacterStateSnapshot snapshot, int version) =>
         new(StateTransitionResultStatus.AlreadyApplied, snapshot, version, version, "Transition already applied for this execution ID.");
+
+    public static StateTransitionResult AlreadyApplied(CharacterStateSnapshot snapshot, int versionBefore, int versionAfter) =>
+        new(StateTransitionResultStatus.AlreadyApplied, snapshot, versionBefore, versionAfter, "Transition already applied for this execution ID.");
 
     public static StateTransitionResult IdempotencyConflict(string message) =>
         new(StateTransitionResultStatus.IdempotencyConflict, null, 0, 0, message);
