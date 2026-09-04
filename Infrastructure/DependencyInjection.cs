@@ -263,6 +263,10 @@ public static class DependencyInjection
         // PR #43: Action Proposal Engine
         services.AddSingleton<Domain.Policies.ICharacterActionProposalPolicy, Domain.Policies.CharacterActionProposalPolicy>();
 
+        // PR #44: Action Execution Engine
+        services.AddSingleton<Domain.Policies.ICharacterActionExecutionPolicy, Domain.Policies.CharacterActionExecutionPolicy>();
+        services.AddScoped<Application.Interfaces.ICharacterActionExecutionService, Infrastructure.Services.ActionExecution.CharacterActionExecutionService>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
