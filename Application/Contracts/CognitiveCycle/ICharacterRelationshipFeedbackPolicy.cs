@@ -75,15 +75,8 @@ public sealed class DefaultCharacterRelationshipFeedbackPolicy : ICharacterRelat
                     Reason: "Acknowledged interaction without overt action."
                 ),
 
-            CharacterCognitiveCycleStatus.ConcurrencyConflict or CharacterCognitiveCycleStatus.Failed or CharacterCognitiveCycleStatus.IdempotencyConflict =>
-                new CharacterRelationshipFeedbackProposal(
-                    TrustDelta: -1,
-                    AffectionDelta: 0,
-                    FamiliarityDelta: 1,
-                    NewRelationshipType: null,
-                    Reason: "Interaction encountered execution difficulties."
-                ),
-
+            // Infrastructure or identity failures (Failed, ConcurrencyConflict, IdempotencyConflict, NotFound, InvalidInput)
+            // must NOT mutate social relationship metrics.
             _ => null
         };
     }

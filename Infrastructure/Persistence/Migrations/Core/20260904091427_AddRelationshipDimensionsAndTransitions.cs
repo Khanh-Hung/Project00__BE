@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -58,6 +58,18 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                 type: "integer",
                 nullable: false,
                 defaultValue: 0);
+
+            // Backfill existing rows: map TargetType = 'User', TargetId = UserId, and clamp AffectionScore into Affection (0..100)
+            migrationBuilder.Sql(@"
+                UPDATE ""CharacterRelationships""
+                SET ""TargetType"" = 'User',
+                    ""TargetId"" = ""UserId"",
+                    ""Affection"" = CASE 
+                        WHEN ""AffectionScore"" < 0 THEN 0 
+                        WHEN ""AffectionScore"" > 100 THEN 100 
+                        ELSE ""AffectionScore"" 
+                    END;
+            ");
 
             migrationBuilder.CreateTable(
                 name: "CharacterRelationshipTransitions",

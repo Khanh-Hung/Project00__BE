@@ -472,7 +472,7 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
     }
 
     [Fact]
-    public async Task Feedback_WhenExecutionFails_AppliesFailureFeedback()
+    public async Task Feedback_WhenExecutionFails_WithInfrastructureError_DoesNotMutateRelationship()
     {
         var charId = await SeedCharacterStateAsync(hunger: 90m);
         var targetId = Guid.NewGuid();
@@ -487,15 +487,46 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
 
         var result = await service.RunAsync(context);
 
+        // Infrastructure concurrency failure must NOT result in negative social feedback
         Assert.Equal(CharacterCognitiveCycleStatus.ConcurrencyConflict, result.Status);
+        Assert.Null(result.RelationshipFeedback);
+
+        await using var verifyDb = new CoreDbContext(_options);
+        var rel = await verifyDb.CharacterRelationships.SingleAsync(r => r.CharacterId == charId && r.TargetId == targetId);
+        Assert.Equal(20, rel.Trust); // Untouched
+        Assert.Equal(20, rel.Affection); // Untouched
+        Assert.Equal(10, rel.Familiarity); // Untouched
+
+        // No transition recorded
+        var transitionCount = await verifyDb.CharacterRelationshipTransitions.CountAsync(t => t.CharacterId == charId);
+        Assert.Equal(0, transitionCount);
+    }
+
+    [Fact]
+    public async Task Feedback_WhenCompletedWithoutAction_AppliesFamiliarityOnlyFeedback()
+    {
+        // All needs satisfied: Hunger 0, Energy 100, Stress 0, SocialNeed 0, Comfort 100
+        var charId = await SeedCharacterStateAsync(hunger: 0m, energy: 100m, stress: 0m, socialNeed: 0m, comfort: 100m);
+        var targetId = Guid.NewGuid();
+        await SeedRelationshipAsync(charId, RelationshipTargetType.User, targetId, trust: 20, affection: 20, familiarity: 10);
+
+        var userEvent = new UserMessageCognitiveEvent(Guid.NewGuid(), charId, FixedOccurredAt, "Just passing by", UserId: targetId);
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+        var context = CreateContext(charId, cognitiveEvent: userEvent);
+
+        var result = await service.RunAsync(context);
+
+        Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithoutAction, result.Status);
         Assert.NotNull(result.RelationshipFeedback);
-        Assert.Equal(-1, result.RelationshipFeedback.TrustDelta);
+        Assert.Equal(0, result.RelationshipFeedback.TrustDelta);
         Assert.Equal(0, result.RelationshipFeedback.AffectionDelta);
         Assert.Equal(1, result.RelationshipFeedback.FamiliarityDelta);
 
         await using var verifyDb = new CoreDbContext(_options);
         var rel = await verifyDb.CharacterRelationships.SingleAsync(r => r.CharacterId == charId && r.TargetId == targetId);
-        Assert.Equal(19, rel.Trust); // 20 - 1 = 19
+        Assert.Equal(20, rel.Trust); // 20 + 0 = 20
         Assert.Equal(20, rel.Affection); // 20 + 0 = 20
         Assert.Equal(11, rel.Familiarity); // 10 + 1 = 11
     }
@@ -629,6 +660,50 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
     #region 5. Concurrency Tests
 
     [Fact]
+    public async Task CharacterRelationship_VersionConcurrencyToken_WorkerAWins_WorkerBThrowsDbUpdateConcurrencyException()
+    {
+        var charId = await SeedCharacterStateAsync();
+        var targetId = Guid.NewGuid();
+        Guid relId;
+
+        // Seed relationship at Version 1
+        await using (var seedDb = new CoreDbContext(_options))
+        {
+            var rel = CharacterRelationship.Create(charId, RelationshipTargetType.User, targetId, trust: 10, affection: 10, familiarity: 10);
+            await seedDb.CharacterRelationships.AddAsync(rel);
+            await seedDb.SaveChangesAsync();
+            relId = rel.Id;
+        }
+
+        // Context A and Context B load the exact same relationship at Version 1 concurrently
+        await using var dbA = new CoreDbContext(_options);
+        await using var dbB = new CoreDbContext(_options);
+
+        var relA = await dbA.CharacterRelationships.SingleAsync(r => r.Id == relId);
+        var relB = await dbB.CharacterRelationships.SingleAsync(r => r.Id == relId);
+
+        Assert.Equal(1u, relA.Version);
+        Assert.Equal(1u, relB.Version);
+
+        // Worker A updates Trust (+5) and commits -> Version advances to 2
+        relA.ApplyTrustDelta(5);
+        await dbA.SaveChangesAsync();
+
+        // Worker B attempts to update from stale Version 1 (Trust +10)
+        relB.ApplyTrustDelta(10);
+
+        // EF Core optimistic concurrency token (Version) MUST detect stale update and throw DbUpdateConcurrencyException
+        var ex = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => dbB.SaveChangesAsync());
+        Assert.NotNull(ex);
+
+        // Verify database state in an independent context: Version remains at 2 with Worker A's authoritative update (no silent lost updates!)
+        await using var verifyDb = new CoreDbContext(_options);
+        var authoritativeRel = await verifyDb.CharacterRelationships.SingleAsync(r => r.Id == relId);
+        Assert.Equal(2u, authoritativeRel.Version);
+        Assert.Equal(15, authoritativeRel.Trust); // 10 + 5 = 15 (Worker B's stale 10 was rejected)
+    }
+
+    [Fact]
     public async Task ConcurrentRelationshipTransitions_DoNotSilentlyOverwrite()
     {
         var charId = await SeedCharacterStateAsync();
@@ -656,7 +731,7 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
 
         var results = await Task.WhenAll(tasks);
 
-        // Assert: All 5 transitions succeeded
+        // Assert: All 5 transitions succeeded via concurrency retry
         Assert.All(results, Assert.NotNull);
 
         // Verify final aggregate state is exactly 10 + 5*delta (no lost updates!)
@@ -793,6 +868,100 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
         Assert.Equal(res1.RelationshipFeedback?.TrustDelta, res2.RelationshipFeedback?.TrustDelta);
         Assert.Equal(res1.RelationshipFeedback?.AffectionDelta, res2.RelationshipFeedback?.AffectionDelta);
         Assert.Equal(res1.RelationshipFeedback?.FamiliarityDelta, res2.RelationshipFeedback?.FamiliarityDelta);
+    }
+
+    #endregion
+
+    #region 8. Migration & Backfill Regression Tests
+
+    [Fact]
+    public async Task Migration_LegacyRelationshipsWithMultipleUsers_BackfillsTargetIdAndPreservesUniqueness()
+    {
+        var charId = Guid.NewGuid();
+        var user1 = Guid.NewGuid();
+        var user2 = Guid.NewGuid();
+        var user3 = Guid.NewGuid();
+
+        // 1. Simulate pre-PR48 schema: Drop new unique index temporarily
+        await using (var preDb = new CoreDbContext(_options))
+        {
+            await preDb.Database.ExecuteSqlRawAsync(@"DROP INDEX IF EXISTS ""IX_CharacterRelationships_CharacterId_TargetType_TargetId"";");
+
+            var character = new Character("Hero", "Protagonist", "https://avatar.png", "Brave", "Hi", "Fantasy") { Id = charId };
+            await preDb.Characters.AddAsync(character);
+
+            // Legacy relationship factory uses (characterId, userId, initialAffection, ...)
+            var rel1 = CharacterRelationship.Create(charId, user1, initialAffection: 50, CharacterMood.Neutral);
+            var rel2 = CharacterRelationship.Create(charId, user2, initialAffection: -30, CharacterMood.Neutral);
+            var rel3 = CharacterRelationship.Create(charId, user3, initialAffection: 120, CharacterMood.Neutral);
+
+            await preDb.CharacterRelationships.AddRangeAsync(rel1, rel2, rel3);
+            await preDb.SaveChangesAsync();
+
+            // Simulate raw unmigrated state where TargetId was defaulted to Guid.Empty across all existing rows
+            await preDb.Database.ExecuteSqlRawAsync(
+                @"UPDATE ""CharacterRelationships"" SET ""TargetId"" = '00000000-0000-0000-0000-000000000000', ""TargetType"" = 'User', ""Affection"" = 0;");
+        }
+
+        // 2. Execute authoritative PR48 migration step: Backfill THEN Create Unique Index
+        await using (var migrateDb = new CoreDbContext(_options))
+        {
+            // Step 2a: Backfill existing rows
+            await migrateDb.Database.ExecuteSqlRawAsync(@"
+                UPDATE ""CharacterRelationships""
+                SET ""TargetType"" = 'User',
+                    ""TargetId"" = ""UserId"",
+                    ""Affection"" = CASE 
+                        WHEN ""AffectionScore"" < 0 THEN 0 
+                        WHEN ""AffectionScore"" > 100 THEN 100 
+                        ELSE ""AffectionScore"" 
+                    END;
+            ");
+
+            // Step 2b: Create unique composite index (CharacterId, TargetType, TargetId)
+            // (If backfill hadn't run, this would fail with duplicate key on Guid.Empty)
+            await migrateDb.Database.ExecuteSqlRawAsync(@"
+                CREATE UNIQUE INDEX ""IX_CharacterRelationships_CharacterId_TargetType_TargetId"" 
+                ON ""CharacterRelationships"" (""CharacterId"", ""TargetType"", ""TargetId"");
+            ");
+        }
+
+        // 3. Verify in independent context:
+        await using var verifyDb = new CoreDbContext(_options);
+        var allRels = await verifyDb.CharacterRelationships
+            .Where(r => r.CharacterId == charId)
+            .OrderBy(r => r.UserId)
+            .ToListAsync();
+
+        Assert.Equal(3, allRels.Count);
+
+        var migratedRel1 = allRels.Single(r => r.UserId == user1);
+        Assert.Equal(RelationshipTargetType.User, migratedRel1.TargetType);
+        Assert.Equal(user1, migratedRel1.TargetId);
+        Assert.Equal(50, migratedRel1.Affection);
+
+        var migratedRel2 = allRels.Single(r => r.UserId == user2);
+        Assert.Equal(RelationshipTargetType.User, migratedRel2.TargetType);
+        Assert.Equal(user2, migratedRel2.TargetId);
+        Assert.Equal(0, migratedRel2.Affection); // Clamped from -30 to 0
+
+        var migratedRel3 = allRels.Single(r => r.UserId == user3);
+        Assert.Equal(RelationshipTargetType.User, migratedRel3.TargetType);
+        Assert.Equal(user3, migratedRel3.TargetId);
+        Assert.Equal(100, migratedRel3.Affection); // Clamped from 120 to 100
+
+        // 4. Verify authoritative target-based retrieval finds the migrated legacy record
+        var repo = new Infrastructure.Persistence.Repositories.CharacterRelationshipRepository(verifyDb);
+        var retrieved = await repo.GetByTargetAsync(charId, RelationshipTargetType.User, user1);
+        Assert.NotNull(retrieved);
+        Assert.Equal(migratedRel1.Id, retrieved.Id);
+
+        // 5. Verify GetOrCreateByTargetAsync does NOT create duplicate relationships
+        var retrievedOrCreated = await repo.GetOrCreateByTargetAsync(charId, RelationshipTargetType.User, user1);
+        Assert.Equal(migratedRel1.Id, retrievedOrCreated.Id);
+
+        var totalCount = await verifyDb.CharacterRelationships.CountAsync(r => r.CharacterId == charId);
+        Assert.Equal(3, totalCount);
     }
 
     #endregion
