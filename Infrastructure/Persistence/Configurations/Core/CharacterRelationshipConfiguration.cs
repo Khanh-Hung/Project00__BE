@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.Enums;
 using Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -14,6 +15,15 @@ public sealed class CharacterRelationshipConfiguration : IEntityTypeConfiguratio
         builder.Property(r => r.Id).ValueGeneratedOnAdd();
 
         builder.Property(r => r.CharacterId).IsRequired();
+        builder.Property(r => r.TargetType).IsRequired().HasConversion<string>().HasMaxLength(50).HasDefaultValue(RelationshipTargetType.User);
+        builder.Property(r => r.TargetId).IsRequired();
+        builder.Property(r => r.RelationshipType).IsRequired().HasConversion<string>().HasMaxLength(50).HasDefaultValue(RelationshipType.Stranger);
+
+        builder.Property(r => r.Trust).IsRequired().HasDefaultValue(0);
+        builder.Property(r => r.Affection).IsRequired().HasDefaultValue(0);
+        builder.Property(r => r.Familiarity).IsRequired().HasDefaultValue(0);
+
+        // Backward-compatible properties:
         builder.Property(r => r.UserId).IsRequired();
         builder.Property(r => r.AffectionScore).IsRequired().HasDefaultValue(0);
         builder.Property(r => r.CurrentMood).IsRequired().HasConversion<string>().HasMaxLength(50);
@@ -38,9 +48,13 @@ public sealed class CharacterRelationshipConfiguration : IEntityTypeConfiguratio
             )
             .Metadata.SetValueComparer(eventsComparer);
 
-        // Unique composite index: (UserId, CharacterId)
-        builder.HasIndex(r => new { r.UserId, r.CharacterId })
+        // PR48 Database uniqueness boundary: (CharacterId, TargetType, TargetId)
+        builder.HasIndex(r => new { r.CharacterId, r.TargetType, r.TargetId })
                .IsUnique()
+               .HasDatabaseName("IX_CharacterRelationships_CharacterId_TargetType_TargetId");
+
+        // Existing composite index retained for legacy chat lookups:
+        builder.HasIndex(r => new { r.UserId, r.CharacterId })
                .HasDatabaseName("IX_CharacterRelationships_UserId_CharacterId");
     }
 }

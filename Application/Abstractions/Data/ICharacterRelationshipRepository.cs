@@ -1,3 +1,6 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Domain.Entities;
 using Domain.Enums;
 
@@ -12,5 +15,18 @@ public interface ICharacterRelationshipRepository
         int initialAffection = 0,
         CharacterMood initialMood = CharacterMood.Neutral,
         CancellationToken ct = default);
+
+    Task<CharacterRelationship?> GetByTargetAsync(
+        Guid characterId,
+        RelationshipTargetType targetType,
+        Guid targetId,
+        CancellationToken ct = default);
+
+    Task<CharacterRelationship> GetOrCreateByTargetAsync(
+        Guid characterId,
+        RelationshipTargetType targetType,
+        Guid targetId,
+        CancellationToken ct = default);
+
     Task AddAsync(CharacterRelationship relationship, CancellationToken ct = default);
 }
