@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Application.Contracts.ActionExecution;
 using Domain.Entities;
 using Domain.ValueObjects;
@@ -14,27 +14,34 @@ public enum CognitiveEventType
 public abstract record CharacterCognitiveEvent(
     Guid EventId,
     Guid CharacterId,
-    CognitiveEventType EventType,
     DateTimeOffset OccurredAtUtc,
     string Source
-);
+)
+{
+    public CognitiveEventType EventType => this switch
+    {
+        UserMessageCognitiveEvent => CognitiveEventType.UserMessage,
+        WorldCognitiveEvent => CognitiveEventType.WorldEvent,
+        _ => throw new InvalidOperationException($"Unsupported cognitive event type: {GetType().Name}")
+    };
+}
 
 public sealed record UserMessageCognitiveEvent(
     Guid EventId,
     Guid CharacterId,
     DateTimeOffset OccurredAtUtc,
-    string Source,
-    string Message
-) : CharacterCognitiveEvent(EventId, CharacterId, CognitiveEventType.UserMessage, OccurredAtUtc, Source);
+    string Message,
+    string Source = "User"
+) : CharacterCognitiveEvent(EventId, CharacterId, OccurredAtUtc, Source);
 
 public sealed record WorldCognitiveEvent(
     Guid EventId,
     Guid CharacterId,
     DateTimeOffset OccurredAtUtc,
-    string Source,
     string EventName,
+    string Source = "World",
     string? Category = null
-) : CharacterCognitiveEvent(EventId, CharacterId, CognitiveEventType.WorldEvent, OccurredAtUtc, Source);
+) : CharacterCognitiveEvent(EventId, CharacterId, OccurredAtUtc, Source);
 
 public sealed record CharacterCognitiveCycleContext(
     Guid CycleId,

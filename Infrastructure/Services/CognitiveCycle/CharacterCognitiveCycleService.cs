@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Contracts.ActionExecution;
@@ -85,6 +85,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         }
 
         // Event Consistency & Invariant Validation
+        CharacterPerceptionStimulus? stimulus = null;
         if (cognitiveEvent != null)
         {
             if (cognitiveEvent.CharacterId != characterId)
@@ -110,6 +111,39 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                     "Event OccurredAtUtc must be an explicit, valid timestamp.",
                     cognitiveEvent);
             }
+
+            if (string.IsNullOrWhiteSpace(cognitiveEvent.Source))
+            {
+                return CharacterCognitiveCycleResult.InvalidInput(
+                    cycleId, executionId, characterId, triggeredAtUtc,
+                    "Event Source cannot be empty.",
+                    cognitiveEvent);
+            }
+
+            switch (cognitiveEvent)
+            {
+                case UserMessageCognitiveEvent userMsg when string.IsNullOrWhiteSpace(userMsg.Message):
+                    return CharacterCognitiveCycleResult.InvalidInput(
+                        cycleId, executionId, characterId, triggeredAtUtc,
+                        "UserMessage message cannot be empty.",
+                        cognitiveEvent);
+
+                case WorldCognitiveEvent worldEvt when string.IsNullOrWhiteSpace(worldEvt.EventName):
+                    return CharacterCognitiveCycleResult.InvalidInput(
+                        cycleId, executionId, characterId, triggeredAtUtc,
+                        "WorldEvent eventName cannot be empty.",
+                        cognitiveEvent);
+            }
+
+            stimulus = MapToPerceptionStimulus(cognitiveEvent);
+
+            if (context.PerceptionContext?.Stimulus != null && !context.PerceptionContext.Stimulus.Equals(stimulus))
+            {
+                return CharacterCognitiveCycleResult.InvalidInput(
+                    cycleId, executionId, characterId, triggeredAtUtc,
+                    "Conflicting stimulus detected: When an Event is provided, it is the sole source of external stimulus for the cycle. PerceptionContext.Stimulus must either be null or match the mapped Event.",
+                    cognitiveEvent);
+            }
         }
 
         // 1. Authoritative State Loading (Strict: always load from authoritative state service, zero caller injection)
@@ -129,11 +163,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         int stateVersionAtStart = state.Version;
 
         // 2. Perception & Internal Experience (PR39/PR46: Map event to normalized Domain stimulus)
-        var stimulus = MapToPerceptionStimulus(cognitiveEvent);
         var perceptionContext = context.PerceptionContext != null
-            ? (context.PerceptionContext.Stimulus == null && stimulus != null
-                ? context.PerceptionContext with { Stimulus = stimulus }
-                : context.PerceptionContext)
+            ? (stimulus != null ? context.PerceptionContext with { Stimulus = stimulus } : context.PerceptionContext)
             : new CharacterPerceptionContext(
                 EvaluatedAtUtc: triggeredAtUtc.UtcDateTime,
                 CharacterId: characterId,

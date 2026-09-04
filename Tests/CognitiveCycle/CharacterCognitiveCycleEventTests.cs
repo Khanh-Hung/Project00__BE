@@ -123,14 +123,16 @@ public sealed class CharacterCognitiveCycleEventTests : IDisposable
         Guid? cycleId = null,
         Guid? executionId = null,
         DateTimeOffset? triggeredAtUtc = null,
-        CharacterCognitiveEvent? cognitiveEvent = null)
+        CharacterCognitiveEvent? cognitiveEvent = null,
+        CharacterPerceptionContext? perceptionContext = null)
     {
         return new CharacterCognitiveCycleContext(
             CycleId: cycleId ?? Guid.NewGuid(),
             ExecutionId: executionId ?? Guid.NewGuid(),
             CharacterId: characterId,
             TriggeredAtUtc: triggeredAtUtc ?? FixedNow,
-            Event: cognitiveEvent
+            Event: cognitiveEvent,
+            PerceptionContext: perceptionContext
         );
     }
 
@@ -263,8 +265,8 @@ public sealed class CharacterCognitiveCycleEventTests : IDisposable
             EventId: Guid.NewGuid(),
             CharacterId: charId,
             OccurredAtUtc: default, // Invalid!
-            Source: "User",
-            Message: "Default timestamp"
+            Message: "Default timestamp",
+            Source: "User"
         );
 
         var context = CreateContext(charId, cognitiveEvent: invalidEvent);
@@ -276,6 +278,161 @@ public sealed class CharacterCognitiveCycleEventTests : IDisposable
 
         Assert.Equal(CharacterCognitiveCycleStatus.InvalidInput, result.Status);
         Assert.Contains("Event OccurredAtUtc must be an explicit, valid timestamp", result.Message ?? string.Empty);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RunAsync_WhenEventSourceIsNullOrWhitespace_ReturnsInvalidInput(string invalidSource)
+    {
+        var charId = await SeedCharacterStateAsync();
+
+        var invalidEvent = new UserMessageCognitiveEvent(
+            EventId: Guid.NewGuid(),
+            CharacterId: charId,
+            OccurredAtUtc: FixedOccurredAt,
+            Message: "Valid message",
+            Source: invalidSource
+        );
+
+        var context = CreateContext(charId, cognitiveEvent: invalidEvent);
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+
+        var result = await service.RunAsync(context);
+
+        Assert.Equal(CharacterCognitiveCycleStatus.InvalidInput, result.Status);
+        Assert.Contains("Event Source cannot be empty", result.Message ?? string.Empty);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RunAsync_WhenUserMessageIsNullOrWhitespace_ReturnsInvalidInput(string invalidMessage)
+    {
+        var charId = await SeedCharacterStateAsync();
+
+        var invalidEvent = new UserMessageCognitiveEvent(
+            EventId: Guid.NewGuid(),
+            CharacterId: charId,
+            OccurredAtUtc: FixedOccurredAt,
+            Message: invalidMessage,
+            Source: "User"
+        );
+
+        var context = CreateContext(charId, cognitiveEvent: invalidEvent);
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+
+        var result = await service.RunAsync(context);
+
+        Assert.Equal(CharacterCognitiveCycleStatus.InvalidInput, result.Status);
+        Assert.Contains("UserMessage message cannot be empty", result.Message ?? string.Empty);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RunAsync_WhenWorldEventNameIsNullOrWhitespace_ReturnsInvalidInput(string invalidEventName)
+    {
+        var charId = await SeedCharacterStateAsync();
+
+        var invalidEvent = new WorldCognitiveEvent(
+            EventId: Guid.NewGuid(),
+            CharacterId: charId,
+            OccurredAtUtc: FixedOccurredAt,
+            EventName: invalidEventName,
+            Source: "World"
+        );
+
+        var context = CreateContext(charId, cognitiveEvent: invalidEvent);
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+
+        var result = await service.RunAsync(context);
+
+        Assert.Equal(CharacterCognitiveCycleStatus.InvalidInput, result.Status);
+        Assert.Contains("WorldEvent eventName cannot be empty", result.Message ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenPerceptionContextStimulusConflictsWithEvent_ReturnsInvalidInput()
+    {
+        var charId = await SeedCharacterStateAsync();
+
+        var userEvent = new UserMessageCognitiveEvent(
+            EventId: Guid.NewGuid(),
+            CharacterId: charId,
+            OccurredAtUtc: FixedOccurredAt,
+            Message: "Hello character!",
+            Source: "User"
+        );
+
+        // Conflicting stimulus pre-injected into PerceptionContext
+        var conflictingStimulus = new CharacterPerceptionStimulus(
+            type: PerceptionStimulusType.WorldEvent,
+            source: "Environment",
+            content: "RainStarted",
+            occurredAtUtc: FixedOccurredAt.AddMinutes(-5)
+        );
+
+        var conflictingPerceptionContext = new CharacterPerceptionContext(
+            EvaluatedAtUtc: FixedNow.UtcDateTime,
+            CharacterId: charId,
+            Stimulus: conflictingStimulus
+        );
+
+        var context = CreateContext(charId, cognitiveEvent: userEvent, perceptionContext: conflictingPerceptionContext);
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+
+        var result = await service.RunAsync(context);
+
+        Assert.Equal(CharacterCognitiveCycleStatus.InvalidInput, result.Status);
+        Assert.Contains("Conflicting stimulus detected", result.Message ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenPerceptionContextStimulusMatchesEvent_Succeeds()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+
+        var userEvent = new UserMessageCognitiveEvent(
+            EventId: Guid.NewGuid(),
+            CharacterId: charId,
+            OccurredAtUtc: FixedOccurredAt,
+            Message: "Hello character!",
+            Source: "User"
+        );
+
+        // Matching stimulus pre-set in PerceptionContext
+        var matchingStimulus = new CharacterPerceptionStimulus(
+            type: PerceptionStimulusType.UserMessage,
+            source: "User",
+            content: "Hello character!",
+            occurredAtUtc: FixedOccurredAt
+        );
+
+        var matchingPerceptionContext = new CharacterPerceptionContext(
+            EvaluatedAtUtc: FixedNow.UtcDateTime,
+            CharacterId: charId,
+            Stimulus: matchingStimulus
+        );
+
+        var context = CreateContext(charId, cognitiveEvent: userEvent, perceptionContext: matchingPerceptionContext);
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+
+        var result = await service.RunAsync(context);
+
+        Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result.Status);
+        Assert.NotNull(result.Event);
+        Assert.NotNull(result.Experience);
     }
 
     #endregion
@@ -417,15 +574,28 @@ public sealed class CharacterCognitiveCycleEventTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_WithEvent_Is100PercentDeterministic_Over100Evaluations()
+    public void CognitiveEvent_RuntimeTypeAndEventType_AreAlwaysSynchronized()
+    {
+        var charId = Guid.NewGuid();
+        var userEvent = new UserMessageCognitiveEvent(Guid.NewGuid(), charId, FixedOccurredAt, "Hello");
+        var worldEvent = new WorldCognitiveEvent(Guid.NewGuid(), charId, FixedOccurredAt, "RainStarted");
+
+        Assert.Equal(CognitiveEventType.UserMessage, userEvent.EventType);
+        Assert.Equal(CognitiveEventType.WorldEvent, worldEvent.EventType);
+        Assert.IsAssignableFrom<CharacterCognitiveEvent>(userEvent);
+        Assert.IsAssignableFrom<CharacterCognitiveEvent>(worldEvent);
+    }
+
+    [Fact]
+    public async Task PolicyEvaluation_WithSameStateAndEvent_IsDeterministic()
     {
         var charId = await SeedCharacterStateAsync(hunger: 85m, energy: 40m, stress: 35m, version: 3);
         var userEvent = new UserMessageCognitiveEvent(
             EventId: Guid.NewGuid(),
             CharacterId: charId,
             OccurredAtUtc: FixedOccurredAt,
-            Source: "Tester",
-            Message: "Deterministic test"
+            Message: "Deterministic test",
+            Source: "Tester"
         );
 
         CharacterCognitiveCycleResult? baseline = null;
@@ -471,6 +641,57 @@ public sealed class CharacterCognitiveCycleEventTests : IDisposable
                 Assert.Equal(baseline.ActionProposal.Proposal?.Intensity, proposal.Proposal?.Intensity);
             }
         }
+    }
+
+    [Fact]
+    public async Task RunAsync_WithSameStateAndEvent_IsDeterministic_AcrossMultipleCycles()
+    {
+        var charId1 = await SeedCharacterStateAsync(hunger: 85m, energy: 40m, stress: 35m, version: 3);
+        var charId2 = await SeedCharacterStateAsync(hunger: 85m, energy: 40m, stress: 35m, version: 3);
+
+        var eventId = Guid.NewGuid();
+        var userEvent1 = new UserMessageCognitiveEvent(
+            EventId: eventId,
+            CharacterId: charId1,
+            OccurredAtUtc: FixedOccurredAt,
+            Message: "Deterministic test",
+            Source: "Tester"
+        );
+        var userEvent2 = new UserMessageCognitiveEvent(
+            EventId: eventId,
+            CharacterId: charId2,
+            OccurredAtUtc: FixedOccurredAt,
+            Message: "Deterministic test",
+            Source: "Tester"
+        );
+
+        var cycleId = Guid.NewGuid();
+        var executionId = Guid.NewGuid();
+
+        var context1 = CreateContext(charId1, cycleId: cycleId, executionId: executionId, cognitiveEvent: userEvent1);
+        var context2 = CreateContext(charId2, cycleId: cycleId, executionId: executionId, cognitiveEvent: userEvent2);
+
+        await using var db1 = new CoreDbContext(_options);
+        var service1 = CreateService(db1);
+        var result1 = await service1.RunAsync(context1);
+
+        await using var db2 = new CoreDbContext(_options);
+        var service2 = CreateService(db2);
+        var result2 = await service2.RunAsync(context2);
+
+        Assert.Equal(result1.Status, result2.Status);
+        Assert.Equal(result1.StateVersionAtStart, result2.StateVersionAtStart);
+        Assert.Equal(result1.Experience!.DominantNeed, result2.Experience!.DominantNeed);
+        Assert.Equal(result1.Appraisal!.Type, result2.Appraisal!.Type);
+        Assert.Equal(result1.Appraisal.Polarity, result2.Appraisal.Polarity);
+        Assert.Equal(result1.Emotion!.Type, result2.Emotion!.Type);
+        Assert.Equal(result1.Emotion.Valence, result2.Emotion.Valence);
+        Assert.Equal(result1.Desires!.DominantDesire?.Type, result2.Desires!.DominantDesire?.Type);
+        Assert.Equal(result1.Intent!.Intent?.Type, result2.Intent!.Intent?.Type);
+        Assert.Equal(result1.ActionProposal!.Proposal?.Type, result2.ActionProposal!.Proposal?.Type);
+        Assert.Equal(result1.ActionProposal.Proposal?.Intensity, result2.ActionProposal.Proposal?.Intensity);
+        Assert.Equal(result1.ActionExecution!.Status, result2.ActionExecution!.Status);
+        Assert.Equal(result1.ActionExecution.StateVersionAfter, result2.ActionExecution.StateVersionAfter);
     }
 
     #endregion
