@@ -267,6 +267,9 @@ public static class DependencyInjection
         services.AddSingleton<Domain.Policies.ICharacterActionExecutionPolicy, Domain.Policies.CharacterActionExecutionPolicy>();
         services.AddScoped<Application.Interfaces.ICharacterActionExecutionService, Infrastructure.Services.ActionExecution.CharacterActionExecutionService>();
 
+        // PR #45: Autonomous Character Cognitive Cycle
+        services.AddScoped<Application.Interfaces.ICharacterCognitiveCycleService, Infrastructure.Services.CognitiveCycle.CharacterCognitiveCycleService>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
