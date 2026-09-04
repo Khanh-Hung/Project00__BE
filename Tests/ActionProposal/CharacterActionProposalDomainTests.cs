@@ -72,48 +72,38 @@ public sealed class CharacterActionProposalDomainTests
     [Fact]
     public void CharacterActionProposal_RejectsInvalidIntensity()
     {
-        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, double.NaN, IntentType.SeekFood, 0.5, 1));
-        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, double.PositiveInfinity, IntentType.SeekFood, 0.5, 1));
-        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, double.NegativeInfinity, IntentType.SeekFood, 0.5, 1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposal(ActionType.Eat, -0.01, IntentType.SeekFood, 0.5, 1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposal(ActionType.Eat, 1.01, IntentType.SeekFood, 0.5, 1));
-    }
-
-    [Fact]
-    public void CharacterActionProposal_RejectsInvalidMotivation()
-    {
-        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, double.NaN, 1));
-        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, double.PositiveInfinity, 1));
-        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, double.NegativeInfinity, 1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, -0.01, 1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, 1.01, 1));
+        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, double.NaN, IntentType.SeekFood, MotivationType.HungerDriven, 1));
+        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, double.PositiveInfinity, IntentType.SeekFood, MotivationType.HungerDriven, 1));
+        Assert.Throws<ArgumentException>(() => new CharacterActionProposal(ActionType.Eat, double.NegativeInfinity, IntentType.SeekFood, MotivationType.HungerDriven, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposal(ActionType.Eat, -0.01, IntentType.SeekFood, MotivationType.HungerDriven, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposal(ActionType.Eat, 1.01, IntentType.SeekFood, MotivationType.HungerDriven, 1));
     }
 
     [Fact]
     public void CharacterActionProposal_RejectsNegativeStateVersion()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, 0.5, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, MotivationType.HungerDriven, -1));
     }
 
     [Fact]
     public void CharacterActionProposal_AcceptsValidBoundaries()
     {
-        var zero = new CharacterActionProposal(ActionType.Eat, 0.0, IntentType.SeekFood, 0.0, 0);
-        var one = new CharacterActionProposal(ActionType.Eat, 1.0, IntentType.SeekFood, 1.0, 42);
+        var zero = new CharacterActionProposal(ActionType.Eat, 0.0, IntentType.SeekFood, MotivationType.HungerDriven, 0);
+        var one = new CharacterActionProposal(ActionType.Eat, 1.0, IntentType.SeekFood, MotivationType.RestorationDriven, 42);
 
         Assert.Equal(0.0, zero.Intensity);
-        Assert.Equal(0.0, zero.Motivation);
+        Assert.Equal(MotivationType.HungerDriven, zero.Motivation);
         Assert.Equal(0, zero.StateVersion);
 
         Assert.Equal(1.0, one.Intensity);
-        Assert.Equal(1.0, one.Motivation);
+        Assert.Equal(MotivationType.RestorationDriven, one.Motivation);
         Assert.Equal(42, one.StateVersion);
     }
 
     [Fact]
     public void CharacterActionProposalEvaluation_RejectsInvalidArguments()
     {
-        var proposal = new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, 0.5, 1);
+        var proposal = new CharacterActionProposal(ActionType.Eat, 0.5, IntentType.SeekFood, MotivationType.HungerDriven, 1);
 
         Assert.Throws<ArgumentException>(() => new CharacterActionProposalEvaluation(Guid.Empty, 1, proposal, FixedEvaluatedAt));
         Assert.Throws<ArgumentOutOfRangeException>(() => new CharacterActionProposalEvaluation(Guid.NewGuid(), -1, proposal, FixedEvaluatedAt));
@@ -134,20 +124,25 @@ public sealed class CharacterActionProposalDomainTests
     #region 2. Intent -> Action Mapping Tests
 
     [Theory]
-    [InlineData(IntentType.SeekFood, ActionType.Eat)]
-    [InlineData(IntentType.SeekRest, ActionType.Rest)]
-    [InlineData(IntentType.ReduceStress, ActionType.ReduceStress)]
-    [InlineData(IntentType.SeekSocialConnection, ActionType.Socialize)]
-    [InlineData(IntentType.SeekComfort, ActionType.SeekComfort)]
-    [InlineData(IntentType.SeekSafety, ActionType.SeekSafety)]
-    public void Intent_MapsExactly_ToExpectedActionType(IntentType intentType, ActionType expectedActionType)
+    [InlineData(IntentType.SeekFood, ActionType.Eat, MotivationType.HungerDriven)]
+    [InlineData(IntentType.SeekRest, ActionType.Rest, MotivationType.RestorationDriven)]
+    [InlineData(IntentType.ReduceStress, ActionType.ReduceStress, MotivationType.StressReliefDriven)]
+    [InlineData(IntentType.SeekSocialConnection, ActionType.Socialize, MotivationType.ConnectionDriven)]
+    [InlineData(IntentType.SeekComfort, ActionType.SeekComfort, MotivationType.ComfortDriven)]
+    [InlineData(IntentType.SeekSafety, ActionType.SeekSafety, MotivationType.SafetyDriven)]
+    public void Intent_MapsExactly_ToExpectedActionType(
+        IntentType intentType,
+        ActionType expectedActionType,
+        MotivationType expectedMotivation)
     {
-        var intentEval = CreateIntentEvaluation(intentType, 0.75);
+        var intentEval = CreateIntentEvaluation(intentType, 0.75, motivationType: expectedMotivation);
         var evaluation = _actionPolicy.Evaluate(intentEval, CreateContext());
 
         Assert.NotNull(evaluation.Proposal);
         Assert.Equal(expectedActionType, evaluation.Proposal.Type);
         Assert.Equal(intentType, evaluation.Proposal.SourceIntent);
+        Assert.Equal(expectedMotivation, evaluation.Proposal.Motivation);
+        Assert.Equal(intentEval.Intent!.Motivation, evaluation.Proposal.Motivation);
     }
 
     #endregion
@@ -167,7 +162,23 @@ public sealed class CharacterActionProposalDomainTests
 
         Assert.NotNull(evaluation.Proposal);
         Assert.Equal(expectedIntensity, evaluation.Proposal.Intensity);
-        Assert.Equal(expectedIntensity, evaluation.Proposal.Motivation);
+    }
+
+    [Theory]
+    [InlineData(MotivationType.HungerDriven)]
+    [InlineData(MotivationType.RestorationDriven)]
+    [InlineData(MotivationType.StressReliefDriven)]
+    [InlineData(MotivationType.ConnectionDriven)]
+    [InlineData(MotivationType.ComfortDriven)]
+    [InlineData(MotivationType.SafetyDriven)]
+    public void Motivation_PreservesMotivationTypeProvenance_FromIntent(MotivationType expectedMotivation)
+    {
+        var intentEval = CreateIntentEvaluation(IntentType.SeekFood, 0.75, motivationType: expectedMotivation);
+        var evaluation = _actionPolicy.Evaluate(intentEval, CreateContext());
+
+        Assert.NotNull(evaluation.Proposal);
+        Assert.Equal(expectedMotivation, evaluation.Proposal.Motivation);
+        Assert.Equal(intentEval.Intent!.Motivation, evaluation.Proposal.Motivation);
     }
 
     [Fact]
@@ -248,7 +259,8 @@ public sealed class CharacterActionProposalDomainTests
         Assert.Equal(ActionType.Rest, evaluation.Proposal.Type);
         Assert.Equal(IntentType.SeekRest, evaluation.Proposal.SourceIntent);
         Assert.Equal(0.88, evaluation.Proposal.Intensity);
-        Assert.Equal(0.88, evaluation.Proposal.Motivation);
+        Assert.Equal(MotivationType.RestorationDriven, evaluation.Proposal.Motivation);
+        Assert.Equal(intentEval.Intent!.Motivation, evaluation.Proposal.Motivation);
         Assert.Equal(5, evaluation.Proposal.StateVersion);
     }
 
@@ -257,7 +269,7 @@ public sealed class CharacterActionProposalDomainTests
     #region 6. Full Pipeline Integration Tests
 
     [Fact]
-    public void PipelineIntegration_PropagatesHungerToEatAction_PreservingIntensity()
+    public void PipelineIntegration_PropagatesHungerToEatAction_PreservingIntensityAndMotivation()
     {
         // State: Hunger 90, Energy 70, Stress 10
         // Pipeline: Hunger 90 -> NeedFood -> SeekFood -> Eat
@@ -268,7 +280,7 @@ public sealed class CharacterActionProposalDomainTests
         Assert.Equal(ActionType.Eat, evaluation.Proposal.Type);
         Assert.Equal(IntentType.SeekFood, evaluation.Proposal.SourceIntent);
         Assert.True(evaluation.Proposal.Intensity >= 0.90);
-        Assert.Equal(evaluation.Proposal.Intensity, evaluation.Proposal.Motivation);
+        Assert.Equal(MotivationType.HungerDriven, evaluation.Proposal.Motivation);
         Assert.Equal(7, evaluation.StateVersion);
         Assert.Equal(7, evaluation.Proposal.StateVersion);
     }
@@ -338,6 +350,7 @@ public sealed class CharacterActionProposalDomainTests
         // Assert intent evaluation is completely unmutated
         Assert.Same(initialIntent, intentEval.Intent);
         Assert.Equal(initialIntent.Intensity, proposalEval.Proposal?.Intensity);
+        Assert.Equal(initialIntent.Motivation, proposalEval.Proposal?.Motivation);
         Assert.Equal(initialIntent.Type, proposalEval.Proposal?.SourceIntent);
         Assert.Equal(initialIntent.StateVersion, proposalEval.Proposal?.StateVersion);
         Assert.Equal(12, state.Version);

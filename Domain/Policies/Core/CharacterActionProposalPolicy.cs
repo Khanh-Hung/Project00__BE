@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Domain.Enums;
 using Domain.ValueObjects;
 
@@ -37,7 +37,7 @@ public sealed class CharacterActionProposalPolicy : ICharacterActionProposalPoli
             type: actionType,
             intensity: intent.Intensity,
             sourceIntent: intent.Type,
-            motivation: intent.Intensity,
+            motivation: intent.Motivation,
             stateVersion: intent.StateVersion
         );
 
