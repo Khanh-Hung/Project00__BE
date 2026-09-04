@@ -1,14 +1,7 @@
 using System;
+using Domain.Enums;
 
 namespace Domain.ValueObjects;
-
-public enum CharacterMemoryFeedbackType
-{
-    NoActionTaken = 1,
-    ActionFailed = 2,
-    EventExperienced = 3,
-    ActionCompleted = 4
-}
 
 /// <summary>
 /// CharacterMemoryFeedback is an immutable result describing the persisted CharacterMemory created by the feedback operation.

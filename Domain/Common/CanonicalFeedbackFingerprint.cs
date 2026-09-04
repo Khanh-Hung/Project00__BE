@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using Domain.Enums;
 using Domain.ValueObjects;
 
 namespace Domain.Common;

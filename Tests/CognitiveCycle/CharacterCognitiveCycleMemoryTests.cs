@@ -518,7 +518,7 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         var charId = await SeedCharacterStateAsync(hunger: 90m);
         var sharedExecutionId = Guid.NewGuid();
 
-        // Initial run creates ActionCompleted memory (Importance = 4)
+        // Initial run creates ActionCompleted memory with independent salience (default Importance = 3)
         await using (var db1 = new CoreDbContext(_options))
         {
             var service = CreateService(db1);
@@ -531,7 +531,10 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         await using (var verifyDb = new CoreDbContext(_options))
         {
             var memory = await verifyDb.CharacterMemories.SingleAsync(m => m.SourceSessionId == sharedExecutionId);
-            Assert.Equal((int)CharacterMemoryFeedbackType.ActionCompleted, memory.Importance);
+            // Invariant: Importance is independent memory salience (default 3), NOT coupled to FeedbackType!
+            Assert.Equal(3, memory.Importance);
+            Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, memory.FeedbackType);
+            Assert.NotNull(memory.FeedbackFingerprint);
 
             // Replay with AlreadyExecuted
             var alreadyExecutedService = new AlreadyExecutedActionExecutionService();
@@ -541,9 +544,220 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
 
             Assert.Equal(CharacterCognitiveCycleStatus.AlreadyExecuted, replayResult.Status);
             Assert.NotNull(replayResult.MemoryFeedback);
-            // Invariant: Type is recovered from persisted entity (Importance), not forged or parsed from content
+            // Invariant: Type is recovered from persisted entity (FeedbackType column), not Importance or Content parsing
             Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, replayResult.MemoryFeedback.Type);
             Assert.Equal(memory.Id, replayResult.MemoryFeedback.MemoryId);
+        }
+    }
+
+    [Fact]
+    public async Task Replay_ActionFailed_WithImportance5_RecoversActionFailed_IndependentOfImportance()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var sharedExecutionId = Guid.NewGuid();
+        var memoryId = DeterministicMemoryIdHelper(charId, sharedExecutionId);
+        var canonicalContent = "Attempted action Eat but execution failed: Simulated execution failure..";
+        var fp = CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionFailed, canonicalContent);
+
+        // Seed DB directly with ActionFailed and Importance = 5 (e.g. Critical high-salience failure)
+        await using (var seedDb = new CoreDbContext(_options))
+        {
+            var memory = CharacterMemory.Create(
+                characterId: charId,
+                userId: charId,
+                content: canonicalContent,
+                type: MemoryType.Event,
+                importance: 5, // High salience (5)
+                confidence: 1.0m,
+                sourceSessionId: sharedExecutionId,
+                feedbackType: CharacterMemoryFeedbackType.ActionFailed,
+                feedbackFingerprint: fp
+            );
+            memory.Id = memoryId;
+            await seedDb.CharacterMemories.AddAsync(memory);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // Run cycle with FailingActionExecutionService (produces ActionFailed)
+        await using (var db = new CoreDbContext(_options))
+        {
+            var failingService = new FailingActionExecutionService();
+            var service = CreateService(db, actionExecutionService: failingService);
+            var context = CreateContext(charId, executionId: sharedExecutionId);
+            var res = await service.RunAsync(context);
+
+            // Invariant: Status is ConcurrencyConflict, and MemoryFeedback.Type is ActionFailed despite Importance being 5!
+            Assert.Equal(CharacterCognitiveCycleStatus.ConcurrencyConflict, res.Status);
+            Assert.NotNull(res.MemoryFeedback);
+            Assert.Equal(CharacterMemoryFeedbackType.ActionFailed, res.MemoryFeedback.Type);
+            Assert.Equal(memoryId, res.MemoryFeedback.MemoryId);
+        }
+    }
+
+    [Fact]
+    public async Task Replay_ActionCompleted_WithImportance1_RecoversActionCompleted_IndependentOfImportance()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var sharedExecutionId = Guid.NewGuid();
+        var memoryId = DeterministicMemoryIdHelper(charId, sharedExecutionId);
+        var canonicalContent = "Performed action Eat: HungerDriven.";
+        var fp = CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionCompleted, canonicalContent);
+
+        // Seed DB directly with ActionCompleted and Importance = 1 (e.g. Minor routine action)
+        await using (var seedDb = new CoreDbContext(_options))
+        {
+            var memory = CharacterMemory.Create(
+                characterId: charId,
+                userId: charId,
+                content: canonicalContent,
+                type: MemoryType.Event,
+                importance: 1, // Low salience (1)
+                confidence: 1.0m,
+                sourceSessionId: sharedExecutionId,
+                feedbackType: CharacterMemoryFeedbackType.ActionCompleted,
+                feedbackFingerprint: fp
+            );
+            memory.Id = memoryId;
+            await seedDb.CharacterMemories.AddAsync(memory);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // Replay with AlreadyExecuted
+        await using (var db = new CoreDbContext(_options))
+        {
+            var alreadyExecutedService = new AlreadyExecutedActionExecutionService();
+            var service = CreateService(db, actionExecutionService: alreadyExecutedService);
+            var context = CreateContext(charId, executionId: sharedExecutionId);
+            var res = await service.RunAsync(context);
+
+            Assert.Equal(CharacterCognitiveCycleStatus.AlreadyExecuted, res.Status);
+            Assert.NotNull(res.MemoryFeedback);
+            // Invariant: Type is ActionCompleted, NOT NoActionTaken (which previously was 1 in the old mapping!)
+            Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, res.MemoryFeedback.Type);
+            Assert.Equal(memoryId, res.MemoryFeedback.MemoryId);
+        }
+    }
+
+    [Fact]
+    public async Task Replay_SameExecutionId_DifferentFeedbackType_ThrowsIdempotencyConflict()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var sharedExecutionId = Guid.NewGuid();
+        var memoryId = DeterministicMemoryIdHelper(charId, sharedExecutionId);
+
+        // Seed DB with ActionCompleted
+        await using (var seedDb = new CoreDbContext(_options))
+        {
+            var memory = CharacterMemory.Create(
+                characterId: charId,
+                userId: charId,
+                content: "Performed action Eat: HungerDriven.",
+                type: MemoryType.Event,
+                importance: 3,
+                confidence: 1.0m,
+                sourceSessionId: sharedExecutionId,
+                feedbackType: CharacterMemoryFeedbackType.ActionCompleted,
+                feedbackFingerprint: CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Eat: HungerDriven.")
+            );
+            memory.Id = memoryId;
+            await seedDb.CharacterMemories.AddAsync(memory);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // Run cycle with FailingActionExecutionService (produces ActionFailed)
+        await using (var db = new CoreDbContext(_options))
+        {
+            var failingService = new FailingActionExecutionService();
+            var service = CreateService(db, actionExecutionService: failingService);
+            var context = CreateContext(charId, executionId: sharedExecutionId);
+            var res = await service.RunAsync(context);
+
+            // Invariant: Conflict detected between ActionCompleted in DB and ActionFailed in current execution
+            Assert.Equal(CharacterCognitiveCycleStatus.IdempotencyConflict, res.Status);
+            Assert.Contains("different semantic feedback payload", res.Message);
+        }
+    }
+
+    [Fact]
+    public async Task Replay_SameExecutionId_DifferentCanonicalContent_ThrowsIdempotencyConflict()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var sharedExecutionId = Guid.NewGuid();
+        var memoryId = DeterministicMemoryIdHelper(charId, sharedExecutionId);
+
+        // Seed DB with ActionCompleted for a DIFFERENT action ("Performed action Sleep: Tired.")
+        await using (var seedDb = new CoreDbContext(_options))
+        {
+            var memory = CharacterMemory.Create(
+                characterId: charId,
+                userId: charId,
+                content: "Performed action Sleep: Tired.",
+                type: MemoryType.Event,
+                importance: 3,
+                confidence: 1.0m,
+                sourceSessionId: sharedExecutionId,
+                feedbackType: CharacterMemoryFeedbackType.ActionCompleted,
+                feedbackFingerprint: CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Sleep: Tired.")
+            );
+            memory.Id = memoryId;
+            await seedDb.CharacterMemories.AddAsync(memory);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // Replay with Eat cycle (hunger = 90) -> produces "Performed action Eat: HungerDriven."
+        await using (var db = new CoreDbContext(_options))
+        {
+            var alreadyExecutedService = new AlreadyExecutedActionExecutionService();
+            var service = CreateService(db, actionExecutionService: alreadyExecutedService);
+            var context = CreateContext(charId, executionId: sharedExecutionId);
+            var res = await service.RunAsync(context);
+
+            // Invariant: Conflict detected between Sleep content in DB and Eat content in incoming execution
+            Assert.Equal(CharacterCognitiveCycleStatus.IdempotencyConflict, res.Status);
+            Assert.Contains("different semantic feedback payload", res.Message);
+        }
+    }
+
+    [Fact]
+    public async Task Replay_DatabaseTypeOverridesContentPrefix_NoFeedbackTypeReconstructedFromContent()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var sharedExecutionId = Guid.NewGuid();
+        var memoryId = DeterministicMemoryIdHelper(charId, sharedExecutionId);
+        // Deceptive content: starts with "Performed action Eat", but DB has FeedbackType = ActionFailed!
+        var deceptiveContent = "Performed action Eat: HungerDriven.";
+        var fp = CanonicalFeedbackFingerprint.Compute(charId, sharedExecutionId, CharacterMemoryFeedbackType.ActionFailed, deceptiveContent);
+
+        await using (var seedDb = new CoreDbContext(_options))
+        {
+            var memory = CharacterMemory.Create(
+                characterId: charId,
+                userId: charId,
+                content: deceptiveContent,
+                type: MemoryType.Event,
+                importance: 4,
+                confidence: 1.0m,
+                sourceSessionId: sharedExecutionId,
+                feedbackType: CharacterMemoryFeedbackType.ActionFailed, // In DB: ActionFailed!
+                feedbackFingerprint: fp
+            );
+            memory.Id = memoryId;
+            await seedDb.CharacterMemories.AddAsync(memory);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // Run cycle which would normally produce ActionCompleted with "Performed action Eat: HungerDriven."
+        await using (var db = new CoreDbContext(_options))
+        {
+            var service = CreateService(db);
+            var context = CreateContext(charId, executionId: sharedExecutionId);
+            var res = await service.RunAsync(context);
+
+            // Invariant: The system does NOT parse the Content prefix "Performed action" to claim ActionCompleted.
+            // Instead, it compares semantic FeedbackType (Existing: ActionFailed != Incoming: ActionCompleted)
+            // and detects an IdempotencyConflict!
+            Assert.Equal(CharacterCognitiveCycleStatus.IdempotencyConflict, res.Status);
+            Assert.Contains("different semantic feedback payload", res.Message);
         }
     }
 
@@ -744,6 +958,15 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         public Task<CharacterMemoryFeedback?> RecordFeedbackAsync(
             CharacterCognitiveCycleContext cycleContext,
             CharacterCognitiveCycleResult cycleResult,
+            CancellationToken ct = default)
+        {
+            throw new InvalidOperationException("Simulated memory feedback database crash.");
+        }
+
+        public Task<CharacterMemoryFeedback?> RecordFeedbackAsync(
+            CharacterCognitiveCycleContext cycleContext,
+            CharacterCognitiveCycleResult cycleResult,
+            int importance,
             CancellationToken ct = default)
         {
             throw new InvalidOperationException("Simulated memory feedback database crash.");
