@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Domain.Enums;
 
 namespace Domain.ValueObjects;
@@ -13,6 +13,10 @@ public sealed record CharacterMemoryItem
     public MemoryType Type { get; init; }
     public string Content { get; init; }
     public int Importance { get; init; }
+    /// <summary>
+    /// In PR47, OccurredAtUtc represents the memory creation timestamp (mapped from CharacterMemory.CreatedAt).
+    /// A future Memory enhancement may introduce a distinct historical occurrence timestamp.
+    /// </summary>
     public DateTimeOffset OccurredAtUtc { get; init; }
 
     public CharacterMemoryItem(

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Application.Contracts.ActionExecution;
 using Application.Contracts.CognitiveCycle;
 using Application.Interfaces;
+using Domain.Common;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.Policies;
@@ -265,6 +266,22 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
     }
 
     [Fact]
+    public void CharacterMemoryContext_IsTrulyImmutable_UnderlyingCollectionCannotBeMutated()
+    {
+        var list = new List<CharacterMemoryItem>
+        {
+            new CharacterMemoryItem(Guid.NewGuid(), MemoryType.Fact, "Initial memory", 5, FixedNow)
+        };
+
+        var context = new CharacterMemoryContext(list);
+        Assert.Single(context.RelevantMemories);
+
+        // Mutating original list does not mutate context's RelevantMemories (defensive copy)
+        list.Add(new CharacterMemoryItem(Guid.NewGuid(), MemoryType.Fact, "Mutated memory", 3, FixedNow));
+        Assert.Single(context.RelevantMemories);
+    }
+
+    [Fact]
     public void CharacterCognitiveCycleContext_DoesNotExposeMemoryContextProperty()
     {
         // Invariant: MemoryContext is not a caller-accessible property on CharacterCognitiveCycleContext
@@ -453,7 +470,7 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
 
             // Invariant: Same ExecutionId with conflicting semantic feedback produces IdempotencyConflict!
             Assert.Equal(CharacterCognitiveCycleStatus.IdempotencyConflict, result2.Status);
-            Assert.Contains("already been processed with a different feedback payload", result2.Message);
+            Assert.Contains("already been processed with a different semantic feedback payload", result2.Message);
         }
 
         // Invariant: Database still has exactly 1 memory row (from Run 1)
@@ -477,6 +494,82 @@ public sealed class CharacterCognitiveCycleMemoryTests : IDisposable
         Assert.NotNull(res.MemoryFeedback);
         // Type is ActionCompleted from semantic payload, not parsed from Content string prefix
         Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, res.MemoryFeedback.Type);
+    }
+
+    [Fact]
+    public void CanonicalFeedbackFingerprint_DifferentSemanticPayloads_ProduceDistinctFingerprints()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        var fp1 = CanonicalFeedbackFingerprint.Compute(charId, execId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Eat: HungerDriven.");
+        var fp2 = CanonicalFeedbackFingerprint.Compute(charId, execId, CharacterMemoryFeedbackType.ActionFailed, "Performed action Eat: HungerDriven.");
+        var fp3 = CanonicalFeedbackFingerprint.Compute(charId, execId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Sleep: Tired.");
+        var fp4 = CanonicalFeedbackFingerprint.Compute(Guid.NewGuid(), execId, CharacterMemoryFeedbackType.ActionCompleted, "Performed action Eat: HungerDriven.");
+
+        Assert.NotEqual(fp1, fp2);
+        Assert.NotEqual(fp1, fp3);
+        Assert.NotEqual(fp1, fp4);
+    }
+
+    [Fact]
+    public async Task RunAsync_ReplayReturnsFeedbackRepresentingPersistedSemantics_RecoveredFromEntity()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var sharedExecutionId = Guid.NewGuid();
+
+        // Initial run creates ActionCompleted memory (Importance = 4)
+        await using (var db1 = new CoreDbContext(_options))
+        {
+            var service = CreateService(db1);
+            var context = CreateContext(charId, executionId: sharedExecutionId);
+            var res = await service.RunAsync(context);
+            Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, res.Status);
+        }
+
+        // Verify DB directly
+        await using (var verifyDb = new CoreDbContext(_options))
+        {
+            var memory = await verifyDb.CharacterMemories.SingleAsync(m => m.SourceSessionId == sharedExecutionId);
+            Assert.Equal((int)CharacterMemoryFeedbackType.ActionCompleted, memory.Importance);
+
+            // Replay with AlreadyExecuted
+            var alreadyExecutedService = new AlreadyExecutedActionExecutionService();
+            var service = CreateService(verifyDb, actionExecutionService: alreadyExecutedService);
+            var context = CreateContext(charId, executionId: sharedExecutionId);
+            var replayResult = await service.RunAsync(context);
+
+            Assert.Equal(CharacterCognitiveCycleStatus.AlreadyExecuted, replayResult.Status);
+            Assert.NotNull(replayResult.MemoryFeedback);
+            // Invariant: Type is recovered from persisted entity (Importance), not forged or parsed from content
+            Assert.Equal(CharacterMemoryFeedbackType.ActionCompleted, replayResult.MemoryFeedback.Type);
+            Assert.Equal(memory.Id, replayResult.MemoryFeedback.MemoryId);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_DeterministicMemoryId_IsPureFunctionOfCharacterAndExecutionId()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 90m);
+        var execId = Guid.NewGuid();
+
+        await using var db = new CoreDbContext(_options);
+        var service = CreateService(db);
+        var context = CreateContext(charId, executionId: execId);
+        var res = await service.RunAsync(context);
+
+        Assert.NotNull(res.MemoryFeedback);
+        var expectedGuid = DeterministicMemoryIdHelper(charId, execId);
+        Assert.Equal(expectedGuid, res.MemoryFeedback.MemoryId);
+    }
+
+    private static Guid DeterministicMemoryIdHelper(Guid characterId, Guid executionId)
+    {
+        var canonical = $"MemoryFeedback:{characterId:D}:{executionId:D}";
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
+        Span<byte> guidBytes = stackalloc byte[16];
+        hash.AsSpan(0, 16).CopyTo(guidBytes);
+        return new Guid(guidBytes);
     }
 
     [Fact]

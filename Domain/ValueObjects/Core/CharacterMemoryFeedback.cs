@@ -4,10 +4,10 @@ namespace Domain.ValueObjects;
 
 public enum CharacterMemoryFeedbackType
 {
-    EventExperienced = 1,
-    ActionCompleted = 2,
-    ActionFailed = 3,
-    NoActionTaken = 4
+    NoActionTaken = 1,
+    ActionFailed = 2,
+    EventExperienced = 3,
+    ActionCompleted = 4
 }
 
 /// <summary>
