@@ -964,6 +964,72 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
         Assert.Equal(3, totalCount);
     }
 
+    [Fact]
+    public async Task GetOrCreateByTargetAsync_WhenConcurrentInsertConflictOccurs_DetachesLocalEntityAndSubsequentSaveChangesSucceeds()
+    {
+        var charId = await SeedCharacterStateAsync();
+        var targetId = Guid.NewGuid();
+
+        // 1. Two separate DbContext instances
+        await using var dbWinner = new CoreDbContext(_options);
+        await using var dbLoser = new CoreDbContext(_options);
+
+        // Pre-create the winner's relationship in the database
+        var winnerRepo = new Infrastructure.Persistence.Repositories.CharacterRelationshipRepository(dbWinner);
+        var winnerRel = await winnerRepo.GetOrCreateByTargetAsync(charId, RelationshipTargetType.User, targetId);
+        Assert.NotNull(winnerRel);
+
+        // Loser context tracks an unrelated entity to prove ChangeTracker is NOT indiscriminately cleared
+        var executionId = Guid.NewGuid();
+        var transition = new CharacterRelationshipTransition(
+            characterId: charId,
+            executionId: executionId,
+            targetId: targetId,
+            targetType: RelationshipTargetType.User,
+            trustDelta: 5,
+            affectionDelta: 5,
+            familiarityDelta: 5,
+            oldRelationshipType: RelationshipType.Stranger,
+            newRelationshipType: RelationshipType.Stranger,
+            versionBefore: 1,
+            versionAfter: 2,
+            reason: "Unrelated caller work",
+            appliedAtUtc: DateTime.UtcNow
+        );
+        await dbLoser.CharacterRelationshipTransitions.AddAsync(transition);
+
+        // 2. Loser calls GetOrCreateByTargetAsync for the same (charId, targetType, targetId).
+        // It must catch DbUpdateException, detach ONLY the locally added duplicate, and return authoritative record
+        var loserRepo = new Infrastructure.Persistence.Repositories.CharacterRelationshipRepository(dbLoser);
+        var resolvedRel = await loserRepo.GetOrCreateByTargetAsync(charId, RelationshipTargetType.User, targetId);
+
+        // Assert: Authoritative relationship is returned
+        Assert.NotNull(resolvedRel);
+        Assert.Equal(winnerRel.Id, resolvedRel.Id);
+
+        // Assert: No CharacterRelationship in dbLoser remains in EntityState.Added
+        var addedRelationships = dbLoser.ChangeTracker.Entries<CharacterRelationship>()
+            .Where(e => e.State == EntityState.Added)
+            .ToList();
+        Assert.Empty(addedRelationships);
+
+        // Assert: The unrelated entity is STILL tracked as Added (not cleared!)
+        var transitionEntry = dbLoser.Entry(transition);
+        Assert.Equal(EntityState.Added, transitionEntry.State);
+
+        // 3. Subsequent SaveChangesAsync on the same dbLoser context does NOT attempt to re-insert the duplicate
+        // and successfully commits the unrelated entity!
+        await dbLoser.SaveChangesAsync();
+
+        // 4. Verify in independent context: Exactly 1 relationship exists, and 1 transition was committed
+        await using var verifyDb = new CoreDbContext(_options);
+        var relCount = await verifyDb.CharacterRelationships.CountAsync(r => r.CharacterId == charId && r.TargetId == targetId);
+        Assert.Equal(1, relCount);
+
+        var savedTransition = await verifyDb.CharacterRelationshipTransitions.SingleOrDefaultAsync(t => t.ExecutionId == executionId);
+        Assert.NotNull(savedTransition);
+    }
+
     #endregion
 
     #region Test Doubles

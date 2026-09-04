@@ -103,6 +103,9 @@ public sealed class CharacterRelationshipRepository : GenericRepository<Characte
         }
         catch (DbUpdateException)
         {
+            // Clean up locally created entity so it does not linger in EntityState.Added
+            DbContext.Entry(newRelationship).State = EntityState.Detached;
+
             // Race-safe fallback: If another execution concurrently created the relationship,
             // query the authoritative record from DB.
             var concurrent = await DbContext.CharacterRelationships
