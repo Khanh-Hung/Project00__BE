@@ -50,7 +50,8 @@ public sealed record CharacterCognitiveCycleContext(
     DateTimeOffset TriggeredAtUtc,
     CharacterCognitiveEvent? Event = null,
     CharacterPerceptionContext? PerceptionContext = null,
-    CharacterBlueprint? Blueprint = null
+    CharacterBlueprint? Blueprint = null,
+    CharacterMemoryContext? MemoryContext = null
 );
 
 public enum CharacterCognitiveCycleStatus
@@ -80,6 +81,8 @@ public sealed record CharacterCognitiveCycleResult(
     CharacterIntentEvaluation? Intent = null,
     CharacterActionProposalEvaluation? ActionProposal = null,
     CharacterActionExecutionResult? ActionExecution = null,
+    CharacterMemoryContext? MemoryContext = null,
+    CharacterMemoryFeedback? MemoryFeedback = null,
     string? Message = null
 )
 {
@@ -103,7 +106,9 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterIntentEvaluation intent,
         CharacterActionProposalEvaluation actionProposal,
         CharacterActionExecutionResult actionExecution,
-        CharacterCognitiveEvent? @event = null) =>
+        CharacterCognitiveEvent? @event = null,
+        CharacterMemoryContext? memoryContext = null,
+        CharacterMemoryFeedback? memoryFeedback = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -118,7 +123,9 @@ public sealed record CharacterCognitiveCycleResult(
             Desires: desires,
             Intent: intent,
             ActionProposal: actionProposal,
-            ActionExecution: actionExecution
+            ActionExecution: actionExecution,
+            MemoryContext: memoryContext,
+            MemoryFeedback: memoryFeedback
         );
 
     public static CharacterCognitiveCycleResult CompletedWithoutAction(
@@ -134,6 +141,8 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterIntentEvaluation? intent = null,
         CharacterActionProposalEvaluation? actionProposal = null,
         CharacterCognitiveEvent? @event = null,
+        CharacterMemoryContext? memoryContext = null,
+        CharacterMemoryFeedback? memoryFeedback = null,
         string? message = null) =>
         new(
             CycleId: cycleId,
@@ -150,6 +159,8 @@ public sealed record CharacterCognitiveCycleResult(
             Intent: intent,
             ActionProposal: actionProposal,
             ActionExecution: null,
+            MemoryContext: memoryContext,
+            MemoryFeedback: memoryFeedback,
             Message: message ?? "Cognitive cycle completed without actionable proposal."
         );
 
@@ -166,7 +177,9 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterIntentEvaluation intent,
         CharacterActionProposalEvaluation actionProposal,
         CharacterActionExecutionResult actionExecution,
-        CharacterCognitiveEvent? @event = null) =>
+        CharacterCognitiveEvent? @event = null,
+        CharacterMemoryContext? memoryContext = null,
+        CharacterMemoryFeedback? memoryFeedback = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -182,6 +195,8 @@ public sealed record CharacterCognitiveCycleResult(
             Intent: intent,
             ActionProposal: actionProposal,
             ActionExecution: actionExecution,
+            MemoryContext: memoryContext,
+            MemoryFeedback: memoryFeedback,
             Message: "Action execution was previously applied for this ExecutionId."
         );
 
@@ -199,6 +214,8 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterActionProposalEvaluation? actionProposal = null,
         CharacterActionExecutionResult? actionExecution = null,
         CharacterCognitiveEvent? @event = null,
+        CharacterMemoryContext? memoryContext = null,
+        CharacterMemoryFeedback? memoryFeedback = null,
         string? message = null) =>
         new(
             CycleId: cycleId,
@@ -215,6 +232,8 @@ public sealed record CharacterCognitiveCycleResult(
             Intent: intent,
             ActionProposal: actionProposal,
             ActionExecution: actionExecution,
+            MemoryContext: memoryContext,
+            MemoryFeedback: memoryFeedback,
             Message: message ?? "State concurrency conflict occurred during cognitive cycle."
         );
 
@@ -232,6 +251,8 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterActionProposalEvaluation? actionProposal = null,
         CharacterActionExecutionResult? actionExecution = null,
         CharacterCognitiveEvent? @event = null,
+        CharacterMemoryContext? memoryContext = null,
+        CharacterMemoryFeedback? memoryFeedback = null,
         string? message = null) =>
         new(
             CycleId: cycleId,
@@ -248,6 +269,8 @@ public sealed record CharacterCognitiveCycleResult(
             Intent: intent,
             ActionProposal: actionProposal,
             ActionExecution: actionExecution,
+            MemoryContext: memoryContext,
+            MemoryFeedback: memoryFeedback,
             Message: message ?? "Idempotency conflict occurred during cognitive cycle."
         );
 
@@ -257,7 +280,8 @@ public sealed record CharacterCognitiveCycleResult(
         Guid characterId,
         DateTimeOffset triggeredAtUtc,
         string message,
-        CharacterCognitiveEvent? @event = null) =>
+        CharacterCognitiveEvent? @event = null,
+        CharacterMemoryContext? memoryContext = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -266,6 +290,7 @@ public sealed record CharacterCognitiveCycleResult(
             Status: CharacterCognitiveCycleStatus.InvalidInput,
             StateVersionAtStart: 0,
             Event: @event,
+            MemoryContext: memoryContext,
             Message: message
         );
 
@@ -275,7 +300,8 @@ public sealed record CharacterCognitiveCycleResult(
         Guid characterId,
         DateTimeOffset triggeredAtUtc,
         string message,
-        CharacterCognitiveEvent? @event = null) =>
+        CharacterCognitiveEvent? @event = null,
+        CharacterMemoryContext? memoryContext = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -284,6 +310,7 @@ public sealed record CharacterCognitiveCycleResult(
             Status: CharacterCognitiveCycleStatus.NotFound,
             StateVersionAtStart: 0,
             Event: @event,
+            MemoryContext: memoryContext,
             Message: message
         );
 
@@ -295,6 +322,8 @@ public sealed record CharacterCognitiveCycleResult(
         int stateVersionAtStart,
         CharacterActionExecutionResult? actionExecution = null,
         CharacterCognitiveEvent? @event = null,
+        CharacterMemoryContext? memoryContext = null,
+        CharacterMemoryFeedback? memoryFeedback = null,
         string? message = null) =>
         new(
             CycleId: cycleId,
@@ -305,6 +334,8 @@ public sealed record CharacterCognitiveCycleResult(
             StateVersionAtStart: stateVersionAtStart,
             Event: @event,
             ActionExecution: actionExecution,
+            MemoryContext: memoryContext,
+            MemoryFeedback: memoryFeedback,
             Message: message ?? "Cognitive cycle failed during action execution."
         );
 }
