@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Project.Infrastructure.Persistence.Migrations.Core
 {
     [DbContext(typeof(CoreDbContext))]
-    partial class CoreDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907025859_AddPersonalityAdaptationAndEvidence")]
+    partial class AddPersonalityAdaptationAndEvidence
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -760,12 +763,11 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CharacterId", "ExecutionId")
+                        .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId");
+
                     b.HasIndex("CharacterId", "TraitKey")
                         .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_TraitKey");
-
-                    b.HasIndex("CharacterId", "ExecutionId", "TraitKey")
-                        .IsUnique()
-                        .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId_TraitKey");
 
                     b.ToTable("CharacterPersonalityAdaptations");
                 });
@@ -2263,7 +2265,6 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                         .HasColumnType("character varying(64)");
 
                     b.Property<bool>("IsApplied")
-                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
@@ -2283,9 +2284,9 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CharacterId", "ExecutionId", "TraitKey")
+                    b.HasIndex("CharacterId", "ExecutionId")
                         .IsUnique()
-                        .HasDatabaseName("IX_PersonalityAdaptationEvidences_CharacterId_ExecutionId_TraitKey");
+                        .HasDatabaseName("IX_PersonalityAdaptationEvidences_CharacterId_ExecutionId");
 
                     b.HasIndex("CharacterId", "TraitKey", "IsApplied")
                         .HasDatabaseName("IX_PersonalityAdaptationEvidences_CharId_TraitKey_IsApplied");

@@ -47,6 +47,9 @@ public class CoreDbContext : DbContext
     public DbSet<CharacterState> CharacterStates { get; set; }
     public DbSet<CharacterStateTransition> CharacterStateTransitions { get; set; }
     public DbSet<CharacterRelationshipTransition> CharacterRelationshipTransitions { get; set; }
+    public DbSet<CharacterPersonality> CharacterPersonalities { get; set; }
+    public DbSet<PersonalityAdaptationEvidence> CharacterPersonalityAdaptationEvidences { get; set; }
+    public DbSet<CharacterPersonalityAdaptation> CharacterPersonalityAdaptations { get; set; }
 
     private string NormalizeUserId()
     {

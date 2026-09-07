@@ -12,7 +12,8 @@ public sealed record PsychologyProfile(
     decimal StressSensitivity = 1.0m,
     decimal SocialSensitivity = 1.0m,
     decimal ComfortSensitivity = 1.0m,
-    decimal MoodReactivity = 1.0m
+    decimal MoodReactivity = 1.0m,
+    CharacterPersonalitySnapshot? Personality = null
 )
 {
     public static PsychologyProfile Default { get; } = new();
