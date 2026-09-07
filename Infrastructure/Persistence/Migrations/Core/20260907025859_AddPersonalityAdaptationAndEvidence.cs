@@ -87,9 +87,9 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_PersonalityAdaptationEvidences_CharacterId_ExecutionId_TraitKey",
+                name: "IX_PersonalityAdaptationEvidences_CharacterId_ExecutionId",
                 table: "CharacterPersonalityAdaptationEvidences",
-                columns: new[] { "CharacterId", "ExecutionId", "TraitKey" },
+                columns: new[] { "CharacterId", "ExecutionId" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -98,9 +98,9 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                 columns: new[] { "CharacterId", "TraitKey", "IsApplied" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId_TraitKey",
+                name: "IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId",
                 table: "CharacterPersonalityAdaptations",
-                columns: new[] { "CharacterId", "ExecutionId", "TraitKey" },
+                columns: new[] { "CharacterId", "ExecutionId" },
                 unique: true);
 
             migrationBuilder.CreateIndex(

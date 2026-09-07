@@ -28,6 +28,11 @@ public sealed record CharacterPersonalityAdaptationResult(
 /// </summary>
 public interface IPersonalityAdaptationService
 {
+    /// <summary>
+    /// Processes all personality adaptation proposals derived from the cognitive cycle.
+    /// Note: Personality adaptations are independently persisted per trait; partial personality adaptation across traits is allowed.
+    /// Failure in one trait adaptation does not invalidate or roll back previously committed adaptations.
+    /// </summary>
     Task<IReadOnlyList<CharacterPersonalityAdaptationResult>> ProcessAdaptationsAsync(
         CharacterCognitiveCycleContext context,
         CharacterCognitiveCycleResult result,

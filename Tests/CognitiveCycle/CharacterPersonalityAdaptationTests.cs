@@ -627,6 +627,130 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
     }
 
     [Fact]
+    public async Task Repository_SameExecutionId_CanPersistMultipleEvidenceRecordsForDifferentTraits()
+    {
+        await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        // 1. Evidence for Warmth
+        var fpWarmth = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1);
+        var evWarmth = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1, "Warmth evidence", fpWarmth);
+        await repo.AddOrGetEvidenceAsync(evWarmth);
+
+        // 2. Evidence for TrustDisposition under same ExecutionId
+        var fpTrust = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.RepeatedSuccessfulInteraction,
+            PersonalityTraitKeys.TrustDisposition, +1, 1);
+        var evTrust = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.RepeatedSuccessfulInteraction,
+            PersonalityTraitKeys.TrustDisposition, +1, 1, "Trust evidence", fpTrust);
+        await repo.AddOrGetEvidenceAsync(evTrust);
+
+        // 3. Evidence for SocialConfidence under same ExecutionId
+        var fpSocial = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.RepeatedSuccessfulInteraction,
+            PersonalityTraitKeys.SocialConfidence, +1, 1);
+        var evSocial = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.RepeatedSuccessfulInteraction,
+            PersonalityTraitKeys.SocialConfidence, +1, 1, "Social evidence", fpSocial);
+        await repo.AddOrGetEvidenceAsync(evSocial);
+
+        // Verify: Exactly 3 evidence rows exist for this ExecutionId
+        var evidences = await db.CharacterPersonalityAdaptationEvidences
+            .Where(e => e.CharacterId == charId && e.ExecutionId == execId)
+            .ToListAsync();
+        Assert.Equal(3, evidences.Count);
+        Assert.Contains(evidences, e => e.TraitKey == PersonalityTraitKeys.Warmth);
+        Assert.Contains(evidences, e => e.TraitKey == PersonalityTraitKeys.TrustDisposition);
+        Assert.Contains(evidences, e => e.TraitKey == PersonalityTraitKeys.SocialConfidence);
+    }
+
+    [Fact]
+    public async Task Repository_SameExecutionId_CanPersistMultipleAdaptationRecordsForDifferentTraits()
+    {
+        await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        // 1. Adaptation for Warmth
+        var adaptWarmth = new CharacterPersonalityAdaptation(
+            characterId: charId,
+            executionId: execId,
+            traitKey: PersonalityTraitKeys.Warmth,
+            valueBefore: 50,
+            valueAfter: 51,
+            delta: +1,
+            evidenceCount: 3,
+            fingerprint: CanonicalPersonalityFingerprint.ComputeAdaptation(charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3),
+            createdAtUtc: DateTime.UtcNow
+        );
+        await repo.AddAdaptationAsync(adaptWarmth);
+
+        // 2. Adaptation for TrustDisposition under same ExecutionId
+        var adaptTrust = new CharacterPersonalityAdaptation(
+            characterId: charId,
+            executionId: execId,
+            traitKey: PersonalityTraitKeys.TrustDisposition,
+            valueBefore: 50,
+            valueAfter: 51,
+            delta: +1,
+            evidenceCount: 3,
+            fingerprint: CanonicalPersonalityFingerprint.ComputeAdaptation(charId, execId, PersonalityTraitKeys.TrustDisposition, 50, 51, +1, 3),
+            createdAtUtc: DateTime.UtcNow
+        );
+        await repo.AddAdaptationAsync(adaptTrust);
+
+        await repo.SaveChangesAsync();
+
+        // Verify: Exactly 2 adaptation rows exist for this ExecutionId
+        var adaptations = await db.CharacterPersonalityAdaptations
+            .Where(a => a.CharacterId == charId && a.ExecutionId == execId)
+            .ToListAsync();
+        Assert.Equal(2, adaptations.Count);
+        Assert.Contains(adaptations, a => a.TraitKey == PersonalityTraitKeys.Warmth);
+        Assert.Contains(adaptations, a => a.TraitKey == PersonalityTraitKeys.TrustDisposition);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetEvidenceAsync_SameExecutionIdDifferentTraitKey_DoesNotConflict()
+    {
+        await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        var fpWarmth = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1);
+        var evWarmth = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1, "Warmth", fpWarmth);
+        var resWarmth = await repo.AddOrGetEvidenceAsync(evWarmth);
+
+        // Even with opposite direction or different type, since TraitKey is different, no conflict
+        var fpTrust = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.RepeatedConflict,
+            PersonalityTraitKeys.TrustDisposition, -1, 1);
+        var evTrust = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.RepeatedConflict,
+            PersonalityTraitKeys.TrustDisposition, -1, 1, "Trust conflict", fpTrust);
+        var resTrust = await repo.AddOrGetEvidenceAsync(evTrust);
+
+        Assert.NotNull(resWarmth);
+        Assert.NotNull(resTrust);
+        Assert.NotEqual(resWarmth.Id, resTrust.Id);
+        Assert.Equal(PersonalityTraitKeys.Warmth, resWarmth.TraitKey);
+        Assert.Equal(PersonalityTraitKeys.TrustDisposition, resTrust.TraitKey);
+    }
+
+    [Fact]
     public async Task Repository_AddOrGetEvidenceAsync_WhenReplayedWithDifferentSemanticPayload_ThrowsIdempotencyConflict()
     {
         await using var db = new CoreDbContext(_options);
