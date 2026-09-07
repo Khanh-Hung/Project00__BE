@@ -1,0 +1,34 @@
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Application.Contracts.CognitiveCycle;
+
+/// <summary>
+/// Result summary of processing personality adaptation evidence and possible trait mutation for a cycle.
+/// </summary>
+public sealed record CharacterPersonalityAdaptationResult(
+    Guid EvidenceId,
+    Guid CharacterId,
+    Guid ExecutionId,
+    string TraitKey,
+    int Direction,
+    int Strength,
+    bool AdaptationTriggered,
+    int? TraitValueBefore = null,
+    int? TraitValueAfter = null,
+    int? TraitDelta = null,
+    string? AdaptationFingerprint = null
+);
+
+/// <summary>
+/// Service orchestrating personality adaptation evidence derivation, idempotency checking,
+/// persistence, threshold accumulation, and optimistic concurrency mutation.
+/// </summary>
+public interface IPersonalityAdaptationService
+{
+    Task<CharacterPersonalityAdaptationResult?> ProcessAdaptationAsync(
+        CharacterCognitiveCycleContext context,
+        CharacterCognitiveCycleResult result,
+        CancellationToken ct = default);
+}

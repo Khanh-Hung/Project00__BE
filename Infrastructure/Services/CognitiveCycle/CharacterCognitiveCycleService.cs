@@ -25,6 +25,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
     private readonly ICharacterMemoryFeedbackService? _memoryFeedbackService;
     private readonly ICharacterRelationshipRetrievalService? _relationshipRetrievalService;
     private readonly ICharacterRelationshipFeedbackService? _relationshipFeedbackService;
+    private readonly IPersonalityAdaptationService? _personalityAdaptationService;
     private readonly ILogger<CharacterCognitiveCycleService> _logger;
 
     public CharacterCognitiveCycleService(
@@ -40,7 +41,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         ICharacterMemoryRetrievalService? memoryRetrievalService = null,
         ICharacterMemoryFeedbackService? memoryFeedbackService = null,
         ICharacterRelationshipRetrievalService? relationshipRetrievalService = null,
-        ICharacterRelationshipFeedbackService? relationshipFeedbackService = null)
+        ICharacterRelationshipFeedbackService? relationshipFeedbackService = null,
+        IPersonalityAdaptationService? personalityAdaptationService = null)
     {
         _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
         _experiencePolicy = experiencePolicy ?? throw new ArgumentNullException(nameof(experiencePolicy));
@@ -55,6 +57,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         _memoryFeedbackService = memoryFeedbackService;
         _relationshipRetrievalService = relationshipRetrievalService;
         _relationshipFeedbackService = relationshipFeedbackService;
+        _personalityAdaptationService = personalityAdaptationService;
     }
 
     public async Task<CharacterCognitiveCycleResult> RunAsync(
@@ -393,7 +396,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         var resultWithMemory = await AttachMemoryFeedbackAsync(context, cycleResult, cancellationToken);
 
         // 13. Persist Relationship Feedback (PR48: Independent identity, error does not roll back state)
-        return await AttachRelationshipFeedbackAsync(context, resultWithMemory, cancellationToken);
+        var resultWithRelationship = await AttachRelationshipFeedbackAsync(context, resultWithMemory, cancellationToken);
+
+        // 14. Persist Personality Adaptation (PR49: Independent identity, threshold accumulation, error does not roll back state)
+        return await AttachPersonalityAdaptationAsync(context, resultWithRelationship, cancellationToken);
     }
 
     private async Task<CharacterCognitiveCycleResult> AttachMemoryFeedbackAsync(
@@ -498,6 +504,61 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         {
             _logger.LogError(ex,
                 "[CharacterCognitiveCycleService] Failed to record relationship feedback for CharacterId={CharacterId}, CycleId={CycleId}. State transition remains committed.",
+                context.CharacterId, context.CycleId);
+        }
+
+        return result;
+    }
+
+    private async Task<CharacterCognitiveCycleResult> AttachPersonalityAdaptationAsync(
+        CharacterCognitiveCycleContext context,
+        CharacterCognitiveCycleResult result,
+        CancellationToken ct)
+    {
+        if (_personalityAdaptationService == null)
+        {
+            return result;
+        }
+
+        try
+        {
+            var adaptation = await _personalityAdaptationService.ProcessAdaptationAsync(context, result, ct);
+            if (adaptation != null)
+            {
+                return result with { PersonalityAdaptation = adaptation };
+            }
+        }
+        catch (PersonalityAdaptationIdempotencyConflictException ex)
+        {
+            _logger.LogWarning(ex,
+                "[CharacterCognitiveCycleService] Idempotency conflict detected in personality adaptation for CharacterId={CharacterId}, ExecutionId={ExecutionId}. {Message}",
+                context.CharacterId, context.ExecutionId, ex.Message);
+
+            return CharacterCognitiveCycleResult.IdempotencyConflict(
+                context.CycleId,
+                context.ExecutionId,
+                context.CharacterId,
+                context.TriggeredAtUtc,
+                result.StateVersionAtStart,
+                result.Experience,
+                result.Appraisal,
+                result.Emotion,
+                result.Desires,
+                result.Intent,
+                result.ActionProposal,
+                result.ActionExecution,
+                result.Event,
+                result.MemoryContext,
+                result.MemoryFeedback,
+                relationshipContext: result.RelationshipContext,
+                relationshipFeedback: result.RelationshipFeedback,
+                personalityAdaptation: null,
+                message: ex.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "[CharacterCognitiveCycleService] Failed to process personality adaptation for CharacterId={CharacterId}, CycleId={CycleId}. State transition remains committed.",
                 context.CharacterId, context.CycleId);
         }
 
