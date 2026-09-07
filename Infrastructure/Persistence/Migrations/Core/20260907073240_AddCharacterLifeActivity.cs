@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -47,11 +47,33 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                 name: "IX_CharacterLifeActivities_CharacterId_Status",
                 table: "CharacterLifeActivities",
                 columns: new[] { "CharacterId", "Status" });
+
+            if (migrationBuilder.ActiveProvider != null && !migrationBuilder.ActiveProvider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+            {
+                migrationBuilder.Sql(@"
+                    CREATE EXTENSION IF NOT EXISTS btree_gist;
+                    ALTER TABLE ""CharacterLifeActivities""
+                    ADD CONSTRAINT ""exclude_overlapping_scheduled_or_active_activities""
+                    EXCLUDE USING gist (
+                        ""CharacterId"" WITH =,
+                        tstzrange(""StartAtUtc"", ""PlannedEndAtUtc"", '[)') WITH &&
+                    )
+                    WHERE (""Status"" IN ('Scheduled', 'Active'));
+                ");
+            }
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != null && !migrationBuilder.ActiveProvider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+            {
+                migrationBuilder.Sql(@"
+                    ALTER TABLE ""CharacterLifeActivities""
+                    DROP CONSTRAINT IF EXISTS ""exclude_overlapping_scheduled_or_active_activities"";
+                ");
+            }
+
             migrationBuilder.DropTable(
                 name: "CharacterLifeActivities");
         }

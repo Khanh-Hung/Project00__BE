@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,5 +18,4 @@ public interface ICharacterLifeActivityRepository
     Task<CharacterLifeActivity?> GetOverlappingActivityAsync(Guid characterId, DateTime startAtUtc, DateTime plannedEndAtUtc, Guid? excludeActivityId = null, CancellationToken ct = default);
     Task AddAsync(CharacterLifeActivity activity, CancellationToken ct = default);
     Task SaveChangesAsync(CancellationToken ct = default);
-    void ClearTracking();
 }

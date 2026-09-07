@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Abstractions.Data;
+using Application.Abstractions.Time;
 using Application.Contracts.LifeSimulation;
 using Application.Interfaces;
 using Domain.Entities;
@@ -16,10 +17,14 @@ namespace Infrastructure.Services.LifeSimulation;
 public sealed class LifeSimulationService : ILifeSimulationService
 {
     private readonly ICharacterLifeActivityRepository _repository;
+    private readonly ILifeSimulationClock _clock;
 
-    public LifeSimulationService(ICharacterLifeActivityRepository repository)
+    public LifeSimulationService(
+        ICharacterLifeActivityRepository repository,
+        ILifeSimulationClock clock)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
     public async Task<LifeSimulationTickResult> TickAsync(
@@ -138,7 +143,6 @@ public sealed class LifeSimulationService : ILifeSimulationService
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            _repository.ClearTracking();
             throw new LifeSimulationConcurrencyException(context.CharacterId, null, "Optimistic concurrency conflict occurred during simulation tick.", ex);
         }
     }
@@ -160,26 +164,36 @@ public sealed class LifeSimulationService : ILifeSimulationService
         if (start >= plannedEnd)
             throw new ArgumentException($"StartAtUtc ({start:O}) must be strictly before PlannedEndAtUtc ({plannedEnd:O}).", nameof(startAtUtc));
 
-        var conflicting = await _repository.GetOverlappingActivityAsync(characterId, start, plannedEnd, null, ct);
-        if (conflicting != null)
+        try
         {
-            throw new LifeActivityScheduleConflictException(characterId, start, plannedEnd, conflicting.Id);
+            var conflicting = await _repository.GetOverlappingActivityAsync(characterId, start, plannedEnd, null, ct);
+            if (conflicting != null)
+            {
+                throw new LifeActivityScheduleConflictException(characterId, start, plannedEnd, conflicting.Id);
+            }
+
+            var activity = new CharacterLifeActivity(
+                characterId: characterId,
+                activityType: activityType,
+                startAtUtc: start,
+                plannedEndAtUtc: plannedEnd,
+                status: LifeActivityStatus.Scheduled,
+                metadata: metadata,
+                createdAtUtc: _clock.UtcDateTime
+            );
+
+            await _repository.AddAsync(activity, ct);
+            await _repository.SaveChangesAsync(ct);
+
+            return activity;
         }
-
-        var activity = new CharacterLifeActivity(
-            characterId: characterId,
-            activityType: activityType,
-            startAtUtc: start,
-            plannedEndAtUtc: plannedEnd,
-            status: LifeActivityStatus.Scheduled,
-            metadata: metadata,
-            createdAtUtc: DateTime.UtcNow
-        );
-
-        await _repository.AddAsync(activity, ct);
-        await _repository.SaveChangesAsync(ct);
-
-        return activity;
+        catch (DbUpdateException ex)
+        {
+            var conflicting = await _repository.GetOverlappingActivityAsync(characterId, start, plannedEnd, null, ct);
+            throw new LifeActivityScheduleConflictException(characterId, start, plannedEnd, conflicting?.Id,
+                message: $"Activity for character {characterId} from {start:O} to {plannedEnd:O} overlaps with existing activity {conflicting?.Id}.",
+                innerException: ex);
+        }
     }
 
     public async Task<CharacterLifeActivity> CancelActivityAsync(

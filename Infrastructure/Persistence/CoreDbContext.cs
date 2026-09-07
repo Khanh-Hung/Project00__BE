@@ -117,4 +117,47 @@ public class CoreDbContext : DbContext
                 .IsUnique();
         }
     }
+
+    /// <summary>
+    /// Provider-aware initialization of SQLite overlap-prevention triggers on CharacterLifeActivities.
+    /// In PostgreSQL, interval exclusion constraints (GiST) handle this natively at the database level.
+    /// </summary>
+    public void EnsureLifeSimulationTriggersCreated()
+    {
+        var isSqlite = Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true;
+        if (!isSqlite) return;
+
+        Database.ExecuteSqlRaw(@"
+            CREATE TRIGGER IF NOT EXISTS check_activity_overlap_insert
+            BEFORE INSERT ON CharacterLifeActivities
+            FOR EACH ROW
+            WHEN NEW.Status IN ('Scheduled', 'Active')
+            BEGIN
+                SELECT RAISE(ABORT, 'Schedule overlap conflict')
+                WHERE EXISTS (
+                    SELECT 1 FROM CharacterLifeActivities
+                    WHERE CharacterId = NEW.CharacterId
+                      AND Status IN ('Scheduled', 'Active')
+                      AND StartAtUtc < NEW.PlannedEndAtUtc
+                      AND PlannedEndAtUtc > NEW.StartAtUtc
+                );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS check_activity_overlap_update
+            BEFORE UPDATE OF StartAtUtc, PlannedEndAtUtc, Status ON CharacterLifeActivities
+            FOR EACH ROW
+            WHEN NEW.Status IN ('Scheduled', 'Active')
+            BEGIN
+                SELECT RAISE(ABORT, 'Schedule overlap conflict')
+                WHERE EXISTS (
+                    SELECT 1 FROM CharacterLifeActivities
+                    WHERE CharacterId = NEW.CharacterId
+                      AND Id != NEW.Id
+                      AND Status IN ('Scheduled', 'Active')
+                      AND StartAtUtc < NEW.PlannedEndAtUtc
+                      AND PlannedEndAtUtc > NEW.StartAtUtc
+                );
+            END;
+        ");
+    }
 }

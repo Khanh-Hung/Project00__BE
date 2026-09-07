@@ -7,6 +7,9 @@ namespace Application.Contracts.LifeSimulation;
 
 /// <summary>
 /// Domain event representing an activity lifecycle occurrence within the simulation.
+/// Note on Event Boundary: In PR50 (Foundation), LifeSimulationEvent represents an in-memory
+/// factual occurrence produced during the tick. In PR51+, these events are staged into the
+/// Transactional Outbox and persisted as WorldCognitiveEvents for asynchronous ingestion by the cognitive cycle.
 /// </summary>
 public sealed record LifeSimulationEvent(
     Guid EventId,
@@ -48,8 +51,9 @@ public class LifeActivityScheduleConflictException : InvalidOperationException
         DateTime startAtUtc,
         DateTime plannedEndAtUtc,
         Guid? conflictingActivityId = null,
-        string? message = null)
-        : base(message ?? $"Activity for character {characterId} from {startAtUtc:O} to {plannedEndAtUtc:O} overlaps with existing activity {conflictingActivityId}.")
+        string? message = null,
+        Exception? innerException = null)
+        : base(message ?? $"Activity for character {characterId} from {startAtUtc:O} to {plannedEndAtUtc:O} overlaps with existing activity {conflictingActivityId}.", innerException)
     {
         CharacterId = characterId;
         StartAtUtc = startAtUtc;

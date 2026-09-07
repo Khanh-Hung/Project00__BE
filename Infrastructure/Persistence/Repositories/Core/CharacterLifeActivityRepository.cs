@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -120,10 +120,5 @@ public sealed class CharacterLifeActivityRepository : ICharacterLifeActivityRepo
     public async Task SaveChangesAsync(CancellationToken ct = default)
     {
         await _context.SaveChangesAsync(ct);
-    }
-
-    public void ClearTracking()
-    {
-        _context.ChangeTracker.Clear();
     }
 }

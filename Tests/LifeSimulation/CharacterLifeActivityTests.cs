@@ -15,6 +15,7 @@ using Infrastructure.Persistence.Repositories.Core;
 using Infrastructure.Services.LifeSimulation;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
 
 namespace Tests.LifeSimulation;
@@ -35,6 +36,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
 
         using var db = new CoreDbContext(_options);
         db.Database.EnsureCreated();
+        db.EnsureLifeSimulationTriggersCreated();
     }
 
     public void Dispose()
@@ -42,13 +44,21 @@ public sealed class CharacterLifeActivityTests : IDisposable
         _connection.Dispose();
     }
 
-    private CoreDbContext CreateDbContext() => new CoreDbContext(_options);
-
-    private (ICharacterLifeActivityRepository repo, ILifeSimulationService service) CreateSystem(CoreDbContext db)
+    private CoreDbContext CreateDbContext()
     {
+        var db = new CoreDbContext(_options);
+        db.EnsureLifeSimulationTriggersCreated();
+        return db;
+    }
+
+    private (ICharacterLifeActivityRepository repo, ILifeSimulationService service, FakeLifeSimulationClock clock) CreateSystem(
+        CoreDbContext db,
+        FakeLifeSimulationClock? clock = null)
+    {
+        var clk = clock ?? new FakeLifeSimulationClock();
         var repo = new CharacterLifeActivityRepository(db);
-        var service = new LifeSimulationService(repo);
-        return (repo, service);
+        var service = new LifeSimulationService(repo, clk);
+        return (repo, service, clk);
     }
 
     #region 1-6. Domain Lifecycle & Validation Tests
@@ -105,6 +115,18 @@ public sealed class CharacterLifeActivityTests : IDisposable
     }
 
     [Fact]
+    public void Test03b_Domain_StartBeforeStartAtUtc_ThrowsInvalidOperationException()
+    {
+        var charId = Guid.NewGuid();
+        var start = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+        var end = start.AddHours(1);
+
+        var activity = new CharacterLifeActivity(charId, LifeActivityType.Work, start, end);
+        var ex = Assert.Throws<InvalidOperationException>(() => activity.Start(start.AddMinutes(-5)));
+        Assert.Contains("Cannot start activity before its planned StartAtUtc", ex.Message);
+    }
+
+    [Fact]
     public void Test04_Domain_Transition_ActiveToCompleted_Succeeds()
     {
         var charId = Guid.NewGuid();
@@ -127,6 +149,19 @@ public sealed class CharacterLifeActivityTests : IDisposable
         activity.Complete(completeTime.AddMinutes(5));
         Assert.Equal(LifeActivityStatus.Completed, activity.Status);
         Assert.Equal(3u, activity.Version);
+    }
+
+    [Fact]
+    public void Test04b_Domain_CompleteBeforeStartedAtUtc_ThrowsInvalidOperationException()
+    {
+        var charId = Guid.NewGuid();
+        var start = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+        var end = start.AddHours(1);
+
+        var activity = new CharacterLifeActivity(charId, LifeActivityType.Work, start, end);
+        activity.Start(start);
+        var ex = Assert.Throws<InvalidOperationException>(() => activity.Complete(start.AddMinutes(-10)));
+        Assert.Contains("Cannot complete activity before its StartedAtUtc", ex.Message);
     }
 
     [Fact]
@@ -186,7 +221,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test07_Repository_PersistAndRetrieveById()
     {
         using var db = CreateDbContext();
-        var (repo, _) = CreateSystem(db);
+        var (repo, _, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
         var start = new DateTime(2026, 9, 7, 8, 0, 0, DateTimeKind.Utc);
@@ -197,7 +232,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
         await repo.SaveChangesAsync();
 
         using var dbVerify = CreateDbContext();
-        var (repoVerify, _) = CreateSystem(dbVerify);
+        var (repoVerify, _, _) = CreateSystem(dbVerify);
 
         var retrieved = await repoVerify.GetByIdAsync(activity.Id);
         Assert.NotNull(retrieved);
@@ -215,7 +250,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test08_Repository_GetActiveActivity()
     {
         using var db = CreateDbContext();
-        var (repo, _) = CreateSystem(db);
+        var (repo, _, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
         var start = new DateTime(2026, 9, 7, 8, 0, 0, DateTimeKind.Utc);
@@ -246,7 +281,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test09_Repository_GetNextScheduledActivity()
     {
         using var db = CreateDbContext();
-        var (repo, _) = CreateSystem(db);
+        var (repo, _, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
         var baseTime = new DateTime(2026, 9, 7, 8, 0, 0, DateTimeKind.Utc);
@@ -277,7 +312,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test10_Repository_IsolationBetweenCharacters()
     {
         using var db = CreateDbContext();
-        var (repo, _) = CreateSystem(db);
+        var (repo, _, _) = CreateSystem(db);
 
         var charA = Guid.NewGuid();
         var charB = Guid.NewGuid();
@@ -316,7 +351,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test11_Scheduling_OverlappingScheduledActivity_RejectsWithException()
     {
         using var db = CreateDbContext();
-        var (_, service) = CreateSystem(db);
+        var (_, service, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
         var start = new DateTimeOffset(2026, 9, 7, 10, 0, 0, TimeSpan.Zero);
@@ -345,7 +380,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test12_Scheduling_OverlappingAgainstActiveActivity_RejectsWithException()
     {
         using var db = CreateDbContext();
-        var (repo, service) = CreateSystem(db);
+        var (repo, service, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
         var start = new DateTime(2026, 9, 7, 8, 0, 0, DateTimeKind.Utc);
@@ -370,7 +405,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test13_Scheduling_NonOverlappingActivities_AcceptedAndPersisted()
     {
         using var db = CreateDbContext();
-        var (_, service) = CreateSystem(db);
+        var (_, service, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
         var time1 = new DateTimeOffset(2026, 9, 7, 8, 0, 0, TimeSpan.Zero);
@@ -394,7 +429,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test14_Scheduling_DeterministicOrderingOfScheduledActivities()
     {
         using var db = CreateDbContext();
-        var (repo, _) = CreateSystem(db);
+        var (repo, _, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
         var baseTime = new DateTime(2026, 9, 7, 6, 0, 0, DateTimeKind.Utc);
@@ -424,10 +459,11 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test15_Tick_CompletesExpiredActiveActivity()
     {
         using var db = CreateDbContext();
-        var (repo, service) = CreateSystem(db);
+        var clock = new FakeLifeSimulationClock(new DateTimeOffset(2026, 9, 7, 8, 0, 0, TimeSpan.Zero));
+        var (repo, service, _) = CreateSystem(db, clock);
 
         var charId = Guid.NewGuid();
-        var start = new DateTime(2026, 9, 7, 8, 0, 0, DateTimeKind.Utc);
+        var start = clock.UtcNow.UtcDateTime;
         var end = start.AddHours(2);
 
         var active = new CharacterLifeActivity(charId, LifeActivityType.Work, start, end);
@@ -435,10 +471,12 @@ public sealed class CharacterLifeActivityTests : IDisposable
         await repo.AddAsync(active);
         await repo.SaveChangesAsync();
 
-        // Tick at exactly end time
+        // Advance clock to end time
+        clock.Set(new DateTimeOffset(end, TimeSpan.Zero));
+
         var tickContext = new CharacterLifeSimulationContext(
             CharacterId: charId,
-            SimulationTimeUtc: new DateTimeOffset(end, TimeSpan.Zero),
+            SimulationTimeUtc: clock.UtcNow,
             TickId: Guid.NewGuid()
         );
 
@@ -460,7 +498,8 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test16_Tick_ActivatesNextScheduledActivityWhenDue()
     {
         using var db = CreateDbContext();
-        var (_, service) = CreateSystem(db);
+        var clock = new FakeLifeSimulationClock(new DateTimeOffset(2026, 9, 7, 9, 0, 0, TimeSpan.Zero));
+        var (_, service, _) = CreateSystem(db, clock);
 
         var charId = Guid.NewGuid();
         var start = new DateTimeOffset(2026, 9, 7, 10, 0, 0, TimeSpan.Zero);
@@ -468,9 +507,12 @@ public sealed class CharacterLifeActivityTests : IDisposable
 
         var scheduled = await service.ScheduleActivityAsync(charId, LifeActivityType.Rest, start, end);
 
+        // Advance clock to after start time
+        clock.Set(start.AddMinutes(5));
+
         var tickContext = new CharacterLifeSimulationContext(
             CharacterId: charId,
-            SimulationTimeUtc: start.AddMinutes(5),
+            SimulationTimeUtc: clock.UtcNow,
             TickId: Guid.NewGuid()
         );
 
@@ -491,7 +533,8 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test17_Tick_IgnoresFutureScheduledActivities()
     {
         using var db = CreateDbContext();
-        var (_, service) = CreateSystem(db);
+        var clock = new FakeLifeSimulationClock(new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero));
+        var (_, service, _) = CreateSystem(db, clock);
 
         var charId = Guid.NewGuid();
         var futureStart = new DateTimeOffset(2026, 9, 7, 14, 0, 0, TimeSpan.Zero);
@@ -499,10 +542,9 @@ public sealed class CharacterLifeActivityTests : IDisposable
 
         var scheduled = await service.ScheduleActivityAsync(charId, LifeActivityType.Sleep, futureStart, futureEnd);
 
-        var currentSimTime = futureStart.AddHours(-1);
         var tickContext = new CharacterLifeSimulationContext(
             CharacterId: charId,
-            SimulationTimeUtc: currentSimTime,
+            SimulationTimeUtc: clock.UtcNow,
             TickId: Guid.NewGuid()
         );
 
@@ -522,10 +564,11 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test18_Tick_HandlesBackToBackCompletionAndActivationInSingleTick()
     {
         using var db = CreateDbContext();
-        var (repo, service) = CreateSystem(db);
+        var clock = new FakeLifeSimulationClock(new DateTimeOffset(2026, 9, 7, 8, 0, 0, TimeSpan.Zero));
+        var (repo, service, _) = CreateSystem(db, clock);
 
         var charId = Guid.NewGuid();
-        var t1 = new DateTime(2026, 9, 7, 8, 0, 0, DateTimeKind.Utc);
+        var t1 = clock.UtcNow.UtcDateTime;
         var t2 = t1.AddHours(1);
         var t3 = t2.AddHours(2);
 
@@ -538,9 +581,11 @@ public sealed class CharacterLifeActivityTests : IDisposable
         await repo.SaveChangesAsync();
 
         // Tick occurs exactly at transition boundary t2
+        clock.Set(new DateTimeOffset(t2, TimeSpan.Zero));
+
         var tickContext = new CharacterLifeSimulationContext(
             CharacterId: charId,
-            SimulationTimeUtc: new DateTimeOffset(t2, TimeSpan.Zero),
+            SimulationTimeUtc: clock.UtcNow,
             TickId: Guid.NewGuid()
         );
 
@@ -573,7 +618,9 @@ public sealed class CharacterLifeActivityTests : IDisposable
         var options1 = new DbContextOptionsBuilder<CoreDbContext>().UseSqlite(conn1).Options;
         using var db1 = new CoreDbContext(options1);
         db1.Database.EnsureCreated();
-        var (repo1, service1) = CreateSystem(db1);
+        db1.EnsureLifeSimulationTriggersCreated();
+        var clock1 = new FakeLifeSimulationClock(simTime);
+        var (repo1, service1, _) = CreateSystem(db1, clock1);
         var act1 = new CharacterLifeActivity(charId, LifeActivityType.Work, simTime.UtcDateTime.AddHours(-1), simTime.UtcDateTime.AddHours(1), id: actId);
         act1.Start(simTime.UtcDateTime.AddHours(-1));
         await repo1.AddAsync(act1);
@@ -587,7 +634,9 @@ public sealed class CharacterLifeActivityTests : IDisposable
         var options2 = new DbContextOptionsBuilder<CoreDbContext>().UseSqlite(conn2).Options;
         using var db2 = new CoreDbContext(options2);
         db2.Database.EnsureCreated();
-        var (repo2, service2) = CreateSystem(db2);
+        db2.EnsureLifeSimulationTriggersCreated();
+        var clock2 = new FakeLifeSimulationClock(simTime);
+        var (repo2, service2, _) = CreateSystem(db2, clock2);
         var act2 = new CharacterLifeActivity(charId, LifeActivityType.Work, simTime.UtcDateTime.AddHours(-1), simTime.UtcDateTime.AddHours(1), id: actId);
         act2.Start(simTime.UtcDateTime.AddHours(-1));
         await repo2.AddAsync(act2);
@@ -605,10 +654,11 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test20_Tick_FullyElapsedScheduledActivity_CompletesBothTransitions()
     {
         using var db = CreateDbContext();
-        var (repo, service) = CreateSystem(db);
+        var clock = new FakeLifeSimulationClock(new DateTimeOffset(2026, 9, 7, 8, 0, 0, TimeSpan.Zero));
+        var (repo, service, _) = CreateSystem(db, clock);
 
         var charId = Guid.NewGuid();
-        var start = new DateTime(2026, 9, 7, 8, 0, 0, DateTimeKind.Utc);
+        var start = clock.UtcNow.UtcDateTime;
         var end = start.AddHours(1);
 
         // Scheduled activity completely elapsed before tick was called
@@ -616,8 +666,8 @@ public sealed class CharacterLifeActivityTests : IDisposable
         await repo.AddAsync(elapsed);
         await repo.SaveChangesAsync();
 
-        var tickTime = new DateTimeOffset(end.AddHours(2), TimeSpan.Zero);
-        var result = await service.TickAsync(new CharacterLifeSimulationContext(charId, tickTime, Guid.NewGuid()));
+        clock.Set(new DateTimeOffset(end.AddHours(2), TimeSpan.Zero));
+        var result = await service.TickAsync(new CharacterLifeSimulationContext(charId, clock.UtcNow, Guid.NewGuid()));
 
         Assert.True(result.IsSuccess);
         Assert.Single(result.StartedActivities);
@@ -637,7 +687,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test21_SimulationInvariant_TickDoesNotMutateCharacterState()
     {
         using var db = CreateDbContext();
-        var (repo, service) = CreateSystem(db);
+        var (repo, service, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
 
@@ -680,7 +730,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
     public async Task Test22_SimulationInvariant_TickDoesNotMutatePersonalityMemoryOrRelationship()
     {
         using var db = CreateDbContext();
-        var (_, service) = CreateSystem(db);
+        var (_, service, _) = CreateSystem(db);
 
         var charId = Guid.NewGuid();
 
@@ -715,7 +765,7 @@ public sealed class CharacterLifeActivityTests : IDisposable
 
     #endregion
 
-    #region 23-25. Concurrency, Adapter & Identity Invariant Tests
+    #region 23-26. Concurrency, Barrier Race, Adapter & Identity Invariant Tests
 
     [Fact]
     public async Task Test23_Concurrency_OptimisticConcurrencyConflict_ThrowsLifeSimulationConcurrencyException()
@@ -723,8 +773,8 @@ public sealed class CharacterLifeActivityTests : IDisposable
         using var db1 = CreateDbContext();
         using var db2 = CreateDbContext();
 
-        var (repo1, service1) = CreateSystem(db1);
-        var (repo2, service2) = CreateSystem(db2);
+        var (repo1, service1, _) = CreateSystem(db1);
+        var (repo2, service2, _) = CreateSystem(db2);
 
         var charId = Guid.NewGuid();
         var start = new DateTime(2026, 9, 7, 8, 0, 0, DateTimeKind.Utc);
@@ -748,6 +798,60 @@ public sealed class CharacterLifeActivityTests : IDisposable
         loadedInDb2.Cancel(start.AddMinutes(5), "Conflicting cancel");
 
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => repo2.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Test26_Scheduling_ConcurrentScheduleRace_OneWinnerAndOneConflictException()
+    {
+        var charId = Guid.NewGuid();
+        var clock = new FakeLifeSimulationClock(new DateTimeOffset(2026, 9, 7, 9, 0, 0, TimeSpan.Zero));
+
+        // Worker A wants [10:00, 12:00)
+        var startA = new DateTimeOffset(2026, 9, 7, 10, 0, 0, TimeSpan.Zero);
+        var endA = startA.AddHours(2);
+
+        // Worker B wants overlapping [11:00, 13:00)
+        var startB = new DateTimeOffset(2026, 9, 7, 11, 0, 0, TimeSpan.Zero);
+        var endB = startB.AddHours(2);
+
+        // Setup Worker B with an interceptor that deterministicly pauses right before saving,
+        // allowing Worker A to race in and commit the overlapping activity first.
+        var interceptor = new ConcurrentScheduleRaceInterceptor(async () =>
+        {
+            await using var dbWorkerA = new CoreDbContext(_options);
+            dbWorkerA.EnsureLifeSimulationTriggersCreated();
+            var (_, serviceA, _) = CreateSystem(dbWorkerA, clock);
+
+            // Worker A executes and commits successfully
+            await serviceA.ScheduleActivityAsync(charId, LifeActivityType.Work, startA, endA);
+        });
+
+        var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var dbWorkerB = new CoreDbContext(optionsB);
+        dbWorkerB.EnsureLifeSimulationTriggersCreated();
+        var (_, serviceB, _) = CreateSystem(dbWorkerB, clock);
+
+        // Worker B checks overlap (finds none initially), then in SavingChangesAsync Worker A inserts and commits,
+        // then Worker B attempts to commit and is rejected by the database trigger constraint!
+        var ex = await Assert.ThrowsAsync<LifeActivityScheduleConflictException>(() =>
+            serviceB.ScheduleActivityAsync(charId, LifeActivityType.Sleep, startB, endB));
+
+        Assert.Equal(charId, ex.CharacterId);
+        Assert.True(interceptor.InterceptorFired);
+
+        // Verify exactly ONE activity was persisted in DB
+        await using var verifyDb = new CoreDbContext(_options);
+        var activities = await verifyDb.CharacterLifeActivities
+            .Where(a => a.CharacterId == charId)
+            .ToListAsync();
+
+        Assert.Single(activities);
+        Assert.Equal(LifeActivityType.Work, activities[0].ActivityType);
+        Assert.Equal(startA.UtcDateTime, activities[0].StartAtUtc);
     }
 
     [Fact]
@@ -804,4 +908,28 @@ public sealed class CharacterLifeActivityTests : IDisposable
     }
 
     #endregion
+
+    private sealed class ConcurrentScheduleRaceInterceptor : SaveChangesInterceptor
+    {
+        private readonly Func<Task> _onBeforeFirstSave;
+        private int _invoked;
+        public bool InterceptorFired => _invoked > 0;
+
+        public ConcurrentScheduleRaceInterceptor(Func<Task> onBeforeFirstSave)
+        {
+            _onBeforeFirstSave = onBeforeFirstSave;
+        }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.CompareExchange(ref _invoked, 1, 0) == 0)
+            {
+                await _onBeforeFirstSave();
+            }
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
 }

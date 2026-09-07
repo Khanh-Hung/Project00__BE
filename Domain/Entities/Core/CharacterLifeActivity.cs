@@ -57,7 +57,7 @@ public sealed class CharacterLifeActivity
         CompletedAtUtc = completedAtUtc;
         CancellationReason = cancellationReason;
         Metadata = metadata;
-        CreatedAtUtc = createdAtUtc ?? DateTime.UtcNow;
+        CreatedAtUtc = createdAtUtc ?? startAtUtc;
         Version = version == 0 ? 1u : version;
     }
 
@@ -74,6 +74,9 @@ public sealed class CharacterLifeActivity
 
         if (Status == LifeActivityStatus.Cancelled)
             throw new InvalidOperationException("Cannot transition a cancelled activity to Active.");
+
+        if (currentSimulationTimeUtc < StartAtUtc)
+            throw new InvalidOperationException($"Cannot start activity before its planned StartAtUtc ({StartAtUtc:O}). Current simulation time: {currentSimulationTimeUtc:O}.");
 
         Status = LifeActivityStatus.Active;
         StartedAtUtc = currentSimulationTimeUtc;
@@ -93,6 +96,9 @@ public sealed class CharacterLifeActivity
 
         if (Status == LifeActivityStatus.Cancelled)
             throw new InvalidOperationException("Cannot transition a cancelled activity to Completed.");
+
+        if (StartedAtUtc.HasValue && currentSimulationTimeUtc < StartedAtUtc.Value)
+            throw new InvalidOperationException($"Cannot complete activity before its StartedAtUtc ({StartedAtUtc.Value:O}). Current simulation time: {currentSimulationTimeUtc:O}.");
 
         Status = LifeActivityStatus.Completed;
         CompletedAtUtc = currentSimulationTimeUtc;
