@@ -50,6 +50,7 @@ public class CoreDbContext : DbContext
     public DbSet<CharacterPersonality> CharacterPersonalities { get; set; }
     public DbSet<PersonalityAdaptationEvidence> CharacterPersonalityAdaptationEvidences { get; set; }
     public DbSet<CharacterPersonalityAdaptation> CharacterPersonalityAdaptations { get; set; }
+    public DbSet<CharacterLifeActivity> CharacterLifeActivities { get; set; }
 
     private string NormalizeUserId()
     {

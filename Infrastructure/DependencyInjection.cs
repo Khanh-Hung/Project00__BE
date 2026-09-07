@@ -270,6 +270,11 @@ public static class DependencyInjection
         // PR #45: Autonomous Character Cognitive Cycle
         services.AddScoped<Application.Interfaces.ICharacterCognitiveCycleService, Infrastructure.Services.CognitiveCycle.CharacterCognitiveCycleService>();
 
+        // PR #50: Life Simulation Foundation
+        services.AddSingleton<Application.Abstractions.Time.ILifeSimulationClock, Infrastructure.Services.Time.SystemLifeSimulationClock>();
+        services.AddScoped<Application.Abstractions.Data.ICharacterLifeActivityRepository, Infrastructure.Persistence.Repositories.Core.CharacterLifeActivityRepository>();
+        services.AddScoped<Application.Interfaces.ILifeSimulationService, Infrastructure.Services.LifeSimulation.LifeSimulationService>();
+
         // 7. Add Voice Generation & Provider Services (Phase 7 / PR #15)
         services.AddScoped<IVoiceProvider, Infrastructure.Services.MockVoiceProvider>();
         services.AddScoped<IVoiceGenerationService, Infrastructure.Services.VoiceGenerationService>();
