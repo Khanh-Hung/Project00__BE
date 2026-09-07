@@ -51,6 +51,7 @@ public class CoreDbContext : DbContext
     public DbSet<PersonalityAdaptationEvidence> CharacterPersonalityAdaptationEvidences { get; set; }
     public DbSet<CharacterPersonalityAdaptation> CharacterPersonalityAdaptations { get; set; }
     public DbSet<CharacterLifeActivity> CharacterLifeActivities { get; set; }
+    public DbSet<CharacterOutboxMessage> CharacterOutboxMessages { get; set; }
 
     private string NormalizeUserId()
     {
