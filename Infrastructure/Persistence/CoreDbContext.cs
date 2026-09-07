@@ -46,6 +46,7 @@ public class CoreDbContext : DbContext
     public DbSet<CharacterAutonomyTick> CharacterAutonomyTicks { get; set; }
     public DbSet<CharacterState> CharacterStates { get; set; }
     public DbSet<CharacterStateTransition> CharacterStateTransitions { get; set; }
+    public DbSet<CharacterRelationshipTransition> CharacterRelationshipTransitions { get; set; }
 
     private string NormalizeUserId()
     {
