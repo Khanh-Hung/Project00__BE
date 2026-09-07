@@ -77,6 +77,67 @@ public sealed record CharacterOutboxPayload
             createdAtUtc: createdAtUtc
         );
     }
+
+    public static string ComputeCanonicalFingerprint(
+        Guid eventId,
+        Guid characterId,
+        string eventType,
+        string payloadJson,
+        DateTime occurredAtUtc)
+    {
+        CharacterOutboxPayload? payload = null;
+        try
+        {
+            payload = FromJson(payloadJson);
+        }
+        catch
+        {
+            // Handled below
+        }
+
+        if (payload == null)
+        {
+            throw new CharacterOutboxIdempotencyConflictException(
+                eventId,
+                string.Empty,
+                string.Empty,
+                $"Cannot compute canonical fingerprint because payloadJson for EventId={eventId} is invalid or null.");
+        }
+
+        return CanonicalOutboxFingerprint.Compute(
+            eventId,
+            characterId,
+            eventType,
+            payload.ActivityId,
+            payload.ActivityType,
+            occurredAtUtc);
+    }
+
+    public static string ComputeCanonicalFingerprint(CharacterOutboxMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        return ComputeCanonicalFingerprint(
+            message.EventId,
+            message.CharacterId,
+            message.EventType,
+            message.PayloadJson,
+            message.OccurredAtUtc);
+    }
+
+    public static void ValidateCanonicalFingerprint(CharacterOutboxMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        var expectedFingerprint = ComputeCanonicalFingerprint(message);
+        if (!string.Equals(message.Fingerprint, expectedFingerprint, StringComparison.Ordinal))
+        {
+            throw new CharacterOutboxIdempotencyConflictException(
+                message.EventId,
+                expectedFingerprint,
+                message.Fingerprint,
+                $"Canonical fingerprint mismatch for EventId={message.EventId}. Expected canonical fingerprint '{expectedFingerprint}' but received '{message.Fingerprint}'.");
+        }
+    }
 }
 
 /// <summary>

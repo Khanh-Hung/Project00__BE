@@ -38,11 +38,14 @@ public sealed class CharacterOutboxRepository : ICharacterOutboxRepository
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        // 1. Initial check
+        // 1. Validate incoming fingerprint against canonical computation BEFORE existing lookup
+        CharacterOutboxPayload.ValidateCanonicalFingerprint(message);
+
+        // 2. Initial check
         var existing = await GetByEventIdAsync(message.EventId, ct);
         if (existing != null)
         {
-            if (existing.Fingerprint == message.Fingerprint)
+            if (string.Equals(existing.Fingerprint, message.Fingerprint, StringComparison.Ordinal))
             {
                 return existing;
             }
@@ -70,7 +73,7 @@ public sealed class CharacterOutboxRepository : ICharacterOutboxRepository
 
             if (concurrent != null)
             {
-                if (concurrent.Fingerprint == message.Fingerprint)
+                if (string.Equals(concurrent.Fingerprint, message.Fingerprint, StringComparison.Ordinal))
                 {
                     return concurrent;
                 }
@@ -88,12 +91,17 @@ public sealed class CharacterOutboxRepository : ICharacterOutboxRepository
     public async Task AddAsync(CharacterOutboxMessage message, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(message);
+        CharacterOutboxPayload.ValidateCanonicalFingerprint(message);
         await _context.CharacterOutboxMessages.AddAsync(message, ct);
     }
 
     public async Task AddRangeAsync(IEnumerable<CharacterOutboxMessage> messages, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(messages);
+        foreach (var message in messages)
+        {
+            CharacterOutboxPayload.ValidateCanonicalFingerprint(message);
+        }
         await _context.CharacterOutboxMessages.AddRangeAsync(messages, ct);
     }
 

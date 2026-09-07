@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Application.Abstractions.Data;
 using Application.Contracts.CognitiveCycle;
@@ -16,6 +17,7 @@ using Infrastructure.Persistence.Repositories.Core;
 using Infrastructure.Services.LifeSimulation;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
 
 namespace Tests.LifeSimulation;
@@ -62,6 +64,52 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         return (activityRepo, outboxRepo, service, clk);
     }
 
+    private static CharacterOutboxMessage CreateValidMessage(
+        Guid? eventId = null,
+        Guid? characterId = null,
+        string eventType = "ActivityStarted",
+        Guid? activityId = null,
+        LifeActivityType activityType = LifeActivityType.Work,
+        DateTime? occurredAtUtc = null,
+        string description = "Test activity",
+        DateTime? createdAtUtc = null,
+        CharacterOutboxStatus status = CharacterOutboxStatus.Pending,
+        string? customFingerprint = null,
+        string? customPayloadJson = null)
+    {
+        var evId = eventId ?? Guid.NewGuid();
+        var chId = characterId ?? Guid.NewGuid();
+        var actId = activityId ?? evId;
+        var occTime = occurredAtUtc ?? new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+
+        var payload = new CharacterOutboxPayload
+        {
+            SchemaVersion = 1,
+            EventId = evId,
+            CharacterId = chId,
+            EventType = eventType,
+            ActivityId = actId,
+            ActivityType = activityType,
+            OccurredAtUtc = occTime,
+            Description = description
+        };
+
+        var json = customPayloadJson ?? payload.ToJson();
+        var fp = customFingerprint ?? CanonicalOutboxFingerprint.Compute(
+            evId, chId, eventType, actId, activityType, occTime);
+
+        return new CharacterOutboxMessage(
+            eventId: evId,
+            characterId: chId,
+            eventType: eventType,
+            payloadJson: json,
+            fingerprint: fp,
+            occurredAtUtc: occTime,
+            createdAtUtc: createdAtUtc ?? occTime,
+            status: status
+        );
+    }
+
     #region 1-4. Domain Lifecycle & Validation Tests
 
     [Fact]
@@ -96,14 +144,7 @@ public sealed class CharacterOutboxMessageTests : IDisposable
     [Fact]
     public void Test02_Domain_ValidStatusTransitions_WorkCorrectly()
     {
-        var msg = new CharacterOutboxMessage(
-            eventId: Guid.NewGuid(),
-            characterId: Guid.NewGuid(),
-            eventType: "ActivityStarted",
-            payloadJson: "{}",
-            fingerprint: "fp1",
-            occurredAtUtc: DateTime.UtcNow
-        );
+        var msg = CreateValidMessage();
 
         // Pending -> Processing
         msg.MarkProcessing();
@@ -121,15 +162,9 @@ public sealed class CharacterOutboxMessageTests : IDisposable
     [Fact]
     public void Test03_Domain_InvalidStatusTransitions_AreRejected()
     {
-        var msg = new CharacterOutboxMessage(
-            eventId: Guid.NewGuid(),
-            characterId: Guid.NewGuid(),
-            eventType: "ActivityStarted",
-            payloadJson: "{}",
-            fingerprint: "fp1",
-            occurredAtUtc: DateTime.UtcNow
-        );
+        var msg = CreateValidMessage();
 
+        msg.MarkProcessing();
         msg.MarkPublished(DateTime.UtcNow);
 
         // Invariant: Published message cannot transition to Processing, Failed, or Retry
@@ -170,6 +205,103 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         Assert.Equal(CharacterOutboxStatus.Pending, msg.Status);
     }
 
+    [Fact]
+    public void Pending_CanBecomeProcessing()
+    {
+        var msg = CreateValidMessage();
+        Assert.Equal(CharacterOutboxStatus.Pending, msg.Status);
+
+        msg.MarkProcessing();
+        Assert.Equal(CharacterOutboxStatus.Processing, msg.Status);
+    }
+
+    [Fact]
+    public void Processing_CanBecomePublished()
+    {
+        var msg = CreateValidMessage();
+        msg.MarkProcessing();
+
+        var publishedAt = DateTime.UtcNow;
+        msg.MarkPublished(publishedAt);
+
+        Assert.Equal(CharacterOutboxStatus.Published, msg.Status);
+        Assert.Equal(publishedAt, msg.ProcessedAtUtc);
+    }
+
+    [Fact]
+    public void Processing_CanBecomeFailed()
+    {
+        var msg = CreateValidMessage();
+        msg.MarkProcessing();
+
+        var failedAt = DateTime.UtcNow;
+        msg.MarkFailed("Permanent failure", failedAt, canRetry: false);
+
+        Assert.Equal(CharacterOutboxStatus.Failed, msg.Status);
+        Assert.Equal(failedAt, msg.ProcessedAtUtc);
+        Assert.Equal("Permanent failure", msg.LastError);
+    }
+
+    [Fact]
+    public void Failed_CannotBecomeProcessingDirectly()
+    {
+        var msg = CreateValidMessage();
+        msg.MarkProcessing();
+        msg.MarkFailed("Fatal error", DateTime.UtcNow, canRetry: false);
+        Assert.Equal(CharacterOutboxStatus.Failed, msg.Status);
+
+        // Invariant: Failed -> Processing directly is strictly forbidden. Must go Failed -> Retry() -> Pending -> Processing.
+        var ex = Assert.Throws<InvalidOperationException>(() => msg.MarkProcessing());
+        Assert.Contains("must be in Pending state", ex.Message);
+    }
+
+    [Fact]
+    public void Processing_CannotBeRetriedDirectly()
+    {
+        var msg = CreateValidMessage();
+        msg.MarkProcessing();
+        Assert.Equal(CharacterOutboxStatus.Processing, msg.Status);
+
+        // Invariant: Only Failed messages can be retried.
+        var ex = Assert.Throws<InvalidOperationException>(() => msg.Retry());
+        Assert.Contains("Only Failed messages can be retried", ex.Message);
+    }
+
+    [Fact]
+    public void Published_IsTerminal()
+    {
+        var msg = CreateValidMessage();
+        msg.MarkProcessing();
+        msg.MarkPublished(DateTime.UtcNow);
+        Assert.Equal(CharacterOutboxStatus.Published, msg.Status);
+
+        // Invariant: Published is strictly terminal
+        Assert.Throws<InvalidOperationException>(() => msg.MarkProcessing());
+        Assert.Throws<InvalidOperationException>(() => msg.MarkFailed("Err", DateTime.UtcNow));
+        Assert.Throws<InvalidOperationException>(() => msg.Retry());
+
+        // Idempotent call does not throw
+        msg.MarkPublished(DateTime.UtcNow);
+        Assert.Equal(CharacterOutboxStatus.Published, msg.Status);
+    }
+
+    [Fact]
+    public void Failed_CanRetryToPending()
+    {
+        var msg = CreateValidMessage();
+        msg.MarkProcessing();
+        msg.MarkFailed("Network timeout", DateTime.UtcNow, canRetry: false);
+        Assert.Equal(CharacterOutboxStatus.Failed, msg.Status);
+
+        // Reset via Retry
+        msg.Retry();
+        Assert.Equal(CharacterOutboxStatus.Pending, msg.Status);
+
+        // From Pending it can now become Processing
+        msg.MarkProcessing();
+        Assert.Equal(CharacterOutboxStatus.Processing, msg.Status);
+    }
+
     #endregion
 
     #region 5-11. Repository & Idempotency Tests
@@ -182,14 +314,7 @@ public sealed class CharacterOutboxMessageTests : IDisposable
 
         var eventId = Guid.NewGuid();
         var charId = Guid.NewGuid();
-        var msg = new CharacterOutboxMessage(
-            eventId: eventId,
-            characterId: charId,
-            eventType: "ActivityStarted",
-            payloadJson: "{\"factual\":true}",
-            fingerprint: "fp",
-            occurredAtUtc: DateTime.UtcNow
-        );
+        var msg = CreateValidMessage(eventId: eventId, characterId: charId, eventType: "ActivityStarted");
 
         await outboxRepo.AddAsync(msg);
         await outboxRepo.SaveChangesAsync();
@@ -210,8 +335,8 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var charId = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
-        var msg1 = new CharacterOutboxMessage(Guid.NewGuid(), charId, "Event1", "{}", "fp1", now);
-        var msg2 = new CharacterOutboxMessage(Guid.NewGuid(), charId, "Event2", "{}", "fp2", now.AddMinutes(1));
+        var msg1 = CreateValidMessage(characterId: charId, eventType: "Event1", occurredAtUtc: now);
+        var msg2 = CreateValidMessage(characterId: charId, eventType: "Event2", occurredAtUtc: now.AddMinutes(1));
 
         await outboxRepo.AddRangeAsync(new[] { msg1, msg2 });
         await outboxRepo.SaveChangesAsync();
@@ -229,9 +354,9 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var charId = Guid.NewGuid();
         var baseTime = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
 
-        var msg3 = new CharacterOutboxMessage(Guid.NewGuid(), charId, "E3", "{}", "fp3", baseTime.AddHours(2), baseTime.AddMinutes(5));
-        var msg1 = new CharacterOutboxMessage(Guid.NewGuid(), charId, "E1", "{}", "fp1", baseTime, baseTime);
-        var msg2 = new CharacterOutboxMessage(Guid.NewGuid(), charId, "E2", "{}", "fp2", baseTime.AddHours(1), baseTime.AddMinutes(1));
+        var msg3 = CreateValidMessage(characterId: charId, eventType: "E3", occurredAtUtc: baseTime.AddHours(2), createdAtUtc: baseTime.AddMinutes(5));
+        var msg1 = CreateValidMessage(characterId: charId, eventType: "E1", occurredAtUtc: baseTime, createdAtUtc: baseTime);
+        var msg2 = CreateValidMessage(characterId: charId, eventType: "E2", occurredAtUtc: baseTime.AddHours(1), createdAtUtc: baseTime.AddMinutes(1));
 
         // Insert in scrambled order
         await outboxRepo.AddRangeAsync(new[] { msg3, msg1, msg2 });
@@ -254,8 +379,8 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var charB = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
-        var msgA = new CharacterOutboxMessage(Guid.NewGuid(), charA, "EventA", "{}", "fpA", now);
-        var msgB = new CharacterOutboxMessage(Guid.NewGuid(), charB, "EventB", "{}", "fpB", now);
+        var msgA = CreateValidMessage(characterId: charA, eventType: "EventA", occurredAtUtc: now);
+        var msgB = CreateValidMessage(characterId: charB, eventType: "EventB", occurredAtUtc: now);
 
         await outboxRepo.AddRangeAsync(new[] { msgA, msgB });
         await outboxRepo.SaveChangesAsync();
@@ -279,8 +404,8 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var charId = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
-        var msg1 = new CharacterOutboxMessage(sharedEventId, charId, "TypeA", "{}", "fp1", now);
-        var msg2 = new CharacterOutboxMessage(sharedEventId, charId, "TypeB", "{}", "fp2", now);
+        var msg1 = CreateValidMessage(eventId: sharedEventId, characterId: charId, eventType: "TypeA", occurredAtUtc: now);
+        var msg2 = CreateValidMessage(eventId: sharedEventId, characterId: charId, eventType: "TypeB", occurredAtUtc: now);
 
         await outboxRepo.AddAsync(msg1);
         await outboxRepo.SaveChangesAsync();
@@ -299,14 +424,15 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var charId = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
-        var msg1 = new CharacterOutboxMessage(eventId, charId, "TypeA", "{\"key\":\"val\"}", "fp_same", now);
-        var msg2 = new CharacterOutboxMessage(eventId, charId, "TypeA", "{\"key\":\"val\"}", "fp_same", now);
+        var msg1 = CreateValidMessage(eventId: eventId, characterId: charId, occurredAtUtc: now);
+        var msg2 = CreateValidMessage(eventId: eventId, characterId: charId, occurredAtUtc: now);
 
         var saved1 = await outboxRepo.AddOrGetAsync(msg1);
         var saved2 = await outboxRepo.AddOrGetAsync(msg2);
 
         Assert.Equal(saved1.Id, saved2.Id);
         Assert.Equal(saved1.EventId, saved2.EventId);
+        Assert.Equal(saved1.Fingerprint, saved2.Fingerprint);
     }
 
     [Fact]
@@ -319,8 +445,8 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var charId = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
-        var msg1 = new CharacterOutboxMessage(eventId, charId, "TypeA", "{\"key\":\"val1\"}", "fp_one", now);
-        var msg2 = new CharacterOutboxMessage(eventId, charId, "TypeA", "{\"key\":\"val2\"}", "fp_two", now);
+        var msg1 = CreateValidMessage(eventId: eventId, characterId: charId, activityType: LifeActivityType.Work, occurredAtUtc: now);
+        var msg2 = CreateValidMessage(eventId: eventId, characterId: charId, activityType: LifeActivityType.Rest, occurredAtUtc: now);
 
         await outboxRepo.AddOrGetAsync(msg1);
 
@@ -330,8 +456,66 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         });
 
         Assert.Equal(eventId, ex.EventId);
-        Assert.Equal("fp_one", ex.StoredFingerprint);
-        Assert.Equal("fp_two", ex.IncomingFingerprint);
+        Assert.Equal(msg1.Fingerprint, ex.StoredFingerprint);
+        Assert.Equal(msg2.Fingerprint, ex.IncomingFingerprint);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAsync_WhenIncomingFingerprintDoesNotMatchCanonical_Throws()
+    {
+        using var db = CreateDbContext();
+        var (_, outboxRepo, _, _) = CreateSystem(db);
+
+        var eventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        // Compute a valid SHA-256 fingerprint for a DIFFERENT set of parameters
+        var divergentFingerprint = CanonicalOutboxFingerprint.Compute(
+            Guid.NewGuid(), charId, "OtherType", Guid.NewGuid(), LifeActivityType.Eat, now);
+
+        // Create message where payload does not match the fingerprint
+        var msg = CreateValidMessage(
+            eventId: eventId,
+            characterId: charId,
+            eventType: "ActivityStarted",
+            activityType: LifeActivityType.Work,
+            occurredAtUtc: now,
+            customFingerprint: divergentFingerprint);
+
+        var ex = await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        {
+            await outboxRepo.AddOrGetAsync(msg);
+        });
+
+        Assert.Equal(eventId, ex.EventId);
+        Assert.Equal(divergentFingerprint, ex.IncomingFingerprint);
+        Assert.NotEqual(divergentFingerprint, ex.StoredFingerprint);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAsync_WhenFingerprintIsArbitrary_Throws()
+    {
+        using var db = CreateDbContext();
+        var (_, outboxRepo, _, _) = CreateSystem(db);
+
+        var eventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        var msg = CreateValidMessage(
+            eventId: eventId,
+            characterId: charId,
+            occurredAtUtc: now,
+            customFingerprint: "arbitrary_unvalidated_fingerprint");
+
+        var ex = await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        {
+            await outboxRepo.AddOrGetAsync(msg);
+        });
+
+        Assert.Equal(eventId, ex.EventId);
+        Assert.Equal("arbitrary_unvalidated_fingerprint", ex.IncomingFingerprint);
     }
 
     #endregion
@@ -385,13 +569,13 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var hash = System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(raw));
         var deterministicEventId = new Guid(hash);
 
-        // Insert colliding message with divergent fingerprint directly to trigger DB uniqueness conflict
-        var poisonMsg = new CharacterOutboxMessage(
+        // Pre-insert valid canonical message with divergent activity type
+        var poisonMsg = CreateValidMessage(
             eventId: deterministicEventId,
             characterId: charId,
             eventType: "ActivityStarted",
-            payloadJson: "{\"poison\":true}",
-            fingerprint: "poison_fp",
+            activityId: activity.Id,
+            activityType: LifeActivityType.Rest,
             occurredAtUtc: baseTime
         );
         await outboxRepo.AddAsync(poisonMsg);
@@ -458,8 +642,8 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var repo1 = new CharacterOutboxRepository(db1);
         var repo2 = new CharacterOutboxRepository(db2);
 
-        var msg1 = new CharacterOutboxMessage(eventId, charId, "ActivityStarted", "{\"f\":1}", "fp_ident", now);
-        var msg2 = new CharacterOutboxMessage(eventId, charId, "ActivityStarted", "{\"f\":1}", "fp_ident", now);
+        var msg1 = CreateValidMessage(eventId: eventId, characterId: charId, occurredAtUtc: now);
+        var msg2 = CreateValidMessage(eventId: eventId, characterId: charId, occurredAtUtc: now);
 
         // Concurrent execution
         var task1 = repo1.AddOrGetAsync(msg1);
@@ -469,6 +653,7 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var res2 = await task2;
 
         Assert.Equal(res1.EventId, res2.EventId);
+        Assert.Equal(res1.Fingerprint, res2.Fingerprint);
 
         using var verifyDb = CreateDbContext();
         var count = await verifyDb.CharacterOutboxMessages.CountAsync(m => m.EventId == eventId);
@@ -484,17 +669,21 @@ public sealed class CharacterOutboxMessageTests : IDisposable
 
         using var db1 = CreateDbContext();
         var repo1 = new CharacterOutboxRepository(db1);
-        var msg1 = new CharacterOutboxMessage(eventId, charId, "ActivityStarted", "{\"payload\":\"canonical\"}", "fp_canonical", now);
+        var msg1 = CreateValidMessage(eventId: eventId, characterId: charId, activityType: LifeActivityType.Work, occurredAtUtc: now);
         await repo1.AddOrGetAsync(msg1);
 
         using var db2 = CreateDbContext();
         var repo2 = new CharacterOutboxRepository(db2);
-        var msg2 = new CharacterOutboxMessage(eventId, charId, "ActivityStarted", "{\"payload\":\"divergent\"}", "fp_divergent", now);
+        var msg2 = CreateValidMessage(eventId: eventId, characterId: charId, activityType: LifeActivityType.Rest, occurredAtUtc: now);
 
-        await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        var ex = await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
         {
             await repo2.AddOrGetAsync(msg2);
         });
+
+        Assert.Equal(eventId, ex.EventId);
+        Assert.Equal(msg1.Fingerprint, ex.StoredFingerprint);
+        Assert.Equal(msg2.Fingerprint, ex.IncomingFingerprint);
     }
 
     [Fact]
@@ -508,14 +697,98 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var repo1 = new CharacterOutboxRepository(db1);
         var repo2 = new CharacterOutboxRepository(db2);
 
-        var msg1 = new CharacterOutboxMessage(Guid.NewGuid(), charId, "TypeA", "{}", "fpA", now);
-        var msg2 = new CharacterOutboxMessage(Guid.NewGuid(), charId, "TypeB", "{}", "fpB", now);
+        var msg1 = CreateValidMessage(eventId: Guid.NewGuid(), characterId: charId, eventType: "TypeA", occurredAtUtc: now);
+        var msg2 = CreateValidMessage(eventId: Guid.NewGuid(), characterId: charId, eventType: "TypeB", occurredAtUtc: now);
 
         await Task.WhenAll(repo1.AddOrGetAsync(msg1), repo2.AddOrGetAsync(msg2));
 
         using var verifyDb = CreateDbContext();
         var total = await verifyDb.CharacterOutboxMessages.CountAsync(m => m.CharacterId == charId);
         Assert.Equal(2, total);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAsync_ConcurrentRace_WithInterceptorBarrier_ProvesDbUpdateExceptionRecovery()
+    {
+        var eventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+
+        var msgWorkerA = CreateValidMessage(eventId: eventId, characterId: charId, occurredAtUtc: now);
+        var msgWorkerB = CreateValidMessage(eventId: eventId, characterId: charId, occurredAtUtc: now);
+
+        // Setup Worker B with a SaveChangesInterceptor that pauses Worker B right before saving,
+        // allowing Worker A to race in and commit the exact same EventId first.
+        var interceptor = new ConcurrentOutboxRaceInterceptor(async () =>
+        {
+            await using var dbWorkerA = new CoreDbContext(_options);
+            var repoA = new CharacterOutboxRepository(dbWorkerA);
+
+            // Worker A inserts and commits successfully
+            var winner = await repoA.AddOrGetAsync(msgWorkerA);
+            Assert.NotNull(winner);
+            Assert.Equal(eventId, winner.EventId);
+        });
+
+        var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var dbWorkerB = new CoreDbContext(optionsB);
+        var repoB = new CharacterOutboxRepository(dbWorkerB);
+
+        // Worker B initially checks GetByEventIdAsync (returns null), then in SavingChangesAsync Worker A inserts,
+        // then Worker B's insert is rejected with unique constraint violation (DbUpdateException).
+        // AddOrGetAsync catches DbUpdateException, reloads authoritative row, and gracefully returns it!
+        var resultB = await repoB.AddOrGetAsync(msgWorkerB);
+
+        Assert.True(interceptor.InterceptorFired);
+        Assert.NotNull(resultB);
+        Assert.Equal(eventId, resultB.EventId);
+        Assert.Equal(msgWorkerA.Fingerprint, resultB.Fingerprint);
+
+        // Verify exactly one record in the database
+        await using var verifyDb = new CoreDbContext(_options);
+        var count = await verifyDb.CharacterOutboxMessages.CountAsync(m => m.EventId == eventId);
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAsync_ConcurrentRace_WithDivergentPayload_ThrowsConflict()
+    {
+        var eventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+
+        var msgWorkerA = CreateValidMessage(eventId: eventId, characterId: charId, activityType: LifeActivityType.Work, occurredAtUtc: now);
+        var msgWorkerB = CreateValidMessage(eventId: eventId, characterId: charId, activityType: LifeActivityType.Sleep, occurredAtUtc: now);
+
+        var interceptor = new ConcurrentOutboxRaceInterceptor(async () =>
+        {
+            await using var dbWorkerA = new CoreDbContext(_options);
+            var repoA = new CharacterOutboxRepository(dbWorkerA);
+            var winner = await repoA.AddOrGetAsync(msgWorkerA);
+            Assert.NotNull(winner);
+        });
+
+        var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var dbWorkerB = new CoreDbContext(optionsB);
+        var repoB = new CharacterOutboxRepository(dbWorkerB);
+
+        var ex = await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        {
+            await repoB.AddOrGetAsync(msgWorkerB);
+        });
+
+        Assert.True(interceptor.InterceptorFired);
+        Assert.Equal(eventId, ex.EventId);
+        Assert.Equal(msgWorkerA.Fingerprint, ex.StoredFingerprint);
+        Assert.Equal(msgWorkerB.Fingerprint, ex.IncomingFingerprint);
     }
 
     #endregion
@@ -728,4 +1001,28 @@ public sealed class CharacterOutboxMessageTests : IDisposable
     }
 
     #endregion
+
+    private sealed class ConcurrentOutboxRaceInterceptor : SaveChangesInterceptor
+    {
+        private readonly Func<Task> _onBeforeFirstSave;
+        private int _invoked;
+        public bool InterceptorFired => _invoked > 0;
+
+        public ConcurrentOutboxRaceInterceptor(Func<Task> onBeforeFirstSave)
+        {
+            _onBeforeFirstSave = onBeforeFirstSave;
+        }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.CompareExchange(ref _invoked, 1, 0) == 0)
+            {
+                await _onBeforeFirstSave();
+            }
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
 }

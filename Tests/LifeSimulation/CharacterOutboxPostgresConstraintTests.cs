@@ -143,14 +143,29 @@ ON ""CharacterOutboxMessages"" (""CharacterId"", ""Status"", ""OccurredAtUtc"");
 
         var sharedEventId = Guid.NewGuid();
         var charId = Guid.NewGuid();
+        var activityId = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
         var repo1 = new CharacterOutboxRepository(db);
 
+        var payload1 = new CharacterOutboxPayload
+        {
+            SchemaVersion = 1,
+            EventId = sharedEventId,
+            CharacterId = charId,
+            EventType = "ActivityStarted",
+            ActivityId = activityId,
+            ActivityType = LifeActivityType.Work,
+            OccurredAtUtc = now,
+            Description = "PG Work"
+        };
+        var fp1 = CanonicalOutboxFingerprint.Compute(
+            sharedEventId, charId, "ActivityStarted", activityId, LifeActivityType.Work, now);
+
         var msg1 = new CharacterOutboxMessage(
-            sharedEventId, charId, "ActivityStarted", "{\"pg\":true}", "fp_pg", now);
+            sharedEventId, charId, "ActivityStarted", payload1.ToJson(), fp1, now);
         var msg2 = new CharacterOutboxMessage(
-            sharedEventId, charId, "ActivityStarted", "{\"pg\":true}", "fp_pg", now);
+            sharedEventId, charId, "ActivityStarted", payload1.ToJson(), fp1, now);
 
         var saved1 = await repo1.AddOrGetAsync(msg1);
         Assert.NotNull(saved1);
@@ -161,8 +176,22 @@ ON ""CharacterOutboxMessages"" (""CharacterId"", ""Status"", ""OccurredAtUtc"");
         Assert.Equal(saved1.EventId, saved2.EventId);
 
         // Third call with same eventId + divergent payload => throws conflict
+        var payloadConflict = new CharacterOutboxPayload
+        {
+            SchemaVersion = 1,
+            EventId = sharedEventId,
+            CharacterId = charId,
+            EventType = "ActivityStarted",
+            ActivityId = activityId,
+            ActivityType = LifeActivityType.Sleep,
+            OccurredAtUtc = now,
+            Description = "PG Sleep"
+        };
+        var fpConflict = CanonicalOutboxFingerprint.Compute(
+            sharedEventId, charId, "ActivityStarted", activityId, LifeActivityType.Sleep, now);
+
         var msgConflict = new CharacterOutboxMessage(
-            sharedEventId, charId, "ActivityStarted", "{\"pg\":false}", "fp_divergent", now);
+            sharedEventId, charId, "ActivityStarted", payloadConflict.ToJson(), fpConflict, now);
 
         await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
         {

@@ -80,15 +80,12 @@ public sealed class CharacterOutboxMessage
 
     /// <summary>
     /// Marks the outbox message as currently being processed.
-    /// Transition: Pending -> Processing.
+    /// Invariant transition: strictly Pending -> Processing.
     /// </summary>
     public void MarkProcessing()
     {
-        if (Status == CharacterOutboxStatus.Published)
-            throw new InvalidOperationException($"Cannot transition message {Id} to Processing because it is already Published.");
-
-        if (Status == CharacterOutboxStatus.Processing)
-            throw new InvalidOperationException($"Message {Id} is already in Processing state.");
+        if (Status != CharacterOutboxStatus.Pending)
+            throw new InvalidOperationException($"Cannot transition message {Id} from {Status} to Processing. Message must be in Pending state.");
 
         Status = CharacterOutboxStatus.Processing;
         Version++;
@@ -96,15 +93,15 @@ public sealed class CharacterOutboxMessage
 
     /// <summary>
     /// Marks the outbox message as successfully published/dispatched.
-    /// Transition: Processing or Pending -> Published.
+    /// Invariant transition: strictly Processing -> Published. Published is terminal.
     /// </summary>
     public void MarkPublished(DateTime processedAtUtc)
     {
         if (Status == CharacterOutboxStatus.Published)
             return;
 
-        if (Status == CharacterOutboxStatus.Failed)
-            throw new InvalidOperationException($"Cannot transition failed message {Id} directly to Published. It must be retried first.");
+        if (Status != CharacterOutboxStatus.Processing)
+            throw new InvalidOperationException($"Cannot transition message {Id} from {Status} to Published. Message must be in Processing state.");
 
         Status = CharacterOutboxStatus.Published;
         ProcessedAtUtc = processedAtUtc;
@@ -114,12 +111,15 @@ public sealed class CharacterOutboxMessage
 
     /// <summary>
     /// Marks the outbox message as failed due to an error during dispatch.
-    /// Transition: Processing or Pending -> Failed (or Pending for retry).
+    /// Invariant transition: strictly Processing -> Failed (or Pending if retries remaining).
     /// </summary>
     public void MarkFailed(string error, DateTime failedAtUtc, bool canRetry = true)
     {
         if (Status == CharacterOutboxStatus.Published)
             throw new InvalidOperationException($"Cannot mark a Published message as Failed (MessageId: {Id}).");
+
+        if (Status != CharacterOutboxStatus.Processing)
+            throw new InvalidOperationException($"Cannot transition message {Id} from {Status} to Failed. Message must be in Processing state.");
 
         AttemptCount++;
         LastError = error;
@@ -140,12 +140,13 @@ public sealed class CharacterOutboxMessage
 
     /// <summary>
     /// Explicitly resets a failed message back to Pending for manual or automated recovery.
-    /// Invariant: Published messages can NEVER be reset.
+    /// Invariant transition: strictly Failed -> Pending. Only Failed messages can be retried.
+    /// Published and Processing messages can NEVER be retried.
     /// </summary>
     public void Retry()
     {
-        if (Status == CharacterOutboxStatus.Published)
-            throw new InvalidOperationException($"Published messages cannot be retried (MessageId: {Id}).");
+        if (Status != CharacterOutboxStatus.Failed)
+            throw new InvalidOperationException($"Cannot retry message {Id} because its status is {Status}. Only Failed messages can be retried.");
 
         Status = CharacterOutboxStatus.Pending;
         Version++;
