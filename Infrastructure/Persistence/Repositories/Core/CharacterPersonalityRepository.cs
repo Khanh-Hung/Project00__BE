@@ -188,11 +188,79 @@ public sealed class CharacterPersonalityRepository : ICharacterPersonalityReposi
             .FirstOrDefaultAsync(a => a.CharacterId == characterId && a.ExecutionId == executionId && a.TraitKey == normalizedTraitKey, ct);
     }
 
+    public async Task<CharacterPersonalityAdaptation> AddOrGetAdaptationAsync(
+        CharacterPersonalityAdaptation adaptation,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(adaptation);
+
+        var existing = await GetAdaptationByExecutionAndTraitAsync(adaptation.CharacterId, adaptation.ExecutionId, adaptation.TraitKey, ct);
+        if (existing != null)
+        {
+            if (existing.Fingerprint == adaptation.Fingerprint)
+            {
+                return existing;
+            }
+
+            throw new PersonalityAdaptationIdempotencyConflictException(
+                $"Idempotency conflict detected for adaptation CharacterId={adaptation.CharacterId}, ExecutionId={adaptation.ExecutionId}, TraitKey={adaptation.TraitKey}. " +
+                $"Existing fingerprint '{existing.Fingerprint}' does not match incoming fingerprint '{adaptation.Fingerprint}'.");
+        }
+
+        try
+        {
+            await _dbContext.CharacterPersonalityAdaptations.AddAsync(adaptation, ct);
+            await _dbContext.SaveChangesAsync(ct);
+            return adaptation;
+        }
+        catch (DbUpdateException)
+        {
+            // Concurrent insert race: detach candidate and query authoritative row
+            _dbContext.Entry(adaptation).State = EntityState.Detached;
+
+            var normalizedTraitKey = PersonalityTraitKeys.Normalize(adaptation.TraitKey);
+            var concurrent = await _dbContext.CharacterPersonalityAdaptations
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.CharacterId == adaptation.CharacterId && a.ExecutionId == adaptation.ExecutionId && a.TraitKey == normalizedTraitKey, ct);
+
+            if (concurrent != null)
+            {
+                if (concurrent.Fingerprint == adaptation.Fingerprint)
+                {
+                    return concurrent;
+                }
+
+                throw new PersonalityAdaptationIdempotencyConflictException(
+                    $"Concurrent idempotency conflict detected for adaptation CharacterId={adaptation.CharacterId}, ExecutionId={adaptation.ExecutionId}, TraitKey={adaptation.TraitKey}. " +
+                    $"Committed fingerprint '{concurrent.Fingerprint}' does not match candidate fingerprint '{adaptation.Fingerprint}'.");
+            }
+
+            throw;
+        }
+    }
+
     public async Task AddAdaptationAsync(
         CharacterPersonalityAdaptation adaptation,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(adaptation);
+
+        var expectedFingerprint = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            adaptation.CharacterId,
+            adaptation.ExecutionId,
+            adaptation.TraitKey,
+            adaptation.ValueBefore,
+            adaptation.ValueAfter,
+            adaptation.Delta,
+            adaptation.EvidenceCount);
+
+        if (adaptation.Fingerprint != expectedFingerprint)
+        {
+            throw new PersonalityAdaptationIdempotencyConflictException(
+                $"Adaptation fingerprint mismatch for CharacterId={adaptation.CharacterId}, ExecutionId={adaptation.ExecutionId}, TraitKey={adaptation.TraitKey}. " +
+                $"Expected '{expectedFingerprint}', got '{adaptation.Fingerprint}'.");
+        }
+
         await _dbContext.CharacterPersonalityAdaptations.AddAsync(adaptation, ct);
     }
 

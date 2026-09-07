@@ -131,6 +131,22 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
             var existingAdaptation = await _repository.GetAdaptationByExecutionAndTraitAsync(context.CharacterId, context.ExecutionId, proposal.TraitKey, ct);
             if (existingAdaptation != null)
             {
+                var canonicalFingerprint = CanonicalPersonalityFingerprint.ComputeAdaptation(
+                    existingAdaptation.CharacterId,
+                    existingAdaptation.ExecutionId,
+                    existingAdaptation.TraitKey,
+                    existingAdaptation.ValueBefore,
+                    existingAdaptation.ValueAfter,
+                    existingAdaptation.Delta,
+                    existingAdaptation.EvidenceCount);
+
+                if (existingAdaptation.Fingerprint != canonicalFingerprint)
+                {
+                    throw new PersonalityAdaptationIdempotencyConflictException(
+                        $"Idempotency conflict detected for CharacterId={context.CharacterId}, ExecutionId={context.ExecutionId}, TraitKey={proposal.TraitKey}. " +
+                        $"Existing adaptation fingerprint '{existingAdaptation.Fingerprint}' does not match canonical payload fingerprint '{canonicalFingerprint}'.");
+                }
+
                 return new CharacterPersonalityAdaptationResult(
                     EvidenceId: evidence.Id,
                     CharacterId: context.CharacterId,
@@ -261,6 +277,13 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
                     var committed = await _repository.GetAdaptationByExecutionAndTraitAsync(context.CharacterId, context.ExecutionId, proposal.TraitKey, ct);
                     if (committed != null)
                     {
+                        if (committed.Fingerprint != adaptationFingerprint)
+                        {
+                            throw new PersonalityAdaptationIdempotencyConflictException(
+                                $"Concurrent idempotency conflict detected on retry exhaustion for adaptation CharacterId={context.CharacterId}, ExecutionId={context.ExecutionId}, TraitKey={proposal.TraitKey}. " +
+                                $"Committed fingerprint '{committed.Fingerprint}' does not match candidate fingerprint '{adaptationFingerprint}'.");
+                        }
+
                         return new CharacterPersonalityAdaptationResult(
                             EvidenceId: evidence.Id,
                             CharacterId: context.CharacterId,
@@ -296,6 +319,13 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
                 var existing = await _repository.GetAdaptationByExecutionAndTraitAsync(context.CharacterId, context.ExecutionId, proposal.TraitKey, ct);
                 if (existing != null)
                 {
+                    if (existing.Fingerprint != adaptationFingerprint)
+                    {
+                        throw new PersonalityAdaptationIdempotencyConflictException(
+                            $"Concurrent idempotency conflict detected for adaptation CharacterId={context.CharacterId}, ExecutionId={context.ExecutionId}, TraitKey={proposal.TraitKey}. " +
+                            $"Committed fingerprint '{existing.Fingerprint}' does not match candidate fingerprint '{adaptationFingerprint}'.");
+                    }
+
                     return new CharacterPersonalityAdaptationResult(
                         EvidenceId: evidence.Id,
                         CharacterId: context.CharacterId,

@@ -840,6 +840,201 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         Assert.Equal(2, total); // Winner + Unrelated
     }
 
+    [Fact]
+    public async Task Repository_AddOrGetAdaptationAsync_WhenReplayedWithIdenticalPayload_IsIdempotent()
+    {
+        await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        var fp = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3);
+
+        var adaptation1 = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, fp);
+
+        var res1 = await repo.AddOrGetAdaptationAsync(adaptation1);
+
+        var adaptation2 = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, fp);
+
+        var res2 = await repo.AddOrGetAdaptationAsync(adaptation2);
+
+        Assert.NotNull(res1);
+        Assert.NotNull(res2);
+        Assert.Equal(res1.Id, res2.Id);
+        Assert.Equal(fp, res2.Fingerprint);
+
+        var total = await db.CharacterPersonalityAdaptations.CountAsync(a =>
+            a.CharacterId == charId && a.ExecutionId == execId && a.TraitKey == PersonalityTraitKeys.Warmth);
+        Assert.Equal(1, total);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAdaptationAsync_WhenReplayedWithDifferentSemanticPayload_ThrowsIdempotencyConflict()
+    {
+        await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        var fp1 = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3);
+
+        var adaptation1 = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, fp1);
+
+        await repo.AddOrGetAdaptationAsync(adaptation1);
+
+        // Conflicting semantics (e.g. delta = -1 instead of +1, 50 -> 49) with same ExecutionId and TraitKey
+        var fp2 = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 49, -1, 3);
+
+        var adaptation2 = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 49, -1, 3, fp2);
+
+        await Assert.ThrowsAsync<PersonalityAdaptationIdempotencyConflictException>(() =>
+            repo.AddOrGetAdaptationAsync(adaptation2));
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAdaptationAsync_WhenConcurrentInsertConflictOccurs_DetachesLocalAndReturnsWinner()
+    {
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+        var fp = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3);
+
+        var interceptor = new ConcurrentPersonalityAdaptationInsertInterceptor(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, fp);
+        var loserOptions = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var dbLoser = new CoreDbContext(loserOptions);
+
+        // Loser context tracks an unrelated entity to prove ChangeTracker is not indiscriminately cleared
+        var unrelatedExecId = Guid.NewGuid();
+        var unrelatedFp = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            charId, unrelatedExecId, PersonalityTraitKeys.TrustDisposition, 50, 51, +1, 3);
+        var unrelatedAdaptation = new CharacterPersonalityAdaptation(
+            charId, unrelatedExecId, PersonalityTraitKeys.TrustDisposition, 50, 51, +1, 3, unrelatedFp);
+        await dbLoser.CharacterPersonalityAdaptations.AddAsync(unrelatedAdaptation);
+
+        var candidate = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, fp);
+
+        var loserRepo = new CharacterPersonalityRepository(dbLoser);
+        var resolved = await loserRepo.AddOrGetAdaptationAsync(candidate);
+
+        // Assert 1: Interceptor actually injected concurrent winner
+        Assert.True(interceptor.WasInjected);
+
+        // Assert 2: Resolved adaptation matches winner
+        Assert.NotNull(resolved);
+        Assert.Equal(charId, resolved.CharacterId);
+        Assert.Equal(execId, resolved.ExecutionId);
+        Assert.Equal(PersonalityTraitKeys.Warmth, resolved.TraitKey);
+        Assert.Equal(fp, resolved.Fingerprint);
+
+        // Assert 3: Candidate was detached
+        var candidateEntry = dbLoser.Entry(candidate);
+        Assert.Equal(EntityState.Detached, candidateEntry.State);
+
+        // Assert 4: Unrelated entity remains tracked as Added
+        var unrelatedEntry = dbLoser.Entry(unrelatedAdaptation);
+        Assert.Equal(EntityState.Added, unrelatedEntry.State);
+
+        // Assert 5: Subsequent SaveChangesAsync succeeds and saves unrelated entity
+        await dbLoser.SaveChangesAsync();
+
+        await using var verifyDb = new CoreDbContext(_options);
+        var total = await verifyDb.CharacterPersonalityAdaptations.CountAsync(a => a.CharacterId == charId);
+        Assert.Equal(2, total); // Winner + Unrelated
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAdaptationAsync_WhenConcurrentInsertConflictOccursWithDivergentFingerprint_ThrowsIdempotencyConflict()
+    {
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        // Injected winner has delta = +1
+        var winnerFp = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3);
+
+        var interceptor = new ConcurrentPersonalityAdaptationInsertInterceptor(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, winnerFp);
+        var loserOptions = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var dbLoser = new CoreDbContext(loserOptions);
+
+        // Candidate has delta = -1 (divergent payload)
+        var candidateFp = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 49, -1, 3);
+
+        var candidate = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 49, -1, 3, candidateFp);
+
+        var loserRepo = new CharacterPersonalityRepository(dbLoser);
+
+        await Assert.ThrowsAsync<PersonalityAdaptationIdempotencyConflictException>(() =>
+            loserRepo.AddOrGetAdaptationAsync(candidate));
+
+        // Candidate was detached after conflict
+        var candidateEntry = dbLoser.Entry(candidate);
+        Assert.Equal(EntityState.Detached, candidateEntry.State);
+    }
+
+    [Fact]
+    public async Task Repository_AddAdaptationAsync_WhenFingerprintDoesNotMatchCanonical_ThrowsIdempotencyConflict()
+    {
+        await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        var invalidAdaptation = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, "tampered_fake_fingerprint");
+
+        await Assert.ThrowsAsync<PersonalityAdaptationIdempotencyConflictException>(() =>
+            repo.AddAdaptationAsync(invalidAdaptation));
+    }
+
+    [Fact]
+    public async Task ProcessAdaptationAsync_WhenExistingAdaptationHasCorruptedOrConflictingFingerprint_ThrowsIdempotencyConflict()
+    {
+        await using var db = new CoreDbContext(_options);
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        // Seed an adaptation in DB directly with a corrupted/divergent fingerprint
+        var corruptedAdaptation = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, "corrupted_invalid_hash");
+        await db.CharacterPersonalityAdaptations.AddAsync(corruptedAdaptation);
+        await db.SaveChangesAsync();
+
+        var repo = new CharacterPersonalityRepository(db);
+        var service = new PersonalityAdaptationService(
+            repo, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
+
+        var context = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: execId,
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow
+        );
+        var result = CreateSuccessResultWithRel(context, affectionDelta: 5);
+
+        await Assert.ThrowsAsync<PersonalityAdaptationIdempotencyConflictException>(() =>
+            service.ProcessAdaptationAsync(context, result));
+    }
+
     #endregion
 
     #region 5. Aggregation & Threshold Tests (P0-2)
@@ -1698,6 +1893,121 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
                 pTraitKey.ParameterName = "@traitKey";
                 pTraitKey.Value = PersonalityTraitKeys.Warmth;
                 cmd.Parameters.Add(pTraitKey);
+
+                var pFp = cmd.CreateParameter();
+                pFp.ParameterName = "@fingerprint";
+                pFp.Value = _fingerprint;
+                cmd.Parameters.Add(pFp);
+
+                var pNow = cmd.CreateParameter();
+                pNow.ParameterName = "@now";
+                pNow.Value = now;
+                cmd.Parameters.Add(pNow);
+
+                cmd.ExecuteNonQuery();
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class ConcurrentPersonalityAdaptationInsertInterceptor : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private readonly Guid _charId;
+        private readonly Guid _execId;
+        private readonly string _traitKey;
+        private readonly int _valueBefore;
+        private readonly int _valueAfter;
+        private readonly int _delta;
+        private readonly int _evidenceCount;
+        private readonly string _fingerprint;
+        public bool WasInjected { get; private set; }
+
+        public ConcurrentPersonalityAdaptationInsertInterceptor(
+            Guid charId,
+            Guid execId,
+            string traitKey,
+            int valueBefore,
+            int valueAfter,
+            int delta,
+            int evidenceCount,
+            string fingerprint)
+        {
+            _charId = charId;
+            _execId = execId;
+            _traitKey = traitKey;
+            _valueBefore = valueBefore;
+            _valueAfter = valueAfter;
+            _delta = delta;
+            _evidenceCount = evidenceCount;
+            _fingerprint = fingerprint;
+        }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!WasInjected && eventData.Context != null)
+            {
+                WasInjected = true;
+
+                using var cmd = eventData.Context.Database.GetDbConnection().CreateCommand();
+                if (eventData.Context.Database.CurrentTransaction != null)
+                {
+                    cmd.Transaction = eventData.Context.Database.CurrentTransaction.GetDbTransaction();
+                }
+
+                var id = Guid.NewGuid();
+                var now = DateTime.UtcNow.ToString("O");
+                cmd.CommandText = @"
+                    INSERT INTO ""CharacterPersonalityAdaptations"" (
+                        ""Id"", ""CharacterId"", ""ExecutionId"", ""TraitKey"", ""ValueBefore"", ""ValueAfter"",
+                        ""Delta"", ""EvidenceCount"", ""Fingerprint"", ""CreatedAtUtc""
+                    ) VALUES (
+                        @id, @charId, @execId, @traitKey, @valueBefore, @valueAfter,
+                        @delta, @evidenceCount, @fingerprint, @now
+                    );";
+
+                var pId = cmd.CreateParameter();
+                pId.ParameterName = "@id";
+                pId.Value = id;
+                cmd.Parameters.Add(pId);
+
+                var pCharId = cmd.CreateParameter();
+                pCharId.ParameterName = "@charId";
+                pCharId.Value = _charId;
+                cmd.Parameters.Add(pCharId);
+
+                var pExecId = cmd.CreateParameter();
+                pExecId.ParameterName = "@execId";
+                pExecId.Value = _execId;
+                cmd.Parameters.Add(pExecId);
+
+                var pTraitKey = cmd.CreateParameter();
+                pTraitKey.ParameterName = "@traitKey";
+                pTraitKey.Value = _traitKey;
+                cmd.Parameters.Add(pTraitKey);
+
+                var pValBefore = cmd.CreateParameter();
+                pValBefore.ParameterName = "@valueBefore";
+                pValBefore.Value = _valueBefore;
+                cmd.Parameters.Add(pValBefore);
+
+                var pValAfter = cmd.CreateParameter();
+                pValAfter.ParameterName = "@valueAfter";
+                pValAfter.Value = _valueAfter;
+                cmd.Parameters.Add(pValAfter);
+
+                var pDelta = cmd.CreateParameter();
+                pDelta.ParameterName = "@delta";
+                pDelta.Value = _delta;
+                cmd.Parameters.Add(pDelta);
+
+                var pCount = cmd.CreateParameter();
+                pCount.ParameterName = "@evidenceCount";
+                pCount.Value = _evidenceCount;
+                cmd.Parameters.Add(pCount);
 
                 var pFp = cmd.CreateParameter();
                 pFp.ParameterName = "@fingerprint";

@@ -19,6 +19,7 @@ public interface ICharacterPersonalityRepository
 
     Task<CharacterPersonalityAdaptation?> GetAdaptationByExecutionIdAsync(Guid characterId, Guid executionId, CancellationToken ct = default);
     Task<CharacterPersonalityAdaptation?> GetAdaptationByExecutionAndTraitAsync(Guid characterId, Guid executionId, string traitKey, CancellationToken ct = default);
+    Task<CharacterPersonalityAdaptation> AddOrGetAdaptationAsync(CharacterPersonalityAdaptation adaptation, CancellationToken ct = default);
     Task AddAdaptationAsync(CharacterPersonalityAdaptation adaptation, CancellationToken ct = default);
 
     Task SaveChangesAsync(CancellationToken ct = default);
