@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -19,7 +19,7 @@ public sealed class PersonalityAdaptationEvidenceConfiguration : IEntityTypeConf
         builder.Property(e => e.Strength).IsRequired();
         builder.Property(e => e.Reason).IsRequired().HasMaxLength(500);
         builder.Property(e => e.Fingerprint).IsRequired().HasMaxLength(64);
-        builder.Property(e => e.IsApplied).IsRequired().HasDefaultValue(false);
+        builder.Property(e => e.IsApplied).IsRequired().HasDefaultValue(false).IsConcurrencyToken();
         builder.Property(e => e.AdaptationId).IsRequired(false);
         builder.Property(e => e.CreatedAtUtc).IsRequired();
 

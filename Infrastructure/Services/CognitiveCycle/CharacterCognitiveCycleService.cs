@@ -1,9 +1,11 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Application.Abstractions.Data;
 using Application.Contracts.ActionExecution;
 using Application.Contracts.CognitiveCycle;
 using Application.Interfaces;
+using Domain.Entities;
 using Domain.Enums;
 using Domain.Policies;
 using Domain.ValueObjects;
@@ -26,6 +28,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
     private readonly ICharacterRelationshipRetrievalService? _relationshipRetrievalService;
     private readonly ICharacterRelationshipFeedbackService? _relationshipFeedbackService;
     private readonly IPersonalityAdaptationService? _personalityAdaptationService;
+    private readonly ICharacterPersonalityRepository? _personalityRepository;
     private readonly ILogger<CharacterCognitiveCycleService> _logger;
 
     public CharacterCognitiveCycleService(
@@ -42,7 +45,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         ICharacterMemoryFeedbackService? memoryFeedbackService = null,
         ICharacterRelationshipRetrievalService? relationshipRetrievalService = null,
         ICharacterRelationshipFeedbackService? relationshipFeedbackService = null,
-        IPersonalityAdaptationService? personalityAdaptationService = null)
+        IPersonalityAdaptationService? personalityAdaptationService = null,
+        ICharacterPersonalityRepository? personalityRepository = null)
     {
         _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
         _experiencePolicy = experiencePolicy ?? throw new ArgumentNullException(nameof(experiencePolicy));
@@ -58,6 +62,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         _relationshipRetrievalService = relationshipRetrievalService;
         _relationshipFeedbackService = relationshipFeedbackService;
         _personalityAdaptationService = personalityAdaptationService;
+        _personalityRepository = personalityRepository;
     }
 
     public async Task<CharacterCognitiveCycleResult> RunAsync(
@@ -177,6 +182,34 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
 
         int stateVersionAtStart = state.Version;
 
+        // 1.5 Authoritative Personality Loading & Snapshot Creation (P0-1)
+        CharacterPersonality personality;
+        if (_personalityRepository != null)
+        {
+            try
+            {
+                personality = await _personalityRepository.GetOrCreateDefaultAsync(characterId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[CharacterCognitiveCycleService] Failed to load authoritative personality for CharacterId={CharacterId}. Falling back to default snapshot.",
+                    characterId);
+                personality = CharacterPersonality.CreateDefault(characterId);
+            }
+        }
+        else
+        {
+            personality = CharacterPersonality.CreateDefault(characterId);
+        }
+
+        var personalitySnapshot = personality.ToSnapshot();
+        var effectivePsychology = personalitySnapshot.ToEffectivePsychology(context.Blueprint?.Psychology);
+        var effectiveBlueprint = (context.Blueprint ?? new CharacterBlueprint()) with
+        {
+            Psychology = effectivePsychology
+        };
+
         // Validate caller did not attempt to inject MemoryContext via PerceptionContext
         if (context.PerceptionContext?.MemoryContext != null)
         {
@@ -187,7 +220,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             return CharacterCognitiveCycleResult.InvalidInput(
                 cycleId, executionId, characterId, triggeredAtUtc,
                 message: "PerceptionContext.MemoryContext cannot be pre-populated by caller. Memory retrieval is managed authoritatively by the cognitive cycle.",
-                @event: cognitiveEvent);
+                @event: cognitiveEvent,
+                personalitySnapshot: personalitySnapshot);
         }
 
         // Validate caller did not attempt to inject RelationshipContext via PerceptionContext
@@ -200,7 +234,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             return CharacterCognitiveCycleResult.InvalidInput(
                 cycleId, executionId, characterId, triggeredAtUtc,
                 message: "PerceptionContext.RelationshipContext cannot be pre-populated by caller. Relationship retrieval is managed authoritatively by the cognitive cycle.",
-                @event: cognitiveEvent);
+                @event: cognitiveEvent,
+                personalitySnapshot: personalitySnapshot);
         }
 
         // 2. Perception & Stimulus Mapping (PR39/PR46: Map event to normalized Domain stimulus)
@@ -240,7 +275,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 cycleId, executionId, characterId, triggeredAtUtc,
                 message: "Conflicting RelationshipContext detected: Caller cannot override authoritative relationship state.",
                 @event: cognitiveEvent,
-                relationshipContext: relationshipContext);
+                relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot);
         }
 
         // 3. Memory Retrieval (PR47: Contextual knowledge, graceful degradation to empty)
@@ -271,14 +307,14 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             RelationshipContext = relationshipContext
         };
 
-        // 4. Internal Experience (PR39)
-        var experience = _experiencePolicy.Evaluate(state, perceptionContext, context.Blueprint?.Psychology);
+        // 4. Internal Experience (PR39 modulated by authoritative PersonalitySnapshot)
+        var experience = _experiencePolicy.Evaluate(state, perceptionContext, effectivePsychology);
 
-        // 5. Appraisal (PR40)
-        var appraisal = _appraisalPolicy.Evaluate(experience, context.Blueprint);
+        // 5. Appraisal (PR40 modulated by effective Blueprint)
+        var appraisal = _appraisalPolicy.Evaluate(experience, effectiveBlueprint);
 
-        // 6. Emotion (PR40)
-        var emotion = _emotionPolicy.Evaluate(appraisal, context.Blueprint);
+        // 6. Emotion (PR40 modulated by effective Blueprint)
+        var emotion = _emotionPolicy.Evaluate(appraisal, effectiveBlueprint);
 
         // 7. Desire (PR41)
         var desires = _desirePolicy.Evaluate(experience, appraisal, emotion);
@@ -300,10 +336,12 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 @event: cognitiveEvent,
                 memoryContext: memoryContext,
                 relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot,
                 message: "No actionable intent formed from desires.");
 
             var withMemory = await AttachMemoryFeedbackAsync(context, noIntentResult, cancellationToken);
-            return await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
+            var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
+            return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
         }
 
         // 9. Action Proposal (PR43)
@@ -324,10 +362,12 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 @event: cognitiveEvent,
                 memoryContext: memoryContext,
                 relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot,
                 message: "No actionable proposal formed from intent.");
 
             var withMemory = await AttachMemoryFeedbackAsync(context, noProposalResult, cancellationToken);
-            return await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
+            var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
+            return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
         }
 
         // 10. Action Execution (PR44)
@@ -351,14 +391,16 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
                 @event: cognitiveEvent,
                 memoryContext: memoryContext,
-                relationshipContext: relationshipContext),
+                relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot),
 
             CharacterActionExecutionStatus.AlreadyExecuted => CharacterCognitiveCycleResult.AlreadyExecuted(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
                 experience, appraisal, emotion, desires, intent, actionProposal, executionResult,
                 @event: cognitiveEvent,
                 memoryContext: memoryContext,
-                relationshipContext: relationshipContext),
+                relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot),
 
             CharacterActionExecutionStatus.ConcurrencyConflict => CharacterCognitiveCycleResult.ConcurrencyConflict(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
@@ -366,6 +408,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 @event: cognitiveEvent,
                 memoryContext: memoryContext,
                 relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot,
                 message: executionResult.Message),
 
             CharacterActionExecutionStatus.IdempotencyConflict => CharacterCognitiveCycleResult.IdempotencyConflict(
@@ -374,6 +417,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 @event: cognitiveEvent,
                 memoryContext: memoryContext,
                 relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot,
                 message: executionResult.Message),
 
             CharacterActionExecutionStatus.NotFound => CharacterCognitiveCycleResult.NotFound(
@@ -381,7 +425,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 executionResult.Message ?? $"Character {characterId} not found during action execution.",
                 cognitiveEvent,
                 memoryContext: memoryContext,
-                relationshipContext: relationshipContext),
+                relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot),
 
             _ => CharacterCognitiveCycleResult.Failed(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
@@ -389,6 +434,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 @event: cognitiveEvent,
                 memoryContext: memoryContext,
                 relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot,
                 message: executionResult.Message ?? "Action execution failed.")
         };
 
@@ -498,6 +544,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 result.MemoryFeedback,
                 relationshipContext: result.RelationshipContext,
                 relationshipFeedback: null,
+                personalitySnapshot: result.PersonalitySnapshot,
                 message: ex.Message);
         }
         catch (Exception ex)
@@ -552,6 +599,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 result.MemoryFeedback,
                 relationshipContext: result.RelationshipContext,
                 relationshipFeedback: result.RelationshipFeedback,
+                personalitySnapshot: result.PersonalitySnapshot,
                 personalityAdaptation: null,
                 message: ex.Message);
         }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Security.Cryptography;
 using System.Text;
 using Domain.Enums;
@@ -20,11 +20,9 @@ public static class CanonicalPersonalityFingerprint
         PersonalityAdaptationEvidenceType evidenceType,
         string traitKey,
         int direction,
-        int strength,
-        string? canonicalReason)
+        int strength)
     {
         var normalizedTraitKey = PersonalityTraitKeys.Normalize(traitKey);
-        var normalizedReason = canonicalReason?.Trim() ?? string.Empty;
 
         var canonicalString = string.Join("|",
             CurrentSchemaVersion,
@@ -33,8 +31,7 @@ public static class CanonicalPersonalityFingerprint
             ((int)evidenceType).ToString(),
             normalizedTraitKey,
             direction.ToString(),
-            strength.ToString(),
-            normalizedReason
+            strength.ToString()
         );
 
         var bytes = Encoding.UTF8.GetBytes(canonicalString);

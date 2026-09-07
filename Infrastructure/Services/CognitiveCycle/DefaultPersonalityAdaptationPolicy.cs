@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Application.Contracts.CognitiveCycle;
 using Domain.Common;
 using Domain.Enums;
@@ -37,28 +37,53 @@ public sealed class DefaultPersonalityAdaptationPolicy : IPersonalityAdaptationP
         {
             var rel = result.RelationshipFeedback;
 
-            if (rel.TrustDelta > 0 || rel.AffectionDelta > 0)
+            // Affection changes explicitly map to Warmth
+            if (rel.AffectionDelta > 0)
             {
                 return new PersonalityAdaptationProposal(
                     evidenceType: PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
                     traitKey: PersonalityTraitKeys.Warmth,
                     direction: +1,
                     strength: 1,
-                    reason: "Positive social outcome with interaction partner."
+                    reason: "Affectionate social outcome with interaction partner."
                 );
             }
 
-            if (rel.TrustDelta < 0 || rel.AffectionDelta < 0)
+            if (rel.AffectionDelta < 0)
             {
                 return new PersonalityAdaptationProposal(
                     evidenceType: PersonalityAdaptationEvidenceType.NegativeSocialOutcome,
                     traitKey: PersonalityTraitKeys.Warmth,
                     direction: -1,
                     strength: 1,
-                    reason: "Negative social outcome or conflict with interaction partner."
+                    reason: "Antipathy or conflict with interaction partner reducing warmth."
                 );
             }
 
+            // Trust changes explicitly map to TrustDisposition
+            if (rel.TrustDelta > 0)
+            {
+                return new PersonalityAdaptationProposal(
+                    evidenceType: PersonalityAdaptationEvidenceType.RepeatedSuccessfulInteraction,
+                    traitKey: PersonalityTraitKeys.TrustDisposition,
+                    direction: +1,
+                    strength: 1,
+                    reason: "Demonstrated reliability reinforcing trust disposition."
+                );
+            }
+
+            if (rel.TrustDelta < 0)
+            {
+                return new PersonalityAdaptationProposal(
+                    evidenceType: PersonalityAdaptationEvidenceType.RepeatedConflict,
+                    traitKey: PersonalityTraitKeys.TrustDisposition,
+                    direction: -1,
+                    strength: 1,
+                    reason: "Breach of trust or conflict undermining trust disposition."
+                );
+            }
+
+            // Familiarity changes map to SocialConfidence
             if (rel.FamiliarityDelta > 0)
             {
                 return new PersonalityAdaptationProposal(
@@ -66,32 +91,30 @@ public sealed class DefaultPersonalityAdaptationPolicy : IPersonalityAdaptationP
                     traitKey: PersonalityTraitKeys.SocialConfidence,
                     direction: +1,
                     strength: 1,
-                    reason: "Consistent social engagement building familiarity."
+                    reason: "Consistent social engagement building social confidence."
                 );
             }
         }
 
-        // 4. Autonomous / Self-regulation Evidence
-        if (result.Emotion != null &&
-            (result.Emotion.Type is EmotionType.Stress or EmotionType.Fatigue) &&
-            result.Emotion.Intensity >= 0.50)
+        // 4. Emotional Regulation: Requires deliberate stress reduction behavior under stress
+        var isElevatedStress = (result.Emotion != null && result.Emotion.Type == EmotionType.Stress && result.Emotion.Intensity >= 0.40) ||
+                               (result.Experience != null && result.Experience.Stress.Level >= StressLevel.MildPressure);
+
+        if (isElevatedStress &&
+            result.ActionProposal?.Proposal?.Type == ActionType.ReduceStress &&
+            result.ActionExecution.AppliedDelta != null &&
+            result.ActionExecution.AppliedDelta.StressDelta < 0)
         {
             return new PersonalityAdaptationProposal(
                 evidenceType: PersonalityAdaptationEvidenceType.EmotionalRegulation,
                 traitKey: PersonalityTraitKeys.EmotionalStability,
                 direction: +1,
                 strength: 1,
-                reason: "Successfully executed purposeful action under emotional fatigue or stress."
+                reason: "Successfully executed deliberate stress regulation under pressure."
             );
         }
 
-        // 5. General purposeful behavioral consistency
-        return new PersonalityAdaptationProposal(
-            evidenceType: PersonalityAdaptationEvidenceType.BehavioralConsistency,
-            traitKey: PersonalityTraitKeys.Conscientiousness,
-            direction: +1,
-            strength: 1,
-            reason: "Deliberate action execution consistent with formed intent."
-        );
+        // Generic actions (Eat, Rest, Walk) without explicit semantic evidence produce no personality learning
+        return null;
     }
 }

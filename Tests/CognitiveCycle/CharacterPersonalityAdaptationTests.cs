@@ -19,6 +19,7 @@ using Infrastructure.Services.CognitiveCycle;
 using Infrastructure.Services.State;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -76,7 +77,8 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         CoreDbContext db,
         IPersonalityAdaptationService? personalityAdaptationService = null,
         ICharacterActionExecutionService? actionExecutionService = null,
-        ICharacterRelationshipFeedbackService? relationshipFeedbackService = null)
+        ICharacterRelationshipFeedbackService? relationshipFeedbackService = null,
+        ICharacterPersonalityRepository? personalityRepository = null)
     {
         var transitionService = new CharacterStateTransitionService(
             db,
@@ -117,8 +119,9 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             new DefaultCharacterRelationshipFeedbackPolicy(),
             NullLogger<CharacterRelationshipFeedbackService>.Instance);
 
+        var personalityRepo = personalityRepository ?? new CharacterPersonalityRepository(db);
         var personalityService = personalityAdaptationService ?? new PersonalityAdaptationService(
-            db,
+            personalityRepo,
             new DefaultPersonalityAdaptationPolicy(),
             NullLogger<PersonalityAdaptationService>.Instance,
             threshold: 3);
@@ -137,7 +140,8 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             memoryFeedbackService: memoryFeedback,
             relationshipRetrievalService: relRetrieval,
             relationshipFeedbackService: relFeedback,
-            personalityAdaptationService: personalityService
+            personalityAdaptationService: personalityService,
+            personalityRepository: personalityRepo
         );
     }
 
@@ -241,27 +245,112 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         Assert.False(PersonalityTraitKeys.IsValid("Unknown"));
     }
 
+    [Fact]
+    public void CharacterPersonality_ToSnapshot_CreatesImmutableSnapshot()
+    {
+        var charId = Guid.NewGuid();
+        var personality = new CharacterPersonality(
+            charId,
+            warmth: 65,
+            openness: 70,
+            assertiveness: 45,
+            conscientiousness: 80,
+            socialConfidence: 60,
+            trustDisposition: 55,
+            emotionalStability: 75,
+            version: 3
+        );
+
+        var snapshot = personality.ToSnapshot();
+
+        Assert.Equal(charId, snapshot.CharacterId);
+        Assert.Equal(65, snapshot.Warmth);
+        Assert.Equal(70, snapshot.Openness);
+        Assert.Equal(45, snapshot.Assertiveness);
+        Assert.Equal(80, snapshot.Conscientiousness);
+        Assert.Equal(60, snapshot.SocialConfidence);
+        Assert.Equal(55, snapshot.TrustDisposition);
+        Assert.Equal(75, snapshot.EmotionalStability);
+        Assert.Equal(3u, snapshot.Version);
+
+        // Mutating entity does not mutate existing snapshot
+        personality.AdaptTrait(PersonalityTraitKeys.Warmth, +1);
+        Assert.Equal(66, personality.Warmth);
+        Assert.Equal(65, snapshot.Warmth);
+    }
+
+    [Fact]
+    public void CharacterPersonalitySnapshot_ToEffectivePsychology_ModulatesSensitivities()
+    {
+        var basePsych = PsychologyProfile.Default;
+
+        // High emotional stability (100) -> 0.5x multiplier on Stress & Mood
+        var resilientSnapshot = new CharacterPersonalitySnapshot(
+            Guid.NewGuid(),
+            Version: 1,
+            Warmth: 50,
+            Openness: 50,
+            Assertiveness: 50,
+            Conscientiousness: 100, // 0.75x multiplier on fatigue
+            SocialConfidence: 50,
+            TrustDisposition: 50,
+            EmotionalStability: 100,
+            SnapshotAtUtc: DateTimeOffset.UtcNow
+        );
+
+        var resilientPsych = resilientSnapshot.ToEffectivePsychology(basePsych);
+        Assert.Equal(0.50m, resilientPsych.StressSensitivity);
+        Assert.Equal(0.50m, resilientPsych.MoodReactivity);
+        Assert.Equal(0.75m, resilientPsych.FatigueSensitivity);
+        Assert.Equal(1.00m, resilientPsych.SocialSensitivity);
+
+        // Low emotional stability (0) -> 1.5x multiplier on Stress & Mood
+        var vulnerableSnapshot = new CharacterPersonalitySnapshot(
+            Guid.NewGuid(),
+            Version: 1,
+            Warmth: 0,
+            Openness: 50,
+            Assertiveness: 50,
+            Conscientiousness: 0, // 1.25x multiplier on fatigue
+            SocialConfidence: 0,
+            TrustDisposition: 50,
+            EmotionalStability: 0,
+            SnapshotAtUtc: DateTimeOffset.UtcNow
+        );
+
+        var vulnerablePsych = vulnerableSnapshot.ToEffectivePsychology(basePsych);
+        Assert.Equal(1.50m, vulnerablePsych.StressSensitivity);
+        Assert.Equal(1.50m, vulnerablePsych.MoodReactivity);
+        Assert.Equal(1.25m, vulnerablePsych.FatigueSensitivity);
+        Assert.Equal(0.50m, vulnerablePsych.SocialSensitivity);
+    }
+
     #endregion
 
     #region 2. Evidence & Fingerprint Tests
 
     [Fact]
-    public void CanonicalPersonalityFingerprint_IsDeterministic()
+    public void CanonicalPersonalityFingerprint_ReasonWordingChange_ProducesIdenticalFingerprint()
     {
         var charId = Guid.NewGuid();
         var execId = Guid.NewGuid();
 
-        var hash1 = CanonicalPersonalityFingerprint.ComputeEvidence(
+        // Two reasons describing the exact same event with different human wording
+        var fp = CanonicalPersonalityFingerprint.ComputeEvidence(
             charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
-            PersonalityTraitKeys.Warmth, +1, 1, "Positive interaction");
+            PersonalityTraitKeys.Warmth, +1, 1);
 
-        var hash2 = CanonicalPersonalityFingerprint.ComputeEvidence(
+        var ev1 = new PersonalityAdaptationEvidence(
             charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
-            PersonalityTraitKeys.Warmth, +1, 1, "Positive interaction");
+            PersonalityTraitKeys.Warmth, +1, 1, "User complimented character warmly.", fp);
 
-        Assert.Equal(hash1, hash2);
-        Assert.False(string.IsNullOrWhiteSpace(hash1));
-        Assert.Equal(64, hash1.Length);
+        var ev2 = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1, "User gave pleasant feedback.", fp);
+
+        // Semantic fingerprint MUST be identical regardless of reason string (P1-4)
+        Assert.NotEqual(ev1.Reason, ev2.Reason);
+        Assert.Equal(ev1.Fingerprint, ev2.Fingerprint);
     }
 
     [Fact]
@@ -272,11 +361,11 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
 
         var hash1 = CanonicalPersonalityFingerprint.ComputeEvidence(
             charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
-            PersonalityTraitKeys.Warmth, +1, 1, "Reason A");
+            PersonalityTraitKeys.Warmth, +1, 1);
 
         var hash2 = CanonicalPersonalityFingerprint.ComputeEvidence(
             charId, execId, PersonalityAdaptationEvidenceType.NegativeSocialOutcome,
-            PersonalityTraitKeys.Warmth, -1, 1, "Reason B");
+            PersonalityTraitKeys.Warmth, -1, 1);
 
         Assert.NotEqual(hash1, hash2);
     }
@@ -309,7 +398,7 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
     #region 3. Policy Tests
 
     [Fact]
-    public void Policy_CompletedWithAction_PositiveRelationshipFeedback_ProducesPositiveSocialOutcomeEvidence()
+    public void Policy_GenericSuccessfulActions_ReturnNull_NoFalseLearning()
     {
         var policy = new DefaultPersonalityAdaptationPolicy();
         var charId = Guid.NewGuid();
@@ -322,19 +411,20 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             TriggeredAtUtc: DateTimeOffset.UtcNow
         );
 
-        var result = CreateSuccessResult(context, trustDelta: 3);
+        // Standard actions (Eat, Rest, SeekComfort) without deliberate stress reduction or relationship feedback
+        var actionsToTest = new[] { ActionType.Eat, ActionType.Rest, ActionType.SeekComfort };
+        foreach (var action in actionsToTest)
+        {
+            var result = CreateSuccessResult(context, actionType: action, relFeedback: null);
+            var evidence = policy.Evaluate(context, result);
 
-        var proposal = policy.Evaluate(context, result);
-
-        Assert.NotNull(proposal);
-        Assert.Equal(PersonalityAdaptationEvidenceType.PositiveSocialOutcome, proposal.EvidenceType);
-        Assert.Equal(PersonalityTraitKeys.Warmth, proposal.TraitKey);
-        Assert.Equal(+1, proposal.Direction);
-        Assert.Equal(1, proposal.Strength);
+            // MUST be null: regular routine actions do not adapt long-term traits (P1-1)
+            Assert.Null(evidence);
+        }
     }
 
     [Fact]
-    public void Policy_CompletedWithAction_NegativeRelationshipFeedback_ProducesNegativeSocialOutcomeEvidence()
+    public void Policy_EmotionalRegulation_OnlyTriggersOnDeliberateStressReliefUnderStress()
     {
         var policy = new DefaultPersonalityAdaptationPolicy();
         var charId = Guid.NewGuid();
@@ -347,14 +437,99 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             TriggeredAtUtc: DateTimeOffset.UtcNow
         );
 
-        var result = CreateSuccessResult(context, trustDelta: -3);
+        // Case A: Deliberate ActionType.ReduceStress when stress is HighlyStressed and stress was reduced
+        var validResult = CreateSuccessResult(
+            context,
+            actionType: ActionType.ReduceStress,
+            stressLevel: StressLevel.HighlyStressed,
+            stressDelta: -15m,
+            relFeedback: null
+        );
+        var validEvidence = policy.Evaluate(context, validResult);
+        Assert.NotNull(validEvidence);
+        Assert.Equal(PersonalityAdaptationEvidenceType.EmotionalRegulation, validEvidence.EvidenceType);
+        Assert.Equal(PersonalityTraitKeys.EmotionalStability, validEvidence.TraitKey);
+        Assert.Equal(+1, validEvidence.Direction);
 
-        var proposal = policy.Evaluate(context, result);
+        // Case B: ActionType.Rest (not ReduceStress), even if stress decreased
+        var restResult = CreateSuccessResult(
+            context,
+            actionType: ActionType.Rest,
+            stressLevel: StressLevel.HighlyStressed,
+            stressDelta: -15m,
+            relFeedback: null
+        );
+        Assert.Null(policy.Evaluate(context, restResult));
 
-        Assert.NotNull(proposal);
-        Assert.Equal(PersonalityAdaptationEvidenceType.NegativeSocialOutcome, proposal.EvidenceType);
-        Assert.Equal(PersonalityTraitKeys.Warmth, proposal.TraitKey);
-        Assert.Equal(-1, proposal.Direction);
+        // Case C: ActionType.ReduceStress, but character was calm (no elevated stress)
+        var calmResult = CreateSuccessResult(
+            context,
+            actionType: ActionType.ReduceStress,
+            stressLevel: StressLevel.Calm,
+            stressDelta: -5m,
+            relFeedback: null
+        );
+        Assert.Null(policy.Evaluate(context, calmResult));
+
+        // Case D: ActionType.ReduceStress under HighlyStressed, but stress did NOT decrease
+        var unreducedResult = CreateSuccessResult(
+            context,
+            actionType: ActionType.ReduceStress,
+            stressLevel: StressLevel.HighlyStressed,
+            stressDelta: 0m,
+            relFeedback: null
+        );
+        Assert.Null(policy.Evaluate(context, unreducedResult));
+    }
+
+    [Fact]
+    public void Policy_RelationshipDeltas_MapToDistinctPersonalityDimensions()
+    {
+        var policy = new DefaultPersonalityAdaptationPolicy();
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        var context = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: execId,
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow
+        );
+
+        // 1. AffectionDelta > 0 -> Warmth +1
+        var affPos = CreateSuccessResultWithRel(context, affectionDelta: 5);
+        var evAffPos = policy.Evaluate(context, affPos);
+        Assert.NotNull(evAffPos);
+        Assert.Equal(PersonalityTraitKeys.Warmth, evAffPos.TraitKey);
+        Assert.Equal(+1, evAffPos.Direction);
+
+        // 2. AffectionDelta < 0 -> Warmth -1
+        var affNeg = CreateSuccessResultWithRel(context, affectionDelta: -5);
+        var evAffNeg = policy.Evaluate(context, affNeg);
+        Assert.NotNull(evAffNeg);
+        Assert.Equal(PersonalityTraitKeys.Warmth, evAffNeg.TraitKey);
+        Assert.Equal(-1, evAffNeg.Direction);
+
+        // 3. TrustDelta > 0 -> TrustDisposition +1
+        var trustPos = CreateSuccessResultWithRel(context, trustDelta: 5);
+        var evTrustPos = policy.Evaluate(context, trustPos);
+        Assert.NotNull(evTrustPos);
+        Assert.Equal(PersonalityTraitKeys.TrustDisposition, evTrustPos.TraitKey);
+        Assert.Equal(+1, evTrustPos.Direction);
+
+        // 4. TrustDelta < 0 -> TrustDisposition -1
+        var trustNeg = CreateSuccessResultWithRel(context, trustDelta: -5);
+        var evTrustNeg = policy.Evaluate(context, trustNeg);
+        Assert.NotNull(evTrustNeg);
+        Assert.Equal(PersonalityTraitKeys.TrustDisposition, evTrustNeg.TraitKey);
+        Assert.Equal(-1, evTrustNeg.Direction);
+
+        // 5. FamiliarityDelta > 0 -> SocialConfidence +1
+        var famPos = CreateSuccessResultWithRel(context, familiarityDelta: 5);
+        var evFamPos = policy.Evaluate(context, famPos);
+        Assert.NotNull(evFamPos);
+        Assert.Equal(PersonalityTraitKeys.SocialConfidence, evFamPos.TraitKey);
+        Assert.Equal(+1, evFamPos.Direction);
     }
 
     [Fact]
@@ -394,107 +569,165 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
 
     #endregion
 
-    #region 4. Idempotency & Conflict Tests
+    #region 4. Idempotency & Repository Tests (P0-3, P1-4)
 
     [Fact]
-    public async Task ProcessAdaptationAsync_WhenReplayedWithIdenticalPayload_IsIdempotentAndSuppressed()
+    public async Task Repository_AddOrGetEvidenceAsync_WhenReplayedWithIdenticalPayload_IsIdempotent()
     {
         await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
         var charId = await SeedCharacterStateAsync();
         var execId = Guid.NewGuid();
 
-        var service = new PersonalityAdaptationService(
-            db, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
+        var fp = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1);
 
-        var context = new CharacterCognitiveCycleContext(
-            CycleId: Guid.NewGuid(),
-            ExecutionId: execId,
-            CharacterId: charId,
-            TriggeredAtUtc: DateTimeOffset.UtcNow
-        );
+        var evidence1 = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1, "First attempt", fp);
 
-        var result = CreateSuccessResult(context);
+        // First insert
+        var stored1 = await repo.AddOrGetEvidenceAsync(evidence1);
+        Assert.NotNull(stored1);
+        Assert.NotEqual(Guid.Empty, stored1.Id);
 
-        // 1st Execution
-        var res1 = await service.ProcessAdaptationAsync(context, result);
-        Assert.NotNull(res1);
+        // Second insert with exact same semantics (even if reason wording differs, fp is same)
+        var evidence2 = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1, "Wording variation", fp);
 
-        // 2nd Execution with identical payload (idempotent replay)
-        var res2 = await service.ProcessAdaptationAsync(context, result);
-        Assert.NotNull(res2);
-        Assert.Equal(res1.EvidenceId, res2.EvidenceId);
+        var stored2 = await repo.AddOrGetEvidenceAsync(evidence2);
+        Assert.NotNull(stored2);
+        Assert.Equal(stored1.Id, stored2.Id);
 
         // Exactly 1 evidence record in DB
-        var totalEvidence = await db.CharacterPersonalityAdaptationEvidences.CountAsync(e => e.CharacterId == charId);
-        Assert.Equal(1, totalEvidence);
+        var total = await db.CharacterPersonalityAdaptationEvidences.CountAsync(e => e.CharacterId == charId);
+        Assert.Equal(1, total);
     }
 
     [Fact]
-    public async Task ProcessAdaptationAsync_WhenReplayedWithDifferentSemanticPayload_ThrowsIdempotencyConflict()
+    public async Task Repository_AddOrGetEvidenceAsync_WhenReplayedWithDifferentSemanticPayload_ThrowsIdempotencyConflict()
     {
         await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
         var charId = await SeedCharacterStateAsync();
         var execId = Guid.NewGuid();
 
-        var service = new PersonalityAdaptationService(
-            db, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
+        var fp1 = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1);
 
-        var context = new CharacterCognitiveCycleContext(
-            CycleId: Guid.NewGuid(),
-            ExecutionId: execId,
-            CharacterId: charId,
-            TriggeredAtUtc: DateTimeOffset.UtcNow
-        );
+        var evidence1 = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1, "First attempt", fp1);
 
-        // 1st execution: Positive relationship feedback
-        var result1 = CreateSuccessResult(context, trustDelta: 3);
-        var res1 = await service.ProcessAdaptationAsync(context, result1);
-        Assert.NotNull(res1);
+        await repo.AddOrGetEvidenceAsync(evidence1);
 
-        // 2nd execution: Same ExecutionId, but CONFLICTING semantic payload (Negative relationship feedback)
-        var result2 = CreateSuccessResult(context, trustDelta: -3);
+        // Conflicting semantics with same ExecutionId
+        var fp2 = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.NegativeSocialOutcome,
+            PersonalityTraitKeys.Warmth, -1, 1);
+
+        var evidence2 = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.NegativeSocialOutcome,
+            PersonalityTraitKeys.Warmth, -1, 1, "Second conflicting attempt", fp2);
 
         await Assert.ThrowsAsync<PersonalityAdaptationIdempotencyConflictException>(() =>
-            service.ProcessAdaptationAsync(context, result2));
+            repo.AddOrGetEvidenceAsync(evidence2));
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetEvidenceAsync_WhenConcurrentInsertConflictOccurs_DetachesLocalAndReturnsWinner()
+    {
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+        var fp = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1);
+
+        var interceptor = new ConcurrentPersonalityEvidenceInsertInterceptor(charId, execId, fp);
+        var loserOptions = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var dbLoser = new CoreDbContext(loserOptions);
+
+        // Loser context tracks an unrelated entity to prove ChangeTracker is not indiscriminately cleared
+        var unrelatedExecId = Guid.NewGuid();
+        var unrelatedFp = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, unrelatedExecId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.SocialConfidence, +1, 1);
+        var unrelatedEvidence = new PersonalityAdaptationEvidence(
+            charId, unrelatedExecId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.SocialConfidence, +1, 1, "Unrelated", unrelatedFp);
+        await dbLoser.CharacterPersonalityAdaptationEvidences.AddAsync(unrelatedEvidence);
+
+        var candidate = new PersonalityAdaptationEvidence(
+            charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1, "Race test", fp);
+
+        var loserRepo = new CharacterPersonalityRepository(dbLoser);
+        var resolved = await loserRepo.AddOrGetEvidenceAsync(candidate);
+
+        // Assert 1: Interceptor actually injected concurrent winner
+        Assert.True(interceptor.WasInjected);
+
+        // Assert 2: Resolved evidence matches winner
+        Assert.NotNull(resolved);
+        Assert.Equal(charId, resolved.CharacterId);
+        Assert.Equal(execId, resolved.ExecutionId);
+        Assert.Equal(fp, resolved.Fingerprint);
+
+        // Assert 3: Candidate was detached
+        var candidateEntry = dbLoser.Entry(candidate);
+        Assert.Equal(EntityState.Detached, candidateEntry.State);
+
+        // Assert 4: Unrelated entity remains tracked as Added
+        var unrelatedEntry = dbLoser.Entry(unrelatedEvidence);
+        Assert.Equal(EntityState.Added, unrelatedEntry.State);
+
+        // Assert 5: Subsequent SaveChangesAsync succeeds and saves unrelated entity
+        await dbLoser.SaveChangesAsync();
+
+        await using var verifyDb = new CoreDbContext(_options);
+        var total = await verifyDb.CharacterPersonalityAdaptationEvidences.CountAsync(e => e.CharacterId == charId);
+        Assert.Equal(2, total); // Winner + Unrelated
     }
 
     #endregion
 
-    #region 5. Aggregation & Threshold Tests
+    #region 5. Aggregation & Threshold Tests (P0-2)
 
     [Fact]
-    public async Task ProcessAdaptationAsync_EvidenceBelowThreshold_DoesNotMutatePersonality()
+    public async Task ProcessAdaptationAsync_SingleInteraction_ProducesEvidence_DoesNotCauseAdaptation()
     {
         await using var db = new CoreDbContext(_options);
         var charId = await SeedCharacterStateAsync();
+        var repo = new CharacterPersonalityRepository(db);
         var service = new PersonalityAdaptationService(
-            db, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
+            repo, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
 
-        // Run 2 successful interactions (threshold is 3)
-        for (int i = 0; i < 2; i++)
-        {
-            var context = new CharacterCognitiveCycleContext(
-                CycleId: Guid.NewGuid(),
-                ExecutionId: Guid.NewGuid(),
-                CharacterId: charId,
-                TriggeredAtUtc: DateTimeOffset.UtcNow
-            );
-            var result = CreateSuccessResult(context, trustDelta: 2);
-            var adaptationResult = await service.ProcessAdaptationAsync(context, result);
+        var context = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: Guid.NewGuid(),
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow
+        );
+        var result = CreateSuccessResultWithRel(context, affectionDelta: 3);
+        var adaptationResult = await service.ProcessAdaptationAsync(context, result);
 
-            Assert.NotNull(adaptationResult);
-            Assert.False(adaptationResult.AdaptationTriggered);
-        }
+        Assert.NotNull(adaptationResult);
+        Assert.False(adaptationResult.AdaptationTriggered);
 
-        // Personality should either be null or still at default (50) with 0 adaptations
+        // 1 evidence record in DB
+        var evidenceCount = await db.CharacterPersonalityAdaptationEvidences.CountAsync(e => e.CharacterId == charId);
+        Assert.Equal(1, evidenceCount);
+
+        // 0 adaptations applied
         var adaptationsCount = await db.CharacterPersonalityAdaptations.CountAsync(a => a.CharacterId == charId);
         Assert.Equal(0, adaptationsCount);
-
-        var personality = await db.CharacterPersonalities.FirstOrDefaultAsync(p => p.CharacterId == charId);
-        if (personality != null)
-        {
-            Assert.Equal(50, personality.Warmth);
-        }
     }
 
     [Fact]
@@ -502,8 +735,9 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
     {
         await using var db = new CoreDbContext(_options);
         var charId = await SeedCharacterStateAsync();
+        var repo = new CharacterPersonalityRepository(db);
         var service = new PersonalityAdaptationService(
-            db, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
+            repo, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
 
         CharacterPersonalityAdaptationResult? finalResult = null;
 
@@ -516,23 +750,22 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
                 CharacterId: charId,
                 TriggeredAtUtc: DateTimeOffset.UtcNow.AddMinutes(i)
             );
-            var result = CreateSuccessResult(context, trustDelta: 2);
+            var result = CreateSuccessResultWithRel(context, affectionDelta: 3);
             finalResult = await service.ProcessAdaptationAsync(context, result);
         }
 
-        // On the 3rd interaction, threshold is reached
         Assert.NotNull(finalResult);
         Assert.True(finalResult.AdaptationTriggered);
         Assert.Equal(50, finalResult.TraitValueBefore);
         Assert.Equal(51, finalResult.TraitValueAfter);
         Assert.Equal(+1, finalResult.TraitDelta);
 
-        // Verify DB: Personality Warmth is 51, Version is 2
+        // Authoritative personality in DB: Warmth is 51, Version is 2
         var personality = await db.CharacterPersonalities.SingleAsync(p => p.CharacterId == charId);
         Assert.Equal(51, personality.Warmth);
         Assert.Equal(2u, personality.Version);
 
-        // Verify DB: 1 adaptation record in audit ledger
+        // 1 adaptation record in DB
         var adaptation = await db.CharacterPersonalityAdaptations.SingleAsync(a => a.CharacterId == charId);
         Assert.Equal(PersonalityTraitKeys.Warmth, adaptation.TraitKey);
         Assert.Equal(50, adaptation.ValueBefore);
@@ -540,7 +773,7 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         Assert.Equal(+1, adaptation.Delta);
         Assert.Equal(3, adaptation.EvidenceCount);
 
-        // Verify all 3 evidence records are marked IsApplied == true
+        // All 3 evidence records marked applied
         var evidenceList = await db.CharacterPersonalityAdaptationEvidences.Where(e => e.CharacterId == charId).ToListAsync();
         Assert.Equal(3, evidenceList.Count);
         Assert.All(evidenceList, e => Assert.True(e.IsApplied));
@@ -548,26 +781,111 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessAdaptationAsync_ConcurrentThresholdEvaluation_ProducesExactlyOneAdaptation_NoLostUpdates()
+    {
+        var charId = await SeedCharacterStateAsync();
+
+        // 1. Seed 2 unapplied evidence items
+        await using (var seedDb = new CoreDbContext(_options))
+        {
+            var seedRepo = new CharacterPersonalityRepository(seedDb);
+            for (int i = 0; i < 2; i++)
+            {
+                var execId = Guid.NewGuid();
+                var fp = CanonicalPersonalityFingerprint.ComputeEvidence(
+                    charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+                    PersonalityTraitKeys.Warmth, +1, 1);
+                var ev = new PersonalityAdaptationEvidence(
+                    charId, execId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+                    PersonalityTraitKeys.Warmth, +1, 1, $"Preseeded {i}", fp);
+                await seedRepo.AddOrGetEvidenceAsync(ev);
+            }
+        }
+
+        // 2. Setup Worker A and Worker B with independent DbContexts
+        await using var dbWorkerA = new CoreDbContext(_options);
+        await using var dbWorkerB = new CoreDbContext(_options);
+
+        var serviceA = new PersonalityAdaptationService(
+            new CharacterPersonalityRepository(dbWorkerA),
+            new DefaultPersonalityAdaptationPolicy(),
+            NullLogger<PersonalityAdaptationService>.Instance,
+            threshold: 3);
+
+        var serviceB = new PersonalityAdaptationService(
+            new CharacterPersonalityRepository(dbWorkerB),
+            new DefaultPersonalityAdaptationPolicy(),
+            NullLogger<PersonalityAdaptationService>.Instance,
+            threshold: 3);
+
+        var contextA = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: Guid.NewGuid(),
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow
+        );
+        var resultA = CreateSuccessResultWithRel(contextA, affectionDelta: 3);
+
+        var contextB = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: Guid.NewGuid(),
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow.AddSeconds(1)
+        );
+        var resultB = CreateSuccessResultWithRel(contextB, affectionDelta: 3);
+
+        // Worker A completes first and commits adaptation (threshold 3 reached: 2 preseeded + A)
+        var resA = await serviceA.ProcessAdaptationAsync(contextA, resultA);
+        Assert.NotNull(resA);
+        Assert.True(resA.AdaptationTriggered);
+        Assert.Equal(51, resA.TraitValueAfter);
+
+        // Worker B executes with its 4th evidence item.
+        // Worker B's service queries fresh DB state: 3 items already applied, only 1 unapplied remaining (< 3).
+        // Worker B gracefully finishes with NoAdaptation without conflict or double increment!
+        var resB = await serviceB.ProcessAdaptationAsync(contextB, resultB);
+        Assert.NotNull(resB);
+        Assert.False(resB.AdaptationTriggered);
+
+        // 3. Verify in independent context: Exactly 1 adaptation committed, Warmth is 51 (NOT 52)
+        await using var verifyDb = new CoreDbContext(_options);
+        var personality = await verifyDb.CharacterPersonalities.SingleAsync(p => p.CharacterId == charId);
+        Assert.Equal(51, personality.Warmth);
+        Assert.Equal(2u, personality.Version);
+
+        var totalAdaptations = await verifyDb.CharacterPersonalityAdaptations.CountAsync(a => a.CharacterId == charId);
+        Assert.Equal(1, totalAdaptations);
+
+        // 4 total evidence: 3 applied, 1 unapplied (Worker B's)
+        var appliedEvidence = await verifyDb.CharacterPersonalityAdaptationEvidences.CountAsync(e => e.CharacterId == charId && e.IsApplied);
+        Assert.Equal(3, appliedEvidence);
+
+        var unappliedEvidence = await verifyDb.CharacterPersonalityAdaptationEvidences.CountAsync(e => e.CharacterId == charId && !e.IsApplied);
+        Assert.Equal(1, unappliedEvidence);
+    }
+
+    [Fact]
     public async Task ProcessAdaptationAsync_OppositeEvidence_CancelsOut_AndDoesNotMutatePersonality()
     {
         await using var db = new CoreDbContext(_options);
         var charId = await SeedCharacterStateAsync();
+        var repo = new CharacterPersonalityRepository(db);
         var service = new PersonalityAdaptationService(
-            db, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
+            repo, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
 
-        // 1. First interaction: Positive (+1 Warmth)
+        // 1. Positive (+1 Warmth)
         var context1 = new CharacterCognitiveCycleContext(Guid.NewGuid(), Guid.NewGuid(), charId, DateTimeOffset.UtcNow);
-        var res1 = await service.ProcessAdaptationAsync(context1, CreateSuccessResult(context1, trustDelta: 2));
+        var res1 = await service.ProcessAdaptationAsync(context1, CreateSuccessResultWithRel(context1, affectionDelta: 3));
         Assert.False(res1!.AdaptationTriggered);
 
-        // 2. Second interaction: Negative (-1 Warmth)
+        // 2. Negative (-1 Warmth)
         var context2 = new CharacterCognitiveCycleContext(Guid.NewGuid(), Guid.NewGuid(), charId, DateTimeOffset.UtcNow.AddMinutes(1));
-        var res2 = await service.ProcessAdaptationAsync(context2, CreateSuccessResult(context2, trustDelta: -2));
+        var res2 = await service.ProcessAdaptationAsync(context2, CreateSuccessResultWithRel(context2, affectionDelta: -3));
         Assert.False(res2!.AdaptationTriggered);
 
-        // 3. Third interaction: Positive (+1 Warmth) -> Net score = 1 - 1 + 1 = 1 (< 3)
+        // 3. Positive (+1 Warmth) -> Net score = +1 -1 +1 = +1 (< 3)
         var context3 = new CharacterCognitiveCycleContext(Guid.NewGuid(), Guid.NewGuid(), charId, DateTimeOffset.UtcNow.AddMinutes(2));
-        var res3 = await service.ProcessAdaptationAsync(context3, CreateSuccessResult(context3, trustDelta: 2));
+        var res3 = await service.ProcessAdaptationAsync(context3, CreateSuccessResultWithRel(context3, affectionDelta: 3));
         Assert.False(res3!.AdaptationTriggered);
 
         // 0 adaptations applied
@@ -577,7 +895,7 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
 
     #endregion
 
-    #region 6. Optimistic Concurrency Tests (Two DbContexts)
+    #region 6. Concurrency Token & Race Tests (P2-2, P0-2)
 
     [Fact]
     public async Task Personality_VersionConcurrencyToken_WorkerAWins_WorkerBThrowsDbUpdateConcurrencyException()
@@ -622,9 +940,182 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         Assert.Equal(2u, authoritative.Version);
     }
 
+    [Fact]
+    public async Task Personality_GetOrCreateDefaultAsync_WhenConcurrentInsertConflictOccurs_DetachesLocalAndReturnsWinner()
+    {
+        var charId = await SeedCharacterStateAsync();
+
+        var interceptor = new ConcurrentPersonalityInsertInterceptor(charId);
+        var loserOptions = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var dbLoser = new CoreDbContext(loserOptions);
+
+        // Loser context tracks an unrelated entity to prove ChangeTracker is not cleared
+        var unrelatedExecId = Guid.NewGuid();
+        var unrelatedFp = CanonicalPersonalityFingerprint.ComputeEvidence(
+            charId, unrelatedExecId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1);
+        var unrelated = new PersonalityAdaptationEvidence(
+            charId, unrelatedExecId, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+            PersonalityTraitKeys.Warmth, +1, 1, "Unrelated", unrelatedFp);
+        await dbLoser.CharacterPersonalityAdaptationEvidences.AddAsync(unrelated);
+
+        var loserRepo = new CharacterPersonalityRepository(dbLoser);
+        var resolved = await loserRepo.GetOrCreateDefaultAsync(charId);
+
+        // Assert 1: Interceptor actually injected the concurrent row
+        Assert.True(interceptor.WasInjected);
+
+        // Assert 2: Authoritative winner personality is returned
+        Assert.NotNull(resolved);
+        Assert.Equal(charId, resolved.CharacterId);
+        Assert.Equal(50, resolved.Warmth);
+
+        // Assert 3: Unrelated entity is STILL tracked as Added (ChangeTracker.Clear() was NOT called)
+        var unrelatedEntry = dbLoser.Entry(unrelated);
+        Assert.Equal(EntityState.Added, unrelatedEntry.State);
+
+        // Assert 4: Subsequent SaveChangesAsync succeeds
+        await dbLoser.SaveChangesAsync();
+
+        // Assert 5: Verify in independent context: Exactly 1 personality exists, unrelated entity committed
+        await using var verifyDb = new CoreDbContext(_options);
+        var count = await verifyDb.CharacterPersonalities.CountAsync(p => p.CharacterId == charId);
+        Assert.Equal(1, count);
+
+        var savedUnrelated = await verifyDb.CharacterPersonalityAdaptationEvidences.SingleOrDefaultAsync(e => e.ExecutionId == unrelatedExecId);
+        Assert.NotNull(savedUnrelated);
+    }
+
     #endregion
 
-    #region 7. Pipeline Integration & Invariant Tests
+    #region 7. Blueprint & Snapshot Separation Tests (P0-1)
+
+    [Fact]
+    public async Task CognitiveCycle_LoadsAuthoritativePersonalitySnapshot_AndModulatesExperiencePolicy()
+    {
+        await using var db = new CoreDbContext(_options);
+        var charId = await SeedCharacterStateAsync(stress: 60m); // Stress 60
+
+        // Seed authoritative personality with high EmotionalStability (100) -> 0.5x stress sensitivity
+        var personality = new CharacterPersonality(
+            charId,
+            warmth: 85,
+            openness: 60,
+            assertiveness: 70,
+            conscientiousness: 90,
+            socialConfidence: 75,
+            trustDisposition: 80,
+            emotionalStability: 100,
+            version: 1
+        );
+        db.CharacterPersonalities.Add(personality);
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var cycleContext = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: Guid.NewGuid(),
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow
+        );
+
+        var result = await service.RunAsync(cycleContext);
+
+        Assert.True(result.IsSuccess);
+        // Result MUST expose immutable PersonalitySnapshot
+        Assert.NotNull(result.PersonalitySnapshot);
+        Assert.Equal(charId, result.PersonalitySnapshot.CharacterId);
+        Assert.Equal(85, result.PersonalitySnapshot.Warmth);
+        Assert.Equal(100, result.PersonalitySnapshot.EmotionalStability);
+
+        // Stress intensity MUST be modulated by 0.5x (60 / 100 * 0.5 = 0.30)
+        Assert.NotNull(result.Experience);
+        Assert.Equal(0.30, result.Experience.Stress.Intensity.Value, 2);
+    }
+
+    [Fact]
+    public async Task CognitiveCycle_AdaptationOnlyAffectsFutureCycles()
+    {
+        await using var db = new CoreDbContext(_options);
+        var charId = await SeedCharacterStateAsync(hunger: 80m);
+        var userId = Guid.NewGuid();
+
+        // Seed authoritative personality with initial Warmth = 50
+        var personality = CharacterPersonality.CreateDefault(charId);
+        db.CharacterPersonalities.Add(personality);
+        await db.SaveChangesAsync();
+
+        // Configure service with threshold = 1 so cycle 1 immediately adapts
+        var repo = new CharacterPersonalityRepository(db);
+        var personalityService = new PersonalityAdaptationService(
+            repo,
+            new DefaultPersonalityAdaptationPolicy(),
+            NullLogger<PersonalityAdaptationService>.Instance,
+            threshold: 1);
+
+        var service = CreateService(db, personalityAdaptationService: personalityService, personalityRepository: repo);
+
+        // --- Cycle 1 ---
+        var cycle1Context = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: Guid.NewGuid(),
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow,
+            Event: new UserMessageCognitiveEvent(
+                EventId: Guid.NewGuid(),
+                CharacterId: charId,
+                OccurredAtUtc: DateTimeOffset.UtcNow,
+                Message: "Great job, friend!",
+                Source: "User",
+                UserId: userId
+            )
+        );
+
+        var result1 = await service.RunAsync(cycle1Context);
+        Assert.True(result1.IsSuccess);
+
+        // Cycle 1 evaluated using Snapshot A (Warmth = 50)
+        Assert.NotNull(result1.PersonalitySnapshot);
+        Assert.Equal(50, result1.PersonalitySnapshot.Warmth);
+
+        // Adaptation triggered at the END of Cycle 1
+        Assert.NotNull(result1.PersonalityAdaptation);
+        Assert.True(result1.PersonalityAdaptation.AdaptationTriggered);
+        Assert.Equal(50, result1.PersonalityAdaptation.TraitValueBefore);
+        Assert.Equal(51, result1.PersonalityAdaptation.TraitValueAfter);
+
+        // --- Cycle 2 ---
+        var cycle2Context = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: Guid.NewGuid(),
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow.AddMinutes(1),
+            Event: new UserMessageCognitiveEvent(
+                EventId: Guid.NewGuid(),
+                CharacterId: charId,
+                OccurredAtUtc: DateTimeOffset.UtcNow.AddMinutes(1),
+                Message: "Another greeting!",
+                Source: "User",
+                UserId: userId
+            )
+        );
+
+        var result2 = await service.RunAsync(cycle2Context);
+        Assert.True(result2.IsSuccess);
+
+        // Cycle 2 evaluates using Snapshot B (Warmth = 51)
+        Assert.NotNull(result2.PersonalitySnapshot);
+        Assert.Equal(51, result2.PersonalitySnapshot.Warmth);
+    }
+
+    #endregion
+
+    #region 8. Pipeline Integration & Failure Isolation Tests
 
     [Fact]
     public async Task CognitiveCycle_FullExecution_ProducesPersonalityEvidence_AndThresholdAdaptation()
@@ -677,10 +1168,6 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         Assert.Equal(51, personality.Warmth);
     }
 
-    #endregion
-
-    #region 8. Failure Isolation Tests
-
     [Fact]
     public async Task CognitiveCycle_WhenPersonalityPersistenceFails_StateAndOtherFeedbacksRemainCommitted()
     {
@@ -729,28 +1216,12 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
 
     #region Helper Methods & Doubles
 
-    private static CharacterCognitiveCycleResult CreateSuccessResult(
+    private static CharacterCognitiveCycleResult CreateSuccessResultWithRel(
         CharacterCognitiveCycleContext context,
-        int trustDelta = 1)
+        int trustDelta = 0,
+        int affectionDelta = 0,
+        int familiarityDelta = 0)
     {
-        var actionProposal = new CharacterActionProposal(
-            type: ActionType.Eat,
-            intensity: 0.8,
-            sourceIntent: IntentType.SeekFood,
-            motivation: MotivationType.HungerDriven,
-            stateVersion: 1
-        );
-
-        var actionExec = CharacterActionExecutionResult.Applied(
-            context.ExecutionId,
-            context.CharacterId,
-            actionProposal,
-            1,
-            2,
-            CharacterStateDelta.Zero,
-            new CharacterStateSnapshot(energy: 80, hunger: 20, version: 2)
-        );
-
         var relFeedback = new CharacterRelationshipFeedback(
             RelationshipId: Guid.NewGuid(),
             CharacterId: context.CharacterId,
@@ -758,17 +1229,49 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             TargetId: Guid.NewGuid(),
             TargetType: RelationshipTargetType.User,
             TrustDelta: trustDelta,
-            AffectionDelta: 0,
-            FamiliarityDelta: 1,
+            AffectionDelta: affectionDelta,
+            FamiliarityDelta: familiarityDelta,
             NewRelationshipType: null,
-            Reason: "Helpful interaction",
+            Reason: "Relationship test feedback",
             OccurredAtUtc: context.TriggeredAtUtc
+        );
+
+        return CreateSuccessResult(context, relFeedback: relFeedback);
+    }
+
+    private static CharacterCognitiveCycleResult CreateSuccessResult(
+        CharacterCognitiveCycleContext context,
+        ActionType actionType = ActionType.Eat,
+        StressLevel stressLevel = StressLevel.Calm,
+        decimal stressDelta = 0m,
+        CharacterRelationshipFeedback? relFeedback = null)
+    {
+        var actionProposal = new CharacterActionProposal(
+            type: actionType,
+            intensity: 0.8,
+            sourceIntent: IntentType.SeekFood,
+            motivation: MotivationType.HungerDriven,
+            stateVersion: 1
+        );
+
+        var appliedDelta = stressDelta != 0m
+            ? new CharacterStateDelta { StressDelta = stressDelta }
+            : CharacterStateDelta.Zero;
+
+        var actionExec = CharacterActionExecutionResult.Applied(
+            context.ExecutionId,
+            context.CharacterId,
+            actionProposal,
+            1,
+            2,
+            appliedDelta,
+            new CharacterStateSnapshot(energy: 80, hunger: 20, version: 2)
         );
 
         var hungerPerception = new HungerPerception(HungerLevel.Satisfied, new PerceptionIntensity(0.2), 20);
         var energyPerception = new EnergyPerception(EnergyLevel.Energized, new PerceptionIntensity(0.2), 80);
         var moodPerception = new MoodPerception(MoodPerceptionLevel.Good, new PerceptionIntensity(0.6), 60, CharacterMood.Happy);
-        var stressPerception = new StressPerception(StressLevel.Calm, new PerceptionIntensity(0.1), 10);
+        var stressPerception = new StressPerception(stressLevel, new PerceptionIntensity(0.1), 10);
         var socialNeedPerception = new SocialNeedPerception(SocialNeedLevel.SociallySatisfied, new PerceptionIntensity(0.2), 20);
         var comfortPerception = new ComfortPerception(ComfortLevel.Comfortable, new PerceptionIntensity(0.2), 80);
 
@@ -822,6 +1325,145 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             CancellationToken ct = default)
         {
             throw new InvalidOperationException("Simulated database failure during personality adaptation persistence.");
+        }
+    }
+
+    private sealed class ConcurrentPersonalityInsertInterceptor : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private readonly Guid _charId;
+        public bool WasInjected { get; private set; }
+
+        public ConcurrentPersonalityInsertInterceptor(Guid charId)
+        {
+            _charId = charId;
+        }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!WasInjected && eventData.Context != null)
+            {
+                WasInjected = true;
+
+                using var cmd = eventData.Context.Database.GetDbConnection().CreateCommand();
+                if (eventData.Context.Database.CurrentTransaction != null)
+                {
+                    cmd.Transaction = eventData.Context.Database.CurrentTransaction.GetDbTransaction();
+                }
+
+                var id = Guid.NewGuid();
+                var now = DateTime.UtcNow.ToString("O");
+                cmd.CommandText = @"
+                    INSERT INTO ""CharacterPersonalities"" (
+                        ""Id"", ""CharacterId"", ""Warmth"", ""Openness"", ""Assertiveness"", ""Conscientiousness"",
+                        ""SocialConfidence"", ""TrustDisposition"", ""EmotionalStability"", ""Version"", ""CreatedAt"", ""IsSoftDeleted""
+                    ) VALUES (
+                        @id, @charId, 50, 50, 50, 50, 50, 50, 50, 1, @now, 0
+                    );";
+
+                var pId = cmd.CreateParameter();
+                pId.ParameterName = "@id";
+                pId.Value = id;
+                cmd.Parameters.Add(pId);
+
+                var pCharId = cmd.CreateParameter();
+                pCharId.ParameterName = "@charId";
+                pCharId.Value = _charId;
+                cmd.Parameters.Add(pCharId);
+
+                var pNow = cmd.CreateParameter();
+                pNow.ParameterName = "@now";
+                pNow.Value = now;
+                cmd.Parameters.Add(pNow);
+
+                cmd.ExecuteNonQuery();
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class ConcurrentPersonalityEvidenceInsertInterceptor : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private readonly Guid _charId;
+        private readonly Guid _execId;
+        private readonly string _fingerprint;
+        public bool WasInjected { get; private set; }
+
+        public ConcurrentPersonalityEvidenceInsertInterceptor(Guid charId, Guid execId, string fingerprint)
+        {
+            _charId = charId;
+            _execId = execId;
+            _fingerprint = fingerprint;
+        }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!WasInjected && eventData.Context != null)
+            {
+                WasInjected = true;
+
+                using var cmd = eventData.Context.Database.GetDbConnection().CreateCommand();
+                if (eventData.Context.Database.CurrentTransaction != null)
+                {
+                    cmd.Transaction = eventData.Context.Database.CurrentTransaction.GetDbTransaction();
+                }
+
+                var id = Guid.NewGuid();
+                var now = DateTime.UtcNow.ToString("O");
+                cmd.CommandText = @"
+                    INSERT INTO ""CharacterPersonalityAdaptationEvidences"" (
+                        ""Id"", ""CharacterId"", ""ExecutionId"", ""EvidenceType"", ""TraitKey"", ""Direction"",
+                        ""Strength"", ""Reason"", ""Fingerprint"", ""IsApplied"", ""CreatedAtUtc""
+                    ) VALUES (
+                        @id, @charId, @execId, @type, @traitKey, 1,
+                        1, 'Winner reason', @fingerprint, 0, @now
+                    );";
+
+                var pId = cmd.CreateParameter();
+                pId.ParameterName = "@id";
+                pId.Value = id;
+                cmd.Parameters.Add(pId);
+
+                var pCharId = cmd.CreateParameter();
+                pCharId.ParameterName = "@charId";
+                pCharId.Value = _charId;
+                cmd.Parameters.Add(pCharId);
+
+                var pExecId = cmd.CreateParameter();
+                pExecId.ParameterName = "@execId";
+                pExecId.Value = _execId;
+                cmd.Parameters.Add(pExecId);
+
+                var pType = cmd.CreateParameter();
+                pType.ParameterName = "@type";
+                pType.Value = nameof(PersonalityAdaptationEvidenceType.PositiveSocialOutcome);
+                cmd.Parameters.Add(pType);
+
+                var pTraitKey = cmd.CreateParameter();
+                pTraitKey.ParameterName = "@traitKey";
+                pTraitKey.Value = PersonalityTraitKeys.Warmth;
+                cmd.Parameters.Add(pTraitKey);
+
+                var pFp = cmd.CreateParameter();
+                pFp.ParameterName = "@fingerprint";
+                pFp.Value = _fingerprint;
+                cmd.Parameters.Add(pFp);
+
+                var pNow = cmd.CreateParameter();
+                pNow.ParameterName = "@now";
+                pNow.Value = now;
+                cmd.Parameters.Add(pNow);
+
+                cmd.ExecuteNonQuery();
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
 

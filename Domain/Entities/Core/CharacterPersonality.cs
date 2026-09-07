@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using Domain.Common;
+using Domain.ValueObjects;
 
 namespace Domain.Entities;
 
@@ -163,5 +164,21 @@ public sealed class CharacterPersonality : Entity
         Touch();
 
         return (valueBefore, valueAfter);
+    }
+
+    public CharacterPersonalitySnapshot ToSnapshot()
+    {
+        return new CharacterPersonalitySnapshot(
+            CharacterId: CharacterId,
+            Version: Version,
+            Warmth: Warmth,
+            Openness: Openness,
+            Assertiveness: Assertiveness,
+            Conscientiousness: Conscientiousness,
+            SocialConfidence: SocialConfidence,
+            TrustDisposition: TrustDisposition,
+            EmotionalStability: EmotionalStability,
+            SnapshotAtUtc: DateTimeOffset.UtcNow
+        );
     }
 }

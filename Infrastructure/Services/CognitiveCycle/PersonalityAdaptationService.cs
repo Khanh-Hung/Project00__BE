@@ -1,13 +1,15 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Application.Abstractions.Data;
 using Application.Contracts.CognitiveCycle;
 using Domain.Common;
 using Domain.Entities;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
+using Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -22,21 +24,30 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
     public const int DefaultAccumulationThreshold = 3;
     private const int MaxConcurrencyRetries = 3;
 
-    private readonly CoreDbContext _dbContext;
+    private readonly ICharacterPersonalityRepository _repository;
     private readonly IPersonalityAdaptationPolicy _policy;
     private readonly ILogger<PersonalityAdaptationService> _logger;
     private readonly int _threshold;
+
+    public PersonalityAdaptationService(
+        ICharacterPersonalityRepository repository,
+        IPersonalityAdaptationPolicy policy,
+        ILogger<PersonalityAdaptationService> logger,
+        int threshold = DefaultAccumulationThreshold)
+    {
+        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _policy = policy ?? throw new ArgumentNullException(nameof(policy));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _threshold = threshold <= 0 ? DefaultAccumulationThreshold : threshold;
+    }
 
     public PersonalityAdaptationService(
         CoreDbContext dbContext,
         IPersonalityAdaptationPolicy policy,
         ILogger<PersonalityAdaptationService> logger,
         int threshold = DefaultAccumulationThreshold)
+        : this(new CharacterPersonalityRepository(dbContext), policy, logger, threshold)
     {
-        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _policy = policy ?? throw new ArgumentNullException(nameof(policy));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _threshold = threshold <= 0 ? DefaultAccumulationThreshold : threshold;
     }
 
     public async Task<CharacterPersonalityAdaptationResult?> ProcessAdaptationAsync(
@@ -54,48 +65,16 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
             return null;
         }
 
+        // Compute canonical SHA-256 fingerprint from machine-level fields (P1-4: Reason excluded)
         var expectedFingerprint = CanonicalPersonalityFingerprint.ComputeEvidence(
             context.CharacterId,
             context.ExecutionId,
             proposal.EvidenceType,
             proposal.TraitKey,
             proposal.Direction,
-            proposal.Strength,
-            proposal.Reason);
+            proposal.Strength);
 
-        // 2. Idempotency Check: (CharacterId, ExecutionId)
-        var existingEvidence = await _dbContext.CharacterPersonalityAdaptationEvidences
-            .AsNoTracking()
-            .FirstOrDefaultAsync(e => e.CharacterId == context.CharacterId && e.ExecutionId == context.ExecutionId, ct);
-
-        if (existingEvidence != null)
-        {
-            if (existingEvidence.Fingerprint != expectedFingerprint)
-            {
-                _logger.LogWarning(
-                    "[PersonalityAdaptationService] Idempotency conflict for CharacterId={CharacterId}, ExecutionId={ExecutionId}. Existing '{Existing}' != incoming '{Incoming}'.",
-                    context.CharacterId, context.ExecutionId, existingEvidence.Fingerprint, expectedFingerprint);
-
-                throw new PersonalityAdaptationIdempotencyConflictException(
-                    $"ExecutionId '{context.ExecutionId}' has already been processed with a different semantic personality adaptation evidence payload.");
-            }
-
-            _logger.LogInformation(
-                "[PersonalityAdaptationService] Idempotent duplicate evidence suppressed for CharacterId={CharacterId}, ExecutionId={ExecutionId}.",
-                context.CharacterId, context.ExecutionId);
-
-            return new CharacterPersonalityAdaptationResult(
-                EvidenceId: existingEvidence.Id,
-                CharacterId: existingEvidence.CharacterId,
-                ExecutionId: existingEvidence.ExecutionId,
-                TraitKey: existingEvidence.TraitKey,
-                Direction: existingEvidence.Direction,
-                Strength: existingEvidence.Strength,
-                AdaptationTriggered: existingEvidence.IsApplied
-            );
-        }
-
-        // 3. Persist new evidence
+        // 2. Persist Evidence atomically with idempotent race handling (P0-3)
         var newEvidence = new PersonalityAdaptationEvidence(
             characterId: context.CharacterId,
             executionId: context.ExecutionId,
@@ -108,95 +87,125 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
             createdAtUtc: context.TriggeredAtUtc.UtcDateTime
         );
 
-        await _dbContext.CharacterPersonalityAdaptationEvidences.AddAsync(newEvidence, ct);
-        await _dbContext.SaveChangesAsync(ct);
+        var evidence = await _repository.AddOrGetEvidenceAsync(newEvidence, ct);
 
-        // 4. Evidence Accumulation Check
-        var unappliedList = await _dbContext.CharacterPersonalityAdaptationEvidences
-            .Where(e => e.CharacterId == context.CharacterId && e.TraitKey == proposal.TraitKey && !e.IsApplied)
-            .OrderBy(e => e.CreatedAtUtc)
-            .ThenBy(e => e.Id)
-            .ToListAsync(ct);
-
-        int netEvidenceScore = unappliedList.Sum(e => e.Direction * e.Strength);
-
-        int adaptationDelta = 0;
-        if (netEvidenceScore >= _threshold)
-        {
-            adaptationDelta = +1;
-        }
-        else if (netEvidenceScore <= -_threshold)
-        {
-            adaptationDelta = -1;
-        }
-
-        if (adaptationDelta == 0)
-        {
-            // Below threshold: Evidence recorded, no trait mutation applied
-            return new CharacterPersonalityAdaptationResult(
-                EvidenceId: newEvidence.Id,
-                CharacterId: newEvidence.CharacterId,
-                ExecutionId: newEvidence.ExecutionId,
-                TraitKey: newEvidence.TraitKey,
-                Direction: newEvidence.Direction,
-                Strength: newEvidence.Strength,
-                AdaptationTriggered: false
-            );
-        }
-
-        // 5. Apply Adaptation with Optimistic Concurrency Retry
+        // 3. Evidence Accumulation & Adaptation Loop (P0-2)
         for (var attempt = 1; attempt <= MaxConcurrencyRetries; attempt++)
         {
+            // If retry > 1, clear tracking to avoid stale detached entities
+            if (attempt > 1 && _repository is CharacterPersonalityRepository repo)
+            {
+                repo.ClearTracking();
+            }
+
+            // Check if an adaptation for this ExecutionId was already committed
+            var existingAdaptation = await _repository.GetAdaptationByExecutionIdAsync(context.CharacterId, context.ExecutionId, ct);
+            if (existingAdaptation != null)
+            {
+                return new CharacterPersonalityAdaptationResult(
+                    EvidenceId: evidence.Id,
+                    CharacterId: context.CharacterId,
+                    ExecutionId: context.ExecutionId,
+                    TraitKey: existingAdaptation.TraitKey,
+                    Direction: evidence.Direction,
+                    Strength: evidence.Strength,
+                    AdaptationTriggered: true,
+                    TraitValueBefore: existingAdaptation.ValueBefore,
+                    TraitValueAfter: existingAdaptation.ValueAfter,
+                    TraitDelta: existingAdaptation.Delta,
+                    AdaptationFingerprint: existingAdaptation.Fingerprint
+                );
+            }
+
+            // Query fresh unapplied evidence from DB
+            var unappliedList = await _repository.GetUnappliedEvidenceAsync(context.CharacterId, proposal.TraitKey, ct);
+
+            int netEvidenceScore = unappliedList.Sum(e => e.Direction * e.Strength);
+
+            int adaptationDelta = 0;
+            if (netEvidenceScore >= _threshold)
+            {
+                adaptationDelta = +1;
+            }
+            else if (netEvidenceScore <= -_threshold)
+            {
+                adaptationDelta = -1;
+            }
+
+            if (adaptationDelta == 0)
+            {
+                // Below threshold or concurrent worker already consumed evidence: No adaptation
+                return new CharacterPersonalityAdaptationResult(
+                    EvidenceId: evidence.Id,
+                    CharacterId: context.CharacterId,
+                    ExecutionId: context.ExecutionId,
+                    TraitKey: proposal.TraitKey,
+                    Direction: evidence.Direction,
+                    Strength: evidence.Strength,
+                    AdaptationTriggered: false
+                );
+            }
+
+            // Select only the threshold number of unapplied evidence items contributing to this direction
+            var targetDirection = adaptationDelta > 0 ? 1 : -1;
+            var toApply = unappliedList.Where(e => e.Direction == targetDirection).Take(_threshold).ToList();
+
+            if (toApply.Count < _threshold)
+            {
+                return new CharacterPersonalityAdaptationResult(
+                    EvidenceId: evidence.Id,
+                    CharacterId: context.CharacterId,
+                    ExecutionId: context.ExecutionId,
+                    TraitKey: proposal.TraitKey,
+                    Direction: evidence.Direction,
+                    Strength: evidence.Strength,
+                    AdaptationTriggered: false
+                );
+            }
+
+            // Load fresh personality from repository
+            var personality = await _repository.GetOrCreateDefaultAsync(context.CharacterId, ct);
+            var (valueBefore, valueAfter) = personality.AdaptTrait(proposal.TraitKey, adaptationDelta);
+
+            var adaptationFingerprint = CanonicalPersonalityFingerprint.ComputeAdaptation(
+                context.CharacterId,
+                context.ExecutionId,
+                proposal.TraitKey,
+                valueBefore,
+                valueAfter,
+                adaptationDelta,
+                toApply.Count);
+
+            var adaptationRecord = new CharacterPersonalityAdaptation(
+                characterId: context.CharacterId,
+                executionId: context.ExecutionId,
+                traitKey: proposal.TraitKey,
+                valueBefore: valueBefore,
+                valueAfter: valueAfter,
+                delta: adaptationDelta,
+                evidenceCount: toApply.Count,
+                fingerprint: adaptationFingerprint,
+                createdAtUtc: context.TriggeredAtUtc.UtcDateTime
+            );
+
+            await _repository.AddAdaptationAsync(adaptationRecord, ct);
+
+            // Mark the claimed evidence items
+            foreach (var ev in toApply)
+            {
+                ev.MarkApplied(adaptationRecord.Id);
+            }
+
             try
             {
-                var personality = await _dbContext.CharacterPersonalities
-                    .FirstOrDefaultAsync(p => p.CharacterId == context.CharacterId, ct);
-
-                if (personality == null)
-                {
-                    personality = CharacterPersonality.CreateDefault(context.CharacterId, context.TriggeredAtUtc.UtcDateTime);
-                    await _dbContext.CharacterPersonalities.AddAsync(personality, ct);
-                }
-
-                var (valueBefore, valueAfter) = personality.AdaptTrait(proposal.TraitKey, adaptationDelta);
-
-                var adaptationFingerprint = CanonicalPersonalityFingerprint.ComputeAdaptation(
-                    context.CharacterId,
-                    context.ExecutionId,
-                    proposal.TraitKey,
-                    valueBefore,
-                    valueAfter,
-                    adaptationDelta,
-                    unappliedList.Count);
-
-                var adaptationRecord = new CharacterPersonalityAdaptation(
-                    characterId: context.CharacterId,
-                    executionId: context.ExecutionId,
-                    traitKey: proposal.TraitKey,
-                    valueBefore: valueBefore,
-                    valueAfter: valueAfter,
-                    delta: adaptationDelta,
-                    evidenceCount: unappliedList.Count,
-                    fingerprint: adaptationFingerprint,
-                    createdAtUtc: context.TriggeredAtUtc.UtcDateTime
-                );
-
-                await _dbContext.CharacterPersonalityAdaptations.AddAsync(adaptationRecord, ct);
-
-                // Mark unapplied evidence as applied
-                foreach (var ev in unappliedList)
-                {
-                    ev.MarkApplied(adaptationRecord.Id);
-                }
-
-                await _dbContext.SaveChangesAsync(ct);
+                await _repository.SaveChangesAsync(ct);
 
                 _logger.LogInformation(
                     "[PersonalityAdaptationService] Applied adaptation for CharacterId={CharacterId}, Trait={Trait}: {Before} -> {After} (Delta={Delta}, Version={Version}).",
                     context.CharacterId, proposal.TraitKey, valueBefore, valueAfter, adaptationDelta, personality.Version);
 
                 return new CharacterPersonalityAdaptationResult(
-                    EvidenceId: newEvidence.Id,
+                    EvidenceId: evidence.Id,
                     CharacterId: context.CharacterId,
                     ExecutionId: context.ExecutionId,
                     TraitKey: proposal.TraitKey,
@@ -212,22 +221,70 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
             catch (DbUpdateConcurrencyException ex)
             {
                 _logger.LogWarning(ex,
-                    "[PersonalityAdaptationService] Optimistic concurrency conflict on attempt {Attempt}/{MaxAttempts} for CharacterId={CharacterId}. Retrying...",
+                    "[PersonalityAdaptationService] Optimistic concurrency conflict on attempt {Attempt}/{MaxAttempts} for CharacterId={CharacterId}. Reloading fresh evidence...",
                     attempt, MaxConcurrencyRetries, context.CharacterId);
-
-                _dbContext.ChangeTracker.Clear();
 
                 if (attempt == MaxConcurrencyRetries)
                 {
-                    throw;
+                    // If retries exhausted, check if another worker already committed adaptation
+                    var committed = await _repository.GetAdaptationByExecutionIdAsync(context.CharacterId, context.ExecutionId, ct);
+                    if (committed != null)
+                    {
+                        return new CharacterPersonalityAdaptationResult(
+                            EvidenceId: evidence.Id,
+                            CharacterId: context.CharacterId,
+                            ExecutionId: context.ExecutionId,
+                            TraitKey: committed.TraitKey,
+                            Direction: evidence.Direction,
+                            Strength: evidence.Strength,
+                            AdaptationTriggered: true,
+                            TraitValueBefore: committed.ValueBefore,
+                            TraitValueAfter: committed.ValueAfter,
+                            TraitDelta: committed.Delta,
+                            AdaptationFingerprint: committed.Fingerprint
+                        );
+                    }
+
+                    return new CharacterPersonalityAdaptationResult(
+                        EvidenceId: evidence.Id,
+                        CharacterId: context.CharacterId,
+                        ExecutionId: context.ExecutionId,
+                        TraitKey: proposal.TraitKey,
+                        Direction: proposal.Direction,
+                        Strength: proposal.Strength,
+                        AdaptationTriggered: false
+                    );
                 }
 
                 await Task.Delay(25 * attempt, ct);
             }
+            catch (DbUpdateException)
+            {
+                // Unique constraint race on (CharacterId, ExecutionId) adaptation
+                var existing = await _repository.GetAdaptationByExecutionIdAsync(context.CharacterId, context.ExecutionId, ct);
+                if (existing != null)
+                {
+                    return new CharacterPersonalityAdaptationResult(
+                        EvidenceId: evidence.Id,
+                        CharacterId: context.CharacterId,
+                        ExecutionId: context.ExecutionId,
+                        TraitKey: existing.TraitKey,
+                        Direction: evidence.Direction,
+                        Strength: evidence.Strength,
+                        AdaptationTriggered: true,
+                        TraitValueBefore: existing.ValueBefore,
+                        TraitValueAfter: existing.ValueAfter,
+                        TraitDelta: existing.Delta,
+                        AdaptationFingerprint: existing.Fingerprint
+                    );
+                }
+
+                throw;
+            }
         }
 
         return new CharacterPersonalityAdaptationResult(
-            EvidenceId: newEvidence.Id,
+            EvidenceId: evidence.Id,
             CharacterId: context.CharacterId,
             ExecutionId: context.ExecutionId,
             TraitKey: proposal.TraitKey,

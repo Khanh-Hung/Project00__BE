@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -22,6 +22,7 @@ public sealed class CharacterPersonalityAdaptationConfiguration : IEntityTypeCon
         builder.Property(a => a.CreatedAtUtc).IsRequired();
 
         builder.HasIndex(a => new { a.CharacterId, a.ExecutionId })
+               .IsUnique()
                .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId");
 
         builder.HasIndex(a => new { a.CharacterId, a.TraitKey })

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -100,7 +100,8 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
             migrationBuilder.CreateIndex(
                 name: "IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId",
                 table: "CharacterPersonalityAdaptations",
-                columns: new[] { "CharacterId", "ExecutionId" });
+                columns: new[] { "CharacterId", "ExecutionId" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_CharacterPersonalityAdaptations_CharacterId_TraitKey",
