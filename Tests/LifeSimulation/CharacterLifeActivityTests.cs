@@ -57,7 +57,8 @@ public sealed class CharacterLifeActivityTests : IDisposable
     {
         var clk = clock ?? new FakeLifeSimulationClock();
         var repo = new CharacterLifeActivityRepository(db);
-        var service = new LifeSimulationService(repo, clk);
+        var outboxRepo = new CharacterOutboxRepository(db);
+        var service = new LifeSimulationService(repo, outboxRepo, clk);
         return (repo, service, clk);
     }
 

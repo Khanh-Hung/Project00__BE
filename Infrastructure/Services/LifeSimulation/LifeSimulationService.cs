@@ -17,13 +17,16 @@ namespace Infrastructure.Services.LifeSimulation;
 public sealed class LifeSimulationService : ILifeSimulationService
 {
     private readonly ICharacterLifeActivityRepository _repository;
+    private readonly ICharacterOutboxRepository _outboxRepository;
     private readonly ILifeSimulationClock _clock;
 
     public LifeSimulationService(
         ICharacterLifeActivityRepository repository,
+        ICharacterOutboxRepository outboxRepository,
         ILifeSimulationClock clock)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _outboxRepository = outboxRepository ?? throw new ArgumentNullException(nameof(outboxRepository));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
@@ -125,7 +128,17 @@ public sealed class LifeSimulationService : ILifeSimulationService
                 }
             }
 
-            if (completedActivities.Count > 0 || startedActivities.Count > 0)
+            if (events.Count > 0)
+            {
+                var now = _clock.UtcDateTime;
+                foreach (var evt in events)
+                {
+                    var outboxMsg = CharacterOutboxPayload.CreateOutboxMessage(evt, createdAtUtc: now);
+                    await _outboxRepository.AddAsync(outboxMsg, ct);
+                }
+            }
+
+            if (completedActivities.Count > 0 || startedActivities.Count > 0 || events.Count > 0)
             {
                 await _repository.SaveChangesAsync(ct);
             }
@@ -206,6 +219,21 @@ public sealed class LifeSimulationService : ILifeSimulationService
             ?? throw new KeyNotFoundException($"CharacterLifeActivity {activityId} not found.");
 
         activity.Cancel(currentSimulationTimeUtc.UtcDateTime, reason);
+
+        var cancelEventId = ComputeDeterministicEventGuid(activity.Id, Guid.Empty, "ActivityCancelled");
+        var cancelEvent = new LifeSimulationEvent(
+            cancelEventId,
+            activity.CharacterId,
+            currentSimulationTimeUtc,
+            activity.Id,
+            activity.ActivityType,
+            "ActivityCancelled",
+            reason ?? $"Activity {activity.ActivityType} was cancelled."
+        );
+
+        var outboxMsg = CharacterOutboxPayload.CreateOutboxMessage(cancelEvent, createdAtUtc: _clock.UtcDateTime);
+        await _outboxRepository.AddAsync(outboxMsg, ct);
+
         await _repository.SaveChangesAsync(ct);
 
         return activity;
