@@ -10,6 +10,7 @@ namespace Domain.Common;
 /// of a LifeSimulation/WorldEvent outbox message.
 /// Invariants:
 /// - Must not include volatile retry count, error messages, or unformatted text.
+/// - Description is intentionally treated as diagnostic/human-readable and excluded from canonical semantic fingerprinting.
 /// - Used for strict idempotency boundary:
 ///   * Same EventId + same semantic fingerprint => idempotent replay
 ///   * Same EventId + different semantic fingerprint => idempotency conflict

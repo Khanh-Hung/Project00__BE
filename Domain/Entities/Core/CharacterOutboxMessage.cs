@@ -139,9 +139,11 @@ public sealed class CharacterOutboxMessage
     }
 
     /// <summary>
-    /// Explicitly resets a failed message back to Pending for manual or automated recovery.
+    /// Explicitly resets a failed message back to Pending for manual operator recovery or administrative re-dispatch.
     /// Invariant transition: strictly Failed -> Pending. Only Failed messages can be retried.
     /// Published and Processing messages can NEVER be retried.
+    /// Note: Retry() is an explicit operator/manual recovery action and intentionally resets status to Pending
+    /// regardless of previous automatic MaxRetries attempts.
     /// </summary>
     public void Retry()
     {

@@ -90,9 +90,13 @@ public sealed record CharacterOutboxPayload
         {
             payload = FromJson(payloadJson);
         }
-        catch
+        catch (Exception ex)
         {
-            // Handled below
+            throw new CharacterOutboxIdempotencyConflictException(
+                eventId,
+                string.Empty,
+                string.Empty,
+                $"Cannot compute canonical fingerprint because payloadJson for EventId={eventId} is structurally invalid: {ex.Message}");
         }
 
         if (payload == null)
@@ -101,13 +105,60 @@ public sealed record CharacterOutboxPayload
                 eventId,
                 string.Empty,
                 string.Empty,
-                $"Cannot compute canonical fingerprint because payloadJson for EventId={eventId} is invalid or null.");
+                $"Cannot compute canonical fingerprint because payloadJson for EventId={eventId} is null or empty.");
+        }
+
+        // Schema version invariant
+        if (payload.SchemaVersion != 1)
+        {
+            throw new CharacterOutboxIdempotencyConflictException(
+                eventId,
+                string.Empty,
+                string.Empty,
+                $"Payload SchemaVersion={payload.SchemaVersion} is unsupported for EventId={eventId}. Only schema version 1 is supported.");
+        }
+
+        // Factual metadata consistency invariants between message envelope and payload
+        if (payload.EventId != eventId)
+        {
+            throw new CharacterOutboxIdempotencyConflictException(
+                eventId,
+                string.Empty,
+                string.Empty,
+                $"Payload EventId '{payload.EventId}' does not match message envelope EventId '{eventId}'.");
+        }
+
+        if (payload.CharacterId != characterId)
+        {
+            throw new CharacterOutboxIdempotencyConflictException(
+                eventId,
+                string.Empty,
+                string.Empty,
+                $"Payload CharacterId '{payload.CharacterId}' does not match message envelope CharacterId '{characterId}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(eventType) || !string.Equals(payload.EventType?.Trim(), eventType.Trim(), StringComparison.Ordinal))
+        {
+            throw new CharacterOutboxIdempotencyConflictException(
+                eventId,
+                string.Empty,
+                string.Empty,
+                $"Payload EventType '{payload.EventType}' does not match message envelope EventType '{eventType}'.");
+        }
+
+        if (payload.OccurredAtUtc.UtcDateTime != occurredAtUtc)
+        {
+            throw new CharacterOutboxIdempotencyConflictException(
+                eventId,
+                string.Empty,
+                string.Empty,
+                $"Payload OccurredAtUtc '{payload.OccurredAtUtc.UtcDateTime:O}' does not match message envelope OccurredAtUtc '{occurredAtUtc:O}'.");
         }
 
         return CanonicalOutboxFingerprint.Compute(
             eventId,
             characterId,
-            eventType,
+            eventType.Trim(),
             payload.ActivityId,
             payload.ActivityType,
             occurredAtUtc);

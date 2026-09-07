@@ -518,6 +518,272 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         Assert.Equal("arbitrary_unvalidated_fingerprint", ex.IncomingFingerprint);
     }
 
+    [Fact]
+    public async Task Repository_AddOrGetAsync_WhenPayloadEventIdDiffersFromMessage_ThrowsIdempotencyConflict()
+    {
+        using var db = CreateDbContext();
+        var (_, outboxRepo, _, _) = CreateSystem(db);
+
+        var messageEventId = Guid.NewGuid();
+        var divergentPayloadEventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+
+        var payload = new CharacterOutboxPayload
+        {
+            SchemaVersion = 1,
+            EventId = divergentPayloadEventId, // divergent!
+            CharacterId = charId,
+            EventType = "ActivityStarted",
+            ActivityId = Guid.NewGuid(),
+            ActivityType = LifeActivityType.Work,
+            OccurredAtUtc = now,
+            Description = "Divergent payload eventId"
+        };
+
+        var fp = CanonicalOutboxFingerprint.Compute(
+            messageEventId, charId, "ActivityStarted", payload.ActivityId, LifeActivityType.Work, now);
+
+        var msg = new CharacterOutboxMessage(
+            eventId: messageEventId,
+            characterId: charId,
+            eventType: "ActivityStarted",
+            payloadJson: payload.ToJson(),
+            fingerprint: fp,
+            occurredAtUtc: now
+        );
+
+        await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        {
+            await outboxRepo.AddOrGetAsync(msg);
+        });
+
+        // Verify zero persisted rows
+        using var verifyDb = CreateDbContext();
+        var count = await verifyDb.CharacterOutboxMessages.CountAsync(m => m.EventId == messageEventId);
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAsync_WhenPayloadCharacterIdDiffersFromMessage_ThrowsIdempotencyConflict()
+    {
+        using var db = CreateDbContext();
+        var (_, outboxRepo, _, _) = CreateSystem(db);
+
+        var eventId = Guid.NewGuid();
+        var messageCharId = Guid.NewGuid();
+        var divergentPayloadCharId = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+
+        var payload = new CharacterOutboxPayload
+        {
+            SchemaVersion = 1,
+            EventId = eventId,
+            CharacterId = divergentPayloadCharId, // divergent!
+            EventType = "ActivityStarted",
+            ActivityId = Guid.NewGuid(),
+            ActivityType = LifeActivityType.Work,
+            OccurredAtUtc = now,
+            Description = "Divergent payload characterId"
+        };
+
+        var fp = CanonicalOutboxFingerprint.Compute(
+            eventId, messageCharId, "ActivityStarted", payload.ActivityId, LifeActivityType.Work, now);
+
+        var msg = new CharacterOutboxMessage(
+            eventId: eventId,
+            characterId: messageCharId,
+            eventType: "ActivityStarted",
+            payloadJson: payload.ToJson(),
+            fingerprint: fp,
+            occurredAtUtc: now
+        );
+
+        await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        {
+            await outboxRepo.AddOrGetAsync(msg);
+        });
+
+        using var verifyDb = CreateDbContext();
+        var count = await verifyDb.CharacterOutboxMessages.CountAsync(m => m.EventId == eventId);
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAsync_WhenPayloadEventTypeDiffersFromMessage_ThrowsIdempotencyConflict()
+    {
+        using var db = CreateDbContext();
+        var (_, outboxRepo, _, _) = CreateSystem(db);
+
+        var eventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+
+        var payload = new CharacterOutboxPayload
+        {
+            SchemaVersion = 1,
+            EventId = eventId,
+            CharacterId = charId,
+            EventType = "ActivityCompleted", // divergent from message envelope!
+            ActivityId = Guid.NewGuid(),
+            ActivityType = LifeActivityType.Work,
+            OccurredAtUtc = now,
+            Description = "Divergent payload eventType"
+        };
+
+        var fp = CanonicalOutboxFingerprint.Compute(
+            eventId, charId, "ActivityStarted", payload.ActivityId, LifeActivityType.Work, now);
+
+        var msg = new CharacterOutboxMessage(
+            eventId: eventId,
+            characterId: charId,
+            eventType: "ActivityStarted",
+            payloadJson: payload.ToJson(),
+            fingerprint: fp,
+            occurredAtUtc: now
+        );
+
+        await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        {
+            await outboxRepo.AddOrGetAsync(msg);
+        });
+
+        using var verifyDb = CreateDbContext();
+        var count = await verifyDb.CharacterOutboxMessages.CountAsync(m => m.EventId == eventId);
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task Repository_AddOrGetAsync_WhenPayloadOccurredAtUtcDiffersFromMessage_ThrowsIdempotencyConflict()
+    {
+        using var db = CreateDbContext();
+        var (_, outboxRepo, _, _) = CreateSystem(db);
+
+        var eventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var messageTime = new DateTime(2026, 9, 7, 10, 0, 0, DateTimeKind.Utc);
+        var divergentPayloadTime = messageTime.AddMinutes(5); // divergent!
+
+        var payload = new CharacterOutboxPayload
+        {
+            SchemaVersion = 1,
+            EventId = eventId,
+            CharacterId = charId,
+            EventType = "ActivityStarted",
+            ActivityId = Guid.NewGuid(),
+            ActivityType = LifeActivityType.Work,
+            OccurredAtUtc = divergentPayloadTime,
+            Description = "Divergent payload occurredAtUtc"
+        };
+
+        var fp = CanonicalOutboxFingerprint.Compute(
+            eventId, charId, "ActivityStarted", payload.ActivityId, LifeActivityType.Work, messageTime);
+
+        var msg = new CharacterOutboxMessage(
+            eventId: eventId,
+            characterId: charId,
+            eventType: "ActivityStarted",
+            payloadJson: payload.ToJson(),
+            fingerprint: fp,
+            occurredAtUtc: messageTime
+        );
+
+        await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        {
+            await outboxRepo.AddOrGetAsync(msg);
+        });
+
+        using var verifyDb = CreateDbContext();
+        var count = await verifyDb.CharacterOutboxMessages.CountAsync(m => m.EventId == eventId);
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task Repository_LegitimateMessageFromFactory_PassesAddAsyncAndAddOrGetAsync()
+    {
+        using var db = CreateDbContext();
+        var (_, outboxRepo, _, _) = CreateSystem(db);
+
+        var eventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+        var actId = Guid.NewGuid();
+        var time = new DateTimeOffset(2026, 9, 7, 10, 0, 0, TimeSpan.Zero);
+
+        var simEvent = new LifeSimulationEvent(
+            EventId: eventId,
+            CharacterId: charId,
+            OccurredAtUtc: time,
+            ActivityId: actId,
+            ActivityType: LifeActivityType.Work,
+            EventType: "ActivityStarted",
+            Description: "Work started cleanly."
+        );
+
+        var msg = CharacterOutboxPayload.CreateOutboxMessage(simEvent);
+
+        // Can be persisted through AddOrGetAsync
+        var saved = await outboxRepo.AddOrGetAsync(msg);
+        Assert.NotNull(saved);
+        Assert.Equal(eventId, saved.EventId);
+
+        // Replaying same message is idempotent
+        var replayed = await outboxRepo.AddOrGetAsync(msg);
+        Assert.Equal(saved.Id, replayed.Id);
+
+        // Another legitimate message persists cleanly through AddAsync
+        var simEvent2 = new LifeSimulationEvent(
+            EventId: Guid.NewGuid(),
+            CharacterId: charId,
+            OccurredAtUtc: time.AddHours(1),
+            ActivityId: actId,
+            ActivityType: LifeActivityType.Rest,
+            EventType: "ActivityCompleted",
+            Description: "Rest started cleanly."
+        );
+
+        var msg2 = CharacterOutboxPayload.CreateOutboxMessage(simEvent2);
+        await outboxRepo.AddAsync(msg2);
+        await outboxRepo.SaveChangesAsync();
+
+        var retrieved2 = await outboxRepo.GetByEventIdAsync(simEvent2.EventId);
+        Assert.NotNull(retrieved2);
+        Assert.Equal(simEvent2.EventId, retrieved2.EventId);
+    }
+
+    [Fact]
+    public async Task Repository_AddAsync_WhenPayloadEventIdDiffersFromMessage_ThrowsIdempotencyConflict()
+    {
+        using var db = CreateDbContext();
+        var (_, outboxRepo, _, _) = CreateSystem(db);
+
+        var messageEventId = Guid.NewGuid();
+        var payload = new CharacterOutboxPayload
+        {
+            SchemaVersion = 1,
+            EventId = Guid.NewGuid(), // divergent!
+            CharacterId = Guid.NewGuid(),
+            EventType = "ActivityStarted",
+            ActivityId = Guid.NewGuid(),
+            ActivityType = LifeActivityType.Work,
+            OccurredAtUtc = DateTime.UtcNow,
+            Description = "Divergent payload eventId in AddAsync"
+        };
+
+        var msg = new CharacterOutboxMessage(
+            eventId: messageEventId,
+            characterId: payload.CharacterId,
+            eventType: payload.EventType,
+            payloadJson: payload.ToJson(),
+            fingerprint: "dummy",
+            occurredAtUtc: payload.OccurredAtUtc.UtcDateTime
+        );
+
+        await Assert.ThrowsAsync<CharacterOutboxIdempotencyConflictException>(async () =>
+        {
+            await outboxRepo.AddAsync(msg);
+        });
+    }
+
     #endregion
 
     #region 12-15. Transactional Boundary & Atomicity Tests
