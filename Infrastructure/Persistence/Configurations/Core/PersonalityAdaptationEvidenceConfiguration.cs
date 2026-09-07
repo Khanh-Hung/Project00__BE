@@ -23,10 +23,10 @@ public sealed class PersonalityAdaptationEvidenceConfiguration : IEntityTypeConf
         builder.Property(e => e.AdaptationId).IsRequired(false);
         builder.Property(e => e.CreatedAtUtc).IsRequired();
 
-        // Single authoritative evidence per cognitive cycle execution
-        builder.HasIndex(e => new { e.CharacterId, e.ExecutionId })
+        // Multi-evidence per cognitive cycle execution supported by indexing (CharacterId, ExecutionId, TraitKey)
+        builder.HasIndex(e => new { e.CharacterId, e.ExecutionId, e.TraitKey })
                .IsUnique()
-               .HasDatabaseName("IX_PersonalityAdaptationEvidences_CharacterId_ExecutionId");
+               .HasDatabaseName("IX_PersonalityAdaptationEvidences_CharacterId_ExecutionId_TraitKey");
 
         // Fast lookup for unapplied evidence aggregation
         builder.HasIndex(e => new { e.CharacterId, e.TraitKey, e.IsApplied })

@@ -21,9 +21,9 @@ public sealed class CharacterPersonalityAdaptationConfiguration : IEntityTypeCon
         builder.Property(a => a.Fingerprint).IsRequired().HasMaxLength(64);
         builder.Property(a => a.CreatedAtUtc).IsRequired();
 
-        builder.HasIndex(a => new { a.CharacterId, a.ExecutionId })
+        builder.HasIndex(a => new { a.CharacterId, a.ExecutionId, a.TraitKey })
                .IsUnique()
-               .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId");
+               .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId_TraitKey");
 
         builder.HasIndex(a => new { a.CharacterId, a.TraitKey })
                .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_TraitKey");

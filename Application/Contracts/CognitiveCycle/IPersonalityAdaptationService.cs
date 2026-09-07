@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -27,6 +28,11 @@ public sealed record CharacterPersonalityAdaptationResult(
 /// </summary>
 public interface IPersonalityAdaptationService
 {
+    Task<IReadOnlyList<CharacterPersonalityAdaptationResult>> ProcessAdaptationsAsync(
+        CharacterCognitiveCycleContext context,
+        CharacterCognitiveCycleResult result,
+        CancellationToken ct = default);
+
     Task<CharacterPersonalityAdaptationResult?> ProcessAdaptationAsync(
         CharacterCognitiveCycleContext context,
         CharacterCognitiveCycleResult result,

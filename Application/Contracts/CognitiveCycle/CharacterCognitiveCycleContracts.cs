@@ -96,6 +96,7 @@ public sealed record CharacterCognitiveCycleResult(
     CharacterRelationshipContext? RelationshipContext = null,
     CharacterRelationshipFeedback? RelationshipFeedback = null,
     CharacterPersonalitySnapshot? PersonalitySnapshot = null,
+    IReadOnlyList<CharacterPersonalityAdaptationResult>? PersonalityAdaptations = null,
     CharacterPersonalityAdaptationResult? PersonalityAdaptation = null,
     string? Message = null
 )
@@ -126,7 +127,8 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterRelationshipContext? relationshipContext = null,
         CharacterRelationshipFeedback? relationshipFeedback = null,
         CharacterPersonalitySnapshot? personalitySnapshot = null,
-        CharacterPersonalityAdaptationResult? personalityAdaptation = null) =>
+        CharacterPersonalityAdaptationResult? personalityAdaptation = null,
+        IReadOnlyList<CharacterPersonalityAdaptationResult>? personalityAdaptations = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -147,7 +149,8 @@ public sealed record CharacterCognitiveCycleResult(
             RelationshipContext: relationshipContext,
             RelationshipFeedback: relationshipFeedback,
             PersonalitySnapshot: personalitySnapshot,
-            PersonalityAdaptation: personalityAdaptation
+            PersonalityAdaptations: personalityAdaptations ?? (personalityAdaptation != null ? new[] { personalityAdaptation } : null),
+            PersonalityAdaptation: personalityAdaptation ?? personalityAdaptations?.FirstOrDefault(a => a.AdaptationTriggered) ?? personalityAdaptations?.FirstOrDefault()
         );
 
     public static CharacterCognitiveCycleResult CompletedWithoutAction(

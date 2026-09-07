@@ -50,7 +50,7 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
     {
     }
 
-    public async Task<CharacterPersonalityAdaptationResult?> ProcessAdaptationAsync(
+    public async Task<IReadOnlyList<CharacterPersonalityAdaptationResult>> ProcessAdaptationsAsync(
         CharacterCognitiveCycleContext context,
         CharacterCognitiveCycleResult result,
         CancellationToken ct = default)
@@ -59,13 +59,42 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
         ArgumentNullException.ThrowIfNull(result);
 
         // 1. Evaluate policy
-        var proposal = _policy.Evaluate(context, result);
-        if (proposal == null)
+        var proposals = _policy.Evaluate(context, result);
+        if (proposals == null || proposals.Count == 0)
         {
-            return null;
+            return Array.Empty<CharacterPersonalityAdaptationResult>();
         }
 
-        // Compute canonical SHA-256 fingerprint from machine-level fields (P1-4: Reason excluded)
+        var results = new List<CharacterPersonalityAdaptationResult>();
+
+        foreach (var proposal in proposals)
+        {
+            var singleResult = await ProcessSingleProposalAsync(context, proposal, ct);
+            if (singleResult != null)
+            {
+                results.Add(singleResult);
+            }
+            _repository.ClearTracking();
+        }
+
+        return results;
+    }
+
+    public async Task<CharacterPersonalityAdaptationResult?> ProcessAdaptationAsync(
+        CharacterCognitiveCycleContext context,
+        CharacterCognitiveCycleResult result,
+        CancellationToken ct = default)
+    {
+        var results = await ProcessAdaptationsAsync(context, result, ct);
+        return results.FirstOrDefault(r => r.AdaptationTriggered) ?? results.FirstOrDefault();
+    }
+
+    private async Task<CharacterPersonalityAdaptationResult?> ProcessSingleProposalAsync(
+        CharacterCognitiveCycleContext context,
+        PersonalityAdaptationProposal proposal,
+        CancellationToken ct)
+    {
+        // Compute canonical SHA-256 fingerprint from machine-level fields (Reason excluded)
         var expectedFingerprint = CanonicalPersonalityFingerprint.ComputeEvidence(
             context.CharacterId,
             context.ExecutionId,
@@ -92,14 +121,14 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
         // 3. Evidence Accumulation & Adaptation Loop (P0-2)
         for (var attempt = 1; attempt <= MaxConcurrencyRetries; attempt++)
         {
-            // If retry > 1, clear tracking to avoid stale detached entities
-            if (attempt > 1 && _repository is CharacterPersonalityRepository repo)
+            // If retry > 1, clear tracking to avoid stale detached entities (P2-1: directly via repository abstraction)
+            if (attempt > 1)
             {
-                repo.ClearTracking();
+                _repository.ClearTracking();
             }
 
-            // Check if an adaptation for this ExecutionId was already committed
-            var existingAdaptation = await _repository.GetAdaptationByExecutionIdAsync(context.CharacterId, context.ExecutionId, ct);
+            // Check if an adaptation for this ExecutionId and TraitKey was already committed
+            var existingAdaptation = await _repository.GetAdaptationByExecutionAndTraitAsync(context.CharacterId, context.ExecutionId, proposal.TraitKey, ct);
             if (existingAdaptation != null)
             {
                 return new CharacterPersonalityAdaptationResult(
@@ -224,10 +253,12 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
                     "[PersonalityAdaptationService] Optimistic concurrency conflict on attempt {Attempt}/{MaxAttempts} for CharacterId={CharacterId}. Reloading fresh evidence...",
                     attempt, MaxConcurrencyRetries, context.CharacterId);
 
+                _repository.ClearTracking();
+
                 if (attempt == MaxConcurrencyRetries)
                 {
                     // If retries exhausted, check if another worker already committed adaptation
-                    var committed = await _repository.GetAdaptationByExecutionIdAsync(context.CharacterId, context.ExecutionId, ct);
+                    var committed = await _repository.GetAdaptationByExecutionAndTraitAsync(context.CharacterId, context.ExecutionId, proposal.TraitKey, ct);
                     if (committed != null)
                     {
                         return new CharacterPersonalityAdaptationResult(
@@ -260,8 +291,9 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
             }
             catch (DbUpdateException)
             {
-                // Unique constraint race on (CharacterId, ExecutionId) adaptation
-                var existing = await _repository.GetAdaptationByExecutionIdAsync(context.CharacterId, context.ExecutionId, ct);
+                _repository.ClearTracking();
+                // Unique constraint race on (CharacterId, ExecutionId, TraitKey) adaptation
+                var existing = await _repository.GetAdaptationByExecutionAndTraitAsync(context.CharacterId, context.ExecutionId, proposal.TraitKey, ct);
                 if (existing != null)
                 {
                     return new CharacterPersonalityAdaptationResult(
@@ -293,4 +325,5 @@ public sealed class PersonalityAdaptationService : IPersonalityAdaptationService
             AdaptationTriggered: false
         );
     }
+
 }

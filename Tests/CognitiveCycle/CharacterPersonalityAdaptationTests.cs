@@ -418,8 +418,8 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             var result = CreateSuccessResult(context, actionType: action, relFeedback: null);
             var evidence = policy.Evaluate(context, result);
 
-            // MUST be null: regular routine actions do not adapt long-term traits (P1-1)
-            Assert.Null(evidence);
+            // MUST be empty: regular routine actions do not adapt long-term traits (P1-1)
+            Assert.Empty(evidence);
         }
     }
 
@@ -445,8 +445,8 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             stressDelta: -15m,
             relFeedback: null
         );
-        var validEvidence = policy.Evaluate(context, validResult);
-        Assert.NotNull(validEvidence);
+        var validEvidenceList = policy.Evaluate(context, validResult);
+        var validEvidence = Assert.Single(validEvidenceList);
         Assert.Equal(PersonalityAdaptationEvidenceType.EmotionalRegulation, validEvidence.EvidenceType);
         Assert.Equal(PersonalityTraitKeys.EmotionalStability, validEvidence.TraitKey);
         Assert.Equal(+1, validEvidence.Direction);
@@ -459,7 +459,7 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             stressDelta: -15m,
             relFeedback: null
         );
-        Assert.Null(policy.Evaluate(context, restResult));
+        Assert.Empty(policy.Evaluate(context, restResult));
 
         // Case C: ActionType.ReduceStress, but character was calm (no elevated stress)
         var calmResult = CreateSuccessResult(
@@ -469,7 +469,7 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             stressDelta: -5m,
             relFeedback: null
         );
-        Assert.Null(policy.Evaluate(context, calmResult));
+        Assert.Empty(policy.Evaluate(context, calmResult));
 
         // Case D: ActionType.ReduceStress under HighlyStressed, but stress did NOT decrease
         var unreducedResult = CreateSuccessResult(
@@ -479,7 +479,7 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             stressDelta: 0m,
             relFeedback: null
         );
-        Assert.Null(policy.Evaluate(context, unreducedResult));
+        Assert.Empty(policy.Evaluate(context, unreducedResult));
     }
 
     [Fact]
@@ -498,38 +498,57 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
 
         // 1. AffectionDelta > 0 -> Warmth +1
         var affPos = CreateSuccessResultWithRel(context, affectionDelta: 5);
-        var evAffPos = policy.Evaluate(context, affPos);
-        Assert.NotNull(evAffPos);
+        var evAffPos = Assert.Single(policy.Evaluate(context, affPos));
         Assert.Equal(PersonalityTraitKeys.Warmth, evAffPos.TraitKey);
         Assert.Equal(+1, evAffPos.Direction);
 
         // 2. AffectionDelta < 0 -> Warmth -1
         var affNeg = CreateSuccessResultWithRel(context, affectionDelta: -5);
-        var evAffNeg = policy.Evaluate(context, affNeg);
-        Assert.NotNull(evAffNeg);
+        var evAffNeg = Assert.Single(policy.Evaluate(context, affNeg));
         Assert.Equal(PersonalityTraitKeys.Warmth, evAffNeg.TraitKey);
         Assert.Equal(-1, evAffNeg.Direction);
 
         // 3. TrustDelta > 0 -> TrustDisposition +1
         var trustPos = CreateSuccessResultWithRel(context, trustDelta: 5);
-        var evTrustPos = policy.Evaluate(context, trustPos);
-        Assert.NotNull(evTrustPos);
+        var evTrustPos = Assert.Single(policy.Evaluate(context, trustPos));
         Assert.Equal(PersonalityTraitKeys.TrustDisposition, evTrustPos.TraitKey);
         Assert.Equal(+1, evTrustPos.Direction);
 
         // 4. TrustDelta < 0 -> TrustDisposition -1
         var trustNeg = CreateSuccessResultWithRel(context, trustDelta: -5);
-        var evTrustNeg = policy.Evaluate(context, trustNeg);
-        Assert.NotNull(evTrustNeg);
+        var evTrustNeg = Assert.Single(policy.Evaluate(context, trustNeg));
         Assert.Equal(PersonalityTraitKeys.TrustDisposition, evTrustNeg.TraitKey);
         Assert.Equal(-1, evTrustNeg.Direction);
 
         // 5. FamiliarityDelta > 0 -> SocialConfidence +1
         var famPos = CreateSuccessResultWithRel(context, familiarityDelta: 5);
-        var evFamPos = policy.Evaluate(context, famPos);
-        Assert.NotNull(evFamPos);
+        var evFamPos = Assert.Single(policy.Evaluate(context, famPos));
         Assert.Equal(PersonalityTraitKeys.SocialConfidence, evFamPos.TraitKey);
         Assert.Equal(+1, evFamPos.Direction);
+    }
+
+    [Fact]
+    public void Policy_MultipleRelationshipDeltas_ProducesMultipleIndependentProposals()
+    {
+        var policy = new DefaultPersonalityAdaptationPolicy();
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        var context = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: execId,
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow
+        );
+
+        // Multi-delta interaction: Affection +5, Trust +5, Familiarity +5 produces 3 distinct proposals (P1-1)
+        var multiResult = CreateSuccessResultWithRel(context, affectionDelta: 5, trustDelta: 5, familiarityDelta: 5);
+        var proposals = policy.Evaluate(context, multiResult);
+
+        Assert.Equal(3, proposals.Count);
+        Assert.Contains(proposals, p => p.TraitKey == PersonalityTraitKeys.Warmth && p.Direction == +1);
+        Assert.Contains(proposals, p => p.TraitKey == PersonalityTraitKeys.TrustDisposition && p.Direction == +1);
+        Assert.Contains(proposals, p => p.TraitKey == PersonalityTraitKeys.SocialConfidence && p.Direction == +1);
     }
 
     [Fact]
@@ -548,24 +567,25 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
 
         var conflict = CharacterCognitiveCycleResult.ConcurrencyConflict(
             context.CycleId, execId, charId, context.TriggeredAtUtc, 1);
-        Assert.Null(policy.Evaluate(context, conflict));
+        Assert.Empty(policy.Evaluate(context, conflict));
 
         var failed = CharacterCognitiveCycleResult.Failed(
             context.CycleId, execId, charId, context.TriggeredAtUtc, 1);
-        Assert.Null(policy.Evaluate(context, failed));
+        Assert.Empty(policy.Evaluate(context, failed));
 
         var invalidInput = CharacterCognitiveCycleResult.InvalidInput(
             context.CycleId, execId, charId, context.TriggeredAtUtc, "Invalid");
-        Assert.Null(policy.Evaluate(context, invalidInput));
+        Assert.Empty(policy.Evaluate(context, invalidInput));
 
         var notFound = CharacterCognitiveCycleResult.NotFound(
             context.CycleId, execId, charId, context.TriggeredAtUtc, "NotFound");
-        Assert.Null(policy.Evaluate(context, notFound));
+        Assert.Empty(policy.Evaluate(context, notFound));
 
         var withoutAction = CharacterCognitiveCycleResult.CompletedWithoutAction(
             context.CycleId, execId, charId, context.TriggeredAtUtc, 1);
-        Assert.Null(policy.Evaluate(context, withoutAction));
+        Assert.Empty(policy.Evaluate(context, withoutAction));
     }
+
 
     #endregion
 
@@ -785,7 +805,7 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync();
 
-        // 1. Seed 2 unapplied evidence items
+        // 1. Seed 2 unapplied evidence items in the database
         await using (var seedDb = new CoreDbContext(_options))
         {
             var seedRepo = new CharacterPersonalityRepository(seedDb);
@@ -802,29 +822,12 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
             }
         }
 
-        // 2. Setup Worker A and Worker B with independent DbContexts
-        await using var dbWorkerA = new CoreDbContext(_options);
-        await using var dbWorkerB = new CoreDbContext(_options);
-
-        var serviceA = new PersonalityAdaptationService(
-            new CharacterPersonalityRepository(dbWorkerA),
-            new DefaultPersonalityAdaptationPolicy(),
-            NullLogger<PersonalityAdaptationService>.Instance,
-            threshold: 3);
-
-        var serviceB = new PersonalityAdaptationService(
-            new CharacterPersonalityRepository(dbWorkerB),
-            new DefaultPersonalityAdaptationPolicy(),
-            NullLogger<PersonalityAdaptationService>.Instance,
-            threshold: 3);
-
         var contextA = new CharacterCognitiveCycleContext(
             CycleId: Guid.NewGuid(),
             ExecutionId: Guid.NewGuid(),
             CharacterId: charId,
             TriggeredAtUtc: DateTimeOffset.UtcNow
         );
-        var resultA = CreateSuccessResultWithRel(contextA, affectionDelta: 3);
 
         var contextB = new CharacterCognitiveCycleContext(
             CycleId: Guid.NewGuid(),
@@ -834,20 +837,63 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         );
         var resultB = CreateSuccessResultWithRel(contextB, affectionDelta: 3);
 
-        // Worker A completes first and commits adaptation (threshold 3 reached: 2 preseeded + A)
-        var resA = await serviceA.ProcessAdaptationAsync(contextA, resultA);
-        Assert.NotNull(resA);
-        Assert.True(resA.AdaptationTriggered);
-        Assert.Equal(51, resA.TraitValueAfter);
+        // 2. Setup Worker B with a SaveChangesInterceptor that deterministicly pauses Worker B
+        // right before committing adaptation, allowing Worker A to race in and consume the evidence.
+        var interceptor = new ConcurrentThresholdAdaptationInterceptor(async () =>
+        {
+            // Worker A reads the same 3 unapplied evidence items, adapts Warmth 50 -> 51, and commits
+            await using var dbWorkerA = new CoreDbContext(_options);
+            var repoA = new CharacterPersonalityRepository(dbWorkerA);
+            var workerA_Evidence = await repoA.GetUnappliedEvidenceAsync(charId, PersonalityTraitKeys.Warmth);
+            Assert.Equal(3, workerA_Evidence.Count);
 
-        // Worker B executes with its 4th evidence item.
-        // Worker B's service queries fresh DB state: 3 items already applied, only 1 unapplied remaining (< 3).
-        // Worker B gracefully finishes with NoAdaptation without conflict or double increment!
+            var personalityA = await repoA.GetOrCreateDefaultAsync(charId);
+            var (beforeVal, afterVal) = personalityA.AdaptTrait(PersonalityTraitKeys.Warmth, +1);
+
+            var adaptA = new CharacterPersonalityAdaptation(
+                characterId: charId,
+                executionId: contextA.ExecutionId,
+                traitKey: PersonalityTraitKeys.Warmth,
+                valueBefore: beforeVal,
+                valueAfter: afterVal,
+                delta: +1,
+                evidenceCount: workerA_Evidence.Count,
+                fingerprint: CanonicalPersonalityFingerprint.ComputeAdaptation(charId, contextA.ExecutionId, PersonalityTraitKeys.Warmth, beforeVal, afterVal, +1, workerA_Evidence.Count),
+                createdAtUtc: DateTime.UtcNow
+            );
+
+            await repoA.AddAdaptationAsync(adaptA);
+            foreach (var e in workerA_Evidence)
+            {
+                e.MarkApplied(adaptA.Id);
+            }
+
+            await repoA.SaveChangesAsync();
+        });
+
+        var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var dbWorkerB = new CoreDbContext(optionsB);
+        var serviceB = new PersonalityAdaptationService(
+            new CharacterPersonalityRepository(dbWorkerB),
+            new DefaultPersonalityAdaptationPolicy(),
+            NullLogger<PersonalityAdaptationService>.Instance,
+            threshold: 3);
+
+        // Worker B executes. Worker B reads 3 unapplied evidence items, pauses right before SaveChangesAsync.
+        // Worker A commits the 3 items. Worker B catches DbUpdateConcurrencyException, clears tracking,
+        // re-queries unapplied evidence, finds 0 remaining (< threshold 3), and exits cleanly with NoAdaptation.
         var resB = await serviceB.ProcessAdaptationAsync(contextB, resultB);
+
+        Assert.True(interceptor.InterceptorFired);
         Assert.NotNull(resB);
         Assert.False(resB.AdaptationTriggered);
 
-        // 3. Verify in independent context: Exactly 1 adaptation committed, Warmth is 51 (NOT 52)
+        // 3. Verify final state in an independent DbContext:
+        // Warmth == 51, Adaptations.Count == 1, AppliedEvidence.Count == 3, UnappliedEvidence.Count == 0 (P0-1)
         await using var verifyDb = new CoreDbContext(_options);
         var personality = await verifyDb.CharacterPersonalities.SingleAsync(p => p.CharacterId == charId);
         Assert.Equal(51, personality.Warmth);
@@ -856,12 +902,83 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         var totalAdaptations = await verifyDb.CharacterPersonalityAdaptations.CountAsync(a => a.CharacterId == charId);
         Assert.Equal(1, totalAdaptations);
 
-        // 4 total evidence: 3 applied, 1 unapplied (Worker B's)
         var appliedEvidence = await verifyDb.CharacterPersonalityAdaptationEvidences.CountAsync(e => e.CharacterId == charId && e.IsApplied);
         Assert.Equal(3, appliedEvidence);
 
         var unappliedEvidence = await verifyDb.CharacterPersonalityAdaptationEvidences.CountAsync(e => e.CharacterId == charId && !e.IsApplied);
-        Assert.Equal(1, unappliedEvidence);
+        Assert.Equal(0, unappliedEvidence);
+    }
+
+    [Fact]
+    public async Task ProcessAdaptationsAsync_MultiEvidenceCycle_PersistsAllEvidenceAndAdaptsMultipleTraits()
+    {
+        await using var db = new CoreDbContext(_options);
+        var charId = await SeedCharacterStateAsync();
+        var repo = new CharacterPersonalityRepository(db);
+        var service = new PersonalityAdaptationService(
+            repo, new DefaultPersonalityAdaptationPolicy(), NullLogger<PersonalityAdaptationService>.Instance, threshold: 3);
+
+        // Preseed 2 unapplied evidence items for Warmth and 2 for TrustDisposition
+        for (int i = 0; i < 2; i++)
+        {
+            var exec1 = Guid.NewGuid();
+            var fpWarmth = CanonicalPersonalityFingerprint.ComputeEvidence(
+                charId, exec1, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+                PersonalityTraitKeys.Warmth, +1, 1);
+            await repo.AddOrGetEvidenceAsync(new PersonalityAdaptationEvidence(
+                charId, exec1, PersonalityAdaptationEvidenceType.PositiveSocialOutcome,
+                PersonalityTraitKeys.Warmth, +1, 1, $"Preseeded Warmth {i}", fpWarmth));
+
+            var exec2 = Guid.NewGuid();
+            var fpTrust = CanonicalPersonalityFingerprint.ComputeEvidence(
+                charId, exec2, PersonalityAdaptationEvidenceType.RepeatedSuccessfulInteraction,
+                PersonalityTraitKeys.TrustDisposition, +1, 1);
+            await repo.AddOrGetEvidenceAsync(new PersonalityAdaptationEvidence(
+                charId, exec2, PersonalityAdaptationEvidenceType.RepeatedSuccessfulInteraction,
+                PersonalityTraitKeys.TrustDisposition, +1, 1, $"Preseeded Trust {i}", fpTrust));
+        }
+
+        // Single execution context with interaction producing multiple deltas: Affection +5, Trust +5, Familiarity +5
+        var context = new CharacterCognitiveCycleContext(
+            CycleId: Guid.NewGuid(),
+            ExecutionId: Guid.NewGuid(),
+            CharacterId: charId,
+            TriggeredAtUtc: DateTimeOffset.UtcNow
+        );
+        var result = CreateSuccessResultWithRel(context, affectionDelta: 5, trustDelta: 5, familiarityDelta: 5);
+
+        // Process all adaptations for the cycle
+        var results = await service.ProcessAdaptationsAsync(context, result);
+
+        // 3 evidence proposals processed
+        Assert.Equal(3, results.Count);
+
+        // Both Warmth and TrustDisposition hit threshold 3 (2 preseeded + 1 current) and adapted
+        var warmthResult = results.Single(r => r.TraitKey == PersonalityTraitKeys.Warmth);
+        Assert.True(warmthResult.AdaptationTriggered);
+        Assert.Equal(51, warmthResult.TraitValueAfter);
+
+        var trustResult = results.Single(r => r.TraitKey == PersonalityTraitKeys.TrustDisposition);
+        Assert.True(trustResult.AdaptationTriggered);
+        Assert.Equal(51, trustResult.TraitValueAfter);
+
+        // SocialConfidence has only 1 evidence item (current cycle), below threshold 3 -> no adaptation
+        var socialResult = results.Single(r => r.TraitKey == PersonalityTraitKeys.SocialConfidence);
+        Assert.False(socialResult.AdaptationTriggered);
+
+        // Verify in database: Both adaptations persisted under the SAME ExecutionId without collision (P1-1)
+        await using var verifyDb = new CoreDbContext(_options);
+        var adaptations = await verifyDb.CharacterPersonalityAdaptations
+            .Where(a => a.CharacterId == charId && a.ExecutionId == context.ExecutionId)
+            .ToListAsync();
+        Assert.Equal(2, adaptations.Count);
+        Assert.Contains(adaptations, a => a.TraitKey == PersonalityTraitKeys.Warmth && a.Delta == 1);
+        Assert.Contains(adaptations, a => a.TraitKey == PersonalityTraitKeys.TrustDisposition && a.Delta == 1);
+
+        // Character personality has updated both traits
+        var personality = await verifyDb.CharacterPersonalities.SingleAsync(p => p.CharacterId == charId);
+        Assert.Equal(51, personality.Warmth);
+        Assert.Equal(51, personality.TrustDisposition);
     }
 
     [Fact]
@@ -1319,6 +1436,14 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
 
     private sealed class FailingPersonalityAdaptationService : IPersonalityAdaptationService
     {
+        public Task<IReadOnlyList<CharacterPersonalityAdaptationResult>> ProcessAdaptationsAsync(
+            CharacterCognitiveCycleContext context,
+            CharacterCognitiveCycleResult result,
+            CancellationToken ct = default)
+        {
+            throw new InvalidOperationException("Simulated database failure during personality adaptation persistence.");
+        }
+
         public Task<CharacterPersonalityAdaptationResult?> ProcessAdaptationAsync(
             CharacterCognitiveCycleContext context,
             CharacterCognitiveCycleResult result,
@@ -1467,5 +1592,36 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
         }
     }
 
+    private sealed class ConcurrentThresholdAdaptationInterceptor : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private readonly Func<Task> _onSavingAdaptationAsync;
+        private int _fired = 0;
+
+        public bool InterceptorFired => _fired == 1;
+
+        public ConcurrentThresholdAdaptationInterceptor(Func<Task> onSavingAdaptationAsync)
+        {
+            _onSavingAdaptationAsync = onSavingAdaptationAsync;
+        }
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context != null &&
+                eventData.Context.ChangeTracker.Entries<CharacterPersonalityAdaptation>().Any())
+            {
+                if (Interlocked.Exchange(ref _fired, 1) == 0)
+                {
+                    await _onSavingAdaptationAsync();
+                }
+            }
+
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
     #endregion
 }
+

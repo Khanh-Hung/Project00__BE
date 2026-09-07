@@ -83,13 +83,27 @@ public sealed class CharacterPersonalityRepository : ICharacterPersonalityReposi
             .FirstOrDefaultAsync(e => e.CharacterId == characterId && e.ExecutionId == executionId, ct);
     }
 
+    public async Task<PersonalityAdaptationEvidence?> GetEvidenceByExecutionAndTraitAsync(
+        Guid characterId,
+        Guid executionId,
+        string traitKey,
+        CancellationToken ct = default)
+    {
+        if (characterId == Guid.Empty || executionId == Guid.Empty) return null;
+
+        var normalizedTraitKey = PersonalityTraitKeys.Normalize(traitKey);
+
+        return await _dbContext.CharacterPersonalityAdaptationEvidences
+            .FirstOrDefaultAsync(e => e.CharacterId == characterId && e.ExecutionId == executionId && e.TraitKey == normalizedTraitKey, ct);
+    }
+
     public async Task<PersonalityAdaptationEvidence> AddOrGetEvidenceAsync(
         PersonalityAdaptationEvidence evidence,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(evidence);
 
-        var existing = await GetEvidenceByExecutionIdAsync(evidence.CharacterId, evidence.ExecutionId, ct);
+        var existing = await GetEvidenceByExecutionAndTraitAsync(evidence.CharacterId, evidence.ExecutionId, evidence.TraitKey, ct);
         if (existing != null)
         {
             if (existing.Fingerprint == evidence.Fingerprint)
@@ -98,7 +112,7 @@ public sealed class CharacterPersonalityRepository : ICharacterPersonalityReposi
             }
 
             throw new PersonalityAdaptationIdempotencyConflictException(
-                $"Idempotency conflict detected for CharacterId={evidence.CharacterId}, ExecutionId={evidence.ExecutionId}. " +
+                $"Idempotency conflict detected for CharacterId={evidence.CharacterId}, ExecutionId={evidence.ExecutionId}, TraitKey={evidence.TraitKey}. " +
                 $"Existing fingerprint '{existing.Fingerprint}' does not match incoming fingerprint '{evidence.Fingerprint}'.");
         }
 
@@ -113,9 +127,10 @@ public sealed class CharacterPersonalityRepository : ICharacterPersonalityReposi
             // Concurrent insert race (P0-3): detach candidate and query authoritative row
             _dbContext.Entry(evidence).State = EntityState.Detached;
 
+            var normalizedTraitKey = PersonalityTraitKeys.Normalize(evidence.TraitKey);
             var concurrent = await _dbContext.CharacterPersonalityAdaptationEvidences
                 .AsNoTracking()
-                .FirstOrDefaultAsync(e => e.CharacterId == evidence.CharacterId && e.ExecutionId == evidence.ExecutionId, ct);
+                .FirstOrDefaultAsync(e => e.CharacterId == evidence.CharacterId && e.ExecutionId == evidence.ExecutionId && e.TraitKey == normalizedTraitKey, ct);
 
             if (concurrent != null)
             {
@@ -125,7 +140,7 @@ public sealed class CharacterPersonalityRepository : ICharacterPersonalityReposi
                 }
 
                 throw new PersonalityAdaptationIdempotencyConflictException(
-                    $"Concurrent idempotency conflict detected for CharacterId={evidence.CharacterId}, ExecutionId={evidence.ExecutionId}. " +
+                    $"Concurrent idempotency conflict detected for CharacterId={evidence.CharacterId}, ExecutionId={evidence.ExecutionId}, TraitKey={evidence.TraitKey}. " +
                     $"Committed fingerprint '{concurrent.Fingerprint}' does not match candidate fingerprint '{evidence.Fingerprint}'.");
             }
 
@@ -157,6 +172,20 @@ public sealed class CharacterPersonalityRepository : ICharacterPersonalityReposi
 
         return await _dbContext.CharacterPersonalityAdaptations
             .FirstOrDefaultAsync(a => a.CharacterId == characterId && a.ExecutionId == executionId, ct);
+    }
+
+    public async Task<CharacterPersonalityAdaptation?> GetAdaptationByExecutionAndTraitAsync(
+        Guid characterId,
+        Guid executionId,
+        string traitKey,
+        CancellationToken ct = default)
+    {
+        if (characterId == Guid.Empty || executionId == Guid.Empty) return null;
+
+        var normalizedTraitKey = PersonalityTraitKeys.Normalize(traitKey);
+
+        return await _dbContext.CharacterPersonalityAdaptations
+            .FirstOrDefaultAsync(a => a.CharacterId == characterId && a.ExecutionId == executionId && a.TraitKey == normalizedTraitKey, ct);
     }
 
     public async Task AddAdaptationAsync(

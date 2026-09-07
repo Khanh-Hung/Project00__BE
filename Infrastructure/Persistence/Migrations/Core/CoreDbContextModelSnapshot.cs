@@ -760,9 +760,9 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CharacterId", "ExecutionId")
+                    b.HasIndex("CharacterId", "ExecutionId", "TraitKey")
                         .IsUnique()
-                        .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId");
+                        .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_ExecutionId_TraitKey");
 
                     b.HasIndex("CharacterId", "TraitKey")
                         .HasDatabaseName("IX_CharacterPersonalityAdaptations_CharacterId_TraitKey");
@@ -2283,9 +2283,9 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CharacterId", "ExecutionId")
+                    b.HasIndex("CharacterId", "ExecutionId", "TraitKey")
                         .IsUnique()
-                        .HasDatabaseName("IX_PersonalityAdaptationEvidences_CharacterId_ExecutionId");
+                        .HasDatabaseName("IX_PersonalityAdaptationEvidences_CharacterId_ExecutionId_TraitKey");
 
                     b.HasIndex("CharacterId", "TraitKey", "IsApplied")
                         .HasDatabaseName("IX_PersonalityAdaptationEvidences_CharId_TraitKey_IsApplied");

@@ -569,10 +569,13 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
 
         try
         {
-            var adaptation = await _personalityAdaptationService.ProcessAdaptationAsync(context, result, ct);
-            if (adaptation != null)
+            var adaptations = await _personalityAdaptationService.ProcessAdaptationsAsync(context, result, ct);
+            if (adaptations != null && adaptations.Count > 0)
             {
-                return result with { PersonalityAdaptation = adaptation };
+                return result with {
+                    PersonalityAdaptations = adaptations,
+                    PersonalityAdaptation = adaptations.FirstOrDefault(a => a.AdaptationTriggered) ?? adaptations.FirstOrDefault()
+                };
             }
         }
         catch (PersonalityAdaptationIdempotencyConflictException ex)
