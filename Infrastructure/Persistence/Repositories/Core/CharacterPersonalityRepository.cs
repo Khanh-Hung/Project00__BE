@@ -194,6 +194,22 @@ public sealed class CharacterPersonalityRepository : ICharacterPersonalityReposi
     {
         ArgumentNullException.ThrowIfNull(adaptation);
 
+        var expectedFingerprint = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            adaptation.CharacterId,
+            adaptation.ExecutionId,
+            adaptation.TraitKey,
+            adaptation.ValueBefore,
+            adaptation.ValueAfter,
+            adaptation.Delta,
+            adaptation.EvidenceCount);
+
+        if (adaptation.Fingerprint != expectedFingerprint)
+        {
+            throw new PersonalityAdaptationIdempotencyConflictException(
+                $"Incoming adaptation fingerprint mismatch for CharacterId={adaptation.CharacterId}, ExecutionId={adaptation.ExecutionId}, TraitKey={adaptation.TraitKey}. " +
+                $"Expected '{expectedFingerprint}', got '{adaptation.Fingerprint}'.");
+        }
+
         var existing = await GetAdaptationByExecutionAndTraitAsync(adaptation.CharacterId, adaptation.ExecutionId, adaptation.TraitKey, ct);
         if (existing != null)
         {

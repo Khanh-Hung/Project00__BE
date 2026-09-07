@@ -1007,6 +1007,30 @@ public sealed class CharacterPersonalityAdaptationTests : IDisposable
     }
 
     [Fact]
+    public async Task Repository_AddOrGetAdaptationAsync_WhenIncomingFingerprintDoesNotMatchCanonical_ThrowsIdempotencyConflict()
+    {
+        await using var db = new CoreDbContext(_options);
+        var repo = new CharacterPersonalityRepository(db);
+        var charId = await SeedCharacterStateAsync();
+        var execId = Guid.NewGuid();
+
+        // Fingerprint generated from a DIFFERENT semantic payload
+        var differentPayloadFp = CanonicalPersonalityFingerprint.ComputeAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 49, -1, 3);
+
+        // Incoming adaptation payload (50 -> 51, Delta +1, EvidenceCount 3) paired with the mismatched fingerprint
+        var adaptation = new CharacterPersonalityAdaptation(
+            charId, execId, PersonalityTraitKeys.Warmth, 50, 51, +1, 3, differentPayloadFp);
+
+        await Assert.ThrowsAsync<PersonalityAdaptationIdempotencyConflictException>(() =>
+            repo.AddOrGetAdaptationAsync(adaptation));
+
+        // Ensure no adaptation row was persisted
+        var total = await db.CharacterPersonalityAdaptations.CountAsync(a => a.CharacterId == charId);
+        Assert.Equal(0, total);
+    }
+
+    [Fact]
     public async Task ProcessAdaptationAsync_WhenExistingAdaptationHasCorruptedOrConflictingFingerprint_ThrowsIdempotencyConflict()
     {
         await using var db = new CoreDbContext(_options);
