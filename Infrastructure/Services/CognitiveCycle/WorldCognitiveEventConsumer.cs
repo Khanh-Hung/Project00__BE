@@ -5,7 +5,6 @@ using Application.Abstractions.Data;
 using Application.Abstractions.Time;
 using Application.Contracts.CognitiveCycle;
 using Application.Interfaces;
-using Domain.Common.DateTimes;
 using Domain.Entities;
 using Domain.Exceptions;
 using Microsoft.Extensions.Logging;
@@ -17,7 +16,7 @@ namespace Infrastructure.Services.CognitiveCycle;
 /// dispatching them into the Cognitive Cycle pipeline.
 /// Guarantees:
 /// 1. Character-scoped boundary isolation.
-/// 2. Database-backed unique idempotency claim.
+/// 2. Database-backed unique idempotency claim with lease-based crash recovery and failed event retries.
 /// 3. Identity separation: EventId != CycleId != ExecutionId != OutboxMessageId.
 /// 4. Preserves WorldCognitiveEvent.EventId for end-to-end provenance.
 /// 5. Never directly mutates CharacterState, Memory, Relationship, or Personality.
@@ -49,7 +48,7 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // 1. Invariant payload and identity validation
+        // 1. Invariant payload and identity validation using unified ISystemClock
         ValidateWorldEvent(worldEvent, _systemClock);
 
         // 2. Prepare claim aggregate with canonical deterministic fingerprint
@@ -63,13 +62,13 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
             worldEvent.Category,
             now);
 
-        // 3. Atomically claim consumption slot (DB unique constraint on EventId)
-        var (isClaimed, existingOrNew) = await _consumptionRepository.TryClaimAsync(claim, cancellationToken);
+        // 3. Atomically claim consumption slot (DB unique constraint on EventId with lease-based crash recovery & retry)
+        var (isClaimed, existingOrNew) = await _consumptionRepository.TryClaimAsync(claim, ct: cancellationToken);
 
         if (!isClaimed)
         {
             _logger.LogInformation(
-                "WorldCognitiveEvent {EventId} for Character {CharacterId} is duplicate. Status: {State}, Existing CycleId: {CycleId}",
+                "WorldCognitiveEvent {EventId} for Character {CharacterId} is duplicate or actively in-flight. Status: {State}, Existing CycleId: {CycleId}",
                 worldEvent.EventId,
                 worldEvent.CharacterId,
                 existingOrNew.State,
@@ -82,11 +81,20 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
         }
 
         _logger.LogInformation(
-            "WorldCognitiveEvent {EventId} claimed for Character {CharacterId}",
+            "WorldCognitiveEvent {EventId} claimed for Character {CharacterId} (Attempt #{AttemptCount})",
             worldEvent.EventId,
-            worldEvent.CharacterId);
+            worldEvent.CharacterId,
+            existingOrNew.AttemptCount);
 
         // 4. Strict identity separation: EventId != CycleId != ExecutionId
+        // Architectural Contract Note:
+        // The existing CharacterCognitiveCycleContext contract (PR #45/PR #52) mandates a non-empty ExecutionId
+        // upon cycle invocation (CharacterCognitiveCycleService validates ExecutionId != Guid.Empty).
+        // In accordance with PR54 invariants:
+        // - EventId != CycleId
+        // - EventId != ExecutionId
+        // - CycleId != ExecutionId
+        // If the Cognitive Cycle does not produce an actionable proposal, ExecutionId remains unused.
         var cycleId = Guid.NewGuid();
         while (cycleId == worldEvent.EventId)
         {
@@ -123,7 +131,7 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
                     cycleResult.Status,
                     worldEvent.CharacterId);
 
-                await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, failureReason, cancellationToken);
+                await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, failureReason, _systemClock.UtcNow.UtcDateTime, cancellationToken);
                 return WorldCognitiveEventConsumptionResult.RejectedResult(worldEvent.EventId, worldEvent.CharacterId, failureReason);
             }
 
@@ -155,11 +163,14 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
 
             try
             {
-                await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, ex.Message, CancellationToken.None);
+                await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, ex.Message, _systemClock.UtcNow.UtcDateTime, CancellationToken.None);
             }
             catch (Exception markEx)
             {
-                _logger.LogError(markEx, "Failed to mark consumption failed for EventId {EventId}", worldEvent.EventId);
+                _logger.LogCritical(
+                    markEx,
+                    "CRITICAL RECOVERY REQUIRED: Failed to persist failure state for WorldCognitiveEvent {EventId}. Record remains in InProgress state and will be reclaimed upon lease expiration.",
+                    worldEvent.EventId);
             }
 
             throw;
@@ -169,6 +180,7 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
     public static void ValidateWorldEvent(WorldCognitiveEvent worldEvent, ISystemClock clock)
     {
         ArgumentNullException.ThrowIfNull(worldEvent);
+        ArgumentNullException.ThrowIfNull(clock);
 
         if (worldEvent.EventId == Guid.Empty)
             throw new ArgumentException("EventId cannot be empty.", nameof(worldEvent));
@@ -180,7 +192,7 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
             worldEvent.OccurredAtUtc == DateTimeOffset.MinValue ||
             worldEvent.OccurredAtUtc == DateTimeOffset.MaxValue ||
             worldEvent.OccurredAtUtc > clock.UtcNow.AddDays(1) ||
-            worldEvent.OccurredAtUtc < DateTimeOffset.UtcNow.AddYears(-50))
+            worldEvent.OccurredAtUtc < clock.UtcNow.AddYears(-50))
         {
             throw new ArgumentException("OccurredAtUtc is invalid.", nameof(worldEvent));
         }

@@ -27,6 +27,8 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                     State = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     CreatedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     ConsumedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastAttemptAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    AttemptCount = table.Column<int>(type: "integer", nullable: false, defaultValue: 1),
                     FailureReason = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
                     Version = table.Column<long>(type: "bigint", nullable: false)
                 },

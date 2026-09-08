@@ -7,7 +7,7 @@ namespace Domain.Entities;
 
 /// <summary>
 /// Authoritative domain aggregate tracking factual world event consumption within the cognitive boundary.
-/// Enforces idempotent single-dispatch and tracks terminal status of cognitive cycle execution.
+/// Enforces idempotent single-dispatch, deterministic crash recovery, and tracks terminal status.
 /// Invariant: Strictly factual event envelope data. Never contains CharacterState, needs, emotions,
 /// relationships, or cognitive interpretations.
 /// </summary>
@@ -25,6 +25,8 @@ public sealed class WorldCognitiveEventConsumption
     public EventConsumptionState State { get; private set; } = EventConsumptionState.InProgress;
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? ConsumedAtUtc { get; private set; }
+    public DateTime LastAttemptAtUtc { get; private set; }
+    public int AttemptCount { get; private set; } = 1;
     public string? FailureReason { get; private set; }
     public uint Version { get; private set; } = 1;
 
@@ -39,6 +41,8 @@ public sealed class WorldCognitiveEventConsumption
         string? category,
         string fingerprint,
         DateTime createdAtUtc,
+        DateTime? lastAttemptAtUtc = null,
+        int attemptCount = 1,
         Guid? id = null)
     {
         if (eventId == Guid.Empty)
@@ -65,6 +69,8 @@ public sealed class WorldCognitiveEventConsumption
         Category = category?.Trim();
         Fingerprint = fingerprint.Trim();
         CreatedAtUtc = createdAtUtc;
+        LastAttemptAtUtc = lastAttemptAtUtc ?? createdAtUtc;
+        AttemptCount = Math.Max(1, attemptCount);
         State = EventConsumptionState.InProgress;
         Version = 1;
     }
@@ -99,7 +105,9 @@ public sealed class WorldCognitiveEventConsumption
             category,
             fingerprint,
             createdAtUtc,
-            id);
+            lastAttemptAtUtc: createdAtUtc,
+            attemptCount: 1,
+            id: id);
     }
 
     /// <summary>
@@ -131,6 +139,21 @@ public sealed class WorldCognitiveEventConsumption
     }
 
     /// <summary>
+    /// Reclaims an event in Failed state for retry, or an event in InProgress state whose processing lease expired (crash recovery).
+    /// </summary>
+    public void Reclaim(DateTime attemptedAtUtc)
+    {
+        if (State == EventConsumptionState.Consumed)
+            throw new InvalidOperationException($"Cannot reclaim an already Consumed event (EventId: {EventId:D}).");
+
+        State = EventConsumptionState.InProgress;
+        LastAttemptAtUtc = attemptedAtUtc;
+        AttemptCount++;
+        FailureReason = null;
+        Version++;
+    }
+
+    /// <summary>
     /// Transitions consumption claim to Consumed state upon successful Cognitive Cycle execution.
     /// Invariant: CycleId must be valid and distinct from EventId.
     /// </summary>
@@ -158,13 +181,14 @@ public sealed class WorldCognitiveEventConsumption
     /// <summary>
     /// Transitions consumption claim to Failed state when cycle execution or processing fails.
     /// </summary>
-    public void MarkFailed(string reason)
+    public void MarkFailed(string reason, DateTime failedAtUtc)
     {
         if (State == EventConsumptionState.Consumed)
             throw new InvalidOperationException($"Cannot mark an already Consumed event as Failed (EventId: {EventId:D}).");
 
         State = EventConsumptionState.Failed;
         FailureReason = reason;
+        LastAttemptAtUtc = failedAtUtc;
         Version++;
     }
 }

@@ -23,6 +23,7 @@ using Infrastructure.Services.CognitiveCycle;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -85,7 +86,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         );
     }
 
-    private sealed class FakeSystemClock : ISystemClock
+    public sealed class FakeSystemClock : ISystemClock
     {
         public DateTimeOffset CurrentTime { get; set; }
         public FakeSystemClock(DateTimeOffset initialTime) => CurrentTime = initialTime;
@@ -171,20 +172,32 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
     private sealed class FakeWorldCognitiveEventConsumptionRepository : IWorldCognitiveEventConsumptionRepository
     {
-        public Func<WorldCognitiveEventConsumption, CancellationToken, Task<(bool, WorldCognitiveEventConsumption)>>? TryClaimHandler { get; set; }
+        public Func<WorldCognitiveEventConsumption, TimeSpan?, CancellationToken, Task<(bool, WorldCognitiveEventConsumption)>>? TryClaimHandler { get; set; }
+        public Func<Guid, DateTime, CancellationToken, Task<(bool, WorldCognitiveEventConsumption)>>? ReclaimHandler { get; set; }
         public Func<Guid, Guid, DateTime, CancellationToken, Task>? MarkConsumedHandler { get; set; }
-        public Func<Guid, string, CancellationToken, Task>? MarkFailedHandler { get; set; }
+        public Func<Guid, string, DateTime, CancellationToken, Task>? MarkFailedHandler { get; set; }
 
         public Task<WorldCognitiveEventConsumption?> GetByEventIdAsync(Guid eventId, CancellationToken ct = default) =>
             Task.FromResult<WorldCognitiveEventConsumption?>(null);
 
         public Task<(bool IsClaimed, WorldCognitiveEventConsumption Consumption)> TryClaimAsync(
             WorldCognitiveEventConsumption consumption,
+            TimeSpan? leaseTimeout = null,
             CancellationToken ct = default)
         {
             if (TryClaimHandler != null)
-                return TryClaimHandler(consumption, ct);
+                return TryClaimHandler(consumption, leaseTimeout, ct);
             return Task.FromResult((true, consumption));
+        }
+
+        public Task<(bool IsReclaimed, WorldCognitiveEventConsumption Consumption)> ReclaimAsync(
+            Guid eventId,
+            DateTime attemptedAtUtc,
+            CancellationToken ct = default)
+        {
+            if (ReclaimHandler != null)
+                return ReclaimHandler(eventId, attemptedAtUtc, ct);
+            return Task.FromResult((true, (WorldCognitiveEventConsumption)null!));
         }
 
         public Task MarkConsumedAsync(Guid eventId, Guid cycleId, DateTime consumedAtUtc, CancellationToken ct = default)
@@ -194,10 +207,10 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
             return Task.CompletedTask;
         }
 
-        public Task MarkFailedAsync(Guid eventId, string failureReason, CancellationToken ct = default)
+        public Task MarkFailedAsync(Guid eventId, string failureReason, DateTime failedAtUtc, CancellationToken ct = default)
         {
             if (MarkFailedHandler != null)
-                return MarkFailedHandler(eventId, failureReason, ct);
+                return MarkFailedHandler(eventId, failureReason, failedAtUtc, ct);
             return Task.CompletedTask;
         }
 
@@ -229,7 +242,25 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         }
     }
 
-    #region Category 1: Event Validation (Tests 1-6)
+    private sealed class TestSpyLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Logs { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Logs.Add((logLevel, formatter(state, exception), exception));
+        }
+    }
+
+    #region Category 1: Event Validation & Clock Hardening (Tests 1-6)
 
     [Fact]
     public void WorldCognitiveEvent_RejectsEmptyEventId()
@@ -264,7 +295,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     [Fact]
     public void WorldCognitiveEvent_RejectsInvalidTimestamp()
     {
-        // Far future timestamp (more than 1 day in future)
+        // Far future timestamp (> clock.UtcNow + 1 day)
         var futureEvt = new WorldCognitiveEvent(
             EventId: Guid.NewGuid(),
             CharacterId: Guid.NewGuid(),
@@ -276,6 +307,18 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
             WorldCognitiveEventConsumer.ValidateWorldEvent(futureEvt, _clock));
         Assert.Contains("OccurredAtUtc", ex1.Message);
 
+        // Ancient timestamp (< clock.UtcNow - 50 years)
+        var ancientEvt = new WorldCognitiveEvent(
+            EventId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            OccurredAtUtc: _clock.UtcNow.AddYears(-60),
+            EventName: "Storm"
+        );
+
+        var ex2 = Assert.Throws<ArgumentException>(() =>
+            WorldCognitiveEventConsumer.ValidateWorldEvent(ancientEvt, _clock));
+        Assert.Contains("OccurredAtUtc", ex2.Message);
+
         // Default / empty timestamp
         var defaultEvt = new WorldCognitiveEvent(
             EventId: Guid.NewGuid(),
@@ -284,9 +327,9 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
             EventName: "Storm"
         );
 
-        var ex2 = Assert.Throws<ArgumentException>(() =>
+        var ex3 = Assert.Throws<ArgumentException>(() =>
             WorldCognitiveEventConsumer.ValidateWorldEvent(defaultEvt, _clock));
-        Assert.Contains("OccurredAtUtc", ex2.Message);
+        Assert.Contains("OccurredAtUtc", ex3.Message);
     }
 
     [Fact]
@@ -418,7 +461,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
             repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
 
         var invalidEvt = new WorldCognitiveEvent(
-            EventId: Guid.Empty, // Invalid
+            EventId: Guid.Empty,
             CharacterId: Guid.NewGuid(),
             OccurredAtUtc: _clock.UtcNow,
             EventName: "InvalidEvent"
@@ -469,7 +512,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
     #endregion
 
-    #region Category 3: Idempotency & Conflict Semantics (Tests 13-17)
+    #region Category 3: Idempotency, Crash Recovery & Conflict Semantics (Tests 13-17)
 
     [Fact]
     public async Task Consumer_SameEventSamePayload_IsIdempotent()
@@ -542,7 +585,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
         var fakeCycleService = new FakeCharacterCognitiveCycleService();
 
-        // Setup interceptor for Worker B: right before Worker B commits its claim, Worker A executes completely.
+        // Worker B hits interceptor before commit; Worker A runs and commits cleanly
         var interceptor = new ConcurrentConsumerRaceInterceptor(async () =>
         {
             await using var dbWorkerA = new CoreDbContext(_options);
@@ -559,15 +602,13 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var consumerB = new WorldCognitiveEventConsumer(
             repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
 
-        // Worker B attempts to consume, hits interceptor where Worker A commits first,
-        // then Worker B's insert gets unique constraint violation, recovers, and returns Duplicate.
         var resultB = await consumerB.ConsumeAsync(evt);
 
         Assert.True(interceptor.InterceptorFired);
         Assert.True(resultB.IsDuplicate);
         Assert.Equal(1, fakeCycleService.InvocationCount);
 
-        // Verify database contains exactly one consumption row
+        // Verify exactly one record in database
         await using var verifyDb = CreateDbContext();
         var count = await verifyDb.WorldCognitiveEventConsumptions.CountAsync(c => c.EventId == eventId);
         Assert.Equal(1, count);
@@ -602,6 +643,123 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
             consumerB.ConsumeAsync(evtB));
     }
 
+    [Fact]
+    public async Task Consumer_CrashRecovery_InProgressLeaseExpired_ReclaimsAndCompletes()
+    {
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
+        var fakeCycleService = new FakeCharacterCognitiveCycleService();
+
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+
+        var evt = CreateValidEvent();
+
+        // 1. First claim: simulate crash right after DB claim committed (claim created, cycle never run)
+        var claim = WorldCognitiveEventConsumption.CreateClaim(
+            evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, _clock.UtcNow.UtcDateTime);
+        var (isClaimed, _) = await repo.TryClaimAsync(claim);
+        Assert.True(isClaimed);
+
+        // 2. Immediate redelivery within 1 minute (lease active): treated as duplicate / in-flight
+        _clock.CurrentTime = _clock.CurrentTime.AddMinutes(1);
+        var activeResult = await consumer.ConsumeAsync(evt);
+        Assert.True(activeResult.IsDuplicate);
+        Assert.Equal(0, fakeCycleService.InvocationCount);
+
+        // 3. Crash recovery: advance clock past 5 minutes lease timeout
+        _clock.CurrentTime = _clock.CurrentTime.AddMinutes(5);
+        var recoveredResult = await consumer.ConsumeAsync(evt);
+
+        Assert.True(recoveredResult.IsAccepted);
+        Assert.Equal(1, fakeCycleService.InvocationCount);
+
+        // 4. Verify DB state is now Consumed with AttemptCount = 2
+        var finalRecord = await repo.GetByEventIdAsync(evt.EventId);
+        Assert.NotNull(finalRecord);
+        Assert.Equal(EventConsumptionState.Consumed, finalRecord.State);
+        Assert.Equal(2, finalRecord.AttemptCount);
+    }
+
+    [Fact]
+    public async Task Consumer_FailedEvent_CanBeRetriedAndCompleted()
+    {
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
+
+        var shouldFail = true;
+        var fakeCycleService = new FakeCharacterCognitiveCycleService
+        {
+            Handler = (ctx, ct) =>
+            {
+                if (shouldFail)
+                {
+                    return Task.FromResult(CharacterCognitiveCycleResult.Failed(
+                        ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1,
+                        message: "Transient failure during first attempt."));
+                }
+
+                return Task.FromResult(CharacterCognitiveCycleResult.CompletedWithoutAction(
+                    ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1,
+                    message: "Success on retry."));
+            }
+        };
+
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+
+        var evt = CreateValidEvent();
+
+        // 1. First attempt fails
+        var firstResult = await consumer.ConsumeAsync(evt);
+        Assert.True(firstResult.IsRejected);
+
+        var failedRecord = await repo.GetByEventIdAsync(evt.EventId);
+        Assert.NotNull(failedRecord);
+        Assert.Equal(EventConsumptionState.Failed, failedRecord.State);
+        Assert.Equal(1, failedRecord.AttemptCount);
+
+        // 2. Second attempt retries and succeeds
+        shouldFail = false;
+        _clock.CurrentTime = _clock.CurrentTime.AddMinutes(1);
+        var retryResult = await consumer.ConsumeAsync(evt);
+
+        Assert.True(retryResult.IsAccepted);
+        Assert.Equal(2, fakeCycleService.InvocationCount);
+
+        var consumedRecord = await repo.GetByEventIdAsync(evt.EventId);
+        Assert.NotNull(consumedRecord);
+        Assert.Equal(EventConsumptionState.Consumed, consumedRecord.State);
+        Assert.Equal(2, consumedRecord.AttemptCount);
+        Assert.Null(consumedRecord.FailureReason);
+    }
+
+    [Fact]
+    public async Task Consumer_ConsumedEvent_IsTerminalDuplicate()
+    {
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
+        var fakeCycleService = new FakeCharacterCognitiveCycleService();
+
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+
+        var evt = CreateValidEvent();
+
+        // 1. Process successfully
+        var initial = await consumer.ConsumeAsync(evt);
+        Assert.True(initial.IsAccepted);
+
+        // 2. Advance clock 30 days into future
+        _clock.CurrentTime = _clock.CurrentTime.AddDays(30);
+
+        // 3. Redelivery is permanently Duplicate
+        var redelivery = await consumer.ConsumeAsync(evt);
+        Assert.True(redelivery.IsDuplicate);
+        Assert.Equal(initial.CycleId, redelivery.CycleId);
+        Assert.Equal(1, fakeCycleService.InvocationCount);
+    }
+
     #endregion
 
     #region Category 4: Repository Fingerprint & Persistence (Tests 18-20)
@@ -616,7 +774,6 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var charId = Guid.NewGuid();
         var now = _clock.UtcNow;
 
-        // Construct consumption with tampered/arbitrary fingerprint
         var badConsumption = new WorldCognitiveEventConsumption(
             eventId: eventId,
             characterId: charId,
@@ -702,7 +859,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
         Assert.NotEqual(Guid.Empty, capturedCycleId);
         Assert.NotEqual(evt.EventId, capturedCycleId);
-        Assert.NotEqual(evt.EventId, result.CycleId);
+        Assert.Equal(capturedCycleId, result.CycleId);
     }
 
     [Fact]
@@ -723,6 +880,26 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
         Assert.NotEqual(Guid.Empty, capturedExecutionId);
         Assert.NotEqual(evt.EventId, capturedExecutionId);
+    }
+
+    [Fact]
+    public async Task Consumer_CycleIdIsDistinctFromExecutionId()
+    {
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
+
+        var fakeCycleService = new FakeCharacterCognitiveCycleService();
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+
+        var evt = CreateValidEvent();
+        await consumer.ConsumeAsync(evt);
+
+        Assert.NotNull(fakeCycleService.LastContext);
+        var cycleId = fakeCycleService.LastContext.CycleId;
+        var executionId = fakeCycleService.LastContext.ExecutionId;
+
+        Assert.NotEqual(cycleId, executionId);
     }
 
     [Fact]
@@ -756,7 +933,6 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var properties = typeof(WorldCognitiveEvent).GetProperties(BindingFlags.Public | BindingFlags.Instance);
         var propertyNames = properties.Select(p => p.Name.ToLowerInvariant()).ToList();
 
-        // Invariant: WorldCognitiveEvent contains zero CharacterState metrics
         Assert.DoesNotContain("hunger", propertyNames);
         Assert.DoesNotContain("energy", propertyNames);
         Assert.DoesNotContain("mood", propertyNames);
@@ -769,8 +945,6 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     [Fact]
     public void Consumer_DoesNotMutateCharacterState()
     {
-        // Audit constructor parameters of WorldCognitiveEventConsumer:
-        // Must NOT inject CharacterState repository, context, or service
         var ctorParams = typeof(WorldCognitiveEventConsumer).GetConstructors()[0].GetParameters();
         var paramTypes = ctorParams.Select(p => p.ParameterType).ToList();
 
@@ -834,7 +1008,6 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var evt = CreateValidEvent();
         await consumer.ConsumeAsync(evt);
 
-        // Dispatches through ICharacterCognitiveCycleService
         Assert.Equal(1, fakeCycleService.InvocationCount);
         Assert.Equal(evt, fakeCycleService.LastContext?.Event);
     }
@@ -849,7 +1022,6 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
         var fakeActionExecution = new FakeActionExecutionService();
 
-        // When ActionProposal is generated, Safety Gate blocks before execution in CognitiveCycle
         var fakeCycleService = new FakeCharacterCognitiveCycleService
         {
             Handler = (ctx, ct) =>
@@ -869,7 +1041,6 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var evt = CreateValidEvent();
         var result = await consumer.ConsumeAsync(evt);
 
-        // Verification: Even with blocked safety decision, consumer handles cycle result cleanly
         Assert.True(result.IsAccepted);
         Assert.Equal(0, fakeActionExecution.ExecutionCount);
     }
@@ -914,7 +1085,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
         var fakeRepo = new FakeWorldCognitiveEventConsumptionRepository
         {
-            TryClaimHandler = (c, ct) => Task.FromResult((true, claim)),
+            TryClaimHandler = (c, lt, ct) => Task.FromResult((true, claim)),
             MarkConsumedHandler = (eid, cid, t, ct) => throw new DbUpdateException("Database connection severed during commit")
         };
 
@@ -923,8 +1094,41 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var consumer = new WorldCognitiveEventConsumer(
             fakeRepo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
 
-        // Invariant: Persistence failure must bubble up and never return false ProcessedResult
         await Assert.ThrowsAsync<DbUpdateException>(() => consumer.ConsumeAsync(evt));
+    }
+
+    [Fact]
+    public async Task MarkFailed_PersistenceFailure_LogsRecoveryRequiredAndRethrows()
+    {
+        var evt = CreateValidEvent();
+        var now = _clock.UtcNow.UtcDateTime;
+        var claim = WorldCognitiveEventConsumption.CreateClaim(
+            evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, now);
+
+        var fakeRepo = new FakeWorldCognitiveEventConsumptionRepository
+        {
+            TryClaimHandler = (c, lt, ct) => Task.FromResult((true, claim)),
+            MarkFailedHandler = (eid, reason, t, ct) => throw new DbUpdateException("Database disk full during MarkFailed")
+        };
+
+        var fakeCycleService = new FakeCharacterCognitiveCycleService
+        {
+            Handler = (ctx, ct) => throw new InvalidOperationException("Business logic failure")
+        };
+
+        var spyLogger = new TestSpyLogger<WorldCognitiveEventConsumer>();
+
+        var consumer = new WorldCognitiveEventConsumer(
+            fakeRepo, fakeCycleService, _clock, spyLogger);
+
+        // Invariant: Original exception must bubble up, and a Critical log must be emitted
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => consumer.ConsumeAsync(evt));
+        Assert.Equal("Business logic failure", ex.Message);
+
+        var criticalLog = spyLogger.Logs.FirstOrDefault(l => l.Level == LogLevel.Critical);
+        Assert.NotEqual(default, criticalLog);
+        Assert.Contains("CRITICAL RECOVERY REQUIRED", criticalLog.Message);
+        Assert.Contains(evt.EventId.ToString(), criticalLog.Message);
     }
 
     #endregion
@@ -955,7 +1159,6 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var charId = new Guid("66666666-7777-8888-9999-000000000000");
         var occurredAt = new DateTimeOffset(2026, 9, 8, 10, 30, 0, TimeSpan.Zero);
 
-        // Known canonical expected format
         var canonical = $"1|11111111-2222-3333-4444-555555555555|66666666-7777-8888-9999-000000000000|2026-09-08T10:30:00.0000000+00:00|Sensor|FireAlarm|Hazard";
         var expectedHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
 

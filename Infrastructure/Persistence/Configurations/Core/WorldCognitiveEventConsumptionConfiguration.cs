@@ -42,6 +42,8 @@ public sealed class WorldCognitiveEventConsumptionConfiguration : IEntityTypeCon
 
         builder.Property(c => c.CreatedAtUtc).IsRequired();
         builder.Property(c => c.ConsumedAtUtc);
+        builder.Property(c => c.LastAttemptAtUtc).IsRequired();
+        builder.Property(c => c.AttemptCount).IsRequired().HasDefaultValue(1);
 
         builder.Property(c => c.FailureReason)
             .HasMaxLength(2000);
