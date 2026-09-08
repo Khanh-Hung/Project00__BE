@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Project.Infrastructure.Persistence.Migrations.Core
 {
     [DbContext(typeof(CoreDbContext))]
-    partial class CoreDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260908074602_AddCharacterGoalsUniqueActiveIndex")]
+    partial class AddCharacterGoalsUniqueActiveIndex
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -491,74 +494,6 @@ namespace Project.Infrastructure.Persistence.Migrations.Core
                         .HasFilter("\"Status\" = 'Active'");
 
                     b.ToTable("CharacterGoals", (string)null);
-                });
-
-            modelBuilder.Entity("Domain.Entities.CharacterGoalExecutionProgress", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ActionType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<DateTime>("AppliedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CharacterId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DeletedBy")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("ExecutionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("GoalId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsSoftDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("NewProgress")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("OldProgress")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("OperationFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<int>("ProgressDelta")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CharacterId", "ExecutionId");
-
-                    b.HasIndex("GoalId", "ExecutionId")
-                        .IsUnique();
-
-                    b.ToTable("CharacterGoalExecutionProgresses", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Entities.CharacterGoalMilestone", b =>

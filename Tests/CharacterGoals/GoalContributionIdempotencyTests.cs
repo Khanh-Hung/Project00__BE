@@ -36,7 +36,7 @@ public sealed class GoalContributionIdempotencyTests : IDisposable
     public async Task DuplicateGoalContribution_IsIdempotentlySuppressed_AndDoesNotDoubleIncrement()
     {
         var charId = Guid.NewGuid();
-        var goal = new CharacterGoal(charId, "Learn Alchemy", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Learn Alchemy", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {

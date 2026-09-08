@@ -30,6 +30,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
     private readonly ICharacterRelationshipFeedbackService? _relationshipFeedbackService;
     private readonly IPersonalityAdaptationService? _personalityAdaptationService;
     private readonly ICharacterPersonalityRepository? _personalityRepository;
+    private readonly ICharacterGoalService? _goalService;
     private readonly ILogger<CharacterCognitiveCycleService> _logger;
 
     public CharacterCognitiveCycleService(
@@ -48,7 +49,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         ICharacterRelationshipRetrievalService? relationshipRetrievalService = null,
         ICharacterRelationshipFeedbackService? relationshipFeedbackService = null,
         IPersonalityAdaptationService? personalityAdaptationService = null,
-        ICharacterPersonalityRepository? personalityRepository = null)
+        ICharacterPersonalityRepository? personalityRepository = null,
+        ICharacterGoalService? goalService = null)
     {
         _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
         _experiencePolicy = experiencePolicy ?? throw new ArgumentNullException(nameof(experiencePolicy));
@@ -66,6 +68,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         _relationshipFeedbackService = relationshipFeedbackService;
         _personalityAdaptationService = personalityAdaptationService;
         _personalityRepository = personalityRepository;
+        _goalService = goalService;
     }
 
     public async Task<CharacterCognitiveCycleResult> RunAsync(
@@ -247,6 +250,20 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 personalitySnapshot: personalitySnapshot);
         }
 
+        // Validate caller did not attempt to inject GoalContext
+        if (context.GoalContext != null)
+        {
+            _logger.LogWarning(
+                "[CharacterCognitiveCycleService] Caller attempted to inject GoalContext for CharacterId={CharacterId}, CycleId={CycleId}. Rejecting invalid input.",
+                characterId, cycleId);
+
+            return CharacterCognitiveCycleResult.InvalidInput(
+                cycleId, executionId, characterId, triggeredAtUtc,
+                message: "GoalContext cannot be pre-populated by caller. Goal evaluation is managed authoritatively by the cognitive cycle.",
+                @event: cognitiveEvent,
+                personalitySnapshot: personalitySnapshot);
+        }
+
         // 2. Perception & Stimulus Mapping (PR39/PR46: Map event to normalized Domain stimulus)
         var basePerceptionContext = context.PerceptionContext != null
             ? (stimulus != null ? context.PerceptionContext with { Stimulus = stimulus } : context.PerceptionContext)
@@ -336,8 +353,39 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         // 7. Desire (PR41)
         var desires = _desirePolicy.Evaluate(experience, appraisal, emotion);
 
-        // 8. Intent (PR42)
-        var intentContext = new CharacterIntentContext(triggeredAtUtc);
+        // 7.5 Authoritative Goal Evaluation (PR55)
+        CharacterGoalContext? goalContext = null;
+        if (_goalService != null)
+        {
+            try
+            {
+                var activeGoal = await _goalService.GetOrSelectActiveGoalAsync(characterId, desires, triggeredAtUtc, cancellationToken);
+                if (activeGoal != null)
+                {
+                    goalContext = new CharacterGoalContext(
+                        GoalId: activeGoal.Id,
+                        GoalKey: activeGoal.GoalKey,
+                        Status: activeGoal.Status,
+                        Priority: (int)activeGoal.Priority,
+                        Progress: activeGoal.ProgressPercentage
+                    );
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[CharacterCognitiveCycleService] Failed to evaluate goal for CharacterId={CharacterId}. Gracefully falling back to null.",
+                    characterId);
+                goalContext = null;
+            }
+        }
+
+        // 8. Intent (PR42 modulated by active GoalContext)
+        var intentContext = new CharacterIntentContext(triggeredAtUtc, goalContext);
         var intent = _intentPolicy.Evaluate(desireEvaluation: desires, context: intentContext);
 
         // Early Exit: No Intent formed
@@ -356,13 +404,13 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 personalitySnapshot: personalitySnapshot,
                 message: "No actionable intent formed from desires.");
 
-            var withMemory = await AttachMemoryFeedbackAsync(context, noIntentResult, cancellationToken);
+            var withMemory = await AttachMemoryFeedbackAsync(context, noIntentResult with { GoalContext = goalContext }, cancellationToken);
             var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
             return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
         }
 
-        // 9. Action Proposal (PR43)
-        var proposalContext = new CharacterActionProposalContext(triggeredAtUtc);
+        // 9. Action Proposal (PR43 modulated by active GoalContext)
+        var proposalContext = new CharacterActionProposalContext(triggeredAtUtc, goalContext);
         var actionProposal = _actionProposalPolicy.Evaluate(intent, proposalContext);
 
         // Early Exit: No Proposal formed
@@ -382,7 +430,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 personalitySnapshot: personalitySnapshot,
                 message: "No actionable proposal formed from intent.");
 
-            var withMemory = await AttachMemoryFeedbackAsync(context, noProposalResult, cancellationToken);
+            var withMemory = await AttachMemoryFeedbackAsync(context, noProposalResult with { GoalContext = goalContext }, cancellationToken);
             var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
             return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
         }
@@ -407,7 +455,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 message: $"Action proposal blocked by safety policy '{safetyDecision.PolicyCode}': {safetyDecision.Reason}",
                 safetyDecision: safetyDecision);
 
-            var withMemory = await AttachMemoryFeedbackAsync(context, blockedResult, cancellationToken);
+            var withMemory = await AttachMemoryFeedbackAsync(context, blockedResult with { GoalContext = goalContext }, cancellationToken);
             var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
             return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
         }
@@ -483,13 +531,17 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         };
 
         // 12. Persist Memory Feedback (PR47: Independent identity, error does not roll back state)
-        var resultWithMemory = await AttachMemoryFeedbackAsync(context, cycleResult, cancellationToken);
+        var resultWithGoalContext = cycleResult with { GoalContext = goalContext };
+        var resultWithMemory = await AttachMemoryFeedbackAsync(context, resultWithGoalContext, cancellationToken);
 
         // 13. Persist Relationship Feedback (PR48: Independent identity, error does not roll back state)
         var resultWithRelationship = await AttachRelationshipFeedbackAsync(context, resultWithMemory, cancellationToken);
 
         // 14. Persist Personality Adaptation (PR49: Independent identity, threshold accumulation, error does not roll back state)
-        var finalResult = await AttachPersonalityAdaptationAsync(context, resultWithRelationship, cancellationToken);
+        var resultWithPersonality = await AttachPersonalityAdaptationAsync(context, resultWithRelationship, cancellationToken);
+
+        // 15. Persist Goal Progress Feedback (PR55: Independent identity, error does not roll back state)
+        var finalResult = await AttachGoalFeedbackAsync(context, resultWithPersonality, cancellationToken);
 
         _logger.LogInformation(
             "Cognitive cycle completed. CharacterId={CharacterId}, CycleId={CycleId}, ExecutionId={ExecutionId}, EventId={EventId}, StateVersionAtStart={StateVersionAtStart}, Status={Status}, ActionType={ActionType}, SafetyPolicy={SafetyPolicy}",
@@ -503,6 +555,41 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             finalResult.SafetyDecision?.PolicyCode ?? "None");
 
         return finalResult;
+    }
+
+    private async Task<CharacterCognitiveCycleResult> AttachGoalFeedbackAsync(
+        CharacterCognitiveCycleContext context,
+        CharacterCognitiveCycleResult result,
+        CancellationToken ct)
+    {
+        if (_goalService == null || result.GoalContext == null || result.ActionExecution == null)
+        {
+            return result;
+        }
+
+        try
+        {
+            var feedback = await _goalService.ApplyProgressFeedbackAsync(
+                result.CharacterId,
+                result.ExecutionId,
+                result.ActionExecution,
+                result.GoalContext,
+                result.TriggeredAtUtc,
+                ct);
+
+            return result with { GoalFeedback = feedback };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[CharacterCognitiveCycleService] Failed to record goal progress feedback for CharacterId={CharacterId}, ExecutionId={ExecutionId}. Continuing cycle without failing.",
+                result.CharacterId, result.ExecutionId);
+            return result;
+        }
     }
 
     private async Task<CharacterCognitiveCycleResult> AttachMemoryFeedbackAsync(

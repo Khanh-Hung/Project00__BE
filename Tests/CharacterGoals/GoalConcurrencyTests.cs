@@ -36,7 +36,7 @@ public sealed class GoalConcurrencyTests : IDisposable
     public async Task ConcurrentProgressUpdates_EnforcesOptimisticConcurrencyFencing()
     {
         var charId = Guid.NewGuid();
-        var goal = new CharacterGoal(charId, "Master Swordsmanship", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Swordsmanship", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {
@@ -52,11 +52,11 @@ public sealed class GoalConcurrencyTests : IDisposable
         var goal2 = await dbWorker2.CharacterGoals.FirstAsync(g => g.Id == goal.Id);
 
         // Worker 1 records progress -> advances Version to 2
-        goal1.RecordProgress(10);
+        goal1.RecordProgress(10, DateTimeOffset.UtcNow);
         await dbWorker1.SaveChangesAsync();
 
         // Worker 2 attempts to save with stale Version 1 -> DbUpdateConcurrencyException
-        goal2.RecordProgress(10);
+        goal2.RecordProgress(10, DateTimeOffset.UtcNow);
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => dbWorker2.SaveChangesAsync());
     }
 }

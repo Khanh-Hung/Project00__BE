@@ -44,7 +44,7 @@ public sealed class GoalActivityIntegrationTests : IDisposable
             Id = charId
         };
 
-        var goal = new CharacterGoal(charId, "Master Arcane Herbology", CharacterGoalType.SkillDevelopment, 50, CharacterGoalPriority.High);
+        var goal = new CharacterGoal(charId, "Master Arcane Herbology", CharacterGoalType.SkillDevelopment, 50, DateTimeOffset.UtcNow, CharacterGoalPriority.High);
         goal.AddMilestone("Collect Rare Herbs", 1, 20);
 
         using (var db = new CoreDbContext(_options))

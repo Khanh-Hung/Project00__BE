@@ -44,7 +44,7 @@ public sealed class AutonomyTickHappyPathTests : IDisposable
     {
         var charId = Guid.NewGuid();
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
-        var goal = new CharacterGoal(charId, "Master Alchemical Research", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Alchemical Research", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Great work on the research!");
 
         using (var db = new CoreDbContext(_options))

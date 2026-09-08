@@ -48,7 +48,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         {
             Id = charId
         };
-        var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {
@@ -102,7 +102,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         {
             Id = charId
         };
-        var goal = new CharacterGoal(charId, "Survey Ancient Ruins", CharacterGoalType.Exploration, 100);
+        var goal = new CharacterGoal(charId, "Survey Ancient Ruins", CharacterGoalType.Exploration, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {
@@ -190,7 +190,7 @@ public sealed class AutonomousConcurrencyTests : IDisposable
         {
             Id = charId
         };
-        var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {

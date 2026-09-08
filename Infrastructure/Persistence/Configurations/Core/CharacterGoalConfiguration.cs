@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -38,5 +38,10 @@ public class CharacterGoalConfiguration : IEntityTypeConfiguration<CharacterGoal
         builder.HasIndex(x => new { x.CharacterId, x.Status });
         builder.HasIndex(x => new { x.CharacterId, x.Priority });
         builder.HasIndex(x => new { x.CharacterId, x.CreatedAt });
+
+        // Unique constraint: At most one active goal per character for a given semantic goal key
+        builder.HasIndex(x => new { x.CharacterId, x.Title })
+            .HasFilter("\"Status\" = 'Active'")
+            .IsUnique();
     }
 }

@@ -44,7 +44,7 @@ public sealed class GoalVisualMomentIntegrationTests : IDisposable
             Id = charId
         };
 
-        var goal = new CharacterGoal(charId, "Explore Ancient Sunken Ruins", CharacterGoalType.Exploration, 100, CharacterGoalPriority.Critical);
+        var goal = new CharacterGoal(charId, "Explore Ancient Sunken Ruins", CharacterGoalType.Exploration, 100, DateTimeOffset.UtcNow, CharacterGoalPriority.Critical);
 
         using (var db = new CoreDbContext(_options))
         {

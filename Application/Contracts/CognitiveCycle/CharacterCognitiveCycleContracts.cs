@@ -4,6 +4,8 @@ using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
 
+using Application.Contracts.Goals;
+
 namespace Application.Contracts.CognitiveCycle;
 
 public enum CognitiveEventType
@@ -61,7 +63,8 @@ public sealed record CharacterCognitiveCycleContext(
     CharacterCognitiveEvent? Event = null,
     CharacterPerceptionContext? PerceptionContext = null,
     CharacterBlueprint? Blueprint = null,
-    CharacterRelationshipContext? RelationshipContext = null
+    CharacterRelationshipContext? RelationshipContext = null,
+    CharacterGoalContext? GoalContext = null
 );
 
 public enum CharacterCognitiveCycleStatus
@@ -99,7 +102,9 @@ public sealed record CharacterCognitiveCycleResult(
     IReadOnlyList<CharacterPersonalityAdaptationResult>? PersonalityAdaptations = null,
     CharacterPersonalityAdaptationResult? PersonalityAdaptation = null,
     string? Message = null,
-    SafetyDecision? SafetyDecision = null
+    SafetyDecision? SafetyDecision = null,
+    CharacterGoalContext? GoalContext = null,
+    CharacterGoalProgressFeedback? GoalFeedback = null
 )
 {
     public bool IsSuccess => Status == CharacterCognitiveCycleStatus.CompletedWithAction

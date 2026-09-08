@@ -12,8 +12,8 @@ public sealed class GoalConflictTests
     {
         var charId = Guid.NewGuid();
 
-        var goalA = new CharacterGoal(charId, "Painting Masterpiece", CharacterGoalType.Creative, 50, CharacterGoalPriority.Normal);
-        var goalB = new CharacterGoal(charId, "Diplomatic Relationship Building", CharacterGoalType.Relationship, 50, CharacterGoalPriority.High);
+        var goalA = new CharacterGoal(charId, "Painting Masterpiece", CharacterGoalType.Creative, 50, DateTimeOffset.UtcNow, CharacterGoalPriority.Normal);
+        var goalB = new CharacterGoal(charId, "Diplomatic Relationship Building", CharacterGoalType.Relationship, 50, DateTimeOffset.UtcNow, CharacterGoalPriority.High);
 
         var winnerForSocializing = GoalConflictPolicy.ResolveGoalConflict(new[] { goalA, goalB }, CharacterActivityType.Socializing);
         Assert.NotNull(winnerForSocializing);

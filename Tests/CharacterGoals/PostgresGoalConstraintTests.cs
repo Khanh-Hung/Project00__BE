@@ -71,7 +71,7 @@ public sealed class PostgresGoalConstraintTests : IDisposable
     public async Task DuplicateContributions_IdempotentlySuppressed_AndDoesNotDoubleCount()
     {
         var charId = Guid.NewGuid();
-        var goal = new CharacterGoal(charId, "Master Archery", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Archery", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {

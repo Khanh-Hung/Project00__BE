@@ -43,7 +43,7 @@ public sealed class CharacterReactionGoalIntegrationTests : IDisposable
     {
         var charId = Guid.NewGuid();
         var character = new Character("Valerius", "Painter", "http://avatar.png", "Painter", "Hello", "Anime") { Id = charId };
-        var goal = new CharacterGoal(charId, "Master Landscape Art", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Landscape Art", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
         var worldEvent = CharacterWorldEvent.Create(charId, CharacterWorldEventType.UserMessage, "Chat", payloadJson: "Your painting exhibition was a grand success!");
 
         using (var db = new CoreDbContext(_options))

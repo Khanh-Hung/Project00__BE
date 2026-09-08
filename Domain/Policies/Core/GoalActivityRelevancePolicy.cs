@@ -35,7 +35,7 @@ public static class GoalActivityRelevancePolicy
             return new GoalRelevanceResult(0.95f, $"Culinary activity directly advances goal '{title}'.");
         }
 
-        if ((text.Contains("paint") || text.Contains("drawing") || text.Contains("art") || text.Contains("sculpt") || text.Contains("write") || text.Contains("book") || text.Contains("craft") || text.Contains("music")) &&
+        if ((text.Contains("paint") || text.Contains("drawing") || (text.Contains("art") && !text.Contains("martial")) || text.Contains("sculpt") || text.Contains("write") || text.Contains("book") || text.Contains("craft") || text.Contains("music")) &&
             (activityType == CharacterActivityType.Working || activityType == CharacterActivityType.Custom))
         {
             return new GoalRelevanceResult(0.95f, $"Creative activity directly advances goal '{title}'.");
@@ -53,7 +53,7 @@ public static class GoalActivityRelevancePolicy
             return new GoalRelevanceResult(0.95f, $"Exploration directly advances discovery goal '{title}'.");
         }
 
-        if ((text.Contains("study") || text.Contains("learn") || text.Contains("research") || text.Contains("read") || text.Contains("scholar") || text.Contains("alchemy") || text.Contains("academic") || text.Contains("lore")) &&
+        if ((text.Contains("study") || text.Contains("learn") || text.Contains("research") || text.Contains("read") || text.Contains("scholar") || text.Contains("alchemy") || text.Contains("academic") || (text.Contains("lore") && !text.Contains("explore"))) &&
             (activityType == CharacterActivityType.Reading || activityType == CharacterActivityType.Working))
         {
             return new GoalRelevanceResult(0.95f, $"Study and research directly advance intellectual goal '{title}'.");
