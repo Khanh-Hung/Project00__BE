@@ -23,6 +23,10 @@ public sealed class CoreDbContextHealthCheck : IHealthCheck
                 ? HealthCheckResult.Healthy("Database connection successful.")
                 : HealthCheckResult.Unhealthy("Database connection failed.");
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             return HealthCheckResult.Unhealthy("Database health check exception.", ex);

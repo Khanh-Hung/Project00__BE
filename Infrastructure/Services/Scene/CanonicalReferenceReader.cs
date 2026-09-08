@@ -17,35 +17,12 @@ public sealed class CanonicalReferenceReader : ICanonicalReferenceReader
 
     public async Task<CharacterVisualReference?> GetActiveCanonicalReferenceAsync(Guid characterId, CancellationToken ct = default)
     {
-        var existing = await _dbContext.CharacterVisualReferences
+        return await _dbContext.CharacterVisualReferences
             .AsNoTracking()
             .Where(r => r.CharacterId == characterId && r.IsCanonical && r.Status == VisualReferenceStatus.Active)
             .OrderByDescending(r => r.Priority)
             .ThenByDescending(r => r.PromotedAt)
             .ThenByDescending(r => r.CreatedAt)
             .FirstOrDefaultAsync(ct);
-
-        if (existing != null)
-            return existing;
-
-        var character = await _dbContext.Characters
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == characterId, ct);
-
-        if (character != null)
-        {
-            var fallbackUrl = character.VisualIdentity?.CanonicalReferenceUrl ?? character.AvatarUrl;
-            if (!string.IsNullOrWhiteSpace(fallbackUrl))
-            {
-                return new CharacterVisualReference(
-                    characterId,
-                    fallbackUrl,
-                    type: VisualReferenceType.Canonical,
-                    status: VisualReferenceStatus.Active,
-                    isCanonical: true);
-            }
-        }
-
-        return null;
     }
 }

@@ -50,8 +50,10 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<Application.Abstractions.Data.IIdentityUnitOfWork, IdentityUnitOfWork>();
 
-        // 3. Add Auth Services (Hasher & JWT) and DateTime Provider
-        services.AddSingleton<Domain.Common.DateTimes.IDateTimeProvider, Domain.Common.DateTimes.SystemDateTimeProvider>();
+        // 3. Add Auth Services (Hasher & JWT) and Unified System Clock / DateTime Provider
+        services.AddSingleton<Infrastructure.Services.Time.SystemClock>();
+        services.AddSingleton<Application.Abstractions.Time.ISystemClock>(sp => sp.GetRequiredService<Infrastructure.Services.Time.SystemClock>());
+        services.AddSingleton<Domain.Common.DateTimes.IDateTimeProvider>(sp => sp.GetRequiredService<Infrastructure.Services.Time.SystemClock>());
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
@@ -273,9 +275,6 @@ public static class DependencyInjection
 
         // PR #45: Autonomous Character Cognitive Cycle
         services.AddScoped<Application.Interfaces.ICharacterCognitiveCycleService, Infrastructure.Services.CognitiveCycle.CharacterCognitiveCycleService>();
-
-        // PR #53: Unified Production System Clock
-        services.AddSingleton<Application.Abstractions.Time.ISystemClock, Infrastructure.Services.Time.SystemClock>();
 
         // PR #50: Life Simulation Foundation & PR #51: Life Simulation World Events / Outbox
         services.AddSingleton<Application.Abstractions.Time.ILifeSimulationClock, Infrastructure.Services.Time.SystemLifeSimulationClock>();

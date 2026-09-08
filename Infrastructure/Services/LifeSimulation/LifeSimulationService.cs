@@ -22,20 +22,20 @@ public sealed class LifeSimulationService : ILifeSimulationService
     private readonly ICharacterOutboxRepository _outboxRepository;
     private readonly ILifeSimulationClock _clock;
     private readonly ISystemClock _systemClock;
-    private readonly ILogger<LifeSimulationService>? _logger;
+    private readonly ILogger<LifeSimulationService> _logger;
 
     public LifeSimulationService(
         ICharacterLifeActivityRepository repository,
         ICharacterOutboxRepository outboxRepository,
         ILifeSimulationClock clock,
-        ISystemClock? systemClock = null,
-        ILogger<LifeSimulationService>? logger = null)
+        ISystemClock systemClock,
+        ILogger<LifeSimulationService> logger)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _outboxRepository = outboxRepository ?? throw new ArgumentNullException(nameof(outboxRepository));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-        _systemClock = systemClock ?? new Infrastructure.Services.Time.SystemClock();
-        _logger = logger;
+        _systemClock = systemClock ?? throw new ArgumentNullException(nameof(systemClock));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<LifeSimulationTickResult> TickAsync(
@@ -48,7 +48,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
         if (context.CharacterId == Guid.Empty)
             throw new ArgumentException("CharacterId cannot be empty.", nameof(context));
 
-        _logger?.LogInformation(
+        _logger.LogInformation(
             "[LifeSimulationService] Tick started for CharacterId={CharacterId}, TickId={TickId}, SimTime={SimulationTimeUtc}",
             context.CharacterId, context.TickId, context.SimulationTimeUtc);
 
@@ -158,7 +158,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
                 await _repository.SaveChangesAsync(ct);
             }
 
-            _logger?.LogInformation(
+            _logger.LogInformation(
                 "[LifeSimulationService] Tick completed for CharacterId={CharacterId}, TickId={TickId}, Events={EventsCount}, Completed={CompletedCount}, Started={StartedCount}",
                 context.CharacterId, context.TickId, events.Count, completedActivities.Count, startedActivities.Count);
 
@@ -179,7 +179,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            _logger?.LogWarning(ex, "[LifeSimulationService] Concurrency conflict during tick for CharacterId={CharacterId}, TickId={TickId}", context.CharacterId, context.TickId);
+            _logger.LogWarning(ex, "[LifeSimulationService] Concurrency conflict during tick for CharacterId={CharacterId}, TickId={TickId}", context.CharacterId, context.TickId);
             throw new LifeSimulationConcurrencyException(context.CharacterId, null, "Optimistic concurrency conflict occurred during simulation tick.", ex);
         }
     }
@@ -282,7 +282,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
     private static Guid ComputeDeterministicEventGuid(Guid tickId, Guid activityId, string eventType)
     {
         var raw = $"LifeSimEvent:{tickId:D}:{activityId:D}:{eventType}";
-        var hash = MD5.HashData(Encoding.UTF8.GetBytes(raw));
-        return new Guid(hash);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+        return new Guid(hash.AsSpan(0, 16));
     }
 }

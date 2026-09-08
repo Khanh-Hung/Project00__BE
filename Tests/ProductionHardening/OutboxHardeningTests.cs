@@ -186,4 +186,54 @@ public class OutboxHardeningTests : IDisposable
         Assert.Equal(eventB, pending[1].EventId);
         Assert.Equal(eventA, pending[2].EventId);
     }
+
+    [Fact]
+    public async Task LifeSimulationService_UsesSha256_ForDeterministicEventGuid()
+    {
+        await using var db = new CoreDbContext(_options);
+        db.EnsureLifeSimulationTriggersCreated();
+
+        var simTime = new DateTimeOffset(2026, 9, 8, 10, 0, 0, TimeSpan.Zero);
+        var simClock = new FakeLifeSimulationClock(simTime);
+        var systemClock = new SystemClock();
+        var activityRepo = new CharacterLifeActivityRepository(db);
+        var outboxRepo = new CharacterOutboxRepository(db);
+
+        var service = new LifeSimulationService(
+            activityRepo,
+            outboxRepo,
+            simClock,
+            systemClock,
+            NullLogger<LifeSimulationService>.Instance);
+
+        var charId = Guid.NewGuid();
+        var character = new Character(
+            "Test", "Title", "https://example.com/avatar.jpg",
+            "Prompt", "Hi", "Category") { Id = charId };
+        db.Characters.Add(character);
+        var state = new CharacterState(charId, DateTime.UtcNow);
+        db.CharacterStates.Add(state);
+        await db.SaveChangesAsync();
+
+        var activity = await service.ScheduleActivityAsync(
+            charId,
+            LifeActivityType.Work,
+            startAtUtc: simTime,
+            plannedEndAtUtc: simTime.AddHours(2));
+
+        var tickId = Guid.NewGuid();
+        var tickResult = await service.TickAsync(new CharacterLifeSimulationContext(
+            TickId: tickId,
+            CharacterId: charId,
+            SimulationTimeUtc: simTime));
+
+        var outboxMsg = await db.CharacterOutboxMessages.FirstAsync(m => m.EventType == "ActivityStarted");
+
+        // Verify that the event ID matches SHA-256 computation
+        var raw = $"LifeSimEvent:{tickId:D}:{activity.Id:D}:ActivityStarted";
+        var expectedHash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw));
+        var expectedGuid = new Guid(expectedHash.AsSpan(0, 16));
+
+        Assert.Equal(expectedGuid, outboxMsg.EventId);
+    }
 }

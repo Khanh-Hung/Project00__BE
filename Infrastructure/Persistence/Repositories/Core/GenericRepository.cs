@@ -13,26 +13,25 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
     public GenericRepository(CoreDbContext dbContext)
     {
         DbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        if (DbContext.Model.FindEntityType(typeof(TEntity)) == null)
+        {
+            throw new InvalidOperationException(
+                $"Entity type '{typeof(TEntity).Name}' is not mapped in CoreDbContext. Verify that the correct UnitOfWork/DbContext is being used.");
+        }
     }
 
     public async Task<TEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        if (DbContext.Model.FindEntityType(typeof(TEntity)) == null)
-            return null;
         return await DbContext.Set<TEntity>().FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
     public async Task<TEntity?> GetAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken ct = default)
     {
-        if (DbContext.Model.FindEntityType(typeof(TEntity)) == null)
-            return null;
         return await DbContext.Set<TEntity>().FirstOrDefaultAsync(predicate, ct);
     }
 
     public async Task<IReadOnlyList<TEntity>> GetAllAsync(Expression<Func<TEntity, bool>>? predicate = null, CancellationToken ct = default)
     {
-        if (DbContext.Model.FindEntityType(typeof(TEntity)) == null)
-            return Array.Empty<TEntity>();
         IQueryable<TEntity> query = DbContext.Set<TEntity>();
         if (predicate != null)
         {

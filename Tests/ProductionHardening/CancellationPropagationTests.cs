@@ -10,6 +10,7 @@ using Domain.Entities;
 using Domain.Enums;
 using Domain.Policies;
 using Domain.ValueObjects;
+using Infrastructure.Health;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Repositories.Core;
 using Infrastructure.Services.ActionExecution;
@@ -200,5 +201,20 @@ public class CancellationPropagationTests : IDisposable
         // State transitions table must remain empty
         var transitions = await db.CharacterStateTransitions.ToListAsync();
         Assert.Empty(transitions);
+    }
+
+    [Fact]
+    public async Task CoreDbContextHealthCheck_PropagatesCancellation_WhenCancellationTokenTriggered()
+    {
+        await using var db = new CoreDbContext(_options);
+        var healthCheck = new CoreDbContextHealthCheck(db);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var context = new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            healthCheck.CheckHealthAsync(context, cts.Token));
     }
 }

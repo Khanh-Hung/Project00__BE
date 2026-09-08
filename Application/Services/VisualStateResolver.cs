@@ -141,58 +141,7 @@ public sealed class VisualStateResolver : IVisualStateResolver
             var specRepo = _unitOfWork.GetRepository<SceneSpecification>();
             await specRepo.AddAsync(pipelineResult.SceneSpecification, ct);
 
-            string? frozenPreviousSceneImageUrl = null;
-            Guid? frozenPredecessorSceneImageId = null;
-            int? predecessorRevision = targetRevision > 1 ? targetRevision - 1 : null;
-            if (predecessorRevision.HasValue)
-            {
-                try
-                {
-                    var sceneImageRepo = _unitOfWork.GetRepository<SceneImage>();
-                    var lastCommittedImage = await sceneImageRepo.GetAsync(
-                        img => img.SessionId == session.Id && img.SceneRevision == predecessorRevision.Value && img.IsCurrent,
-                        ct);
-                    frozenPreviousSceneImageUrl = lastCommittedImage?.ImageUrl;
-                    frozenPredecessorSceneImageId = lastCommittedImage?.Id;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to resolve predecessor scene image for Revision {Rev} during turn commit.", predecessorRevision.Value);
-                }
-            }
-
-            var baseSnapshot = pipelineResult.VisualSnapshot;
-
-            var effectiveIdentity = character.VisualIdentity != null
-                ? character.VisualIdentity with
-                {
-                    ClothingStyle = delta.OutfitChange ?? updatedSceneState.CurrentOutfit ?? character.VisualIdentity.ClothingStyle,
-                    CanonicalReferenceUrl = character.VisualIdentity.CanonicalReferenceUrl ?? character.AvatarUrl ?? baseSnapshot.IdentityReferenceUrl
-                }
-                : baseSnapshot.VisualIdentity;
-
-            var effectiveCanonicalUrl = effectiveIdentity?.CanonicalReferenceUrl 
-                ?? character.VisualIdentity?.CanonicalReferenceUrl 
-                ?? baseSnapshot.IdentityReferenceUrl 
-                ?? character.AvatarUrl;
-
-            var mergedSnapshot = baseSnapshot with
-            {
-                TurnId = turnId,
-                SessionId = session.Id,
-                CharacterId = character.Id,
-                SceneRevision = targetRevision,
-                VisualIdentity = effectiveIdentity,
-                SceneState = updatedSceneState,
-                TransientState = transientState,
-                IdentityReferenceUrl = effectiveCanonicalUrl,
-                PreviousSceneImageUrl = frozenPreviousSceneImageUrl ?? baseSnapshot.PreviousSceneImageUrl,
-                PredecessorSceneRevision = predecessorRevision ?? baseSnapshot.PredecessorSceneRevision,
-                PredecessorSceneImageId = frozenPredecessorSceneImageId ?? baseSnapshot.PredecessorSceneImageId,
-                SceneDescription = delta.SceneDescription ?? baseSnapshot.SceneDescription
-            };
-
-            return (updatedSceneState, transientState, mergedSnapshot);
+            return (updatedSceneState, transientState, pipelineResult.VisualSnapshot);
         }
         catch (SceneCompositionException)
         {

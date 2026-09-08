@@ -29,23 +29,10 @@ public static class GoalActivityRelevancePolicy
         string reason = $"Activity {activityType} evaluated for goal '{title}'.";
 
         // 1. Keyword Overrides for High Direct Relevance
-        if (text.Contains("cook") || text.Contains("baking") || text.Contains("culinary") || text.Contains("recipe") || text.Contains("chef") || text.Contains("kitchen"))
+        if ((text.Contains("cook") || text.Contains("baking") || text.Contains("culinary") || text.Contains("recipe") || text.Contains("chef") || text.Contains("kitchen") || text.Contains("food") || text.Contains("dish") || text.Contains("meal")) &&
+            (activityType == CharacterActivityType.Cooking || activityType == CharacterActivityType.Eating))
         {
-            if (activityType == CharacterActivityType.Cooking)
-            {
-                return new GoalRelevanceResult(0.95f, $"Culinary activity directly advances goal '{title}'.");
-            }
-        }
-        else if (text.Contains("food") || text.Contains("dish") || text.Contains("meal") || text.Contains("eat") || text.Contains("dine") || text.Contains("dining") || text.Contains("taste"))
-        {
-            if (activityType == CharacterActivityType.Cooking)
-            {
-                return new GoalRelevanceResult(0.90f, $"Culinary activity relates to goal '{title}'.");
-            }
-            if (activityType == CharacterActivityType.Eating)
-            {
-                return new GoalRelevanceResult(0.85f, $"Dining relates to goal '{title}'.");
-            }
+            return new GoalRelevanceResult(0.95f, $"Culinary activity directly advances goal '{title}'.");
         }
 
         if ((text.Contains("paint") || text.Contains("drawing") || text.Contains("art") || text.Contains("sculpt") || text.Contains("write") || text.Contains("book") || text.Contains("craft") || text.Contains("music")) &&

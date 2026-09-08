@@ -58,7 +58,12 @@ public sealed class CharacterLifeActivityTests : IDisposable
         var clk = clock ?? new FakeLifeSimulationClock();
         var repo = new CharacterLifeActivityRepository(db);
         var outboxRepo = new CharacterOutboxRepository(db);
-        var service = new LifeSimulationService(repo, outboxRepo, clk);
+        var service = new LifeSimulationService(
+            repo,
+            outboxRepo,
+            clk,
+            new Infrastructure.Services.Time.SystemClock(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<LifeSimulationService>.Instance);
         return (repo, service, clk);
     }
 

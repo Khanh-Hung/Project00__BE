@@ -10,6 +10,7 @@ using Domain.Enums;
 using Domain.Policies;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
+using Infrastructure.Persistence.Repositories;
 using Infrastructure.Services.State;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -210,5 +211,30 @@ public class ConcurrencyHardeningTests : IDisposable
         await using var db2 = new CoreDbContext(_options);
         db2.CharacterOutboxMessages.Add(msg2);
         await Assert.ThrowsAsync<DbUpdateException>(() => db2.SaveChangesAsync());
+    }
+
+    [Fact]
+    public void GenericRepository_ThrowsInvalidOperationException_WhenEntityNotMappedInCoreDbContext()
+    {
+        using var db = new CoreDbContext(_options);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            new GenericRepository<User>(db));
+
+        Assert.Contains("User", ex.Message);
+        Assert.Contains("not mapped in CoreDbContext", ex.Message);
+    }
+
+    [Fact]
+    public void UnitOfWork_GetRepository_ThrowsInvalidOperationException_ForUnmappedEntity()
+    {
+        using var db = new CoreDbContext(_options);
+        var uow = new UnitOfWork(db);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            uow.GetRepository<User>());
+
+        Assert.Contains("User", ex.Message);
+        Assert.Contains("not mapped in CoreDbContext", ex.Message);
     }
 }
