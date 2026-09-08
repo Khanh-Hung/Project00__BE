@@ -51,7 +51,7 @@ public sealed class CharacterGoalExecutionProgress : BaseEntity
         OldProgress = oldProgress;
         NewProgress = newProgress;
         AppliedAtUtc = appliedAtUtc.UtcDateTime;
-        OperationFingerprint = ComputeFingerprint(characterId, goalId, executionId, ActionType, progressDelta, oldProgress, newProgress);
+        OperationFingerprint = ComputeFingerprint(characterId, goalId, executionId, ActionType, progressDelta);
     }
 
     public static string ComputeFingerprint(
@@ -59,11 +59,9 @@ public sealed class CharacterGoalExecutionProgress : BaseEntity
         Guid goalId,
         Guid executionId,
         string actionType,
-        int progressDelta,
-        int oldProgress,
-        int newProgress)
+        int progressDelta)
     {
-        var raw = $"{characterId:D}:{goalId:D}:{executionId:D}:{actionType.Trim().ToUpperInvariant()}:{progressDelta}:{oldProgress}:{newProgress}";
+        var raw = $"{characterId:D}:{goalId:D}:{executionId:D}:{actionType.Trim().ToUpperInvariant()}:{progressDelta}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }

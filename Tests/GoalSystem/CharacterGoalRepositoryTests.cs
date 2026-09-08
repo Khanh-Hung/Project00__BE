@@ -46,6 +46,7 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
         var goal = new CharacterGoal(
             charId,
             "MasterCooking",
+            DateTimeOffset.UtcNow,
             CharacterGoalType.SkillDevelopment,
             targetValue: 100,
             priority: CharacterGoalPriority.High,
@@ -81,10 +82,10 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
     {
         var charId = Guid.NewGuid();
 
-        var activeGoal = new CharacterGoal(charId, "ActiveGoal", initialStatus: CharacterGoalStatus.Active);
-        var completedGoal = new CharacterGoal(charId, "CompletedGoal", initialStatus: CharacterGoalStatus.Active);
+        var activeGoal = new CharacterGoal(charId, "ActiveGoal", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
+        var completedGoal = new CharacterGoal(charId, "CompletedGoal", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
         completedGoal.Complete(DateTimeOffset.UtcNow);
-        var cancelledGoal = new CharacterGoal(charId, "CancelledGoal", initialStatus: CharacterGoalStatus.Active);
+        var cancelledGoal = new CharacterGoal(charId, "CancelledGoal", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
         cancelledGoal.Cancel(DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
@@ -111,8 +112,8 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
         var charA = Guid.NewGuid();
         var charB = Guid.NewGuid();
 
-        var goalA = new CharacterGoal(charA, "GoalA", initialStatus: CharacterGoalStatus.Active);
-        var goalB = new CharacterGoal(charB, "GoalB", initialStatus: CharacterGoalStatus.Active);
+        var goalA = new CharacterGoal(charA, "GoalA", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
+        var goalB = new CharacterGoal(charB, "GoalB", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
 
         using (var db = new CoreDbContext(_options))
         {
@@ -143,6 +144,7 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
         // Goal A: Priority = Normal (1), Progress = 20%
         var goalA = new CharacterGoal(
             charId, "GoalA",
+            DateTimeOffset.UtcNow,
             priority: CharacterGoalPriority.Normal,
             initialStatus: CharacterGoalStatus.Active,
             initialProgress: 20);
@@ -150,6 +152,7 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
         // Goal B: Priority = High (2), Progress = 10%
         var goalB = new CharacterGoal(
             charId, "GoalB",
+            DateTimeOffset.UtcNow,
             priority: CharacterGoalPriority.High,
             initialStatus: CharacterGoalStatus.Active,
             initialProgress: 10);
@@ -157,6 +160,7 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
         // Goal C: Priority = High (2), Progress = 40%
         var goalC = new CharacterGoal(
             charId, "GoalC",
+            DateTimeOffset.UtcNow,
             priority: CharacterGoalPriority.High,
             initialStatus: CharacterGoalStatus.Active,
             initialProgress: 40);
@@ -190,8 +194,8 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
     public async Task Repository_DuplicateSemanticActiveGoal_IsPreventedOrReused()
     {
         var charId = Guid.NewGuid();
-        var goal1 = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
-        var goal2 = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+        var goal1 = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
+        var goal2 = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
 
         using (var db1 = new CoreDbContext(_options))
         {
@@ -211,8 +215,8 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
     public async Task GoalUniqueConstraintViolation_IsRecognized()
     {
         var charId = Guid.NewGuid();
-        var goal1 = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
-        var goal2 = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+        var goal1 = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
+        var goal2 = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
 
         using (var db1 = new CoreDbContext(_options))
         {

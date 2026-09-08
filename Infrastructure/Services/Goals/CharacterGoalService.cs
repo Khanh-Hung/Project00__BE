@@ -127,9 +127,7 @@ public sealed class CharacterGoalService : ICharacterGoalService
                 goalContext.GoalId,
                 executionId,
                 actionTypeStr,
-                progressDelta,
-                existingProgress.OldProgress,
-                existingProgress.NewProgress);
+                progressDelta);
 
             if (existingProgress.OperationFingerprint != expectedFingerprint)
             {
@@ -262,9 +260,7 @@ public sealed class CharacterGoalService : ICharacterGoalService
                             goalContext.GoalId,
                             executionId,
                             actionTypeStr,
-                            progressDelta,
-                            concurrentRecord.OldProgress,
-                            concurrentRecord.NewProgress);
+                            progressDelta);
 
                         if (concurrentRecord.OperationFingerprint != expectedFingerprint)
                         {

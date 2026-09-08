@@ -49,7 +49,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
             Id = charId
         };
 
-        var goal = new CharacterGoal(charId, "Become Master Chef", CharacterGoalType.Career, 50);
+        var goal = new CharacterGoal(charId, "Become Master Chef", CharacterGoalType.Career, 50, DateTimeOffset.UtcNow);
         var m1 = goal.AddMilestone("Learn Knife Skills", 1, 10);
         var m2 = goal.AddMilestone("Master Sauces", 2, 40);
 
@@ -170,7 +170,7 @@ public sealed class ActivityExecutionIntegrationTests : IDisposable
         {
             Id = charId
         };
-        var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Arcane Alchemy", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {

@@ -36,7 +36,7 @@ public sealed class GoalConcurrencyTests : IDisposable
     public async Task ConcurrentProgressUpdates_EnforcesOptimisticConcurrencyFencing()
     {
         var charId = Guid.NewGuid();
-        var goal = new CharacterGoal(charId, "Master Swordsmanship", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Swordsmanship", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {

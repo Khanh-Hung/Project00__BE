@@ -9,7 +9,7 @@ public sealed class CharacterGoalMilestoneTests
     [Fact]
     public void Milestones_AddedToAggregate_FirstMilestoneActivatedByAggregateRoot()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Become Master Wizard", CharacterGoalType.Career, 100);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Become Master Wizard", CharacterGoalType.Career, 100, DateTimeOffset.UtcNow);
 
         var m1 = goal.AddMilestone("Study Cantrips", 1, 20);
         var m2 = goal.AddMilestone("Learn Fireball", 2, 40);
@@ -24,7 +24,7 @@ public sealed class CharacterGoalMilestoneTests
     [Fact]
     public void MilestoneProgression_CascadingOverflow_DistributesContributionAcrossMultipleMilestones()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Master Culinary Arts", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Master Culinary Arts", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
         var m1 = goal.AddMilestone("Knife Skills", 1, 10);
         var m2 = goal.AddMilestone("Baking Basics", 2, 40);
         var m3 = goal.AddMilestone("Host Banquet", 3, 50);
@@ -73,7 +73,7 @@ public sealed class CharacterGoalMilestoneTests
     [Fact]
     public void MilestoneProgression_TwoStepContribution_CompletesExactTargetsWithoutOvershoot()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Master Swordsmanship", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Master Swordsmanship", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
         var m1 = goal.AddMilestone("Basic Katas", 1, 40);
         var m2 = goal.AddMilestone("Sparring Tournaments", 2, 60);
 
@@ -105,7 +105,7 @@ public sealed class CharacterGoalMilestoneTests
     [Fact]
     public void MilestoneProgression_SingleShotOneHundredContribution_CompletesAllThreeMilestonesExactlyWithoutOvershoot()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Build Citadel", CharacterGoalType.Creative, 100);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Build Citadel", CharacterGoalType.Creative, 100, DateTimeOffset.UtcNow);
         var m1 = goal.AddMilestone("Survey & Foundations", 1, 30);
         var m2 = goal.AddMilestone("Outer Walls & Towers", 2, 30);
         var m3 = goal.AddMilestone("Grand Keep & Throne", 3, 40);
@@ -133,7 +133,7 @@ public sealed class CharacterGoalMilestoneTests
     [Fact]
     public void MilestoneProgression_SingleShotTwoMilestones_NoOffByOneOrFloatingPointArtifacts()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Language Mastery", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Language Mastery", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
         var m1 = goal.AddMilestone("Grammar & Vocabulary", 1, 60);
         var m2 = goal.AddMilestone("Fluent Speech & Translation", 2, 40);
 
@@ -153,7 +153,7 @@ public sealed class CharacterGoalMilestoneTests
     public void MilestoneProgression_PartialMilestonesConfigured_CompletesMilestonesNaturallyWhenGoalReachesTarget()
     {
         // Total milestones = 80, Goal Target = 100
-        var goal = new CharacterGoal(Guid.NewGuid(), "Expedition", CharacterGoalType.Exploration, 100);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Expedition", CharacterGoalType.Exploration, 100, DateTimeOffset.UtcNow);
         var m1 = goal.AddMilestone("Phase 1: Jungle", 1, 40);
         var m2 = goal.AddMilestone("Phase 2: Mountains", 2, 40);
 
@@ -195,7 +195,7 @@ public sealed class CharacterGoalMilestoneTests
     [Fact]
     public void DuplicateMilestoneOrder_ThrowsArgumentException()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Goal", CharacterGoalType.PersonalGrowth, 50);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Goal", CharacterGoalType.PersonalGrowth, 50, DateTimeOffset.UtcNow);
         goal.AddMilestone("M1", 1, 25);
 
         Assert.Throws<ArgumentException>(() => goal.AddMilestone("M1 duplicate", 1, 25));

@@ -44,7 +44,7 @@ public sealed class AutonomyTickNoWorldEventTests : IDisposable
     {
         var charId = Guid.NewGuid();
         var character = new Character("Valerius", "Scholar", "http://avatar.png", "Scholar", "Hello", "Anime") { Id = charId };
-        var goal = new CharacterGoal(charId, "Master Alchemical Research", CharacterGoalType.SkillDevelopment, 100);
+        var goal = new CharacterGoal(charId, "Master Alchemical Research", CharacterGoalType.SkillDevelopment, 100, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {

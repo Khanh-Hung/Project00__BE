@@ -290,7 +290,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
     public async Task GoalProgressUpdate_IsIdempotent()
     {
         var charId = Guid.NewGuid();
-        var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active, initialProgress: 20);
+        var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active, initialProgress: 20);
 
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
@@ -336,7 +336,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
     public async Task GoalProgressUpdate_ConcurrentUpdateDoesNotSilentlyOverwriteWinner()
     {
         var charId = Guid.NewGuid();
-        var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active, initialProgress: 0);
+        var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active, initialProgress: 0);
 
         using (var db = new CoreDbContext(_options))
         {
@@ -371,7 +371,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
     public async Task CompletedGoalCannotReceiveFurtherProgress()
     {
         var charId = Guid.NewGuid();
-        var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active, initialProgress: 90);
+        var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active, initialProgress: 90);
         goal.Complete(FixedNow);
 
         using var db = new CoreDbContext(_options);
@@ -544,8 +544,8 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         var repo = new CharacterGoalRepository(db);
 
         // Character already has pre-existing active goals: BuildRelationship and Rest
-        var existingGoal1 = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
-        var existingGoal2 = new CharacterGoal(charId, "Rest", initialStatus: CharacterGoalStatus.Active);
+        var existingGoal1 = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
+        var existingGoal2 = new CharacterGoal(charId, "Rest", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
         await repo.AddAsync(existingGoal1);
         await repo.AddAsync(existingGoal2);
 
@@ -630,7 +630,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         var clock = new TestSystemClock();
         var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
-        var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+        var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
         await repo.AddAsync(goal);
 
         var goalContext = new CharacterGoalContext(goal.Id, goal.Title, goal.Status, (int)goal.Priority, goal.ProgressPercentage);
@@ -670,7 +670,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         var clock = new TestSystemClock();
         var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
-        var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+        var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
         await repo.AddAsync(goal);
 
         var goalContext = new CharacterGoalContext(goal.Id, goal.Title, goal.Status, (int)goal.Priority, goal.ProgressPercentage);
@@ -697,7 +697,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using (var setupDb = new CoreDbContext(_options))
         {
             var setupRepo = new CharacterGoalRepository(setupDb);
-            var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+            var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
             await setupRepo.AddAsync(goal);
         }
 
@@ -759,7 +759,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using (var setupDb = new CoreDbContext(_options))
         {
             var setupRepo = new CharacterGoalRepository(setupDb);
-            var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+            var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
             await setupRepo.AddAsync(goal);
         }
 
@@ -827,7 +827,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
             var clock = new TestSystemClock();
             var service1 = new CharacterGoalService(db1, repo1, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
-            var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+            var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active);
             await repo1.AddAsync(goal);
             goalId = goal.Id;
 

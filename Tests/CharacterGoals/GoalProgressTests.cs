@@ -36,7 +36,7 @@ public sealed class GoalProgressTests : IDisposable
     public async Task RecordContribution_UpdatesGoalProgress_AndCompletesGoalAtomically()
     {
         var charId = Guid.NewGuid();
-        var goal = new CharacterGoal(charId, "Build Observatory", CharacterGoalType.Creative, 50);
+        var goal = new CharacterGoal(charId, "Build Observatory", CharacterGoalType.Creative, 50, DateTimeOffset.UtcNow);
         var m1 = goal.AddMilestone("Foundation", 1, 25);
         var m2 = goal.AddMilestone("Telescope Mount", 2, 25);
 
@@ -94,7 +94,7 @@ public sealed class GoalProgressTests : IDisposable
     [Fact]
     public async Task OvershootProgress_ClampsToTargetAndCompletes()
     {
-        var goal = new CharacterGoal(Guid.NewGuid(), "Learn Basic French", CharacterGoalType.SkillDevelopment, 20);
+        var goal = new CharacterGoal(Guid.NewGuid(), "Learn Basic French", CharacterGoalType.SkillDevelopment, 20, DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {

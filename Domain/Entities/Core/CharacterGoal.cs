@@ -76,6 +76,8 @@ public sealed class CharacterGoal : BaseEntity
         CurrentValue = (targetValue * initialProgress) / 100.0;
         Status = initialStatus;
 
+        SetCreated(time);
+
         if (Status == CharacterGoalStatus.Active)
         {
             StartedAt = time;
@@ -91,24 +93,72 @@ public sealed class CharacterGoal : BaseEntity
     public CharacterGoal(
         Guid characterId,
         string title,
+        CharacterGoalType goalType,
+        double targetValue,
+        DateTimeOffset now,
+        CharacterGoalPriority priority = CharacterGoalPriority.Normal,
+        string? description = null,
+        CharacterGoalStatus initialStatus = CharacterGoalStatus.Active,
+        Guid? id = null,
+        int initialProgress = 0) : this(
+            characterId,
+            title,
+            now,
+            goalType,
+            targetValue,
+            priority,
+            description,
+            initialStatus,
+            id,
+            initialProgress)
+    {
+    }
+
+    public CharacterGoal(
+        Guid characterId,
+        string title,
+        DateTime now,
         CharacterGoalType goalType = CharacterGoalType.PersonalGrowth,
         double targetValue = 100,
         CharacterGoalPriority priority = CharacterGoalPriority.Normal,
         string? description = null,
         CharacterGoalStatus initialStatus = CharacterGoalStatus.Active,
         Guid? id = null,
-        DateTime? now = null,
         int initialProgress = 0) : this(
-            characterId: characterId,
-            title: title,
-            now: now.HasValue ? new DateTimeOffset(now.Value, TimeSpan.Zero) : DateTimeOffset.UnixEpoch,
-            goalType: goalType,
-            targetValue: targetValue,
-            priority: priority,
-            description: description,
-            initialStatus: initialStatus,
-            id: id,
-            initialProgress: initialProgress)
+            characterId,
+            title,
+            new DateTimeOffset(now, TimeSpan.Zero),
+            goalType,
+            targetValue,
+            priority,
+            description,
+            initialStatus,
+            id,
+            initialProgress)
+    {
+    }
+
+    public CharacterGoal(
+        Guid characterId,
+        string title,
+        CharacterGoalType goalType,
+        double targetValue,
+        DateTime now,
+        CharacterGoalPriority priority = CharacterGoalPriority.Normal,
+        string? description = null,
+        CharacterGoalStatus initialStatus = CharacterGoalStatus.Active,
+        Guid? id = null,
+        int initialProgress = 0) : this(
+            characterId,
+            title,
+            new DateTimeOffset(now, TimeSpan.Zero),
+            goalType,
+            targetValue,
+            priority,
+            description,
+            initialStatus,
+            id,
+            initialProgress)
     {
     }
 
@@ -132,16 +182,16 @@ public sealed class CharacterGoal : BaseEntity
         };
 
         return new CharacterGoal(
-            characterId: characterId,
-            title: goalKey,
-            now: now,
-            goalType: goalType,
-            targetValue: 100,
-            priority: priorityEnum,
-            description: description,
-            initialStatus: initialStatus,
-            id: id,
-            initialProgress: initialProgress);
+            characterId,
+            goalKey,
+            now,
+            goalType,
+            100,
+            priorityEnum,
+            description,
+            initialStatus,
+            id,
+            initialProgress);
     }
 
     public void Activate(DateTimeOffset now)

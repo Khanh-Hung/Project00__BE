@@ -40,6 +40,7 @@ public sealed class CharacterGoalPolicyTests
         var existingGoal = new CharacterGoal(
             charId,
             "BuildRelationship",
+            now,
             goalType: CharacterGoalType.Relationship,
             initialStatus: CharacterGoalStatus.Active);
 
