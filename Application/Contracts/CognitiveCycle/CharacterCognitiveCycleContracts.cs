@@ -98,7 +98,8 @@ public sealed record CharacterCognitiveCycleResult(
     CharacterPersonalitySnapshot? PersonalitySnapshot = null,
     IReadOnlyList<CharacterPersonalityAdaptationResult>? PersonalityAdaptations = null,
     CharacterPersonalityAdaptationResult? PersonalityAdaptation = null,
-    string? Message = null
+    string? Message = null,
+    SafetyDecision? SafetyDecision = null
 )
 {
     public bool IsSuccess => Status == CharacterCognitiveCycleStatus.CompletedWithAction
@@ -128,7 +129,8 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterRelationshipFeedback? relationshipFeedback = null,
         CharacterPersonalitySnapshot? personalitySnapshot = null,
         CharacterPersonalityAdaptationResult? personalityAdaptation = null,
-        IReadOnlyList<CharacterPersonalityAdaptationResult>? personalityAdaptations = null) =>
+        IReadOnlyList<CharacterPersonalityAdaptationResult>? personalityAdaptations = null,
+        SafetyDecision? safetyDecision = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -150,7 +152,8 @@ public sealed record CharacterCognitiveCycleResult(
             RelationshipFeedback: relationshipFeedback,
             PersonalitySnapshot: personalitySnapshot,
             PersonalityAdaptations: personalityAdaptations ?? (personalityAdaptation != null ? new[] { personalityAdaptation } : null),
-            PersonalityAdaptation: personalityAdaptation ?? personalityAdaptations?.FirstOrDefault(a => a.AdaptationTriggered) ?? personalityAdaptations?.FirstOrDefault()
+            PersonalityAdaptation: personalityAdaptation ?? personalityAdaptations?.FirstOrDefault(a => a.AdaptationTriggered) ?? personalityAdaptations?.FirstOrDefault(),
+            SafetyDecision: safetyDecision ?? SafetyDecision.Allowed()
         );
 
     public static CharacterCognitiveCycleResult CompletedWithoutAction(
@@ -172,7 +175,8 @@ public sealed record CharacterCognitiveCycleResult(
         CharacterRelationshipFeedback? relationshipFeedback = null,
         CharacterPersonalitySnapshot? personalitySnapshot = null,
         CharacterPersonalityAdaptationResult? personalityAdaptation = null,
-        string? message = null) =>
+        string? message = null,
+        SafetyDecision? safetyDecision = null) =>
         new(
             CycleId: cycleId,
             ExecutionId: executionId,
@@ -194,7 +198,8 @@ public sealed record CharacterCognitiveCycleResult(
             RelationshipFeedback: relationshipFeedback,
             PersonalitySnapshot: personalitySnapshot,
             PersonalityAdaptation: personalityAdaptation,
-            Message: message ?? "Cognitive cycle completed without actionable proposal."
+            Message: message ?? "Cognitive cycle completed without actionable proposal.",
+            SafetyDecision: safetyDecision
         );
 
     public static CharacterCognitiveCycleResult AlreadyExecuted(

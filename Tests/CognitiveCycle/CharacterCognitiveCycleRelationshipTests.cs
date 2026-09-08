@@ -16,6 +16,7 @@ using Infrastructure.Persistence;
 using Infrastructure.Persistence.Repositories;
 using Infrastructure.Services.ActionExecution;
 using Infrastructure.Services.CognitiveCycle;
+using Infrastructure.Services.Safety;
 using Infrastructure.Services.State;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -157,6 +158,11 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
             new DefaultCharacterRelationshipFeedbackPolicy(),
             NullLogger<CharacterRelationshipFeedbackService>.Instance);
 
+        var safetyGate = new ActionSafetyGate(
+            stateService,
+            new[] { new DefaultActionSafetyPolicy() },
+            NullLogger<ActionSafetyGate>.Instance);
+
         return new CharacterCognitiveCycleService(
             stateService: stateService,
             experiencePolicy: new CharacterInternalExperiencePolicy(),
@@ -165,6 +171,7 @@ public sealed class CharacterCognitiveCycleRelationshipTests : IDisposable
             desirePolicy: new CharacterDesirePolicy(),
             intentPolicy: intentPolicy ?? new CharacterIntentPolicy(),
             actionProposalPolicy: actionProposalPolicy ?? new CharacterActionProposalPolicy(),
+            safetyGate: safetyGate,
             actionExecutionService: execService,
             logger: NullLogger<CharacterCognitiveCycleService>.Instance,
             memoryRetrievalService: memoryRetrieval,
