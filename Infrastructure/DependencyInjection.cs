@@ -267,6 +267,10 @@ public static class DependencyInjection
         services.AddSingleton<Domain.Policies.ICharacterActionExecutionPolicy, Domain.Policies.CharacterActionExecutionPolicy>();
         services.AddScoped<Application.Interfaces.ICharacterActionExecutionService, Infrastructure.Services.ActionExecution.CharacterActionExecutionService>();
 
+        // PR #52: Action Safety Gate & Policies
+        services.AddScoped<Application.Interfaces.IActionSafetyPolicy, Infrastructure.Services.Safety.DefaultActionSafetyPolicy>();
+        services.AddScoped<Application.Interfaces.IActionSafetyGate, Infrastructure.Services.Safety.ActionSafetyGate>();
+
         // PR #45: Autonomous Character Cognitive Cycle
         services.AddScoped<Application.Interfaces.ICharacterCognitiveCycleService, Infrastructure.Services.CognitiveCycle.CharacterCognitiveCycleService>();
 

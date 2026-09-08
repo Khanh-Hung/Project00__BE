@@ -29,6 +29,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
     private readonly ICharacterRelationshipFeedbackService? _relationshipFeedbackService;
     private readonly IPersonalityAdaptationService? _personalityAdaptationService;
     private readonly ICharacterPersonalityRepository? _personalityRepository;
+    private readonly IActionSafetyGate? _safetyGate;
     private readonly ILogger<CharacterCognitiveCycleService> _logger;
 
     public CharacterCognitiveCycleService(
@@ -46,7 +47,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         ICharacterRelationshipRetrievalService? relationshipRetrievalService = null,
         ICharacterRelationshipFeedbackService? relationshipFeedbackService = null,
         IPersonalityAdaptationService? personalityAdaptationService = null,
-        ICharacterPersonalityRepository? personalityRepository = null)
+        ICharacterPersonalityRepository? personalityRepository = null,
+        IActionSafetyGate? safetyGate = null)
     {
         _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
         _experiencePolicy = experiencePolicy ?? throw new ArgumentNullException(nameof(experiencePolicy));
@@ -63,6 +65,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         _relationshipFeedbackService = relationshipFeedbackService;
         _personalityAdaptationService = personalityAdaptationService;
         _personalityRepository = personalityRepository;
+        _safetyGate = safetyGate;
     }
 
     public async Task<CharacterCognitiveCycleResult> RunAsync(
@@ -370,6 +373,34 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
         }
 
+        // 9.5 Safety / Policy Gate Evaluation (PR52)
+        SafetyDecision? safetyDecision = null;
+        if (_safetyGate != null)
+        {
+            safetyDecision = await _safetyGate.EvaluateAsync(characterId, actionProposal.Proposal, cancellationToken);
+            if (!safetyDecision.IsAllowed)
+            {
+                _logger.LogWarning(
+                    "[CharacterCognitiveCycleService] Action proposal {ActionType} for Character {CharacterId} blocked by Safety Gate. Policy: {PolicyCode}, Reason: {Reason}",
+                    actionProposal.Proposal.Type, characterId, safetyDecision.PolicyCode, safetyDecision.Reason);
+
+                var blockedResult = CharacterCognitiveCycleResult.CompletedWithoutAction(
+                    cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
+                    experience: experience, appraisal: appraisal, emotion: emotion, desires: desires, intent: intent,
+                    actionProposal: actionProposal,
+                    @event: cognitiveEvent,
+                    memoryContext: memoryContext,
+                    relationshipContext: relationshipContext,
+                    personalitySnapshot: personalitySnapshot,
+                    message: $"Action proposal blocked by safety policy '{safetyDecision.PolicyCode}': {safetyDecision.Reason}",
+                    safetyDecision: safetyDecision);
+
+                var withMemory = await AttachMemoryFeedbackAsync(context, blockedResult, cancellationToken);
+                var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
+                return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            }
+        }
+
         // 10. Action Execution (PR44)
         var executionContext = new CharacterActionExecutionContext(
             ExecutionId: executionId,
@@ -392,7 +423,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 @event: cognitiveEvent,
                 memoryContext: memoryContext,
                 relationshipContext: relationshipContext,
-                personalitySnapshot: personalitySnapshot),
+                personalitySnapshot: personalitySnapshot,
+                safetyDecision: safetyDecision),
 
             CharacterActionExecutionStatus.AlreadyExecuted => CharacterCognitiveCycleResult.AlreadyExecuted(
                 cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
