@@ -71,7 +71,7 @@ public sealed class CharacterGoalPolicyTests
         Assert.Equal(GoalPolicyAction.CreateNew, decision1.Action);
 
         var createdGoal = CharacterGoal.Create(
-            charId, decision1.Candidate!.GoalKey, decision1.Candidate.GoalType, decision1.Candidate.Priority);
+            charId, decision1.Candidate!.GoalKey, now, decision1.Candidate.GoalType, decision1.Candidate.Priority);
         activeGoals.Add(createdGoal);
 
         // Cycle 2: Reuses created goal

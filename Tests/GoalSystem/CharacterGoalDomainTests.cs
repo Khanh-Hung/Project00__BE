@@ -18,8 +18,8 @@ public sealed class CharacterGoalDomainTests
 
         // UpdateProgress validation
         var goal = new CharacterGoal(charId, "BuildRelationship", initialProgress: 0);
-        Assert.Throws<ArgumentOutOfRangeException>(() => goal.UpdateProgress(-5));
-        Assert.Throws<ArgumentOutOfRangeException>(() => goal.RecordProgress(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => goal.UpdateProgress(-5, DateTimeOffset.UtcNow));
+        Assert.Throws<ArgumentOutOfRangeException>(() => goal.RecordProgress(-1, DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -33,7 +33,7 @@ public sealed class CharacterGoalDomainTests
 
         // UpdateProgress validation
         var goal = new CharacterGoal(charId, "BuildRelationship", initialProgress: 50);
-        Assert.Throws<ArgumentOutOfRangeException>(() => goal.UpdateProgress(101));
+        Assert.Throws<ArgumentOutOfRangeException>(() => goal.UpdateProgress(101, DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public sealed class CharacterGoalDomainTests
 
         Assert.Equal(CharacterGoalStatus.Draft, goal.Status);
 
-        goal.Activate();
+        goal.Activate(DateTimeOffset.UtcNow);
 
         Assert.Equal(CharacterGoalStatus.Active, goal.Status);
         Assert.NotNull(goal.StartedAt);
@@ -62,7 +62,7 @@ public sealed class CharacterGoalDomainTests
             "BuildRelationship",
             initialStatus: CharacterGoalStatus.Active);
 
-        goal.Complete();
+        goal.Complete(DateTimeOffset.UtcNow);
 
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
         Assert.NotNull(goal.CompletedAt);
@@ -79,7 +79,7 @@ public sealed class CharacterGoalDomainTests
             "BuildRelationship",
             initialStatus: CharacterGoalStatus.Active);
 
-        goal.Cancel();
+        goal.Cancel(DateTimeOffset.UtcNow);
 
         Assert.Equal(CharacterGoalStatus.Cancelled, goal.Status);
         Assert.NotNull(goal.CancelledAt);
@@ -90,10 +90,10 @@ public sealed class CharacterGoalDomainTests
     {
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "BuildRelationship");
-        goal.Complete();
+        goal.Complete(DateTimeOffset.UtcNow);
 
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
-        Assert.Throws<InvalidOperationException>(() => goal.Activate());
+        Assert.Throws<InvalidOperationException>(() => goal.Activate(DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -101,10 +101,10 @@ public sealed class CharacterGoalDomainTests
     {
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "BuildRelationship");
-        goal.Complete();
+        goal.Complete(DateTimeOffset.UtcNow);
 
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
-        Assert.Throws<InvalidOperationException>(() => goal.Cancel());
+        Assert.Throws<InvalidOperationException>(() => goal.Cancel(DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -112,10 +112,10 @@ public sealed class CharacterGoalDomainTests
     {
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "BuildRelationship");
-        goal.Cancel();
+        goal.Cancel(DateTimeOffset.UtcNow);
 
         Assert.Equal(CharacterGoalStatus.Cancelled, goal.Status);
-        Assert.Throws<InvalidOperationException>(() => goal.Activate());
+        Assert.Throws<InvalidOperationException>(() => goal.Activate(DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public sealed class CharacterGoalDomainTests
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "GrandProject", CharacterGoalType.PersonalGrowth, targetValue: 1000);
 
-        goal.RecordProgress(50);
+        goal.RecordProgress(50, DateTimeOffset.UtcNow);
 
         Assert.Equal(50, goal.CurrentValue);
         Assert.Equal(0.05f, goal.Progress);
@@ -152,7 +152,7 @@ public sealed class CharacterGoalDomainTests
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "LargeTask", CharacterGoalType.PersonalGrowth, targetValue: 500);
 
-        goal.RecordProgress(25);
+        goal.RecordProgress(25, DateTimeOffset.UtcNow);
 
         Assert.Equal(25, goal.CurrentValue);
         Assert.Equal(0.05f, goal.Progress);
@@ -171,7 +171,7 @@ public sealed class CharacterGoalDomainTests
         Assert.Equal(CharacterGoalMilestoneStatus.Active, m1.Status);
         Assert.Equal(CharacterGoalMilestoneStatus.Pending, m2.Status);
 
-        goal.RecordProgress(50);
+        goal.RecordProgress(50, DateTimeOffset.UtcNow);
 
         // m1 (target 40) is complete, remaining 10 overflowed into m2
         Assert.Equal(CharacterGoalMilestoneStatus.Completed, m1.Status);
@@ -189,7 +189,7 @@ public sealed class CharacterGoalDomainTests
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "TargetGoal", CharacterGoalType.PersonalGrowth, targetValue: 80);
 
-        goal.RecordProgress(85);
+        goal.RecordProgress(85, DateTimeOffset.UtcNow);
 
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
         Assert.Equal(85, goal.CurrentValue);

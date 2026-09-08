@@ -122,7 +122,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         var context = new CharacterCognitiveCycleContext(
@@ -148,7 +148,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         // Caller attempts to inject goal context
@@ -227,7 +227,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         // Safety gate that always blocks actions
         var blockingSafetyGate = new FakeBlockingSafetyGate("TEST_SAFETY_BLOCK", "Test safety block");
@@ -262,7 +262,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         var executionId = Guid.NewGuid();
@@ -297,7 +297,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         await repo.AddAsync(goal);
 
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         var executionId = Guid.NewGuid();
         var actionExec = new CharacterActionExecutionResult(
@@ -372,14 +372,14 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
     {
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active, initialProgress: 90);
-        goal.Complete();
+        goal.Complete(FixedNow);
 
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         await repo.AddAsync(goal);
 
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         var executionId = Guid.NewGuid();
         var actionExec = new CharacterActionExecutionResult(
@@ -409,7 +409,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         var executionId = Guid.NewGuid();
@@ -435,7 +435,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         var eventId = Guid.NewGuid();
@@ -521,7 +521,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         var motivation = new CharacterMotivation(MotivationType.ConnectionDriven, 0.8, DesireSource.SocialNeed);
         var desire = new CharacterDesire(DesireType.NeedSocialConnection, 0.8, DesireSource.SocialNeed, motivation);
@@ -537,13 +537,45 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task GoalPolicyNone_WhenDesireUnmappedOrBelowThreshold_ReturnsNull_DoesNotFallbackToArbitraryActiveGoal()
+    {
+        var charId = Guid.NewGuid();
+        using var db = new CoreDbContext(_options);
+        var repo = new CharacterGoalRepository(db);
+
+        // Character already has pre-existing active goals: BuildRelationship and Rest
+        var existingGoal1 = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+        var existingGoal2 = new CharacterGoal(charId, "Rest", initialStatus: CharacterGoalStatus.Active);
+        await repo.AddAsync(existingGoal1);
+        await repo.AddAsync(existingGoal2);
+
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+
+        // Scenario A: Unsupported desire type (e.g. NeedSafety) -> policy returns None -> service returns null
+        var safetyMotivation = new CharacterMotivation(MotivationType.SafetyDriven, 0.9, DesireSource.Stress);
+        var safetyDesire = new CharacterDesire(DesireType.NeedSafety, 0.9, DesireSource.Stress, safetyMotivation);
+        var safetyEval = new CharacterDesireEvaluation(charId, 1, new[] { safetyDesire }, safetyDesire);
+
+        var selectedGoalA = await goalService.GetOrSelectActiveGoalAsync(charId, safetyEval, FixedNow);
+        Assert.Null(selectedGoalA);
+
+        // Scenario B: Supported desire type (e.g. NeedSocialConnection) with 0.0 intensity -> policy returns None -> service returns null
+        var zeroMotivation = new CharacterMotivation(MotivationType.ConnectionDriven, 0.0, DesireSource.SocialNeed);
+        var zeroDesire = new CharacterDesire(DesireType.NeedSocialConnection, 0.0, DesireSource.SocialNeed, zeroMotivation);
+        var zeroEval = new CharacterDesireEvaluation(charId, 1, new[] { zeroDesire }, zeroDesire);
+
+        var selectedGoalB = await goalService.GetOrSelectActiveGoalAsync(charId, zeroEval, FixedNow);
+        Assert.Null(selectedGoalB);
+    }
+
+    [Fact]
     public async Task RepeatedEvaluation_DoesNotCreateDuplicateGoals()
     {
         var charId = Guid.NewGuid();
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         var motivation = new CharacterMotivation(MotivationType.ConnectionDriven, 0.8, DesireSource.SocialNeed);
         var desire = new CharacterDesire(DesireType.NeedSocialConnection, 0.8, DesireSource.SocialNeed, motivation);
@@ -596,7 +628,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
         await repo.AddAsync(goal);
@@ -636,7 +668,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
         await repo.AddAsync(goal);
@@ -669,37 +701,44 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
             await setupRepo.AddAsync(goal);
         }
 
+        var interceptorB = new ConcurrencyBarrierInterceptor();
+        var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptorB)
+            .Options;
+
         using var dbA = new CoreDbContext(_options);
-        using var dbB = new CoreDbContext(_options);
+        using var dbB = new CoreDbContext(optionsB);
 
         var repoA = new CharacterGoalRepository(dbA);
         var repoB = new CharacterGoalRepository(dbB);
-        var clock = new TestSystemClock();
 
-        var serviceA = new CharacterGoalService(dbA, repoA, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
-        var serviceB = new CharacterGoalService(dbB, repoB, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var serviceA = new CharacterGoalService(dbA, repoA, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+        var serviceB = new CharacterGoalService(dbB, repoB, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         var goalA = await repoA.GetActiveByGoalKeyAsync(charId, "BuildRelationship");
         var goalContext = new CharacterGoalContext(goalA!.Id, goalA.Title, goalA.Status, (int)goalA.Priority, goalA.ProgressPercentage);
 
         var actionResult = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
 
-        // Run both workers concurrently with same ExecutionId
-        var taskA = serviceA.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow);
-        var taskB = serviceB.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow);
+        // 1. Worker B begins execution, checks ledger (empty), updates goal in memory, and suspends right before SavingChanges
+        var taskB = Task.Run(async () => await serviceB.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow));
+        await interceptorB.WaitForBeforeSaveAsync();
 
-        var results = await Task.WhenAll(taskA, taskB);
-
-        var resA = results[0];
-        var resB = results[1];
-
+        // 2. Worker A executes while Worker B is suspended, commits the progress and ledger record first
+        var resA = await serviceA.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow);
         Assert.NotNull(resA);
-        Assert.NotNull(resB);
+        Assert.False(resA.IsDuplicateExecution);
 
-        // Exactly one should be non-duplicate and one duplicate
-        var isDuplicates = new[] { resA.IsDuplicateExecution, resB.IsDuplicateExecution };
-        Assert.Contains(true, isDuplicates);
-        Assert.Contains(false, isDuplicates);
+        // 3. Worker B is now released to attempt its commit
+        // Database enforces unique ledger constraint (GoalId, ExecutionId) -> Worker B catches exception, reloads winner from DB
+        interceptorB.Release();
+        var resB = await taskB;
+
+        Assert.NotNull(resB);
+        Assert.True(resB.IsDuplicateExecution);
+        Assert.Equal(25, resA.NewProgress);
+        Assert.Equal(25, resB.NewProgress);
 
         // Verify database: goal progressed by exactly 25, not 50!
         using var verifyDb = new CoreDbContext(_options);
@@ -724,15 +763,20 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
             await setupRepo.AddAsync(goal);
         }
 
+        var interceptorB = new ConcurrencyBarrierInterceptor();
+        var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptorB)
+            .Options;
+
         using var dbA = new CoreDbContext(_options);
-        using var dbB = new CoreDbContext(_options);
+        using var dbB = new CoreDbContext(optionsB);
 
         var repoA = new CharacterGoalRepository(dbA);
         var repoB = new CharacterGoalRepository(dbB);
-        var clock = new TestSystemClock();
 
-        var serviceA = new CharacterGoalService(dbA, repoA, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
-        var serviceB = new CharacterGoalService(dbB, repoB, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var serviceA = new CharacterGoalService(dbA, repoA, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+        var serviceB = new CharacterGoalService(dbB, repoB, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
         var goalA = await repoA.GetActiveByGoalKeyAsync(charId, "BuildRelationship");
         var goalContext = new CharacterGoalContext(goalA!.Id, goalA.Title, goalA.Status, (int)goalA.Priority, goalA.ProgressPercentage);
@@ -740,16 +784,25 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         var action1 = CreateAppliedActionResult(exec1, charId, ActionType.Socialize);
         var action2 = CreateAppliedActionResult(exec2, charId, ActionType.Socialize);
 
-        // Run both workers concurrently for two DIFFERENT executions on the same goal
-        var taskA = serviceA.ApplyProgressFeedbackAsync(charId, exec1, action1, goalContext, FixedNow);
-        var taskB = serviceB.ApplyProgressFeedbackAsync(charId, exec2, action2, goalContext, FixedNow);
+        // 1. Worker B begins execution for exec2, reads Goal at Version 0, prepares in memory, and suspends right before SavingChanges
+        var taskB = Task.Run(async () => await serviceB.ApplyProgressFeedbackAsync(charId, exec2, action2, goalContext, FixedNow));
+        await interceptorB.WaitForBeforeSaveAsync();
 
-        var results = await Task.WhenAll(taskA, taskB);
+        // 2. Worker A executes for exec1 while Worker B is suspended, reads Goal at Version 0, increments to 25, advances Version to 1, and commits
+        var resA = await serviceA.ApplyProgressFeedbackAsync(charId, exec1, action1, goalContext, FixedNow);
+        Assert.NotNull(resA);
+        Assert.False(resA.IsDuplicateExecution);
+        Assert.Equal(25, resA.NewProgress);
 
-        Assert.NotNull(results[0]);
-        Assert.NotNull(results[1]);
-        Assert.False(results[0].IsDuplicateExecution);
-        Assert.False(results[1].IsDuplicateExecution);
+        // 3. Worker B is now released to attempt its commit with original Version 0
+        // EF Core detects concurrency violation on Version token -> Worker B catches DbUpdateConcurrencyException,
+        // retries in attempt 2, reloads Goal at Version 1, increments to 50, and commits successfully!
+        interceptorB.Release();
+        var resB = await taskB;
+
+        Assert.NotNull(resB);
+        Assert.False(resB.IsDuplicateExecution);
+        Assert.Equal(50, resB.NewProgress);
 
         // Verify database: both executions applied progress -> 0 + 25 + 25 = 50%
         using var verifyDb = new CoreDbContext(_options);
@@ -772,7 +825,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         {
             var repo1 = new CharacterGoalRepository(db1);
             var clock = new TestSystemClock();
-            var service1 = new CharacterGoalService(db1, repo1, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+            var service1 = new CharacterGoalService(db1, repo1, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
             var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
             await repo1.AddAsync(goal);
@@ -792,7 +845,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         {
             var repo2 = new CharacterGoalRepository(db2);
             var clock = new TestSystemClock();
-            var service2 = new CharacterGoalService(db2, repo2, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+            var service2 = new CharacterGoalService(db2, repo2, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
 
             var goal2 = await repo2.GetByIdAsync(goalId);
             Assert.NotNull(goal2);
@@ -862,7 +915,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
 
         public FailingPersistenceGoalService(CoreDbContext db, ICharacterGoalRepository repo, ICharacterGoalPolicy policy, ISystemClock clock)
         {
-            _inner = new CharacterGoalService(db, repo, policy, clock, NullLogger<CharacterGoalService>.Instance);
+            _inner = new CharacterGoalService(db, repo, policy, NullLogger<CharacterGoalService>.Instance);
         }
 
         public Task<CharacterGoal?> GetOrSelectActiveGoalAsync(

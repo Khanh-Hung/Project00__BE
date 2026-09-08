@@ -27,20 +27,17 @@ public sealed class CharacterGoalService : ICharacterGoalService
     private readonly CoreDbContext _dbContext;
     private readonly ICharacterGoalRepository _goalRepository;
     private readonly ICharacterGoalPolicy _goalPolicy;
-    private readonly ISystemClock _clock;
     private readonly ILogger<CharacterGoalService> _logger;
 
     public CharacterGoalService(
         CoreDbContext dbContext,
         ICharacterGoalRepository goalRepository,
         ICharacterGoalPolicy goalPolicy,
-        ISystemClock clock,
         ILogger<CharacterGoalService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _goalRepository = goalRepository ?? throw new ArgumentNullException(nameof(goalRepository));
         _goalPolicy = goalPolicy ?? throw new ArgumentNullException(nameof(goalPolicy));
-        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -68,12 +65,12 @@ public sealed class CharacterGoalService : ICharacterGoalService
                 var newGoal = CharacterGoal.Create(
                     characterId: characterId,
                     goalKey: candidate.GoalKey,
+                    now: now,
                     goalType: candidate.GoalType,
                     priority: candidate.Priority,
                     description: candidate.Description,
                     initialStatus: CharacterGoalStatus.Active,
-                    initialProgress: 0,
-                    now: now);
+                    initialProgress: 0);
 
                 try
                 {
@@ -93,8 +90,8 @@ public sealed class CharacterGoalService : ICharacterGoalService
 
             case GoalPolicyAction.None:
             default:
-                // Fall back to existing highest-priority active goal if any exist
-                return activeGoals.FirstOrDefault();
+                // When policy determines no goal matches or threshold is unreached, return null (never arbitrary fallback)
+                return null;
         }
     }
 
@@ -117,12 +114,6 @@ public sealed class CharacterGoalService : ICharacterGoalService
 
         // 1. Semantic alignment check between Goal and ActionExecution
         int progressDelta = _goalPolicy.EvaluateActionProgress(goalContext.GoalKey, actionTypeStr);
-        var expectedFingerprint = CharacterGoalExecutionProgress.ComputeFingerprint(
-            characterId,
-            goalContext.GoalId,
-            executionId,
-            actionTypeStr,
-            progressDelta);
 
         // 2. Durable DB Idempotency Check: query transition ledger for (GoalId, ExecutionId)
         var existingProgress = await _dbContext.CharacterGoalExecutionProgresses
@@ -131,6 +122,15 @@ public sealed class CharacterGoalService : ICharacterGoalService
 
         if (existingProgress != null)
         {
+            var expectedFingerprint = CharacterGoalExecutionProgress.ComputeFingerprint(
+                characterId,
+                goalContext.GoalId,
+                executionId,
+                actionTypeStr,
+                progressDelta,
+                existingProgress.OldProgress,
+                existingProgress.NewProgress);
+
             if (existingProgress.OperationFingerprint != expectedFingerprint)
             {
                 _logger.LogWarning(
@@ -257,6 +257,15 @@ public sealed class CharacterGoalService : ICharacterGoalService
 
                     if (concurrentRecord != null)
                     {
+                        var expectedFingerprint = CharacterGoalExecutionProgress.ComputeFingerprint(
+                            characterId,
+                            goalContext.GoalId,
+                            executionId,
+                            actionTypeStr,
+                            progressDelta,
+                            concurrentRecord.OldProgress,
+                            concurrentRecord.NewProgress);
+
                         if (concurrentRecord.OperationFingerprint != expectedFingerprint)
                         {
                             throw new CharacterGoalIdempotencyConflictException(

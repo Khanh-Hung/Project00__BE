@@ -83,9 +83,9 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
 
         var activeGoal = new CharacterGoal(charId, "ActiveGoal", initialStatus: CharacterGoalStatus.Active);
         var completedGoal = new CharacterGoal(charId, "CompletedGoal", initialStatus: CharacterGoalStatus.Active);
-        completedGoal.Complete();
+        completedGoal.Complete(DateTimeOffset.UtcNow);
         var cancelledGoal = new CharacterGoal(charId, "CancelledGoal", initialStatus: CharacterGoalStatus.Active);
-        cancelledGoal.Cancel();
+        cancelledGoal.Cancel(DateTimeOffset.UtcNow);
 
         using (var db = new CoreDbContext(_options))
         {
@@ -246,19 +246,25 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
     {
         var charId = Guid.NewGuid();
         var goalKey = "BuildRelationship";
+        var now = DateTimeOffset.UtcNow;
 
-        // Pre-create two independent services with distinct CoreDbContext instances connected to same DB
+        // Use a SaveChangesInterceptor to deterministically suspend Worker B right before save
+        var interceptorB = new ConcurrencyBarrierInterceptor();
+        var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptorB)
+            .Options;
+
         using var dbA = new CoreDbContext(_options);
-        using var dbB = new CoreDbContext(_options);
+        using var dbB = new CoreDbContext(optionsB);
 
         var repoA = new CharacterGoalRepository(dbA);
         var repoB = new CharacterGoalRepository(dbB);
 
         var policy = new CharacterGoalPolicy();
-        var clock = new FixedSystemClock(DateTimeOffset.UtcNow);
 
-        var serviceA = new CharacterGoalService(dbA, repoA, policy, clock, NullLogger<CharacterGoalService>.Instance);
-        var serviceB = new CharacterGoalService(dbB, repoB, policy, clock, NullLogger<CharacterGoalService>.Instance);
+        var serviceA = new CharacterGoalService(dbA, repoA, policy, NullLogger<CharacterGoalService>.Instance);
+        var serviceB = new CharacterGoalService(dbB, repoB, policy, NullLogger<CharacterGoalService>.Instance);
 
         var desire = new CharacterDesire(
             DesireType.NeedSocialConnection,
@@ -267,21 +273,23 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
             new CharacterMotivation(MotivationType.ConnectionDriven, 0.9, DesireSource.SocialNeed));
         var desireEval = new CharacterDesireEvaluation(charId, 1, new[] { desire }, desire);
 
-        // Run both workers concurrently
-        var taskA = serviceA.GetOrSelectActiveGoalAsync(charId, desireEval, clock.UtcNow);
-        var taskB = serviceB.GetOrSelectActiveGoalAsync(charId, desireEval, clock.UtcNow);
+        // 1. Worker B begins execution and checks existing active goals (sees 0), generates new goal, and suspends right before SavingChanges
+        var taskB = Task.Run(async () => await serviceB.GetOrSelectActiveGoalAsync(charId, desireEval, now));
+        await interceptorB.WaitForBeforeSaveAsync();
 
-        var results = await Task.WhenAll(taskA, taskB);
+        // 2. Worker A executes while Worker B is suspended, checks existing active goals (sees 0), inserts, and commits winner to DB
+        var goalA = await serviceA.GetOrSelectActiveGoalAsync(charId, desireEval, now);
+        Assert.NotNull(goalA);
 
-        var goalFromA = results[0];
-        var goalFromB = results[1];
+        // 3. Worker B is now released to attempt its commit
+        // Database enforces unique active constraint -> Worker B catches exception, reloads winner from DB
+        interceptorB.Release();
+        var goalB = await taskB;
+        Assert.NotNull(goalB);
 
-        Assert.NotNull(goalFromA);
-        Assert.NotNull(goalFromB);
-
-        // Both must agree on the same winner goal id
-        Assert.Equal(goalFromA.Id, goalFromB.Id);
-        Assert.Equal(goalKey, goalFromA.Title);
+        // Both workers must agree on the same winner goal instance
+        Assert.Equal(goalA.Id, goalB.Id);
+        Assert.Equal(goalKey, goalA.Title);
 
         // Verify exactly 1 active goal exists in the DB for this character
         using var verifyDb = new CoreDbContext(_options);
@@ -290,12 +298,6 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
             .ToListAsync();
 
         Assert.Single(activeInDb);
-        Assert.Equal(goalFromA.Id, activeInDb[0].Id);
-    }
-
-    private sealed class FixedSystemClock : ISystemClock
-    {
-        public DateTimeOffset UtcNow { get; }
-        public FixedSystemClock(DateTimeOffset utcNow) => UtcNow = utcNow;
+        Assert.Equal(goalA.Id, activeInDb[0].Id);
     }
 }

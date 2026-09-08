@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 using Xunit;
 
@@ -30,17 +30,17 @@ public sealed class CharacterGoalDomainTests
         var goal = new CharacterGoal(Guid.NewGuid(), "Explore Northern Lands", CharacterGoalType.Exploration, 50);
 
         // Pause
-        goal.Pause();
+        goal.Pause(DateTimeOffset.UtcNow);
         Assert.Equal(CharacterGoalStatus.Paused, goal.Status);
         Assert.NotNull(goal.PausedAt);
 
         // Resume
-        goal.Resume();
+        goal.Resume(DateTimeOffset.UtcNow);
         Assert.Equal(CharacterGoalStatus.Active, goal.Status);
         Assert.Null(goal.PausedAt);
 
         // Complete
-        goal.Complete();
+        goal.Complete(DateTimeOffset.UtcNow);
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
         Assert.NotNull(goal.CompletedAt);
         Assert.Equal(1.0f, goal.Progress);
@@ -51,40 +51,40 @@ public sealed class CharacterGoalDomainTests
     {
         // 1. Completed cannot become Active, Paused, Cancelled, or Expired
         var completedGoal = new CharacterGoal(Guid.NewGuid(), "Completed", CharacterGoalType.Lifestyle, 10);
-        completedGoal.Complete();
+        completedGoal.Complete(DateTimeOffset.UtcNow);
 
-        Assert.Throws<InvalidOperationException>(() => completedGoal.Activate());
-        Assert.Throws<InvalidOperationException>(() => completedGoal.Pause());
-        Assert.Throws<InvalidOperationException>(() => completedGoal.Cancel());
-        Assert.Throws<InvalidOperationException>(() => completedGoal.Expire());
+        Assert.Throws<InvalidOperationException>(() => completedGoal.Activate(DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(() => completedGoal.Pause(DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(() => completedGoal.Cancel(DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(() => completedGoal.Expire(DateTimeOffset.UtcNow));
 
         // 2. Cancelled cannot become Active, Paused, or Completed
         var cancelledGoal = new CharacterGoal(Guid.NewGuid(), "Cancelled", CharacterGoalType.Relationship, 10);
-        cancelledGoal.Cancel();
+        cancelledGoal.Cancel(DateTimeOffset.UtcNow);
 
-        Assert.Throws<InvalidOperationException>(() => cancelledGoal.Activate());
-        Assert.Throws<InvalidOperationException>(() => cancelledGoal.Pause());
-        Assert.Throws<InvalidOperationException>(() => cancelledGoal.Complete());
+        Assert.Throws<InvalidOperationException>(() => cancelledGoal.Activate(DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(() => cancelledGoal.Pause(DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(() => cancelledGoal.Complete(DateTimeOffset.UtcNow));
 
         // 3. Expired cannot become Active, Paused, or Completed
         var expiredGoal = new CharacterGoal(Guid.NewGuid(), "Expired", CharacterGoalType.Career, 10);
-        expiredGoal.Expire();
+        expiredGoal.Expire(DateTimeOffset.UtcNow);
 
-        Assert.Throws<InvalidOperationException>(() => expiredGoal.Activate());
-        Assert.Throws<InvalidOperationException>(() => expiredGoal.Pause());
-        Assert.Throws<InvalidOperationException>(() => expiredGoal.Complete());
+        Assert.Throws<InvalidOperationException>(() => expiredGoal.Activate(DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(() => expiredGoal.Pause(DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(() => expiredGoal.Complete(DateTimeOffset.UtcNow));
     }
 
     [Fact]
     public void PausedGoal_CannotCompleteDirectly_MustResumeFirst()
     {
         var goal = new CharacterGoal(Guid.NewGuid(), "Paused Goal", CharacterGoalType.Career, 10);
-        goal.Pause();
+        goal.Pause(DateTimeOffset.UtcNow);
 
-        Assert.Throws<InvalidOperationException>(() => goal.Complete());
+        Assert.Throws<InvalidOperationException>(() => goal.Complete(DateTimeOffset.UtcNow));
 
-        goal.Resume();
-        goal.Complete();
+        goal.Resume(DateTimeOffset.UtcNow);
+        goal.Complete(DateTimeOffset.UtcNow);
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
     }
 
@@ -108,7 +108,7 @@ public sealed class CharacterGoalDomainTests
     public void GoalProgress_InvalidIncrementValue_ThrowsArgumentOutOfRangeException(double invalidIncrement)
     {
         var goal = new CharacterGoal(Guid.NewGuid(), "Valid", CharacterGoalType.Custom, 10);
-        Assert.Throws<ArgumentOutOfRangeException>(() => goal.RecordProgress(invalidIncrement));
+        Assert.Throws<ArgumentOutOfRangeException>(() => goal.RecordProgress(invalidIncrement, DateTimeOffset.UtcNow));
     }
 
     [Fact]

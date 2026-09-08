@@ -43,13 +43,13 @@ public sealed class CharacterGoal : BaseEntity
     public CharacterGoal(
         Guid characterId,
         string title,
+        DateTimeOffset now,
         CharacterGoalType goalType = CharacterGoalType.PersonalGrowth,
         double targetValue = 100,
         CharacterGoalPriority priority = CharacterGoalPriority.Normal,
         string? description = null,
         CharacterGoalStatus initialStatus = CharacterGoalStatus.Active,
         Guid? id = null,
-        DateTime? now = null,
         int initialProgress = 0) : base(id ?? Guid.CreateVersion7())
     {
         if (characterId == Guid.Empty)
@@ -64,7 +64,7 @@ public sealed class CharacterGoal : BaseEntity
         if (initialProgress < 0 || initialProgress > 100)
             throw new ArgumentOutOfRangeException(nameof(initialProgress), "Goal progress must be bounded in [0, 100].");
 
-        var time = now ?? DateTime.UtcNow;
+        var time = now.UtcDateTime;
 
         CharacterId = characterId;
         Title = title.Trim();
@@ -88,16 +88,40 @@ public sealed class CharacterGoal : BaseEntity
         }
     }
 
+    public CharacterGoal(
+        Guid characterId,
+        string title,
+        CharacterGoalType goalType = CharacterGoalType.PersonalGrowth,
+        double targetValue = 100,
+        CharacterGoalPriority priority = CharacterGoalPriority.Normal,
+        string? description = null,
+        CharacterGoalStatus initialStatus = CharacterGoalStatus.Active,
+        Guid? id = null,
+        DateTime? now = null,
+        int initialProgress = 0) : this(
+            characterId: characterId,
+            title: title,
+            now: now.HasValue ? new DateTimeOffset(now.Value, TimeSpan.Zero) : DateTimeOffset.UnixEpoch,
+            goalType: goalType,
+            targetValue: targetValue,
+            priority: priority,
+            description: description,
+            initialStatus: initialStatus,
+            id: id,
+            initialProgress: initialProgress)
+    {
+    }
+
     public static CharacterGoal Create(
         Guid characterId,
         string goalKey,
+        DateTimeOffset now,
         CharacterGoalType goalType = CharacterGoalType.PersonalGrowth,
         int priority = (int)CharacterGoalPriority.Normal,
         string? description = null,
         CharacterGoalStatus initialStatus = CharacterGoalStatus.Active,
         int initialProgress = 0,
-        Guid? id = null,
-        DateTimeOffset? now = null)
+        Guid? id = null)
     {
         var priorityEnum = priority switch
         {
@@ -107,17 +131,16 @@ public sealed class CharacterGoal : BaseEntity
             _ => CharacterGoalPriority.Low
         };
 
-        var time = now?.UtcDateTime ?? DateTime.UtcNow;
         return new CharacterGoal(
             characterId: characterId,
             title: goalKey,
+            now: now,
             goalType: goalType,
             targetValue: 100,
             priority: priorityEnum,
             description: description,
             initialStatus: initialStatus,
             id: id,
-            now: time,
             initialProgress: initialProgress);
     }
 
@@ -134,7 +157,6 @@ public sealed class CharacterGoal : BaseEntity
     }
 
     public void Activate(DateTime now) => Activate(new DateTimeOffset(now, TimeSpan.Zero));
-    public void Activate() => Activate(DateTimeOffset.UtcNow);
 
     public void Pause(DateTimeOffset now)
     {
@@ -148,7 +170,6 @@ public sealed class CharacterGoal : BaseEntity
     }
 
     public void Pause(DateTime now) => Pause(new DateTimeOffset(now, TimeSpan.Zero));
-    public void Pause() => Pause(DateTimeOffset.UtcNow);
 
     public void Resume(DateTimeOffset now)
     {
@@ -162,7 +183,6 @@ public sealed class CharacterGoal : BaseEntity
     }
 
     public void Resume(DateTime now) => Resume(new DateTimeOffset(now, TimeSpan.Zero));
-    public void Resume() => Resume(DateTimeOffset.UtcNow);
 
     public void Complete(DateTimeOffset now)
     {
@@ -188,7 +208,6 @@ public sealed class CharacterGoal : BaseEntity
     }
 
     public void Complete(DateTime now) => Complete(new DateTimeOffset(now, TimeSpan.Zero));
-    public void Complete() => Complete(DateTimeOffset.UtcNow);
 
     public void Cancel(DateTimeOffset now)
     {
@@ -205,7 +224,6 @@ public sealed class CharacterGoal : BaseEntity
     }
 
     public void Cancel(DateTime now) => Cancel(new DateTimeOffset(now, TimeSpan.Zero));
-    public void Cancel() => Cancel(DateTimeOffset.UtcNow);
 
     public void Expire(DateTimeOffset now)
     {
@@ -224,7 +242,6 @@ public sealed class CharacterGoal : BaseEntity
     }
 
     public void Expire(DateTime now) => Expire(new DateTimeOffset(now, TimeSpan.Zero));
-    public void Expire() => Expire(DateTimeOffset.UtcNow);
 
     /// <summary>
     /// Updates goal progress as an integer percentage [0, 100].
@@ -254,8 +271,6 @@ public sealed class CharacterGoal : BaseEntity
             Touch();
         }
     }
-
-    public void UpdateProgress(int percentage) => UpdateProgress(percentage, DateTimeOffset.UtcNow);
 
     public void UpdateProgress(int percentage, DateTime now) => UpdateProgress(percentage, new DateTimeOffset(now, TimeSpan.Zero));
 
@@ -341,9 +356,6 @@ public sealed class CharacterGoal : BaseEntity
 
     public void RecordProgress(double incrementValue, DateTime now) =>
         RecordProgress(incrementValue, new DateTimeOffset(now, TimeSpan.Zero));
-
-    public void RecordProgress(double incrementValue) =>
-        RecordProgress(incrementValue, DateTimeOffset.UtcNow);
 
     public CharacterGoalMilestone AddMilestone(string title, int order, double targetValue, string? description = null)
     {
