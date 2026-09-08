@@ -14,14 +14,10 @@ namespace Infrastructure.Persistence.Repositories.Core;
 public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEventConsumptionRepository
 {
     private readonly CoreDbContext _context;
-    private readonly IWorldCognitiveEventInFlightTracker _inFlightTracker;
 
-    public WorldCognitiveEventConsumptionRepository(
-        CoreDbContext context,
-        IWorldCognitiveEventInFlightTracker? inFlightTracker = null)
+    public WorldCognitiveEventConsumptionRepository(CoreDbContext context)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
-        _inFlightTracker = inFlightTracker ?? WorldCognitiveEventInFlightTracker.Instance;
     }
 
     public async Task<WorldCognitiveEventConsumption?> GetByEventIdAsync(Guid eventId, CancellationToken ct = default)
@@ -84,26 +80,18 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
         if (eventId == Guid.Empty)
             throw new ArgumentException("EventId cannot be empty.", nameof(eventId));
 
-        // 1. In-flight execution check: cannot steal or reclaim an event actively executing on this instance
-        if (_inFlightTracker.IsInFlight(eventId))
-        {
-            throw new InvalidOperationException(
-                $"Cannot reclaim WorldCognitiveEvent consumption for EventId '{eventId:D}' because it is actively in-flight on this instance.");
-        }
-
         var existing = await GetByEventIdAsync(eventId, ct);
         if (existing == null)
             throw new InvalidOperationException($"Cannot reclaim non-existent WorldCognitiveEvent consumption for EventId '{eventId:D}'.");
 
         var timeout = leaseTimeout ?? TimeSpan.FromMinutes(5);
 
-        // 2. Reclaim domain aggregate method validates State != Consumed and InProgress lease expiration
+        // Domain aggregate method enforces: Consumed -> throws, InProgress -> throws, Failed -> allowed
         existing.Reclaim(attemptedAtUtc, timeout);
 
         try
         {
             await _context.SaveChangesAsync(ct);
-            _inFlightTracker.Invalidate(eventId);
             return (true, existing);
         }
         catch (DbUpdateConcurrencyException)

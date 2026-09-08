@@ -602,7 +602,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var interceptor = new ConcurrentConsumerRaceInterceptor(async () =>
         {
             await using var dbWorkerA = new CoreDbContext(_options);
-            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA, trackerA);
+            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA);
             var consumerA = new WorldCognitiveEventConsumer(
                 repoA, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerA);
 
@@ -611,7 +611,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         });
 
         await using var dbWorkerB = CreateDbContext(interceptor);
-        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB, trackerB);
+        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB);
         var consumerB = new WorldCognitiveEventConsumer(
             repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerB);
 
@@ -642,7 +642,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var interceptor = new ConcurrentConsumerRaceInterceptor(async () =>
         {
             await using var dbWorkerA = new CoreDbContext(_options);
-            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA, trackerA);
+            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA);
             var consumerA = new WorldCognitiveEventConsumer(
                 repoA, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerA);
 
@@ -650,7 +650,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         });
 
         await using var dbWorkerB = CreateDbContext(interceptor);
-        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB, trackerB);
+        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB);
         var consumerB = new WorldCognitiveEventConsumer(
             repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerB);
 
@@ -690,14 +690,22 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         Assert.True(redelivery.IsDuplicate);
         Assert.Equal(0, fakeCycleService.InvocationCount);
 
-        // Explicit recovery boundary reclaims the expired InProgress claim safely when not in flight
+        // Under Option A: InProgress claim CANNOT be reclaimed merely because lease expired
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repo.ReclaimAsync(evt.EventId, _clock.UtcNow.UtcDateTime, TimeSpan.FromMinutes(5)));
+        Assert.Contains("Cannot reclaim an InProgress claim", ex.Message);
+
+        // Once marked Failed (e.g. failure confirmed)
+        await repo.MarkFailedAsync(evt.EventId, "Worker crash confirmed", _clock.UtcNow.UtcDateTime, expectedVersion: 1);
+
+        // Explicit recovery boundary cleanly reclaims the Failed claim
         var (isReclaimed, recovered) = await repo.ReclaimAsync(evt.EventId, _clock.UtcNow.UtcDateTime, TimeSpan.FromMinutes(5));
         Assert.True(isReclaimed);
         Assert.Equal(2, recovered.AttemptCount);
         Assert.Equal(EventConsumptionState.InProgress, recovered.State);
 
-        // Authoritative cycle marks consumed
-        await repo.MarkConsumedAsync(evt.EventId, Guid.NewGuid(), _clock.UtcNow.UtcDateTime, expectedVersion: 2);
+        // Authoritative cycle marks consumed with current claim version
+        await repo.MarkConsumedAsync(evt.EventId, Guid.NewGuid(), _clock.UtcNow.UtcDateTime, expectedVersion: recovered.Version);
 
         // 4. Verify DB state is now Consumed with AttemptCount = 2
         var finalRecord = await repo.GetByEventIdAsync(evt.EventId);
@@ -865,16 +873,16 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         // Attempting domain Reclaim throws InvalidOperationException
         var exDomain = Assert.Throws<InvalidOperationException>(() =>
             claim.Reclaim(attemptTime, TimeSpan.FromMinutes(5)));
-        Assert.Contains("within lease window", exDomain.Message);
+        Assert.Contains("Cannot reclaim an InProgress claim", exDomain.Message);
 
         // Attempting repo ReclaimAsync throws InvalidOperationException
         var exRepo = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             repo.ReclaimAsync(evt.EventId, attemptTime, TimeSpan.FromMinutes(5)));
-        Assert.Contains("within lease window", exRepo.Message);
+        Assert.Contains("Cannot reclaim an InProgress claim", exRepo.Message);
     }
 
     [Fact]
-    public async Task ExpiredInProgressClaim_CanBeRecovered()
+    public async Task InProgressClaim_CannotBeReclaimedMerelyDueToLeaseExpiration()
     {
         using var db = CreateDbContext();
         var repo = new WorldCognitiveEventConsumptionRepository(db);
@@ -889,11 +897,9 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         // 6 minutes later (> 5 minutes lease window)
         var recoveryTime = _clock.UtcNow.UtcDateTime.AddMinutes(6);
 
-        var (isReclaimed, recovered) = await repo.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5));
-        Assert.True(isReclaimed);
-        Assert.Equal(EventConsumptionState.InProgress, recovered.State);
-        Assert.Equal(2, recovered.AttemptCount);
-        Assert.Equal(2u, recovered.Version);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repo.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5)));
+        Assert.Contains("Cannot reclaim an InProgress claim", ex.Message);
     }
 
     [Fact]
@@ -957,11 +963,14 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         Assert.True(claimed);
         Assert.Equal(1u, workerAClaim.Version);
 
-        // Worker A hangs, lease expires, Worker B recovers the claim (Version becomes 2)
+        // Worker A crashes / fails, state is marked Failed
+        await repo.MarkFailedAsync(evt.EventId, "Transient crash", _clock.UtcNow.UtcDateTime, expectedVersion: 1);
+
+        // Worker B recovers the Failed claim (Version becomes 3)
         var recoveryTime = _clock.UtcNow.UtcDateTime.AddMinutes(10);
-        var (isReclaimed, workerBClaim) = await repo.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5));
+        var (isReclaimed, workerBClaim) = await repo.ReclaimAsync(evt.EventId, recoveryTime);
         Assert.True(isReclaimed);
-        Assert.Equal(2u, workerBClaim.Version);
+        Assert.Equal(3u, workerBClaim.Version);
 
         // Stale Worker A finishes later and attempts MarkConsumed with its old expectedVersion = 1
         var cycleIdA = Guid.NewGuid();
@@ -976,9 +985,9 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         Assert.Equal(EventConsumptionState.InProgress, record.State);
         Assert.NotEqual(cycleIdA, record.CycleId);
 
-        // Worker B finishes authoritative cycle and marks consumed with expectedVersion = 2
+        // Worker B finishes authoritative cycle and marks consumed with expectedVersion = 3
         var cycleIdB = Guid.NewGuid();
-        await repo.MarkConsumedAsync(evt.EventId, cycleIdB, _clock.UtcNow.UtcDateTime, expectedVersion: 2);
+        await repo.MarkConsumedAsync(evt.EventId, cycleIdB, _clock.UtcNow.UtcDateTime, expectedVersion: workerBClaim.Version);
 
         var finalRecord = await repo.GetByEventIdAsync(evt.EventId);
         Assert.NotNull(finalRecord);
@@ -990,51 +999,53 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     public async Task RecoveryRace_OnlyOneWorkerOwnsCurrentClaim()
     {
         var evt = CreateValidEvent();
-        using var dbInit = CreateDbContext();
-        var repoInit = new WorldCognitiveEventConsumptionRepository(dbInit);
+        var now = _clock.UtcNow.UtcDateTime;
+        using (var dbInit = CreateDbContext())
+        {
+            var claim = WorldCognitiveEventConsumption.CreateClaim(
+                evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, now);
+            claim.MarkFailed("Pre-existing failure", now);
+            dbInit.WorldCognitiveEventConsumptions.Add(claim);
+            await dbInit.SaveChangesAsync();
+        }
 
-        var claim = WorldCognitiveEventConsumption.CreateClaim(
-            evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, _clock.UtcNow.UtcDateTime);
-        await repoInit.TryClaimAsync(claim);
-
-        // Advance clock past lease timeout
-        var recoveryTime = _clock.UtcNow.UtcDateTime.AddMinutes(10);
+        var recoveryTime = now.AddMinutes(10);
 
         // Worker A reclaims successfully
         using var dbWorkerA = CreateDbContext();
         var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA);
-        var (reclaimedA, claimA) = await repoA.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5));
+        var (reclaimedA, claimA) = await repoA.ReclaimAsync(evt.EventId, recoveryTime);
         Assert.True(reclaimedA);
-        Assert.Equal(2u, claimA.Version);
+        Assert.Equal(3u, claimA.Version);
 
         // Worker B attempts to reclaim with stale view
         using var dbWorkerB = CreateDbContext();
         var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB);
 
-        // Since Worker A already updated LastAttemptAtUtc to recoveryTime, Worker B sees InProgress within lease!
+        // Since Worker A already transitioned the state to InProgress, Worker B cannot reclaim an InProgress claim!
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            repoB.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5)));
+            repoB.ReclaimAsync(evt.EventId, recoveryTime));
 
-        Assert.Contains("within lease window", ex.Message);
+        Assert.Contains("Cannot reclaim an InProgress claim", ex.Message);
     }
 
     [Fact]
     public async Task StaleWorker_Consumer_FencesOutAndReturnsDuplicate()
     {
         var node1Tracker = new WorldCognitiveEventInFlightTracker();
-        var node2Tracker = new WorldCognitiveEventInFlightTracker();
 
         using var db = CreateDbContext();
-        var repo = new WorldCognitiveEventConsumptionRepository(db, node1Tracker);
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
 
         var fakeCycleService = new FakeCharacterCognitiveCycleService
         {
             Handler = async (ctx, ct) =>
             {
-                // Simulate lease expiry and recovery by another worker node while cycle is running
+                // Simulate supervisor marking failure and reclaiming claim while stale cycle is running
                 using var recoveryDb = CreateDbContext();
-                var recoveryRepo = new WorldCognitiveEventConsumptionRepository(recoveryDb, node2Tracker);
-                await recoveryRepo.ReclaimAsync(ctx.Event!.EventId, _clock.UtcNow.UtcDateTime.AddMinutes(10), TimeSpan.Zero);
+                var recoveryRepo = new WorldCognitiveEventConsumptionRepository(recoveryDb);
+                await recoveryRepo.MarkFailedAsync(ctx.Event!.EventId, "Supervisor reset", _clock.UtcNow.UtcDateTime, expectedVersion: 1);
+                await recoveryRepo.ReclaimAsync(ctx.Event!.EventId, _clock.UtcNow.UtcDateTime.AddMinutes(10));
 
                 return CharacterCognitiveCycleResult.CompletedWithoutAction(
                     ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1, message: "Late completion");
@@ -1462,14 +1473,14 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
     #endregion
 
-    #region Category 10: P0 Fencing, Pre-Claim Tracking & Recovery Boundary (Tests 36-44)
+    #region Category 10: P0 Fencing, Pre-Claim Tracking & Recovery Boundary (Tests 36-45)
 
     [Fact]
     public async Task ClaimOwnership_IsRegisteredBeforeExecutionStarts()
     {
         var tracker = new WorldCognitiveEventInFlightTracker();
         using var db = CreateDbContext();
-        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
 
         bool wasInFlightDuringCycle = false;
         var fakeCycleService = new FakeCharacterCognitiveCycleService
@@ -1498,7 +1509,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     {
         var tracker = new WorldCognitiveEventInFlightTracker();
         using var db = CreateDbContext();
-        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
 
         var cycleStartedTcs = new TaskCompletionSource<bool>();
         var cycleReleaseTcs = new TaskCompletionSource<bool>();
@@ -1542,7 +1553,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     {
         var tracker = new WorldCognitiveEventInFlightTracker();
         using var db = CreateDbContext();
-        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
 
         var evt = CreateValidEvent();
         var now = _clock.UtcNow.UtcDateTime;
@@ -1562,11 +1573,11 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
             // Advance clock past lease window
             var recoveryTime = now.AddMinutes(10);
 
-            // Attempting to reclaim an actively in-flight claim on this instance must throw InvalidOperationException
+            // Attempting to reclaim an InProgress claim throws InvalidOperationException under Option A
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 repo.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5)));
 
-            Assert.Contains("actively in-flight on this instance", ex.Message);
+            Assert.Contains("Cannot reclaim an InProgress claim", ex.Message);
         }
     }
 
@@ -1575,7 +1586,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     {
         var tracker = new WorldCognitiveEventInFlightTracker();
         using var db = CreateDbContext();
-        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
 
         var fakeCycleService = new FakeCharacterCognitiveCycleService();
         var consumer = new WorldCognitiveEventConsumer(
@@ -1598,7 +1609,14 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         Assert.True(normalDispatchResult.IsDuplicate);
         Assert.Equal(0, fakeCycleService.InvocationCount);
 
-        // 3. Explicit recovery boundary DOES allow recovery of the expired claim
+        // 3. Under Option A, explicit ReclaimAsync also rejects InProgress claims
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repo.ReclaimAsync(evt.EventId, _clock.UtcNow.UtcDateTime, TimeSpan.FromMinutes(5)));
+        Assert.Contains("Cannot reclaim an InProgress claim", ex.Message);
+
+        // 4. Once explicitly marked Failed, recovery is allowed
+        await repo.MarkFailedAsync(evt.EventId, "Worker crashed confirmed", _clock.UtcNow.UtcDateTime, expectedVersion: 1);
+
         var (isReclaimed, recovered) = await repo.ReclaimAsync(evt.EventId, _clock.UtcNow.UtcDateTime, TimeSpan.FromMinutes(5));
         Assert.True(isReclaimed);
         Assert.Equal(2, recovered.AttemptCount);
@@ -1610,7 +1628,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     {
         var tracker = new WorldCognitiveEventInFlightTracker();
         using var db = CreateDbContext();
-        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
 
         int actionExecutionCount = 0;
         var fakeCycleService = new FakeCharacterCognitiveCycleService
@@ -1650,13 +1668,14 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
         var claim = WorldCognitiveEventConsumption.CreateClaim(
             evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, now);
+        claim.MarkFailed("First failure", now);
         db.WorldCognitiveEventConsumptions.Add(claim);
         await db.SaveChangesAsync();
 
         // Increment version in DB (e.g. recovery worker reclaimed it)
         claim.Reclaim(now.AddMinutes(10));
         await db.SaveChangesAsync();
-        Assert.Equal(2u, claim.Version);
+        Assert.Equal(3u, claim.Version);
 
         // Stale worker tries to mark failed with version 1
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
@@ -1673,28 +1692,37 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         {
             var claim = WorldCognitiveEventConsumption.CreateClaim(
                 evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, now);
+            claim.MarkFailed("Pre-existing failure", now);
             initDb.WorldCognitiveEventConsumptions.Add(claim);
             await initDb.SaveChangesAsync();
         }
 
-        var recoveryTime = now.AddMinutes(10);
-        var trackerA = new WorldCognitiveEventInFlightTracker();
-        var trackerB = new WorldCognitiveEventInFlightTracker();
-
         using var dbA = CreateDbContext();
         using var dbB = CreateDbContext();
-        var repoA = new WorldCognitiveEventConsumptionRepository(dbA, trackerA);
-        var repoB = new WorldCognitiveEventConsumptionRepository(dbB, trackerB);
 
-        // Worker A successfully reclaims
-        var (isReclaimedA, recordA) = await repoA.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5));
-        Assert.True(isReclaimedA);
+        // A reads Version 2 (CreateClaim = 1, MarkFailed = 2)
+        var recordA = await dbA.WorldCognitiveEventConsumptions.FirstAsync(c => c.EventId == evt.EventId);
         Assert.Equal(2u, recordA.Version);
 
-        // Worker B attempts to reclaim within lease timeout of Worker A's new claim -> throws InvalidOperationException
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            repoB.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5)));
-        Assert.Contains("within lease window", ex.Message);
+        // B reads Version 2
+        var recordB = await dbB.WorldCognitiveEventConsumptions.FirstAsync(c => c.EventId == evt.EventId);
+        Assert.Equal(2u, recordB.Version);
+
+        // A reclaims and attempts SaveChanges -> A wins (Version becomes 3)
+        recordA.Reclaim(now.AddMinutes(1));
+        await dbA.SaveChangesAsync();
+
+        // In DB, Version is now 3
+        using (var verifyDb = CreateDbContext())
+        {
+            var committed = await verifyDb.WorldCognitiveEventConsumptions.FirstAsync(c => c.EventId == evt.EventId);
+            Assert.Equal(3u, committed.Version);
+        }
+
+        // B attempts SaveChanges with stale Version 2 -> B receives DbUpdateConcurrencyException
+        recordB.Reclaim(now.AddMinutes(1));
+        var ex = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => dbB.SaveChangesAsync());
+        Assert.NotNull(ex);
     }
 
     [Fact]
@@ -1702,7 +1730,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     {
         var tracker = new WorldCognitiveEventInFlightTracker();
         using var db = CreateDbContext();
-        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
 
         var cycleStartedTcs = new TaskCompletionSource<bool>();
         var cycleReleaseTcs = new TaskCompletionSource<bool>();
@@ -1753,7 +1781,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var interceptor = new ConcurrentConsumerRaceInterceptor(async () =>
         {
             await using var dbWorkerA = new CoreDbContext(_options);
-            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA, trackerA);
+            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA);
             var consumerA = new WorldCognitiveEventConsumer(
                 repoA, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerA);
 
@@ -1761,12 +1789,104 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         });
 
         await using var dbWorkerB = CreateDbContext(interceptor);
-        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB, trackerB);
+        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB);
         var consumerB = new WorldCognitiveEventConsumer(
             repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerB);
 
         await Assert.ThrowsAsync<WorldCognitiveEventIdempotencyConflictException>(() =>
             consumerB.ConsumeAsync(evtB));
+    }
+
+    [Fact]
+    public async Task LongRunningWorker_CrossProcess_DisallowsRecoveryBeforeSideEffectMutation()
+    {
+        var evt = CreateValidEvent();
+
+        // Node A setup
+        var trackerA = new WorldCognitiveEventInFlightTracker();
+        using var dbA = CreateDbContext();
+        var repoA = new WorldCognitiveEventConsumptionRepository(dbA);
+
+        var nodeACycleStarted = new TaskCompletionSource<bool>();
+        var nodeAReleaseToMutate = new TaskCompletionSource<bool>();
+        int totalActionExecutionCount = 0;
+
+        var fakeCycleServiceA = new FakeCharacterCognitiveCycleService
+        {
+            Handler = async (ctx, ct) =>
+            {
+                // Signal that Node A has started and claimed ownership
+                nodeACycleStarted.TrySetResult(true);
+
+                // Node A pauses here, simulating a slow/long-running cycle exceeding lease timeout
+                await nodeAReleaseToMutate.Task;
+
+                // Dangerous business side-effect point: ActionExecution / CharacterState mutation
+                ct.ThrowIfCancellationRequested();
+                Interlocked.Increment(ref totalActionExecutionCount);
+
+                return CharacterCognitiveCycleResult.CompletedWithoutAction(
+                    ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1, message: "Node A executed");
+            }
+        };
+
+        var consumerA = new WorldCognitiveEventConsumer(
+            repoA, fakeCycleServiceA, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerA);
+
+        // 1. Node A starts consuming and pauses inside the CognitiveCycle
+        var nodeATask = Task.Run(() => consumerA.ConsumeAsync(evt));
+        await nodeACycleStarted.Task;
+
+        // 2. Advance clock past the lease timeout (10 minutes later) while Node A is still alive and running
+        _clock.CurrentTime = _clock.CurrentTime.AddMinutes(10);
+
+        // 3. Node B on a separate process (isolated InFlightTracker, separate DbContext)
+        var trackerB = new WorldCognitiveEventInFlightTracker();
+        using var dbB = CreateDbContext();
+        var repoB = new WorldCognitiveEventConsumptionRepository(dbB);
+
+        var fakeCycleServiceB = new FakeCharacterCognitiveCycleService
+        {
+            Handler = (ctx, ct) =>
+            {
+                Interlocked.Increment(ref totalActionExecutionCount);
+                return Task.FromResult(CharacterCognitiveCycleResult.CompletedWithoutAction(
+                    ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1, message: "Node B executed"));
+            }
+        };
+
+        var consumerB = new WorldCognitiveEventConsumer(
+            repoB, fakeCycleServiceB, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerB);
+
+        // Under Option A:
+        // Scenario A: Node B receives normal consumer redelivery -> treated as duplicate, 0 cycles dispatched
+        var redeliveryResult = await consumerB.ConsumeAsync(evt);
+        Assert.True(redeliveryResult.IsDuplicate);
+        Assert.False(redeliveryResult.IsAccepted);
+        Assert.Equal(0, fakeCycleServiceB.InvocationCount);
+
+        // Scenario B: Node B attempts explicit ReclaimAsync after lease expiry -> rejected because InProgress cannot be reclaimed
+        var recoveryTime = _clock.UtcNow.UtcDateTime;
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repoB.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5)));
+        Assert.Contains("Cannot reclaim an InProgress claim", ex.Message);
+
+        // At this point, Node B has been completely prevented from reaching ActionExecution
+        Assert.Equal(0, totalActionExecutionCount);
+
+        // 4. Release Node A to proceed to its ActionExecution and complete consumption
+        nodeAReleaseToMutate.TrySetResult(true);
+        var nodeAResult = await nodeATask;
+
+        Assert.True(nodeAResult.IsAccepted);
+        Assert.Equal(1, fakeCycleServiceA.InvocationCount);
+        Assert.Equal(1, totalActionExecutionCount);
+
+        // 5. Final DB state is authoritative Consumed
+        using var verifyDb = CreateDbContext();
+        var finalRecord = await verifyDb.WorldCognitiveEventConsumptions.FirstAsync(c => c.EventId == evt.EventId);
+        Assert.Equal(EventConsumptionState.Consumed, finalRecord.State);
+        Assert.Equal(1, finalRecord.AttemptCount);
     }
 
     #endregion

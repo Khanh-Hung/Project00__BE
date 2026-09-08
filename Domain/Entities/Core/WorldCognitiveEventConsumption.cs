@@ -139,8 +139,10 @@ public sealed class WorldCognitiveEventConsumption
     }
 
     /// <summary>
-    /// Reclaims an event in Failed state for retry, or an event in InProgress state whose processing lease expired (crash recovery).
-    /// Invariant: An active InProgress event cannot be reclaimed before its lease expires.
+    /// Reclaims an event in Failed state for retry.
+    /// Invariant: In PR54 (Option A), an InProgress claim cannot be reclaimed merely due to elapsed lease time.
+    /// Lease expiration alone does not guarantee that the remote executing worker has died, and consumption record
+    /// fencing cannot prevent duplicate CharacterState mutations during ActionExecution.
     /// Invariant: A Consumed event is terminal and can never be reclaimed.
     /// </summary>
     public void Reclaim(DateTime attemptedAtUtc, TimeSpan? leaseTimeout = null)
@@ -150,13 +152,8 @@ public sealed class WorldCognitiveEventConsumption
 
         if (State == EventConsumptionState.InProgress)
         {
-            var timeout = leaseTimeout ?? TimeSpan.FromMinutes(5);
-            var elapsed = attemptedAtUtc - LastAttemptAtUtc;
-            if (elapsed >= TimeSpan.Zero && elapsed < timeout)
-            {
-                throw new InvalidOperationException(
-                    $"Cannot reclaim active InProgress claim within lease window of {timeout.TotalMinutes} minutes (EventId: {EventId:D}).");
-            }
+            throw new InvalidOperationException(
+                $"Cannot reclaim an InProgress claim for EventId '{EventId:D}'. In PR54, lease expiration alone does not guarantee worker termination and cannot fence CharacterState side effects. InProgress claims cannot be reclaimed without explicit terminal failure.");
         }
 
         State = EventConsumptionState.InProgress;
