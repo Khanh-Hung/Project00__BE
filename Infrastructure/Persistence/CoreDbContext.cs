@@ -52,6 +52,7 @@ public class CoreDbContext : DbContext
     public DbSet<CharacterPersonalityAdaptation> CharacterPersonalityAdaptations { get; set; }
     public DbSet<CharacterLifeActivity> CharacterLifeActivities { get; set; }
     public DbSet<CharacterOutboxMessage> CharacterOutboxMessages { get; set; }
+    public DbSet<WorldCognitiveEventConsumption> WorldCognitiveEventConsumptions { get; set; }
 
     private string NormalizeUserId()
     {
