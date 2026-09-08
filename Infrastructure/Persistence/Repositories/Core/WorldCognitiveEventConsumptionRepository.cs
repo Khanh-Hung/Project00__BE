@@ -84,18 +84,26 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
         if (eventId == Guid.Empty)
             throw new ArgumentException("EventId cannot be empty.", nameof(eventId));
 
+        // 1. In-flight execution check: cannot steal or reclaim an event actively executing on this instance
+        if (_inFlightTracker.IsInFlight(eventId))
+        {
+            throw new InvalidOperationException(
+                $"Cannot reclaim WorldCognitiveEvent consumption for EventId '{eventId:D}' because it is actively in-flight on this instance.");
+        }
+
         var existing = await GetByEventIdAsync(eventId, ct);
         if (existing == null)
             throw new InvalidOperationException($"Cannot reclaim non-existent WorldCognitiveEvent consumption for EventId '{eventId:D}'.");
 
         var timeout = leaseTimeout ?? TimeSpan.FromMinutes(5);
 
-        // Reclaim domain aggregate method validates State != Consumed and InProgress lease expiration
+        // 2. Reclaim domain aggregate method validates State != Consumed and InProgress lease expiration
         existing.Reclaim(attemptedAtUtc, timeout);
 
         try
         {
             await _context.SaveChangesAsync(ct);
+            _inFlightTracker.Invalidate(eventId);
             return (true, existing);
         }
         catch (DbUpdateConcurrencyException)
@@ -130,23 +138,17 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
             return (false, existing);
         }
 
-        var now = incoming.LastAttemptAtUtc;
-
-        // In-flight active lease check for InProgress state
+        // Active state: InProgress is always treated as duplicate in normal consumer dispatch
+        // Invariant: Lease expiry alone does not prove that an active CognitiveCycle is dead.
+        // To strictly prevent duplicate execution and un-fenced CharacterState side effects,
+        // InProgress is never automatically reclaimed by ConsumeAsync; recovery is restricted to explicit ReclaimAsync.
         if (existing.State == EventConsumptionState.InProgress)
         {
-            var elapsed = now - existing.LastAttemptAtUtc;
-            var isInFlight = _inFlightTracker.IsInFlight(existing.EventId);
-            if (isInFlight || (elapsed >= TimeSpan.Zero && elapsed < leaseTimeout))
-            {
-                // Another worker is actively processing in-flight or within the lease window
-                return (false, existing);
-            }
-
-            // Elapsed >= leaseTimeout and not in-flight: worker crashed or timed out -> fall through to reclaim
+            return (false, existing);
         }
 
-        // State is either Failed (retryable) or InProgress with expired lease (crash recovery)
+        // State is Failed (retryable upon redelivery)
+        var now = incoming.LastAttemptAtUtc;
         try
         {
             existing.Reclaim(now, leaseTimeout);
@@ -155,7 +157,7 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Another concurrent worker claimed the recovery/retry slot
+            // Another concurrent worker claimed the retry slot
             _context.Entry(existing).State = EntityState.Detached;
             var reloaded = await _context.WorldCognitiveEventConsumptions
                 .AsNoTracking()
@@ -198,16 +200,17 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
         var record = await _context.WorldCognitiveEventConsumptions
             .FirstOrDefaultAsync(c => c.EventId == eventId, ct);
 
-        if (record != null)
-        {
-            if (expectedVersion.HasValue && record.Version != expectedVersion.Value)
-            {
-                return;
-            }
+        if (record == null)
+            throw new InvalidOperationException($"Cannot mark non-existent WorldCognitiveEvent consumption as Failed (EventId: {eventId:D}).");
 
-            record.MarkFailed(failureReason, failedAtUtc, expectedVersion);
-            await _context.SaveChangesAsync(ct);
+        if (expectedVersion.HasValue && record.Version != expectedVersion.Value)
+        {
+            throw new DbUpdateConcurrencyException(
+                $"Stale worker fence violation for EventId '{eventId:D}'. Expected claim version {expectedVersion.Value} but found {record.Version}.");
         }
+
+        record.MarkFailed(failureReason, failedAtUtc, expectedVersion);
+        await _context.SaveChangesAsync(ct);
     }
 
     public async Task SaveChangesAsync(CancellationToken ct = default)

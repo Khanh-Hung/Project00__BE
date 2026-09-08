@@ -595,23 +595,25 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var evt = CreateValidEvent(eventId: eventId, characterId: charId);
 
         var fakeCycleService = new FakeCharacterCognitiveCycleService();
+        var trackerA = new WorldCognitiveEventInFlightTracker();
+        var trackerB = new WorldCognitiveEventInFlightTracker();
 
         // Worker B hits interceptor before commit; Worker A runs and commits cleanly
         var interceptor = new ConcurrentConsumerRaceInterceptor(async () =>
         {
             await using var dbWorkerA = new CoreDbContext(_options);
-            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA);
+            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA, trackerA);
             var consumerA = new WorldCognitiveEventConsumer(
-                repoA, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+                repoA, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerA);
 
             var resultA = await consumerA.ConsumeAsync(evt);
             Assert.True(resultA.IsAccepted);
         });
 
         await using var dbWorkerB = CreateDbContext(interceptor);
-        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB);
+        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB, trackerB);
         var consumerB = new WorldCognitiveEventConsumer(
-            repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+            repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerB);
 
         var resultB = await consumerB.ConsumeAsync(evt);
 
@@ -634,21 +636,23 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         var evtB = CreateValidEvent(eventId: sharedEventId, characterId: charId, eventName: "EventB_Divergent");
 
         var fakeCycleService = new FakeCharacterCognitiveCycleService();
+        var trackerA = new WorldCognitiveEventInFlightTracker();
+        var trackerB = new WorldCognitiveEventInFlightTracker();
 
         var interceptor = new ConcurrentConsumerRaceInterceptor(async () =>
         {
             await using var dbWorkerA = new CoreDbContext(_options);
-            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA);
+            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA, trackerA);
             var consumerA = new WorldCognitiveEventConsumer(
-                repoA, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+                repoA, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerA);
 
             await consumerA.ConsumeAsync(evtA);
         });
 
         await using var dbWorkerB = CreateDbContext(interceptor);
-        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB);
+        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB, trackerB);
         var consumerB = new WorldCognitiveEventConsumer(
-            repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+            repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerB);
 
         await Assert.ThrowsAsync<WorldCognitiveEventIdempotencyConflictException>(() =>
             consumerB.ConsumeAsync(evtB));
@@ -680,10 +684,20 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
 
         // 3. Crash recovery: advance clock past 5 minutes lease timeout
         _clock.CurrentTime = _clock.CurrentTime.AddMinutes(5);
-        var recoveredResult = await consumer.ConsumeAsync(evt);
 
-        Assert.True(recoveredResult.IsAccepted);
-        Assert.Equal(1, fakeCycleService.InvocationCount);
+        // Under Option A: normal consumer dispatch treats InProgress as duplicate (prevents un-fenced side effects)
+        var redelivery = await consumer.ConsumeAsync(evt);
+        Assert.True(redelivery.IsDuplicate);
+        Assert.Equal(0, fakeCycleService.InvocationCount);
+
+        // Explicit recovery boundary reclaims the expired InProgress claim safely when not in flight
+        var (isReclaimed, recovered) = await repo.ReclaimAsync(evt.EventId, _clock.UtcNow.UtcDateTime, TimeSpan.FromMinutes(5));
+        Assert.True(isReclaimed);
+        Assert.Equal(2, recovered.AttemptCount);
+        Assert.Equal(EventConsumptionState.InProgress, recovered.State);
+
+        // Authoritative cycle marks consumed
+        await repo.MarkConsumedAsync(evt.EventId, Guid.NewGuid(), _clock.UtcNow.UtcDateTime, expectedVersion: 2);
 
         // 4. Verify DB state is now Consumed with AttemptCount = 2
         var finalRecord = await repo.GetByEventIdAsync(evt.EventId);
@@ -1007,17 +1021,20 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
     [Fact]
     public async Task StaleWorker_Consumer_FencesOutAndReturnsDuplicate()
     {
+        var node1Tracker = new WorldCognitiveEventInFlightTracker();
+        var node2Tracker = new WorldCognitiveEventInFlightTracker();
+
         using var db = CreateDbContext();
-        var repo = new WorldCognitiveEventConsumptionRepository(db);
+        var repo = new WorldCognitiveEventConsumptionRepository(db, node1Tracker);
 
         var fakeCycleService = new FakeCharacterCognitiveCycleService
         {
             Handler = async (ctx, ct) =>
             {
-                // Simulate lease expiry and recovery by another worker while cycle is running
+                // Simulate lease expiry and recovery by another worker node while cycle is running
                 using var recoveryDb = CreateDbContext();
-                var recoveryRepo = new WorldCognitiveEventConsumptionRepository(recoveryDb);
-                await recoveryRepo.ReclaimAsync(ctx.Event!.EventId, DateTime.UtcNow.AddMinutes(10), TimeSpan.Zero);
+                var recoveryRepo = new WorldCognitiveEventConsumptionRepository(recoveryDb, node2Tracker);
+                await recoveryRepo.ReclaimAsync(ctx.Event!.EventId, _clock.UtcNow.UtcDateTime.AddMinutes(10), TimeSpan.Zero);
 
                 return CharacterCognitiveCycleResult.CompletedWithoutAction(
                     ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1, message: "Late completion");
@@ -1025,7 +1042,7 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
         };
 
         var consumer = new WorldCognitiveEventConsumer(
-            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance);
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, node1Tracker);
 
         var evt = CreateValidEvent();
         var result = await consumer.ConsumeAsync(evt);
@@ -1441,6 +1458,315 @@ public sealed class WorldCognitiveEventConsumerTests : IDisposable
             eventId, charId, occurredAt, "FireAlarm", "Sensor", "Hazard");
 
         Assert.Equal(expectedHash, actualHash);
+    }
+
+    #endregion
+
+    #region Category 10: P0 Fencing, Pre-Claim Tracking & Recovery Boundary (Tests 36-44)
+
+    [Fact]
+    public async Task ClaimOwnership_IsRegisteredBeforeExecutionStarts()
+    {
+        var tracker = new WorldCognitiveEventInFlightTracker();
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+
+        bool wasInFlightDuringCycle = false;
+        var fakeCycleService = new FakeCharacterCognitiveCycleService
+        {
+            Handler = (ctx, ct) =>
+            {
+                wasInFlightDuringCycle = tracker.IsInFlight(ctx.Event!.EventId);
+                return Task.FromResult(CharacterCognitiveCycleResult.CompletedWithoutAction(
+                    ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1, message: "OK"));
+            }
+        };
+
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, tracker);
+
+        var evt = CreateValidEvent();
+        var result = await consumer.ConsumeAsync(evt);
+
+        Assert.True(result.IsAccepted);
+        Assert.True(wasInFlightDuringCycle, "InFlightTracker must register ownership before CognitiveCycle execution starts.");
+        Assert.False(tracker.IsInFlight(evt.EventId), "InFlightTracker must clear registration after consumption completes.");
+    }
+
+    [Fact]
+    public async Task ClaimAndTrack_CannotBeInterleavedIntoStaleWorkerExecution()
+    {
+        var tracker = new WorldCognitiveEventInFlightTracker();
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+
+        var cycleStartedTcs = new TaskCompletionSource<bool>();
+        var cycleReleaseTcs = new TaskCompletionSource<bool>();
+
+        var fakeCycleService = new FakeCharacterCognitiveCycleService
+        {
+            Handler = async (ctx, ct) =>
+            {
+                cycleStartedTcs.TrySetResult(true);
+                await cycleReleaseTcs.Task;
+                return CharacterCognitiveCycleResult.CompletedWithoutAction(
+                    ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1, message: "OK");
+            }
+        };
+
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, tracker);
+
+        var evt = CreateValidEvent();
+
+        // Worker A starts execution and pauses in the middle of CognitiveCycle
+        var workerATask = Task.Run(() => consumer.ConsumeAsync(evt));
+        await cycleStartedTcs.Task;
+
+        // Worker B attempts to consume the same event while Worker A is in-flight
+        var workerBResult = await consumer.ConsumeAsync(evt);
+
+        Assert.True(workerBResult.IsDuplicate);
+        Assert.False(workerBResult.IsAccepted);
+
+        // Release Worker A
+        cycleReleaseTcs.TrySetResult(true);
+        var workerAResult = await workerATask;
+
+        Assert.True(workerAResult.IsAccepted);
+        Assert.Equal(1, fakeCycleService.InvocationCount);
+    }
+
+    [Fact]
+    public async Task ActiveInFlightClaim_CannotBeReclaimedByExplicitRecovery()
+    {
+        var tracker = new WorldCognitiveEventInFlightTracker();
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+
+        var evt = CreateValidEvent();
+        var now = _clock.UtcNow.UtcDateTime;
+
+        // Simulate initial claim in DB
+        var claim = WorldCognitiveEventConsumption.CreateClaim(
+            evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, now);
+        db.WorldCognitiveEventConsumptions.Add(claim);
+        await db.SaveChangesAsync();
+
+        // Register in-flight tracker to simulate active execution
+        Assert.True(tracker.TryTrack(evt.EventId, out var scope));
+        using (scope)
+        {
+            Assert.True(tracker.IsInFlight(evt.EventId));
+
+            // Advance clock past lease window
+            var recoveryTime = now.AddMinutes(10);
+
+            // Attempting to reclaim an actively in-flight claim on this instance must throw InvalidOperationException
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                repo.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5)));
+
+            Assert.Contains("actively in-flight on this instance", ex.Message);
+        }
+    }
+
+    [Fact]
+    public async Task ExpiredClaim_CanOnlyBeRecoveredWhenRecoveryBoundaryAllowsIt()
+    {
+        var tracker = new WorldCognitiveEventInFlightTracker();
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+
+        var fakeCycleService = new FakeCharacterCognitiveCycleService();
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, tracker);
+
+        var evt = CreateValidEvent();
+        var now = _clock.UtcNow.UtcDateTime;
+
+        // 1. Initial claim placed in DB (simulate worker that crashed before completion)
+        var claim = WorldCognitiveEventConsumption.CreateClaim(
+            evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, now);
+        db.WorldCognitiveEventConsumptions.Add(claim);
+        await db.SaveChangesAsync();
+
+        // Advance clock past lease timeout (10 minutes later)
+        _clock.CurrentTime = _clock.CurrentTime.AddMinutes(10);
+
+        // 2. Under Option A, normal consumer redelivery treats InProgress as duplicate (no second cycle dispatched)
+        var normalDispatchResult = await consumer.ConsumeAsync(evt);
+        Assert.True(normalDispatchResult.IsDuplicate);
+        Assert.Equal(0, fakeCycleService.InvocationCount);
+
+        // 3. Explicit recovery boundary DOES allow recovery of the expired claim
+        var (isReclaimed, recovered) = await repo.ReclaimAsync(evt.EventId, _clock.UtcNow.UtcDateTime, TimeSpan.FromMinutes(5));
+        Assert.True(isReclaimed);
+        Assert.Equal(2, recovered.AttemptCount);
+        Assert.Equal(EventConsumptionState.InProgress, recovered.State);
+    }
+
+    [Fact]
+    public async Task StaleWorker_CannotCauseCharacterStateMutation()
+    {
+        var tracker = new WorldCognitiveEventInFlightTracker();
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+
+        int actionExecutionCount = 0;
+        var fakeCycleService = new FakeCharacterCognitiveCycleService
+        {
+            Handler = (ctx, ct) =>
+            {
+                // Invalidate the running worker while it's in cycle
+                tracker.Invalidate(ctx.Event!.EventId);
+
+                // Simulate cancellation check before mutating character state
+                ct.ThrowIfCancellationRequested();
+
+                actionExecutionCount++;
+                return Task.FromResult(CharacterCognitiveCycleResult.CompletedWithoutAction(
+                    ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1, message: "Should not reach here"));
+            }
+        };
+
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, tracker);
+
+        var evt = CreateValidEvent();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => consumer.ConsumeAsync(evt));
+
+        Assert.Equal(0, actionExecutionCount);
+    }
+
+    [Fact]
+    public async Task StaleWorker_CannotMarkFailed()
+    {
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db);
+
+        var evt = CreateValidEvent();
+        var now = _clock.UtcNow.UtcDateTime;
+
+        var claim = WorldCognitiveEventConsumption.CreateClaim(
+            evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, now);
+        db.WorldCognitiveEventConsumptions.Add(claim);
+        await db.SaveChangesAsync();
+
+        // Increment version in DB (e.g. recovery worker reclaimed it)
+        claim.Reclaim(now.AddMinutes(10));
+        await db.SaveChangesAsync();
+        Assert.Equal(2u, claim.Version);
+
+        // Stale worker tries to mark failed with version 1
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+            repo.MarkFailedAsync(evt.EventId, "Stale worker failure", now, expectedVersion: 1));
+    }
+
+    [Fact]
+    public async Task ConcurrentRecovery_OneWinnerOneConcurrencyConflict()
+    {
+        var evt = CreateValidEvent();
+        var now = _clock.UtcNow.UtcDateTime;
+
+        using (var initDb = CreateDbContext())
+        {
+            var claim = WorldCognitiveEventConsumption.CreateClaim(
+                evt.EventId, evt.CharacterId, evt.OccurredAtUtc, evt.EventName, evt.Source, evt.Category, now);
+            initDb.WorldCognitiveEventConsumptions.Add(claim);
+            await initDb.SaveChangesAsync();
+        }
+
+        var recoveryTime = now.AddMinutes(10);
+        var trackerA = new WorldCognitiveEventInFlightTracker();
+        var trackerB = new WorldCognitiveEventInFlightTracker();
+
+        using var dbA = CreateDbContext();
+        using var dbB = CreateDbContext();
+        var repoA = new WorldCognitiveEventConsumptionRepository(dbA, trackerA);
+        var repoB = new WorldCognitiveEventConsumptionRepository(dbB, trackerB);
+
+        // Worker A successfully reclaims
+        var (isReclaimedA, recordA) = await repoA.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5));
+        Assert.True(isReclaimedA);
+        Assert.Equal(2u, recordA.Version);
+
+        // Worker B attempts to reclaim within lease timeout of Worker A's new claim -> throws InvalidOperationException
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repoB.ReclaimAsync(evt.EventId, recoveryTime, TimeSpan.FromMinutes(5)));
+        Assert.Contains("within lease window", ex.Message);
+    }
+
+    [Fact]
+    public async Task ConcurrentSameEvent_DoesNotDispatchTwoCycles()
+    {
+        var tracker = new WorldCognitiveEventInFlightTracker();
+        using var db = CreateDbContext();
+        var repo = new WorldCognitiveEventConsumptionRepository(db, tracker);
+
+        var cycleStartedTcs = new TaskCompletionSource<bool>();
+        var cycleReleaseTcs = new TaskCompletionSource<bool>();
+
+        var fakeCycleService = new FakeCharacterCognitiveCycleService
+        {
+            Handler = async (ctx, ct) =>
+            {
+                cycleStartedTcs.TrySetResult(true);
+                await cycleReleaseTcs.Task;
+                return CharacterCognitiveCycleResult.CompletedWithoutAction(
+                    ctx.CycleId, ctx.ExecutionId, ctx.CharacterId, ctx.TriggeredAtUtc, 1, message: "OK");
+            }
+        };
+
+        var consumer = new WorldCognitiveEventConsumer(
+            repo, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, tracker);
+
+        var evt = CreateValidEvent();
+
+        var task1 = Task.Run(() => consumer.ConsumeAsync(evt));
+        await cycleStartedTcs.Task;
+
+        var task2 = Task.Run(() => consumer.ConsumeAsync(evt));
+        var result2 = await task2;
+
+        cycleReleaseTcs.TrySetResult(true);
+        var result1 = await task1;
+
+        Assert.True(result1.IsAccepted || result2.IsAccepted);
+        Assert.True(result1.IsDuplicate || result2.IsDuplicate);
+        Assert.Equal(1, fakeCycleService.InvocationCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentDivergentEvent_RemainsIdempotencyConflict()
+    {
+        var eventId = Guid.NewGuid();
+        var charId = Guid.NewGuid();
+
+        var evtA = CreateValidEvent(eventId: eventId, characterId: charId, eventName: "EventA_Original");
+        var evtB = CreateValidEvent(eventId: eventId, characterId: charId, eventName: "EventB_Divergent");
+
+        var fakeCycleService = new FakeCharacterCognitiveCycleService();
+        var trackerA = new WorldCognitiveEventInFlightTracker();
+        var trackerB = new WorldCognitiveEventInFlightTracker();
+
+        var interceptor = new ConcurrentConsumerRaceInterceptor(async () =>
+        {
+            await using var dbWorkerA = new CoreDbContext(_options);
+            var repoA = new WorldCognitiveEventConsumptionRepository(dbWorkerA, trackerA);
+            var consumerA = new WorldCognitiveEventConsumer(
+                repoA, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerA);
+
+            await consumerA.ConsumeAsync(evtA);
+        });
+
+        await using var dbWorkerB = CreateDbContext(interceptor);
+        var repoB = new WorldCognitiveEventConsumptionRepository(dbWorkerB, trackerB);
+        var consumerB = new WorldCognitiveEventConsumer(
+            repoB, fakeCycleService, _clock, NullLogger<WorldCognitiveEventConsumer>.Instance, trackerB);
+
+        await Assert.ThrowsAsync<WorldCognitiveEventIdempotencyConflictException>(() =>
+            consumerB.ConsumeAsync(evtB));
     }
 
     #endregion

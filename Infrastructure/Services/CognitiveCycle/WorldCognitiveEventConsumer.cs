@@ -54,66 +54,59 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
         // 1. Invariant payload and identity validation using unified ISystemClock
         ValidateWorldEvent(worldEvent, _systemClock);
 
-        // 2. In-flight execution check: prevent duplicate dispatch while an active execution is running
-        if (_inFlightTracker.IsInFlight(worldEvent.EventId))
+        // 2. Register process-local in-flight execution guard BEFORE durable claim
+        // This eliminates any race window where a worker owns a durable claim but has not registered execution.
+        if (!_inFlightTracker.TryTrack(worldEvent.EventId, out var inFlightScope))
         {
             _logger.LogInformation(
                 "WorldCognitiveEvent {EventId} for Character {CharacterId} is currently being processed in-flight. Skipping duplicate execution.",
                 worldEvent.EventId,
                 worldEvent.CharacterId);
 
-            var existing = await _consumptionRepository.GetByEventIdAsync(worldEvent.EventId, cancellationToken);
+            var existingRecord = await _consumptionRepository.GetByEventIdAsync(worldEvent.EventId, cancellationToken);
             return WorldCognitiveEventConsumptionResult.DuplicateResult(
                 worldEvent.EventId,
                 worldEvent.CharacterId,
-                existing?.CycleId);
+                existingRecord?.CycleId);
         }
 
-        // 3. Prepare claim aggregate with canonical deterministic fingerprint
-        var now = _systemClock.UtcNow.UtcDateTime;
-        var claim = WorldCognitiveEventConsumption.CreateClaim(
-            worldEvent.EventId,
-            worldEvent.CharacterId,
-            worldEvent.OccurredAtUtc,
-            worldEvent.EventName,
-            worldEvent.Source,
-            worldEvent.Category,
-            now);
-
-        // 4. Atomically claim consumption slot (DB unique constraint on EventId with lease-based crash recovery & retry)
-        var (isClaimed, existingOrNew) = await _consumptionRepository.TryClaimAsync(claim, ct: cancellationToken);
-
-        if (!isClaimed)
+        using (inFlightScope)
         {
-            _logger.LogInformation(
-                "WorldCognitiveEvent {EventId} for Character {CharacterId} is duplicate or actively in-flight. Status: {State}, Existing CycleId: {CycleId}",
+            // Link caller's cancellation token with in-flight execution scope cancellation token
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                inFlightScope!.CancellationToken);
+            var linkedToken = linkedCts.Token;
+
+            // 3. Prepare claim aggregate with canonical deterministic fingerprint
+            var now = _systemClock.UtcNow.UtcDateTime;
+            var claim = WorldCognitiveEventConsumption.CreateClaim(
                 worldEvent.EventId,
                 worldEvent.CharacterId,
-                existingOrNew.State,
-                existingOrNew.CycleId);
+                worldEvent.OccurredAtUtc,
+                worldEvent.EventName,
+                worldEvent.Source,
+                worldEvent.Category,
+                now);
 
-            return WorldCognitiveEventConsumptionResult.DuplicateResult(
-                worldEvent.EventId,
-                worldEvent.CharacterId,
-                existingOrNew.CycleId);
-        }
+            // 4. Atomically claim consumption slot (DB unique constraint on EventId with retry for Failed events)
+            var (isClaimed, existingOrNew) = await _consumptionRepository.TryClaimAsync(claim, ct: linkedToken);
 
-        // 5. Register in-flight execution guard for the duration of Cognitive Cycle execution
-        if (!_inFlightTracker.TryTrack(worldEvent.EventId, out var inFlightRegistration))
-        {
-            _logger.LogInformation(
-                "WorldCognitiveEvent {EventId} for Character {CharacterId} entered in-flight execution on another worker. Returning duplicate.",
-                worldEvent.EventId,
-                worldEvent.CharacterId);
+            if (!isClaimed)
+            {
+                _logger.LogInformation(
+                    "WorldCognitiveEvent {EventId} for Character {CharacterId} is duplicate or actively in-flight. Status: {State}, Existing CycleId: {CycleId}",
+                    worldEvent.EventId,
+                    worldEvent.CharacterId,
+                    existingOrNew.State,
+                    existingOrNew.CycleId);
 
-            return WorldCognitiveEventConsumptionResult.DuplicateResult(
-                worldEvent.EventId,
-                worldEvent.CharacterId,
-                existingOrNew.CycleId);
-        }
+                return WorldCognitiveEventConsumptionResult.DuplicateResult(
+                    worldEvent.EventId,
+                    worldEvent.CharacterId,
+                    existingOrNew.CycleId);
+            }
 
-        using (inFlightRegistration)
-        {
             var claimVersion = existingOrNew.Version;
 
             _logger.LogInformation(
@@ -154,7 +147,7 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
             // 6. Dispatch into authoritative Cognitive Cycle pipeline
             try
             {
-                var cycleResult = await _cognitiveCycleService.RunAsync(cycleContext, cancellationToken);
+                var cycleResult = await _cognitiveCycleService.RunAsync(cycleContext, linkedToken);
 
                 if (cycleResult.Status is CharacterCognitiveCycleStatus.Failed
                     or CharacterCognitiveCycleStatus.ConcurrencyConflict
@@ -168,14 +161,25 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
                         cycleResult.Status,
                         worldEvent.CharacterId);
 
-                    await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, failureReason, _systemClock.UtcNow.UtcDateTime, claimVersion, cancellationToken);
+                    try
+                    {
+                        await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, failureReason, _systemClock.UtcNow.UtcDateTime, claimVersion, linkedToken);
+                    }
+                    catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException ex)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "Stale worker failed to record failure for WorldCognitiveEvent {EventId} because claim was reclaimed (fenced out).",
+                            worldEvent.EventId);
+                    }
+
                     return WorldCognitiveEventConsumptionResult.RejectedResult(worldEvent.EventId, worldEvent.CharacterId, failureReason);
                 }
 
                 var consumedAt = _systemClock.UtcNow.UtcDateTime;
                 try
                 {
-                    await _consumptionRepository.MarkConsumedAsync(worldEvent.EventId, cycleResult.CycleId, consumedAt, claimVersion, cancellationToken);
+                    await _consumptionRepository.MarkConsumedAsync(worldEvent.EventId, cycleResult.CycleId, consumedAt, claimVersion, linkedToken);
                 }
                 catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException ex)
                 {
@@ -218,11 +222,18 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
                 {
                     await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, ex.Message, _systemClock.UtcNow.UtcDateTime, claimVersion, CancellationToken.None);
                 }
+                catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException staleEx)
+                {
+                    _logger.LogWarning(
+                        staleEx,
+                        "Stale worker could not record failure for WorldCognitiveEvent {EventId} because claim was reclaimed by another worker.",
+                        worldEvent.EventId);
+                }
                 catch (Exception markEx)
                 {
                     _logger.LogCritical(
                         markEx,
-                        "CRITICAL RECOVERY REQUIRED: Failed to persist failure state for WorldCognitiveEvent {EventId}. Record remains in InProgress state and will be reclaimed upon lease expiration.",
+                        "CRITICAL RECOVERY REQUIRED: Failed to persist failure state for WorldCognitiveEvent {EventId}. Record remains in InProgress state and will be reclaimed upon explicit recovery.",
                         worldEvent.EventId);
                 }
 

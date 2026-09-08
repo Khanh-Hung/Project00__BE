@@ -207,7 +207,10 @@ public sealed class WorldCognitiveEventConsumption
             throw new InvalidOperationException($"Cannot mark an already Consumed event as Failed (EventId: {EventId:D}).");
 
         if (expectedVersion.HasValue && expectedVersion.Value != Version)
-            return;
+        {
+            throw new InvalidOperationException(
+                $"Stale worker fencing violation for EventId '{EventId:D}'. Expected claim version {expectedVersion.Value} but entity version is {Version}.");
+        }
 
         State = EventConsumptionState.Failed;
         FailureReason = reason;

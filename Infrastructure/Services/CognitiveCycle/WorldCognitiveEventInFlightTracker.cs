@@ -8,6 +8,7 @@ namespace Infrastructure.Services.CognitiveCycle;
 /// <summary>
 /// Thread-safe in-memory tracker preventing duplicate cognitive cycle execution
 /// for the same WorldCognitiveEvent across all consumers in the application process.
+/// Invariant: Process-local execution guard only. Not a distributed lock.
 /// </summary>
 public sealed class WorldCognitiveEventInFlightTracker : IWorldCognitiveEventInFlightTracker
 {
@@ -16,44 +17,75 @@ public sealed class WorldCognitiveEventInFlightTracker : IWorldCognitiveEventInF
 
     public static WorldCognitiveEventInFlightTracker Instance => LazyInstance.Value;
 
-    private readonly ConcurrentDictionary<Guid, byte> _inFlightEvents = new();
+    private readonly ConcurrentDictionary<Guid, InFlightExecutionScope> _inFlightScopes = new();
 
-    public bool TryTrack(Guid eventId, out IDisposable? registration)
+    public bool TryTrack(Guid eventId, out IWorldCognitiveEventExecutionScope? scope)
     {
-        if (_inFlightEvents.TryAdd(eventId, 0))
+        var candidate = new InFlightExecutionScope(this, eventId);
+        if (_inFlightScopes.TryAdd(eventId, candidate))
         {
-            registration = new InFlightRegistration(this, eventId);
+            scope = candidate;
             return true;
         }
 
-        registration = null;
+        candidate.Dispose();
+        scope = null;
         return false;
     }
 
-    public bool IsInFlight(Guid eventId) => _inFlightEvents.ContainsKey(eventId);
+    public bool IsInFlight(Guid eventId) => _inFlightScopes.ContainsKey(eventId);
+
+    public void Invalidate(Guid eventId)
+    {
+        if (_inFlightScopes.TryGetValue(eventId, out var existingScope))
+        {
+            existingScope.Cancel();
+        }
+    }
 
     private void Remove(Guid eventId)
     {
-        _inFlightEvents.TryRemove(eventId, out _);
+        _inFlightScopes.TryRemove(eventId, out _);
     }
 
-    private sealed class InFlightRegistration : IDisposable
+    private sealed class InFlightExecutionScope : IWorldCognitiveEventExecutionScope
     {
         private readonly WorldCognitiveEventInFlightTracker _tracker;
-        private readonly Guid _eventId;
+        private readonly CancellationTokenSource _cts = new();
         private int _disposed;
+        private int _cancelled;
 
-        public InFlightRegistration(WorldCognitiveEventInFlightTracker tracker, Guid eventId)
+        public Guid EventId { get; }
+        public CancellationToken CancellationToken => _cts.Token;
+        public bool IsStale => Volatile.Read(ref _cancelled) == 1;
+
+        public InFlightExecutionScope(WorldCognitiveEventInFlightTracker tracker, Guid eventId)
         {
             _tracker = tracker;
-            _eventId = eventId;
+            EventId = eventId;
+        }
+
+        public void Cancel()
+        {
+            if (Interlocked.Exchange(ref _cancelled, 1) == 0)
+            {
+                try
+                {
+                    _cts.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Ignore if already disposed
+                }
+            }
         }
 
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
-                _tracker.Remove(_eventId);
+                _tracker.Remove(EventId);
+                _cts.Dispose();
             }
         }
     }
