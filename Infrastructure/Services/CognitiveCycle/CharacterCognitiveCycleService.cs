@@ -72,6 +72,8 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         CharacterCognitiveCycleContext context,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (context == null)
         {
             throw new ArgumentNullException(nameof(context));
@@ -193,6 +195,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             {
                 personality = await _personalityRepository.GetOrCreateDefaultAsync(characterId, cancellationToken);
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
@@ -258,6 +264,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             {
                 relationshipContext = await _relationshipRetrievalService.RetrieveRelationshipAsync(characterId, cognitiveEvent, cancellationToken);
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
@@ -290,6 +300,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             try
             {
                 memoryContext = await _memoryRetrievalService.RetrieveRelevantAsync(characterId, basePerceptionContext, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -374,6 +388,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         }
 
         // 9.5 Safety / Policy Gate Evaluation (PR52: Mandatory execution boundary)
+        cancellationToken.ThrowIfCancellationRequested();
         var safetyDecision = await _safetyGate.EvaluateAsync(characterId, actionProposal.Proposal, cancellationToken);
         if (!safetyDecision.IsAllowed)
         {
@@ -398,6 +413,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         }
 
         // 10. Action Execution (PR44)
+        cancellationToken.ThrowIfCancellationRequested();
         var executionContext = new CharacterActionExecutionContext(
             ExecutionId: executionId,
             ExecutedAtUtc: triggeredAtUtc
@@ -473,7 +489,20 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         var resultWithRelationship = await AttachRelationshipFeedbackAsync(context, resultWithMemory, cancellationToken);
 
         // 14. Persist Personality Adaptation (PR49: Independent identity, threshold accumulation, error does not roll back state)
-        return await AttachPersonalityAdaptationAsync(context, resultWithRelationship, cancellationToken);
+        var finalResult = await AttachPersonalityAdaptationAsync(context, resultWithRelationship, cancellationToken);
+
+        _logger.LogInformation(
+            "Cognitive cycle completed. CharacterId={CharacterId}, CycleId={CycleId}, ExecutionId={ExecutionId}, EventId={EventId}, StateVersionAtStart={StateVersionAtStart}, Status={Status}, ActionType={ActionType}, SafetyPolicy={SafetyPolicy}",
+            finalResult.CharacterId,
+            finalResult.CycleId,
+            finalResult.ExecutionId,
+            finalResult.Event?.EventId,
+            finalResult.StateVersionAtStart,
+            finalResult.Status,
+            finalResult.ActionProposal?.Proposal?.Type,
+            finalResult.SafetyDecision?.PolicyCode ?? "None");
+
+        return finalResult;
     }
 
     private async Task<CharacterCognitiveCycleResult> AttachMemoryFeedbackAsync(
@@ -493,6 +522,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             {
                 return result with { MemoryFeedback = feedback };
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (CharacterMemoryIdempotencyConflictException ex)
         {
@@ -547,6 +580,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             {
                 return result with { RelationshipFeedback = feedback };
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (CharacterRelationshipIdempotencyConflictException ex)
         {
@@ -605,6 +642,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                     PersonalityAdaptation = adaptations.FirstOrDefault(a => a.AdaptationTriggered) ?? adaptations.FirstOrDefault()
                 };
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (PersonalityAdaptationIdempotencyConflictException ex)
         {

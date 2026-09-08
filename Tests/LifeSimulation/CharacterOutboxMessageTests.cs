@@ -60,7 +60,12 @@ public sealed class CharacterOutboxMessageTests : IDisposable
         var clk = clock ?? new FakeLifeSimulationClock();
         var activityRepo = new CharacterLifeActivityRepository(db);
         var outboxRepo = new CharacterOutboxRepository(db);
-        var service = new LifeSimulationService(activityRepo, outboxRepo, clk);
+        var service = new LifeSimulationService(
+            activityRepo,
+            outboxRepo,
+            clk,
+            new Infrastructure.Services.Time.SystemClock(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<LifeSimulationService>.Instance);
         return (activityRepo, outboxRepo, service, clk);
     }
 
@@ -832,8 +837,8 @@ public sealed class CharacterOutboxMessageTests : IDisposable
 
         // Deterministically pre-insert an outbox record with conflicting payload for the exact start event
         var raw = $"LifeSimEvent:{tickId:D}:{activity.Id:D}:ActivityStarted";
-        var hash = System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(raw));
-        var deterministicEventId = new Guid(hash);
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw));
+        var deterministicEventId = new Guid(hash.AsSpan(0, 16));
 
         // Pre-insert valid canonical message with divergent activity type
         var poisonMsg = CreateValidMessage(

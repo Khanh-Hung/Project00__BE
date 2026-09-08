@@ -59,6 +59,7 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
         CharacterCognitiveCycleResult cycleResult,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(cycleContext);
         ArgumentNullException.ThrowIfNull(cycleResult);
 
@@ -218,6 +219,10 @@ public sealed class CharacterMemoryFeedbackService : ICharacterMemoryFeedbackSer
                 memoryId, cycleContext.CharacterId, cycleContext.ExecutionId);
 
             return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

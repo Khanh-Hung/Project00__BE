@@ -13,6 +13,11 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
     public GenericRepository(CoreDbContext dbContext)
     {
         DbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        if (DbContext.Model.FindEntityType(typeof(TEntity)) == null)
+        {
+            throw new InvalidOperationException(
+                $"Entity type '{typeof(TEntity).Name}' is not mapped in CoreDbContext. Verify that the correct UnitOfWork/DbContext is being used.");
+        }
     }
 
     public async Task<TEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -37,7 +42,11 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
 
     public async Task AddAsync(TEntity entity, CancellationToken ct = default)
     {
-        await DbContext.Set<TEntity>().AddAsync(entity, ct);
+        var entry = DbContext.Entry(entity);
+        if (entry.State == EntityState.Detached)
+        {
+            await DbContext.Set<TEntity>().AddAsync(entity, ct);
+        }
     }
 
     public void Update(TEntity entity)

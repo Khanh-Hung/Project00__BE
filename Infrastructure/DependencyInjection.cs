@@ -50,8 +50,10 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<Application.Abstractions.Data.IIdentityUnitOfWork, IdentityUnitOfWork>();
 
-        // 3. Add Auth Services (Hasher & JWT) and DateTime Provider
-        services.AddSingleton<Domain.Common.DateTimes.IDateTimeProvider, Domain.Common.DateTimes.SystemDateTimeProvider>();
+        // 3. Add Auth Services (Hasher & JWT) and Unified System Clock / DateTime Provider
+        services.AddSingleton<Infrastructure.Services.Time.SystemClock>();
+        services.AddSingleton<Application.Abstractions.Time.ISystemClock>(sp => sp.GetRequiredService<Infrastructure.Services.Time.SystemClock>());
+        services.AddSingleton<Domain.Common.DateTimes.IDateTimeProvider>(sp => sp.GetRequiredService<Infrastructure.Services.Time.SystemClock>());
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 

@@ -31,6 +31,7 @@ public sealed class CharacterRelationshipRetrievalService : ICharacterRelationsh
         CharacterCognitiveEvent? cognitiveEvent,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (characterId == Guid.Empty)
         {
             throw new ArgumentException("CharacterId cannot be empty.", nameof(characterId));
@@ -61,6 +62,10 @@ public sealed class CharacterRelationshipRetrievalService : ICharacterRelationsh
                 Affection: relationship.Affection,
                 Familiarity: relationship.Familiarity
             );
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
