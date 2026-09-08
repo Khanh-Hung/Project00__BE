@@ -112,19 +112,60 @@ public sealed class CharacterGoalService : ICharacterGoalService
 
         var actionTypeStr = actionExecution.ActionType?.ToString() ?? string.Empty;
 
-        // 1. Semantic alignment check between Goal and ActionExecution
-        int progressDelta = _goalPolicy.EvaluateActionProgress(goalContext.GoalKey, actionTypeStr);
+        // 1. Authoritative DB load: load genuine CharacterGoal from persistence first
+        var authoritativeGoal = await _dbContext.CharacterGoals
+            .FirstOrDefaultAsync(g => g.Id == goalContext.GoalId, ct);
 
-        // 2. Durable DB Idempotency Check: query transition ledger for (GoalId, ExecutionId)
+        if (authoritativeGoal == null)
+        {
+            _logger.LogWarning(
+                "[CharacterGoalService] Goal {GoalId} not found when applying progress feedback.",
+                goalContext.GoalId);
+            return null;
+        }
+
+        if (authoritativeGoal.CharacterId != characterId)
+        {
+            _logger.LogWarning(
+                "[CharacterGoalService] Goal {GoalId} character mismatch (Expected={Expected}, Actual={Actual}).",
+                goalContext.GoalId, characterId, authoritativeGoal.CharacterId);
+            return null;
+        }
+
+        // 2. Invariant Guard: Reject divergent caller-injected GoalKey
+        if (!string.Equals(goalContext.GoalKey, authoritativeGoal.GoalKey, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "[CharacterGoalService] Goal {GoalId} key mismatch. Caller provided '{CallerKey}' but authoritative GoalKey is '{AuthoritativeKey}'. Rejecting caller context.",
+                goalContext.GoalId, goalContext.GoalKey, authoritativeGoal.GoalKey);
+
+            throw new InvalidOperationException(
+                $"GoalContext GoalKey '{goalContext.GoalKey}' does not match authoritative GoalKey '{authoritativeGoal.GoalKey}' for GoalId '{authoritativeGoal.Id}'.");
+        }
+
+        if (authoritativeGoal.Status == CharacterGoalStatus.Completed)
+        {
+            throw new InvalidOperationException($"Completed goal '{authoritativeGoal.Id}' cannot receive further progress.");
+        }
+
+        if (authoritativeGoal.Status != CharacterGoalStatus.Active)
+        {
+            return null;
+        }
+
+        // 3. Semantic alignment derived strictly from authoritative Goal entity
+        int progressDelta = _goalPolicy.EvaluateActionProgress(authoritativeGoal.GoalKey, actionTypeStr);
+
+        // 4. Durable DB Idempotency Check: query transition ledger for (GoalId, ExecutionId)
         var existingProgress = await _dbContext.CharacterGoalExecutionProgresses
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.GoalId == goalContext.GoalId && p.ExecutionId == executionId, ct);
+            .FirstOrDefaultAsync(p => p.GoalId == authoritativeGoal.Id && p.ExecutionId == executionId, ct);
 
         if (existingProgress != null)
         {
             var expectedFingerprint = CharacterGoalExecutionProgress.ComputeFingerprint(
                 characterId,
-                goalContext.GoalId,
+                authoritativeGoal.Id,
                 executionId,
                 actionTypeStr,
                 progressDelta);
@@ -133,10 +174,10 @@ public sealed class CharacterGoalService : ICharacterGoalService
             {
                 _logger.LogWarning(
                     "[CharacterGoalService] Idempotency conflict for GoalId={GoalId}, ExecutionId={ExecutionId}. Existing fingerprint '{Existing}' != incoming '{Incoming}'.",
-                    goalContext.GoalId, executionId, existingProgress.OperationFingerprint, expectedFingerprint);
+                    authoritativeGoal.Id, executionId, existingProgress.OperationFingerprint, expectedFingerprint);
 
                 throw new CharacterGoalIdempotencyConflictException(
-                    goalContext.GoalId,
+                    authoritativeGoal.Id,
                     executionId,
                     existingProgress.OperationFingerprint,
                     expectedFingerprint,
@@ -145,14 +186,14 @@ public sealed class CharacterGoalService : ICharacterGoalService
 
             _logger.LogInformation(
                 "[CharacterGoalService] Idempotent duplicate progress suppressed for GoalId={GoalId}, ExecutionId={ExecutionId}. Reusing recorded feedback.",
-                goalContext.GoalId, executionId);
+                authoritativeGoal.Id, executionId);
 
             var currentGoal = await _dbContext.CharacterGoals
                 .AsNoTracking()
-                .FirstOrDefaultAsync(g => g.Id == goalContext.GoalId, ct);
+                .FirstOrDefaultAsync(g => g.Id == authoritativeGoal.Id, ct);
 
             return new CharacterGoalProgressFeedback(
-                GoalId: goalContext.GoalId,
+                GoalId: authoritativeGoal.Id,
                 ExecutionId: executionId,
                 PreviousProgress: existingProgress.OldProgress,
                 NewProgress: existingProgress.NewProgress,
@@ -161,36 +202,16 @@ public sealed class CharacterGoalService : ICharacterGoalService
             );
         }
 
-        // 3. Concurrency retry loop for applying progress to Goal aggregate and persisting audit record
+        // 5. Concurrency retry loop for applying progress to Goal aggregate and persisting audit record
         for (var attempt = 1; attempt <= MaxConcurrencyRetries; attempt++)
         {
             try
             {
-                var goal = await _dbContext.CharacterGoals
-                    .FirstOrDefaultAsync(g => g.Id == goalContext.GoalId, ct);
+                var goal = attempt == 1
+                    ? authoritativeGoal
+                    : await _dbContext.CharacterGoals.FirstOrDefaultAsync(g => g.Id == authoritativeGoal.Id, ct);
 
-                if (goal == null)
-                {
-                    _logger.LogWarning(
-                        "[CharacterGoalService] Goal {GoalId} not found when applying progress feedback.",
-                        goalContext.GoalId);
-                    return null;
-                }
-
-                if (goal.CharacterId != characterId)
-                {
-                    _logger.LogWarning(
-                        "[CharacterGoalService] Goal {GoalId} character mismatch (Expected={Expected}, Actual={Actual}).",
-                        goalContext.GoalId, characterId, goal.CharacterId);
-                    return null;
-                }
-
-                if (goal.Status == CharacterGoalStatus.Completed)
-                {
-                    throw new InvalidOperationException($"Completed goal '{goal.Id}' cannot receive further progress.");
-                }
-
-                if (goal.Status != CharacterGoalStatus.Active)
+                if (goal == null || goal.CharacterId != characterId || goal.Status != CharacterGoalStatus.Active)
                 {
                     return null;
                 }
@@ -235,7 +256,7 @@ public sealed class CharacterGoalService : ICharacterGoalService
             {
                 _logger.LogWarning(ex,
                     "[CharacterGoalService] Concurrency conflict on attempt {Attempt} for GoalId={GoalId}. Retrying...",
-                    attempt, goalContext.GoalId);
+                    attempt, authoritativeGoal.Id);
 
                 _dbContext.ChangeTracker.Clear();
             }
@@ -245,19 +266,19 @@ public sealed class CharacterGoalService : ICharacterGoalService
                 {
                     _logger.LogInformation(ex,
                         "[CharacterGoalService] Concurrent execution progress detected for GoalId={GoalId}, ExecutionId={ExecutionId}. Reloading recorded result.",
-                        goalContext.GoalId, executionId);
+                        authoritativeGoal.Id, executionId);
 
                     _dbContext.ChangeTracker.Clear();
 
                     var concurrentRecord = await _dbContext.CharacterGoalExecutionProgresses
                         .AsNoTracking()
-                        .FirstOrDefaultAsync(p => p.GoalId == goalContext.GoalId && p.ExecutionId == executionId, ct);
+                        .FirstOrDefaultAsync(p => p.GoalId == authoritativeGoal.Id && p.ExecutionId == executionId, ct);
 
                     if (concurrentRecord != null)
                     {
                         var expectedFingerprint = CharacterGoalExecutionProgress.ComputeFingerprint(
                             characterId,
-                            goalContext.GoalId,
+                            authoritativeGoal.Id,
                             executionId,
                             actionTypeStr,
                             progressDelta);
@@ -265,7 +286,7 @@ public sealed class CharacterGoalService : ICharacterGoalService
                         if (concurrentRecord.OperationFingerprint != expectedFingerprint)
                         {
                             throw new CharacterGoalIdempotencyConflictException(
-                                goalContext.GoalId,
+                                authoritativeGoal.Id,
                                 executionId,
                                 concurrentRecord.OperationFingerprint,
                                 expectedFingerprint,
@@ -274,10 +295,10 @@ public sealed class CharacterGoalService : ICharacterGoalService
 
                         var currentGoal = await _dbContext.CharacterGoals
                             .AsNoTracking()
-                            .FirstOrDefaultAsync(g => g.Id == goalContext.GoalId, ct);
+                            .FirstOrDefaultAsync(g => g.Id == authoritativeGoal.Id, ct);
 
                         return new CharacterGoalProgressFeedback(
-                            GoalId: goalContext.GoalId,
+                            GoalId: authoritativeGoal.Id,
                             ExecutionId: executionId,
                             PreviousProgress: concurrentRecord.OldProgress,
                             NewProgress: concurrentRecord.NewProgress,
@@ -293,7 +314,7 @@ public sealed class CharacterGoalService : ICharacterGoalService
 
         _logger.LogError(
             "[CharacterGoalService] Concurrency retries exhausted for GoalId={GoalId}, ExecutionId={ExecutionId}.",
-            goalContext.GoalId, executionId);
+            authoritativeGoal.Id, executionId);
 
         return null;
     }

@@ -235,4 +235,31 @@ public sealed class CharacterGoalDomainTests
         Assert.Equal(0.50f, goal.Progress);
         Assert.Equal(50, goal.ProgressPercentage);
     }
+
+    [Fact]
+    public void GoalProgress_DistinctSemantics_RecordProgressUsesContribution_UpdateProgressUsesPercentage()
+    {
+        var charId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        // 1. Legacy PR34 contribution API: adds raw domain contribution quantity to CurrentValue
+        var legacyGoal = new CharacterGoal(charId, "DomainContributionTask", CharacterGoalType.SkillDevelopment, 2000, now);
+        legacyGoal.RecordProgress(500, now);
+        Assert.Equal(500, legacyGoal.CurrentValue); // Raw contribution accumulated
+        Assert.Equal(0.25f, legacyGoal.Progress);
+        Assert.Equal(25, legacyGoal.ProgressPercentage);
+
+        // 2. PR55 cognitive goal percentage API: sets percentage directly on TargetValue=100
+        var cognitiveGoal = CharacterGoal.Create(charId, "CognitiveGoal", now);
+        cognitiveGoal.UpdateProgress(25, now);
+        Assert.Equal(25, cognitiveGoal.ProgressPercentage);
+        Assert.Equal(0.25f, cognitiveGoal.Progress);
+        Assert.Equal(25, cognitiveGoal.CurrentValue); // 100 * 25 / 100
+
+        // 3. UpdateProgress on arbitrary TargetValue scales percentage rather than treating value as additive contribution
+        var scaledGoal = new CharacterGoal(charId, "ScaledGoal", CharacterGoalType.Lifestyle, 1000, now);
+        scaledGoal.UpdateProgress(25, now);
+        Assert.Equal(0.25f, scaledGoal.Progress);
+        Assert.Equal(250, scaledGoal.CurrentValue); // Scaled from percentage: 1000 * 25 / 100 = 250
+    }
 }

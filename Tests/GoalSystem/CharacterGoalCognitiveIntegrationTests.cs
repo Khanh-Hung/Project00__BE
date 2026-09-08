@@ -866,6 +866,169 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task GoalProgress_CallerInjectedGoalKey_CannotInfluenceProgressDelta()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        Guid goalId;
+        using (var db = new CoreDbContext(_options))
+        {
+            var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active, initialProgress: 0);
+            await db.CharacterGoals.AddAsync(goal);
+            await db.SaveChangesAsync();
+            goalId = goal.Id;
+        }
+
+        using (var db = new CoreDbContext(_options))
+        {
+            var repo = new CharacterGoalRepository(db);
+            var service = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+
+            // Caller provides valid GoalId but injects mismatched GoalKey "Rest" to manipulate progress delta
+            var injectedContext = new CharacterGoalContext(goalId, "Rest", CharacterGoalStatus.Active, 80, 0);
+            var restAction = CreateAppliedActionResult(execId, charId, ActionType.Rest);
+
+            // Must reject mismatched GoalContext explicitly
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.ApplyProgressFeedbackAsync(charId, execId, restAction, injectedContext, FixedNow));
+
+            Assert.Contains("does not match authoritative GoalKey", ex.Message);
+        }
+    }
+
+    [Fact]
+    public async Task GoalProgress_AuthoritativeGoalKeyDeterminesProgressDelta()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        Guid goalId;
+        using (var db = new CoreDbContext(_options))
+        {
+            var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active, initialProgress: 0);
+            await db.CharacterGoals.AddAsync(goal);
+            await db.SaveChangesAsync();
+            goalId = goal.Id;
+        }
+
+        using (var db = new CoreDbContext(_options))
+        {
+            var repo = new CharacterGoalRepository(db);
+            var service = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+
+            // Matching GoalContext with authoritative GoalKey "BuildRelationship"
+            var goalContext = new CharacterGoalContext(goalId, "BuildRelationship", CharacterGoalStatus.Active, 80, 0);
+            var socializeAction = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+
+            var feedback = await service.ApplyProgressFeedbackAsync(charId, execId, socializeAction, goalContext, FixedNow);
+
+            Assert.NotNull(feedback);
+            Assert.False(feedback.IsDuplicateExecution);
+            Assert.Equal(0, feedback.PreviousProgress);
+            Assert.Equal(25, feedback.NewProgress); // Socialize yields +25 for BuildRelationship
+            Assert.Equal(goalId, feedback.GoalId);
+        }
+    }
+
+    [Fact]
+    public async Task GoalProgress_ReplayValidation_UsesAuthoritativeGoalSemantics()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        Guid goalId;
+        using (var db = new CoreDbContext(_options))
+        {
+            var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active, initialProgress: 0);
+            await db.CharacterGoals.AddAsync(goal);
+            await db.SaveChangesAsync();
+            goalId = goal.Id;
+        }
+
+        // 1. Initial execution records progress (+25)
+        using (var db = new CoreDbContext(_options))
+        {
+            var repo = new CharacterGoalRepository(db);
+            var service = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+            var goalContext = new CharacterGoalContext(goalId, "BuildRelationship", CharacterGoalStatus.Active, 80, 0);
+            var action = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+
+            var res1 = await service.ApplyProgressFeedbackAsync(charId, execId, action, goalContext, FixedNow);
+            Assert.NotNull(res1);
+            Assert.False(res1.IsDuplicateExecution);
+            Assert.Equal(25, res1.NewProgress);
+        }
+
+        // 2. Replay with identical executionId but caller alters GoalKey: must be rejected
+        using (var db = new CoreDbContext(_options))
+        {
+            var repo = new CharacterGoalRepository(db);
+            var service = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+            var alteredContext = new CharacterGoalContext(goalId, "Rest", CharacterGoalStatus.Active, 80, 25);
+            var action = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.ApplyProgressFeedbackAsync(charId, execId, action, alteredContext, FixedNow));
+
+            Assert.Contains("does not match authoritative GoalKey", ex.Message);
+        }
+
+        // 3. Replay with matching authoritative GoalKey succeeds idempotently
+        using (var db = new CoreDbContext(_options))
+        {
+            var repo = new CharacterGoalRepository(db);
+            var service = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+            var matchingContext = new CharacterGoalContext(goalId, "BuildRelationship", CharacterGoalStatus.Active, 80, 25);
+            var action = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+
+            var res3 = await service.ApplyProgressFeedbackAsync(charId, execId, action, matchingContext, FixedNow);
+            Assert.NotNull(res3);
+            Assert.True(res3.IsDuplicateExecution);
+            Assert.Equal(25, res3.NewProgress);
+        }
+    }
+
+    [Fact]
+    public async Task GoalProgress_DivergentCallerGoalContext_DoesNotMutateGoal()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        Guid goalId;
+        using (var db = new CoreDbContext(_options))
+        {
+            var goal = new CharacterGoal(charId, "BuildRelationship", DateTimeOffset.UtcNow, initialStatus: CharacterGoalStatus.Active, initialProgress: 10);
+            await db.CharacterGoals.AddAsync(goal);
+            await db.SaveChangesAsync();
+            goalId = goal.Id;
+        }
+
+        using (var db = new CoreDbContext(_options))
+        {
+            var repo = new CharacterGoalRepository(db);
+            var service = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), NullLogger<CharacterGoalService>.Instance);
+
+            var divergentContext = new CharacterGoalContext(goalId, "Rest", CharacterGoalStatus.Active, 50, 10);
+            var action = CreateAppliedActionResult(execId, charId, ActionType.Rest);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.ApplyProgressFeedbackAsync(charId, execId, action, divergentContext, FixedNow));
+        }
+
+        // Verify DB progress is untouched
+        using (var db = new CoreDbContext(_options))
+        {
+            var repo = new CharacterGoalRepository(db);
+            var untouched = await repo.GetByIdAsync(goalId);
+            Assert.NotNull(untouched);
+            Assert.Equal(10, untouched.ProgressPercentage);
+            Assert.Equal(0.10f, untouched.Progress);
+            Assert.Equal(CharacterGoalStatus.Active, untouched.Status);
+        }
+    }
+
     private sealed class FakeBlockingSafetyGate : IActionSafetyGate
     {
         private readonly string _policyCode;
