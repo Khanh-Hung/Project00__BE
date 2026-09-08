@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 using Domain.Enums;
 
 namespace Domain.Policies;
@@ -202,7 +202,7 @@ public static class VisualContinuityPolicy
             weather = intentWeather.Trim();
             weatherSource = "CurrentIntent";
         }
-        else if (transitionType == SceneTransitionType.SameScene && previousState != null && !string.IsNullOrWhiteSpace(previousState.Weather))
+        else if ((transitionType == SceneTransitionType.SameScene || transitionType == SceneTransitionType.SceneReentry) && previousState != null && !string.IsNullOrWhiteSpace(previousState.Weather))
         {
             weather = previousState.Weather;
             weatherSource = "PreviousSceneState";
@@ -220,7 +220,7 @@ public static class VisualContinuityPolicy
             timeOfDay = intentTimeOfDay.Trim();
             timeSource = "CurrentIntent";
         }
-        else if ((transitionType == SceneTransitionType.SameScene || transitionType == SceneTransitionType.SameLocation) && previousState != null && !string.IsNullOrWhiteSpace(previousState.TimeOfDay))
+        else if ((transitionType == SceneTransitionType.SameScene || transitionType == SceneTransitionType.SameLocation || transitionType == SceneTransitionType.SceneReentry) && previousState != null && !string.IsNullOrWhiteSpace(previousState.TimeOfDay))
         {
             timeOfDay = previousState.TimeOfDay;
             timeSource = "PreviousSceneState";
@@ -238,7 +238,7 @@ public static class VisualContinuityPolicy
             lighting = intentLighting.Trim();
             lightingSource = "CurrentIntent";
         }
-        else if (transitionType == SceneTransitionType.SameScene && previousState != null && !string.IsNullOrWhiteSpace(previousState.Lighting))
+        else if ((transitionType == SceneTransitionType.SameScene || transitionType == SceneTransitionType.SceneReentry) && previousState != null && !string.IsNullOrWhiteSpace(previousState.Lighting))
         {
             lighting = previousState.Lighting;
             lightingSource = "PreviousSceneState";

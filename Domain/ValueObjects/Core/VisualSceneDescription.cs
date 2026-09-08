@@ -18,6 +18,12 @@ public sealed record VisualSceneDescription
     public string? Atmosphere { get; init; }
     public ImmutableArray<string> EnglishPromptTags { get; init; }
 
+    [System.Text.Json.Serialization.JsonConstructor]
+    public VisualSceneDescription()
+    {
+        EnglishPromptTags = ImmutableArray<string>.Empty;
+    }
+
     public VisualSceneDescription(
         string? shotType = null,
         string? cameraAngle = null,

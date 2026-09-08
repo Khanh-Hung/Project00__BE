@@ -17,16 +17,22 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
 
     public async Task<TEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
+        if (DbContext.Model.FindEntityType(typeof(TEntity)) == null)
+            return null;
         return await DbContext.Set<TEntity>().FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
     public async Task<TEntity?> GetAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken ct = default)
     {
+        if (DbContext.Model.FindEntityType(typeof(TEntity)) == null)
+            return null;
         return await DbContext.Set<TEntity>().FirstOrDefaultAsync(predicate, ct);
     }
 
     public async Task<IReadOnlyList<TEntity>> GetAllAsync(Expression<Func<TEntity, bool>>? predicate = null, CancellationToken ct = default)
     {
+        if (DbContext.Model.FindEntityType(typeof(TEntity)) == null)
+            return Array.Empty<TEntity>();
         IQueryable<TEntity> query = DbContext.Set<TEntity>();
         if (predicate != null)
         {
@@ -37,7 +43,11 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
 
     public async Task AddAsync(TEntity entity, CancellationToken ct = default)
     {
-        await DbContext.Set<TEntity>().AddAsync(entity, ct);
+        var entry = DbContext.Entry(entity);
+        if (entry.State == EntityState.Detached)
+        {
+            await DbContext.Set<TEntity>().AddAsync(entity, ct);
+        }
     }
 
     public void Update(TEntity entity)

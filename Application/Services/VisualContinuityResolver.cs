@@ -1,4 +1,4 @@
-﻿using Application.Common.Exceptions;
+using Application.Common.Exceptions;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Entities;
@@ -223,7 +223,7 @@ public sealed class VisualContinuityResolver : IVisualContinuityResolver
         }
 
         // 10. Construct Resolved CharacterVisualState and SceneVisualState
-        uint currentVersion = latestSessionState?.Version ?? 0;
+        uint currentVersion = reenteredHistoricalState?.Version ?? (latestSessionState?.SceneKey == sceneKey ? latestSessionState.Version : 0);
         uint nextVersion = currentVersion + 1;
 
         var characterVisualState = new CharacterVisualState(

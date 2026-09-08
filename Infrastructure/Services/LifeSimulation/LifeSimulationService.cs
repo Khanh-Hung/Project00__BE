@@ -12,6 +12,8 @@ using Domain.Entities;
 using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
+using Microsoft.Extensions.Logging;
+
 namespace Infrastructure.Services.LifeSimulation;
 
 public sealed class LifeSimulationService : ILifeSimulationService
@@ -19,25 +21,36 @@ public sealed class LifeSimulationService : ILifeSimulationService
     private readonly ICharacterLifeActivityRepository _repository;
     private readonly ICharacterOutboxRepository _outboxRepository;
     private readonly ILifeSimulationClock _clock;
+    private readonly ISystemClock _systemClock;
+    private readonly ILogger<LifeSimulationService>? _logger;
 
     public LifeSimulationService(
         ICharacterLifeActivityRepository repository,
         ICharacterOutboxRepository outboxRepository,
-        ILifeSimulationClock clock)
+        ILifeSimulationClock clock,
+        ISystemClock? systemClock = null,
+        ILogger<LifeSimulationService>? logger = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _outboxRepository = outboxRepository ?? throw new ArgumentNullException(nameof(outboxRepository));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _systemClock = systemClock ?? new Infrastructure.Services.Time.SystemClock();
+        _logger = logger;
     }
 
     public async Task<LifeSimulationTickResult> TickAsync(
         CharacterLifeSimulationContext context,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(context);
 
         if (context.CharacterId == Guid.Empty)
             throw new ArgumentException("CharacterId cannot be empty.", nameof(context));
+
+        _logger?.LogInformation(
+            "[LifeSimulationService] Tick started for CharacterId={CharacterId}, TickId={TickId}, SimTime={SimulationTimeUtc}",
+            context.CharacterId, context.TickId, context.SimulationTimeUtc);
 
         var simTime = context.SimulationTimeUtc.UtcDateTime;
         var completedActivities = new List<CharacterLifeActivity>();
@@ -51,6 +64,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
             var activeActivities = await _repository.GetActiveActivitiesAsync(context.CharacterId, ct);
             foreach (var active in activeActivities)
             {
+                ct.ThrowIfCancellationRequested();
                 if (active.PlannedEndAtUtc <= simTime)
                 {
                     active.Complete(simTime);
@@ -76,6 +90,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
             // 2. If no active activity remains, check if any scheduled activity is due
             if (currentActive == null)
             {
+                ct.ThrowIfCancellationRequested();
                 var nextScheduled = await _repository.GetNextScheduledActivityAsync(context.CharacterId, simTime, ct);
                 if (nextScheduled != null)
                 {
@@ -130,7 +145,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
 
             if (events.Count > 0)
             {
-                var now = _clock.UtcDateTime;
+                var now = _systemClock.UtcDateTime;
                 foreach (var evt in events)
                 {
                     var outboxMsg = CharacterOutboxPayload.CreateOutboxMessage(evt, createdAtUtc: now);
@@ -143,6 +158,10 @@ public sealed class LifeSimulationService : ILifeSimulationService
                 await _repository.SaveChangesAsync(ct);
             }
 
+            _logger?.LogInformation(
+                "[LifeSimulationService] Tick completed for CharacterId={CharacterId}, TickId={TickId}, Events={EventsCount}, Completed={CompletedCount}, Started={StartedCount}",
+                context.CharacterId, context.TickId, events.Count, completedActivities.Count, startedActivities.Count);
+
             return new LifeSimulationTickResult(
                 SimulationTickId: context.TickId,
                 CharacterId: context.CharacterId,
@@ -154,8 +173,13 @@ public sealed class LifeSimulationService : ILifeSimulationService
                 IsSuccess: true
             );
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (DbUpdateConcurrencyException ex)
         {
+            _logger?.LogWarning(ex, "[LifeSimulationService] Concurrency conflict during tick for CharacterId={CharacterId}, TickId={TickId}", context.CharacterId, context.TickId);
             throw new LifeSimulationConcurrencyException(context.CharacterId, null, "Optimistic concurrency conflict occurred during simulation tick.", ex);
         }
     }
@@ -168,6 +192,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
         string? metadata = null,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (characterId == Guid.Empty)
             throw new ArgumentException("CharacterId cannot be empty.", nameof(characterId));
 
@@ -192,13 +217,17 @@ public sealed class LifeSimulationService : ILifeSimulationService
                 plannedEndAtUtc: plannedEnd,
                 status: LifeActivityStatus.Scheduled,
                 metadata: metadata,
-                createdAtUtc: _clock.UtcDateTime
+                createdAtUtc: _systemClock.UtcDateTime
             );
 
             await _repository.AddAsync(activity, ct);
             await _repository.SaveChangesAsync(ct);
 
             return activity;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (DbUpdateException ex)
         {
@@ -215,6 +244,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
         string? reason = null,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var activity = await _repository.GetByIdAsync(activityId, ct)
             ?? throw new KeyNotFoundException($"CharacterLifeActivity {activityId} not found.");
 
@@ -231,7 +261,7 @@ public sealed class LifeSimulationService : ILifeSimulationService
             reason ?? $"Activity {activity.ActivityType} was cancelled."
         );
 
-        var outboxMsg = CharacterOutboxPayload.CreateOutboxMessage(cancelEvent, createdAtUtc: _clock.UtcDateTime);
+        var outboxMsg = CharacterOutboxPayload.CreateOutboxMessage(cancelEvent, createdAtUtc: _systemClock.UtcDateTime);
         await _outboxRepository.AddAsync(outboxMsg, ct);
 
         await _repository.SaveChangesAsync(ct);

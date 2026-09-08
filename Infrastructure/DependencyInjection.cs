@@ -274,6 +274,9 @@ public static class DependencyInjection
         // PR #45: Autonomous Character Cognitive Cycle
         services.AddScoped<Application.Interfaces.ICharacterCognitiveCycleService, Infrastructure.Services.CognitiveCycle.CharacterCognitiveCycleService>();
 
+        // PR #53: Unified Production System Clock
+        services.AddSingleton<Application.Abstractions.Time.ISystemClock, Infrastructure.Services.Time.SystemClock>();
+
         // PR #50: Life Simulation Foundation & PR #51: Life Simulation World Events / Outbox
         services.AddSingleton<Application.Abstractions.Time.ILifeSimulationClock, Infrastructure.Services.Time.SystemLifeSimulationClock>();
         services.AddScoped<Application.Abstractions.Data.ICharacterLifeActivityRepository, Infrastructure.Persistence.Repositories.Core.CharacterLifeActivityRepository>();

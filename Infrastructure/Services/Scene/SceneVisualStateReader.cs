@@ -112,6 +112,14 @@ public sealed class SceneVisualStateReader : ISceneVisualStateReader
                 return;
             }
 
+            // Concurrency Guard: If expectedVersion == 0 (initial insert expected), but record already exists for this revision
+            if (expectedVersion == 0 && state.SceneRevision <= existingRecord.SceneRevision)
+            {
+                _logger.LogWarning("[SceneVisualStateReader] Concurrency conflict: initial insert expected but record already exists for SessionId={SessionId}, SceneKey={SceneKey}",
+                    state.SessionId, state.SceneKey);
+                throw new DbUpdateConcurrencyException("Authoritative scene state already exists for this scene.");
+            }
+
             // Authoritative CAS Update
             if (expectedVersion > 0 && existingRecord.Version != expectedVersion)
             {

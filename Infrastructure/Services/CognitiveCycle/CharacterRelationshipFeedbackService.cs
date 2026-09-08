@@ -33,6 +33,7 @@ public sealed class CharacterRelationshipFeedbackService : ICharacterRelationshi
         CharacterCognitiveCycleResult cycleResult,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(cycleContext);
         ArgumentNullException.ThrowIfNull(cycleResult);
 
@@ -69,6 +70,10 @@ public sealed class CharacterRelationshipFeedbackService : ICharacterRelationshi
                 reason: proposal.Reason,
                 occurredAtUtc: cycleContext.TriggeredAtUtc,
                 ct: ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (CharacterRelationshipIdempotencyConflictException)
         {

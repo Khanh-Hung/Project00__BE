@@ -35,6 +35,7 @@ public sealed class CharacterMemoryRetrievalService : ICharacterMemoryRetrievalS
         CharacterPerceptionContext perceptionContext,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (characterId == Guid.Empty)
         {
             return CharacterMemoryContext.Empty;
@@ -68,6 +69,10 @@ public sealed class CharacterMemoryRetrievalService : ICharacterMemoryRetrievalS
                 .ToList();
 
             return new CharacterMemoryContext(memoryItems);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
