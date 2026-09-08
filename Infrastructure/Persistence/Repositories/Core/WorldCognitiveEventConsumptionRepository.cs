@@ -2,9 +2,11 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Abstractions.Data;
+using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.Exceptions;
+using Infrastructure.Services.CognitiveCycle;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Persistence.Repositories.Core;
@@ -12,10 +14,14 @@ namespace Infrastructure.Persistence.Repositories.Core;
 public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEventConsumptionRepository
 {
     private readonly CoreDbContext _context;
+    private readonly IWorldCognitiveEventInFlightTracker _inFlightTracker;
 
-    public WorldCognitiveEventConsumptionRepository(CoreDbContext context)
+    public WorldCognitiveEventConsumptionRepository(
+        CoreDbContext context,
+        IWorldCognitiveEventInFlightTracker? inFlightTracker = null)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _inFlightTracker = inFlightTracker ?? WorldCognitiveEventInFlightTracker.Instance;
     }
 
     public async Task<WorldCognitiveEventConsumption?> GetByEventIdAsync(Guid eventId, CancellationToken ct = default)
@@ -72,6 +78,7 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
     public async Task<(bool IsReclaimed, WorldCognitiveEventConsumption Consumption)> ReclaimAsync(
         Guid eventId,
         DateTime attemptedAtUtc,
+        TimeSpan? leaseTimeout = null,
         CancellationToken ct = default)
     {
         if (eventId == Guid.Empty)
@@ -81,12 +88,13 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
         if (existing == null)
             throw new InvalidOperationException($"Cannot reclaim non-existent WorldCognitiveEvent consumption for EventId '{eventId:D}'.");
 
-        if (existing.State == EventConsumptionState.Consumed)
-            throw new InvalidOperationException($"Cannot reclaim an already Consumed event for EventId '{eventId:D}'.");
+        var timeout = leaseTimeout ?? TimeSpan.FromMinutes(5);
+
+        // Reclaim domain aggregate method validates State != Consumed and InProgress lease expiration
+        existing.Reclaim(attemptedAtUtc, timeout);
 
         try
         {
-            existing.Reclaim(attemptedAtUtc);
             await _context.SaveChangesAsync(ct);
             return (true, existing);
         }
@@ -128,19 +136,20 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
         if (existing.State == EventConsumptionState.InProgress)
         {
             var elapsed = now - existing.LastAttemptAtUtc;
-            if (elapsed >= TimeSpan.Zero && elapsed < leaseTimeout)
+            var isInFlight = _inFlightTracker.IsInFlight(existing.EventId);
+            if (isInFlight || (elapsed >= TimeSpan.Zero && elapsed < leaseTimeout))
             {
-                // Another worker is actively processing within the lease window
+                // Another worker is actively processing in-flight or within the lease window
                 return (false, existing);
             }
 
-            // Elapsed >= leaseTimeout: worker crashed or timed out -> fall through to reclaim
+            // Elapsed >= leaseTimeout and not in-flight: worker crashed or timed out -> fall through to reclaim
         }
 
         // State is either Failed (retryable) or InProgress with expired lease (crash recovery)
         try
         {
-            existing.Reclaim(now);
+            existing.Reclaim(now, leaseTimeout);
             await _context.SaveChangesAsync(ct);
             return (true, existing);
         }
@@ -156,26 +165,47 @@ public sealed class WorldCognitiveEventConsumptionRepository : IWorldCognitiveEv
         }
     }
 
-    public async Task MarkConsumedAsync(Guid eventId, Guid cycleId, DateTime consumedAtUtc, CancellationToken ct = default)
+    public async Task MarkConsumedAsync(
+        Guid eventId,
+        Guid cycleId,
+        DateTime consumedAtUtc,
+        uint? expectedVersion = null,
+        CancellationToken ct = default)
     {
         var record = await _context.WorldCognitiveEventConsumptions
             .FirstOrDefaultAsync(c => c.EventId == eventId, ct);
 
-        if (record != null)
+        if (record == null)
+            throw new InvalidOperationException($"Cannot mark non-existent WorldCognitiveEvent consumption as Consumed (EventId: {eventId:D}).");
+
+        if (expectedVersion.HasValue && record.Version != expectedVersion.Value)
         {
-            record.MarkConsumed(cycleId, consumedAtUtc);
-            await _context.SaveChangesAsync(ct);
+            throw new DbUpdateConcurrencyException(
+                $"Stale worker fence violation for EventId '{eventId:D}'. Expected claim version {expectedVersion.Value} but found {record.Version}.");
         }
+
+        record.MarkConsumed(cycleId, consumedAtUtc, expectedVersion);
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task MarkFailedAsync(Guid eventId, string failureReason, DateTime failedAtUtc, CancellationToken ct = default)
+    public async Task MarkFailedAsync(
+        Guid eventId,
+        string failureReason,
+        DateTime failedAtUtc,
+        uint? expectedVersion = null,
+        CancellationToken ct = default)
     {
         var record = await _context.WorldCognitiveEventConsumptions
             .FirstOrDefaultAsync(c => c.EventId == eventId, ct);
 
         if (record != null)
         {
-            record.MarkFailed(failureReason, failedAtUtc);
+            if (expectedVersion.HasValue && record.Version != expectedVersion.Value)
+            {
+                return;
+            }
+
+            record.MarkFailed(failureReason, failedAtUtc, expectedVersion);
             await _context.SaveChangesAsync(ct);
         }
     }

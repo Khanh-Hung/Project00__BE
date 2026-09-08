@@ -140,11 +140,24 @@ public sealed class WorldCognitiveEventConsumption
 
     /// <summary>
     /// Reclaims an event in Failed state for retry, or an event in InProgress state whose processing lease expired (crash recovery).
+    /// Invariant: An active InProgress event cannot be reclaimed before its lease expires.
+    /// Invariant: A Consumed event is terminal and can never be reclaimed.
     /// </summary>
-    public void Reclaim(DateTime attemptedAtUtc)
+    public void Reclaim(DateTime attemptedAtUtc, TimeSpan? leaseTimeout = null)
     {
         if (State == EventConsumptionState.Consumed)
             throw new InvalidOperationException($"Cannot reclaim an already Consumed event (EventId: {EventId:D}).");
+
+        if (State == EventConsumptionState.InProgress)
+        {
+            var timeout = leaseTimeout ?? TimeSpan.FromMinutes(5);
+            var elapsed = attemptedAtUtc - LastAttemptAtUtc;
+            if (elapsed >= TimeSpan.Zero && elapsed < timeout)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot reclaim active InProgress claim within lease window of {timeout.TotalMinutes} minutes (EventId: {EventId:D}).");
+            }
+        }
 
         State = EventConsumptionState.InProgress;
         LastAttemptAtUtc = attemptedAtUtc;
@@ -156,14 +169,21 @@ public sealed class WorldCognitiveEventConsumption
     /// <summary>
     /// Transitions consumption claim to Consumed state upon successful Cognitive Cycle execution.
     /// Invariant: CycleId must be valid and distinct from EventId.
+    /// Invariant: Stale workers whose claim version has advanced are fenced out.
     /// </summary>
-    public void MarkConsumed(Guid cycleId, DateTime consumedAtUtc)
+    public void MarkConsumed(Guid cycleId, DateTime consumedAtUtc, uint? expectedVersion = null)
     {
         if (cycleId == Guid.Empty)
             throw new ArgumentException("CycleId cannot be empty.", nameof(cycleId));
 
         if (cycleId == EventId)
             throw new InvalidOperationException($"CycleId '{cycleId:D}' must be distinct from EventId.");
+
+        if (expectedVersion.HasValue && expectedVersion.Value != Version)
+        {
+            throw new InvalidOperationException(
+                $"Stale worker fencing violation for EventId '{EventId:D}'. Expected claim version {expectedVersion.Value} but entity version is {Version}.");
+        }
 
         if (State == EventConsumptionState.Consumed)
             return;
@@ -181,10 +201,13 @@ public sealed class WorldCognitiveEventConsumption
     /// <summary>
     /// Transitions consumption claim to Failed state when cycle execution or processing fails.
     /// </summary>
-    public void MarkFailed(string reason, DateTime failedAtUtc)
+    public void MarkFailed(string reason, DateTime failedAtUtc, uint? expectedVersion = null)
     {
         if (State == EventConsumptionState.Consumed)
             throw new InvalidOperationException($"Cannot mark an already Consumed event as Failed (EventId: {EventId:D}).");
+
+        if (expectedVersion.HasValue && expectedVersion.Value != Version)
+            return;
 
         State = EventConsumptionState.Failed;
         FailureReason = reason;

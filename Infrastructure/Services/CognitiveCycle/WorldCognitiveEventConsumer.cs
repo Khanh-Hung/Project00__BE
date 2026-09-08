@@ -29,17 +29,20 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
     private readonly ICharacterCognitiveCycleService _cognitiveCycleService;
     private readonly ISystemClock _systemClock;
     private readonly ILogger<WorldCognitiveEventConsumer> _logger;
+    private readonly IWorldCognitiveEventInFlightTracker _inFlightTracker;
 
     public WorldCognitiveEventConsumer(
         IWorldCognitiveEventConsumptionRepository consumptionRepository,
         ICharacterCognitiveCycleService cognitiveCycleService,
         ISystemClock systemClock,
-        ILogger<WorldCognitiveEventConsumer> logger)
+        ILogger<WorldCognitiveEventConsumer> logger,
+        IWorldCognitiveEventInFlightTracker? inFlightTracker = null)
     {
         _consumptionRepository = consumptionRepository ?? throw new ArgumentNullException(nameof(consumptionRepository));
         _cognitiveCycleService = cognitiveCycleService ?? throw new ArgumentNullException(nameof(cognitiveCycleService));
         _systemClock = systemClock ?? throw new ArgumentNullException(nameof(systemClock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _inFlightTracker = inFlightTracker ?? WorldCognitiveEventInFlightTracker.Instance;
     }
 
     public async Task<WorldCognitiveEventConsumptionResult> ConsumeAsync(
@@ -51,7 +54,22 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
         // 1. Invariant payload and identity validation using unified ISystemClock
         ValidateWorldEvent(worldEvent, _systemClock);
 
-        // 2. Prepare claim aggregate with canonical deterministic fingerprint
+        // 2. In-flight execution check: prevent duplicate dispatch while an active execution is running
+        if (_inFlightTracker.IsInFlight(worldEvent.EventId))
+        {
+            _logger.LogInformation(
+                "WorldCognitiveEvent {EventId} for Character {CharacterId} is currently being processed in-flight. Skipping duplicate execution.",
+                worldEvent.EventId,
+                worldEvent.CharacterId);
+
+            var existing = await _consumptionRepository.GetByEventIdAsync(worldEvent.EventId, cancellationToken);
+            return WorldCognitiveEventConsumptionResult.DuplicateResult(
+                worldEvent.EventId,
+                worldEvent.CharacterId,
+                existing?.CycleId);
+        }
+
+        // 3. Prepare claim aggregate with canonical deterministic fingerprint
         var now = _systemClock.UtcNow.UtcDateTime;
         var claim = WorldCognitiveEventConsumption.CreateClaim(
             worldEvent.EventId,
@@ -62,7 +80,7 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
             worldEvent.Category,
             now);
 
-        // 3. Atomically claim consumption slot (DB unique constraint on EventId with lease-based crash recovery & retry)
+        // 4. Atomically claim consumption slot (DB unique constraint on EventId with lease-based crash recovery & retry)
         var (isClaimed, existingOrNew) = await _consumptionRepository.TryClaimAsync(claim, ct: cancellationToken);
 
         if (!isClaimed)
@@ -80,100 +98,136 @@ public sealed class WorldCognitiveEventConsumer : IWorldCognitiveEventConsumer
                 existingOrNew.CycleId);
         }
 
-        _logger.LogInformation(
-            "WorldCognitiveEvent {EventId} claimed for Character {CharacterId} (Attempt #{AttemptCount})",
-            worldEvent.EventId,
-            worldEvent.CharacterId,
-            existingOrNew.AttemptCount);
-
-        // 4. Strict identity separation: EventId != CycleId != ExecutionId
-        // Architectural Contract Note:
-        // The existing CharacterCognitiveCycleContext contract (PR #45/PR #52) mandates a non-empty ExecutionId
-        // upon cycle invocation (CharacterCognitiveCycleService validates ExecutionId != Guid.Empty).
-        // In accordance with PR54 invariants:
-        // - EventId != CycleId
-        // - EventId != ExecutionId
-        // - CycleId != ExecutionId
-        // If the Cognitive Cycle does not produce an actionable proposal, ExecutionId remains unused.
-        var cycleId = Guid.NewGuid();
-        while (cycleId == worldEvent.EventId)
+        // 5. Register in-flight execution guard for the duration of Cognitive Cycle execution
+        if (!_inFlightTracker.TryTrack(worldEvent.EventId, out var inFlightRegistration))
         {
-            cycleId = Guid.NewGuid();
-        }
-
-        var executionId = Guid.NewGuid();
-        while (executionId == worldEvent.EventId || executionId == cycleId)
-        {
-            executionId = Guid.NewGuid();
-        }
-
-        var cycleContext = new CharacterCognitiveCycleContext(
-            CycleId: cycleId,
-            ExecutionId: executionId,
-            CharacterId: worldEvent.CharacterId,
-            TriggeredAtUtc: _systemClock.UtcNow,
-            Event: worldEvent);
-
-        // 5. Dispatch into authoritative Cognitive Cycle pipeline
-        try
-        {
-            var cycleResult = await _cognitiveCycleService.RunAsync(cycleContext, cancellationToken);
-
-            if (cycleResult.Status is CharacterCognitiveCycleStatus.Failed
-                or CharacterCognitiveCycleStatus.ConcurrencyConflict
-                or CharacterCognitiveCycleStatus.IdempotencyConflict
-                or CharacterCognitiveCycleStatus.InvalidInput)
-            {
-                var failureReason = $"Cognitive cycle completed with non-success status: {cycleResult.Status}";
-                _logger.LogWarning(
-                    "WorldCognitiveEvent {EventId} dispatch resulted in cycle status {Status} for Character {CharacterId}",
-                    worldEvent.EventId,
-                    cycleResult.Status,
-                    worldEvent.CharacterId);
-
-                await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, failureReason, _systemClock.UtcNow.UtcDateTime, cancellationToken);
-                return WorldCognitiveEventConsumptionResult.RejectedResult(worldEvent.EventId, worldEvent.CharacterId, failureReason);
-            }
-
-            var consumedAt = _systemClock.UtcNow.UtcDateTime;
-            await _consumptionRepository.MarkConsumedAsync(worldEvent.EventId, cycleResult.CycleId, consumedAt, cancellationToken);
-
             _logger.LogInformation(
-                "WorldCognitiveEvent {EventId} successfully consumed by Cycle {CycleId} for Character {CharacterId}",
+                "WorldCognitiveEvent {EventId} for Character {CharacterId} entered in-flight execution on another worker. Returning duplicate.",
                 worldEvent.EventId,
-                cycleResult.CycleId,
                 worldEvent.CharacterId);
 
-            return WorldCognitiveEventConsumptionResult.ProcessedResult(
+            return WorldCognitiveEventConsumptionResult.DuplicateResult(
                 worldEvent.EventId,
                 worldEvent.CharacterId,
-                cycleResult.CycleId);
+                existingOrNew.CycleId);
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Error executing cognitive cycle for WorldCognitiveEvent {EventId} on Character {CharacterId}",
-                worldEvent.EventId,
-                worldEvent.CharacterId);
 
+        using (inFlightRegistration)
+        {
+            var claimVersion = existingOrNew.Version;
+
+            _logger.LogInformation(
+                "WorldCognitiveEvent {EventId} claimed for Character {CharacterId} (Attempt #{AttemptCount}, ClaimVersion={ClaimVersion})",
+                worldEvent.EventId,
+                worldEvent.CharacterId,
+                existingOrNew.AttemptCount,
+                claimVersion);
+
+            // 5. Strict identity separation: EventId != CycleId != ExecutionId
+            // Architectural Contract Note:
+            // The existing CharacterCognitiveCycleContext contract (PR #45/PR #52) mandates a non-empty ExecutionId
+            // upon cycle invocation (CharacterCognitiveCycleService validates ExecutionId != Guid.Empty).
+            // In accordance with PR54 invariants:
+            // - EventId != CycleId
+            // - EventId != ExecutionId
+            // - CycleId != ExecutionId
+            // If the Cognitive Cycle does not produce an actionable proposal, ExecutionId remains unused.
+            var cycleId = Guid.NewGuid();
+            while (cycleId == worldEvent.EventId)
+            {
+                cycleId = Guid.NewGuid();
+            }
+
+            var executionId = Guid.NewGuid();
+            while (executionId == worldEvent.EventId || executionId == cycleId)
+            {
+                executionId = Guid.NewGuid();
+            }
+
+            var cycleContext = new CharacterCognitiveCycleContext(
+                CycleId: cycleId,
+                ExecutionId: executionId,
+                CharacterId: worldEvent.CharacterId,
+                TriggeredAtUtc: _systemClock.UtcNow,
+                Event: worldEvent);
+
+            // 6. Dispatch into authoritative Cognitive Cycle pipeline
             try
             {
-                await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, ex.Message, _systemClock.UtcNow.UtcDateTime, CancellationToken.None);
-            }
-            catch (Exception markEx)
-            {
-                _logger.LogCritical(
-                    markEx,
-                    "CRITICAL RECOVERY REQUIRED: Failed to persist failure state for WorldCognitiveEvent {EventId}. Record remains in InProgress state and will be reclaimed upon lease expiration.",
-                    worldEvent.EventId);
-            }
+                var cycleResult = await _cognitiveCycleService.RunAsync(cycleContext, cancellationToken);
 
-            throw;
+                if (cycleResult.Status is CharacterCognitiveCycleStatus.Failed
+                    or CharacterCognitiveCycleStatus.ConcurrencyConflict
+                    or CharacterCognitiveCycleStatus.IdempotencyConflict
+                    or CharacterCognitiveCycleStatus.InvalidInput)
+                {
+                    var failureReason = $"Cognitive cycle completed with non-success status: {cycleResult.Status}";
+                    _logger.LogWarning(
+                        "WorldCognitiveEvent {EventId} dispatch resulted in cycle status {Status} for Character {CharacterId}",
+                        worldEvent.EventId,
+                        cycleResult.Status,
+                        worldEvent.CharacterId);
+
+                    await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, failureReason, _systemClock.UtcNow.UtcDateTime, claimVersion, cancellationToken);
+                    return WorldCognitiveEventConsumptionResult.RejectedResult(worldEvent.EventId, worldEvent.CharacterId, failureReason);
+                }
+
+                var consumedAt = _systemClock.UtcNow.UtcDateTime;
+                try
+                {
+                    await _consumptionRepository.MarkConsumedAsync(worldEvent.EventId, cycleResult.CycleId, consumedAt, claimVersion, cancellationToken);
+                }
+                catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Stale worker fenced out for WorldCognitiveEvent {EventId}. Claim was reclaimed by another worker (ClaimVersion: {ClaimVersion}). Stale cycle result dropped.",
+                        worldEvent.EventId,
+                        claimVersion);
+
+                    return WorldCognitiveEventConsumptionResult.DuplicateResult(
+                        worldEvent.EventId,
+                        worldEvent.CharacterId,
+                        cycleResult.CycleId);
+                }
+
+                _logger.LogInformation(
+                    "WorldCognitiveEvent {EventId} successfully consumed by Cycle {CycleId} for Character {CharacterId}",
+                    worldEvent.EventId,
+                    cycleResult.CycleId,
+                    worldEvent.CharacterId);
+
+                return WorldCognitiveEventConsumptionResult.ProcessedResult(
+                    worldEvent.EventId,
+                    worldEvent.CharacterId,
+                    cycleResult.CycleId);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error executing cognitive cycle for WorldCognitiveEvent {EventId} on Character {CharacterId}",
+                    worldEvent.EventId,
+                    worldEvent.CharacterId);
+
+                try
+                {
+                    await _consumptionRepository.MarkFailedAsync(worldEvent.EventId, ex.Message, _systemClock.UtcNow.UtcDateTime, claimVersion, CancellationToken.None);
+                }
+                catch (Exception markEx)
+                {
+                    _logger.LogCritical(
+                        markEx,
+                        "CRITICAL RECOVERY REQUIRED: Failed to persist failure state for WorldCognitiveEvent {EventId}. Record remains in InProgress state and will be reclaimed upon lease expiration.",
+                        worldEvent.EventId);
+                }
+
+                throw;
+            }
         }
     }
 

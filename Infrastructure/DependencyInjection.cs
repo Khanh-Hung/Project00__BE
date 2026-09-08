@@ -283,6 +283,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Interfaces.ILifeSimulationService, Infrastructure.Services.LifeSimulation.LifeSimulationService>();
 
         // PR #54: World Event Consumer Boundary
+        services.AddSingleton<Application.Interfaces.IWorldCognitiveEventInFlightTracker, Infrastructure.Services.CognitiveCycle.WorldCognitiveEventInFlightTracker>();
         services.AddScoped<Application.Abstractions.Data.IWorldCognitiveEventConsumptionRepository, Infrastructure.Persistence.Repositories.Core.WorldCognitiveEventConsumptionRepository>();
         services.AddScoped<Application.Interfaces.IWorldCognitiveEventConsumer, Infrastructure.Services.CognitiveCycle.WorldCognitiveEventConsumer>();
 

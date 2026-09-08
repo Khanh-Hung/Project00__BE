@@ -29,21 +29,34 @@ public interface IWorldCognitiveEventConsumptionRepository
 
     /// <summary>
     /// Explicitly reclaims a consumption record for retry or crash recovery.
+    /// Invariant: Throws InvalidOperationException if State is Consumed or if State is InProgress within lease window.
     /// </summary>
     Task<(bool IsReclaimed, WorldCognitiveEventConsumption Consumption)> ReclaimAsync(
         Guid eventId,
         DateTime attemptedAtUtc,
+        TimeSpan? leaseTimeout = null,
         CancellationToken ct = default);
 
     /// <summary>
-    /// Transitions consumption state to Consumed with the completed CycleId and timestamp.
+    /// Transitions consumption state to Consumed with the completed CycleId, timestamp, and fencing token.
+    /// Invariant: Stale workers whose claim version has advanced are rejected via DbUpdateConcurrencyException.
     /// </summary>
-    Task MarkConsumedAsync(Guid eventId, Guid cycleId, DateTime consumedAtUtc, CancellationToken ct = default);
+    Task MarkConsumedAsync(
+        Guid eventId,
+        Guid cycleId,
+        DateTime consumedAtUtc,
+        uint? expectedVersion = null,
+        CancellationToken ct = default);
 
     /// <summary>
-    /// Transitions consumption state to Failed with failure explanation and timestamp.
+    /// Transitions consumption state to Failed with failure explanation, timestamp, and fencing token.
     /// </summary>
-    Task MarkFailedAsync(Guid eventId, string failureReason, DateTime failedAtUtc, CancellationToken ct = default);
+    Task MarkFailedAsync(
+        Guid eventId,
+        string failureReason,
+        DateTime failedAtUtc,
+        uint? expectedVersion = null,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Persists pending unit of work changes.
