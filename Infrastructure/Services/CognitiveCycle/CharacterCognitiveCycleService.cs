@@ -161,6 +161,12 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                         cycleId, executionId, characterId, triggeredAtUtc,
                         "WorldEvent eventName cannot be empty.",
                         cognitiveEvent);
+
+                case AutonomousCognitiveEvent autoEvt when string.IsNullOrWhiteSpace(autoEvt.EventName):
+                    return CharacterCognitiveCycleResult.InvalidInput(
+                        cycleId, executionId, characterId, triggeredAtUtc,
+                        "AutonomousCognitiveEvent eventName cannot be empty.",
+                        cognitiveEvent);
             }
 
             stimulus = MapToPerceptionStimulus(cognitiveEvent);
@@ -382,6 +388,28 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                     characterId);
                 goalContext = null;
             }
+        }
+
+        // Early Exit for Autonomous Cycles: Autonomous cycles require an authoritative goal
+        if (cognitiveEvent is AutonomousCognitiveEvent && goalContext == null)
+        {
+            _logger.LogInformation(
+                "[CharacterCognitiveCycleService] No active or compatible goal found for autonomous cycle. CharacterId={CharacterId}, CycleId={CycleId}. Cycle stopping without action.",
+                characterId, cycleId);
+
+            var noGoalResult = CharacterCognitiveCycleResult.CompletedWithoutAction(
+                cycleId, executionId, characterId, triggeredAtUtc, stateVersionAtStart,
+                experience: experience, appraisal: appraisal, emotion: emotion, desires: desires, intent: null,
+                actionProposal: null,
+                @event: cognitiveEvent,
+                memoryContext: memoryContext,
+                relationshipContext: relationshipContext,
+                personalitySnapshot: personalitySnapshot,
+                message: "No active or compatible goal found for autonomous cycle.");
+
+            var withMemory = await AttachMemoryFeedbackAsync(context, noGoalResult, cancellationToken);
+            var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
+            return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
         }
 
         // 8. Intent (PR42 modulated by active GoalContext)
@@ -793,6 +821,13 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 content: worldEvt.EventName,
                 occurredAtUtc: worldEvt.OccurredAtUtc,
                 category: worldEvt.Category
+            ),
+            AutonomousCognitiveEvent autoEvt => new CharacterPerceptionStimulus(
+                type: PerceptionStimulusType.Autonomous,
+                source: string.IsNullOrWhiteSpace(autoEvt.Source) ? "Autonomous" : autoEvt.Source,
+                content: string.IsNullOrWhiteSpace(autoEvt.EventName) ? "AutonomousTick" : autoEvt.EventName,
+                occurredAtUtc: autoEvt.OccurredAtUtc,
+                category: "Autonomous"
             ),
             _ => throw new NotSupportedException($"Unsupported cognitive event type: {cognitiveEvent.GetType().Name}")
         };
