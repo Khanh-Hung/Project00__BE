@@ -11,6 +11,7 @@ using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Infrastructure.Services.ActionExecution;
 using Infrastructure.Services.CognitiveCycle;
+using Infrastructure.Services.Safety;
 using Infrastructure.Services.State;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -80,7 +81,8 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
         ICharacterDesirePolicy? desirePolicy = null,
         ICharacterIntentPolicy? intentPolicy = null,
         ICharacterActionProposalPolicy? actionProposalPolicy = null,
-        ICharacterActionExecutionService? actionExecutionService = null)
+        ICharacterActionExecutionService? actionExecutionService = null,
+        IActionSafetyGate? safetyGate = null)
     {
         var transitionService = new CharacterStateTransitionService(
             db,
@@ -99,6 +101,11 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
             execPolicy,
             NullLogger<CharacterActionExecutionService>.Instance);
 
+        var gate = safetyGate ?? new ActionSafetyGate(
+            stateService,
+            new[] { new DefaultActionSafetyPolicy() },
+            NullLogger<ActionSafetyGate>.Instance);
+
         return new CharacterCognitiveCycleService(
             stateService: stateService,
             experiencePolicy: experiencePolicy ?? new CharacterInternalExperiencePolicy(),
@@ -107,6 +114,7 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
             desirePolicy: desirePolicy ?? new CharacterDesirePolicy(),
             intentPolicy: intentPolicy ?? new CharacterIntentPolicy(),
             actionProposalPolicy: actionProposalPolicy ?? new CharacterActionProposalPolicy(),
+            safetyGate: gate,
             actionExecutionService: execService,
             logger: NullLogger<CharacterCognitiveCycleService>.Instance
         );
@@ -553,7 +561,7 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
         var concurrentProposalPolicy = new ConcurrentMutatingActionProposalPolicy(_options, charId);
 
         await using var testDb = new CoreDbContext(_options);
-        var service = CreateService(testDb, actionProposalPolicy: concurrentProposalPolicy);
+        var service = CreateService(testDb, actionProposalPolicy: concurrentProposalPolicy, safetyGate: new PassThroughSafetyGate());
 
         var context = CreateContext(charId);
         var result = await service.RunAsync(context);
@@ -627,6 +635,12 @@ public sealed class CharacterCognitiveCycleServiceTests : IDisposable
 
             return evaluation;
         }
+    }
+
+    private sealed class PassThroughSafetyGate : IActionSafetyGate
+    {
+        public Task<SafetyDecision> EvaluateAsync(Guid characterId, CharacterActionProposal proposal, CancellationToken cancellationToken = default) =>
+            Task.FromResult(SafetyDecision.Allowed());
     }
 
     #region 8. Unexpected Exception Propagation

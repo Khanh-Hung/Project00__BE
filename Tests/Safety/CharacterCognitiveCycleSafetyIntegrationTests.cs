@@ -218,6 +218,31 @@ public sealed class CharacterCognitiveCycleSafetyIntegrationTests : IDisposable
         Assert.Equal(1, unchangedState.Version);
     }
 
+    [Fact]
+    public async Task Constructor_WhenSafetyGateIsNull_ThrowsArgumentNullException_ProvingMandatoryBoundary()
+    {
+        await using var db = new CoreDbContext(_options);
+        var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
+        var stateService = new CharacterStateService(db, transitionService, new CharacterStateEvolutionPolicy(), NullLogger<CharacterStateService>.Instance);
+        var execService = new CharacterActionExecutionService(transitionService, new CharacterActionExecutionPolicy(), NullLogger<CharacterActionExecutionService>.Instance);
+
+        // Composition contract invariant: Without IActionSafetyGate, construction FAILS and action cannot execute
+        var ex = Assert.Throws<ArgumentNullException>(() => new CharacterCognitiveCycleService(
+            stateService: stateService,
+            experiencePolicy: new CharacterInternalExperiencePolicy(),
+            appraisalPolicy: new CharacterAppraisalPolicy(),
+            emotionPolicy: new CharacterEmotionPolicy(),
+            desirePolicy: new CharacterDesirePolicy(),
+            intentPolicy: new CharacterIntentPolicy(),
+            actionProposalPolicy: new CharacterActionProposalPolicy(),
+            safetyGate: null!,
+            actionExecutionService: execService,
+            logger: NullLogger<CharacterCognitiveCycleService>.Instance
+        ));
+
+        Assert.Equal("safetyGate", ex.ParamName);
+    }
+
     private sealed class ConfigurableSafetyPolicy : IActionSafetyPolicy
     {
         public int Priority { get; set; } = 0;

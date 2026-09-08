@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -140,6 +140,25 @@ public sealed class ActionSafetyGateTests
         Assert.Contains("Database connection timeout", decision.Reason);
     }
 
+    [Fact]
+    public async Task EvaluateAsync_WhenCancellationRequested_PropagatesCancellation()
+    {
+        var charId = Guid.NewGuid();
+        var snapshot = new CharacterStateSnapshot(version: 1);
+        var stateService = new FakeCharacterStateService { SnapshotToReturn = snapshot };
+
+        var gate = new ActionSafetyGate(stateService, Array.Empty<IActionSafetyPolicy>(), _logger);
+
+        var proposal = new CharacterActionProposal(
+            ActionType.Eat, 0.5, IntentType.SeekFood, MotivationType.HungerDriven, 1);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // Invariant: Cancellation MUST propagate as OperationCanceledException and NOT convert to SafetyDecision.Denied
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => gate.EvaluateAsync(charId, proposal, cts.Token));
+    }
+
     private sealed class FakeCharacterStateService : ICharacterStateService
     {
         public CharacterStateSnapshot? SnapshotToReturn { get; set; }
@@ -148,6 +167,7 @@ public sealed class ActionSafetyGateTests
 
         public Task<CharacterStateSnapshot?> GetAsync(Guid characterId, CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             GetAsyncCallCount++;
             if (ExceptionToThrow != null) throw ExceptionToThrow;
             return Task.FromResult(SnapshotToReturn);

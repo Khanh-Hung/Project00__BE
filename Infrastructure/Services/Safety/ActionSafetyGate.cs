@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -33,6 +33,8 @@ public sealed class ActionSafetyGate : IActionSafetyGate
         CharacterActionProposal proposal,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (proposal == null)
         {
             return SafetyDecision.Denied("INVALID_ACTION", "Action proposal cannot be null.");
@@ -40,6 +42,8 @@ public sealed class ActionSafetyGate : IActionSafetyGate
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var characterState = await _stateService.GetAsync(characterId, cancellationToken);
             if (characterState == null)
             {
@@ -51,6 +55,8 @@ public sealed class ActionSafetyGate : IActionSafetyGate
 
             foreach (var policy in _policies)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var decision = policy.Evaluate(proposal, context);
                 if (!decision.IsAllowed)
                 {
@@ -67,6 +73,10 @@ public sealed class ActionSafetyGate : IActionSafetyGate
             }
 
             return SafetyDecision.Allowed();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
