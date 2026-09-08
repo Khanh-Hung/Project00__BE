@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Domain.Enums;
 using Domain.ValueObjects;
 
@@ -31,13 +31,41 @@ public sealed class CharacterIntentPolicy : ICharacterIntentPolicy
             );
         }
 
-        var intentType = MapDesireToIntent(dominantDesire.Type);
+        var selectedDesire = dominantDesire;
+        var goal = context.GoalContext;
+
+        if (goal != null && goal.Status == CharacterGoalStatus.Active)
+        {
+            var alignedDesireType = MapGoalToDesire(goal.GoalKey);
+            if (alignedDesireType.HasValue)
+            {
+                var alignedDesire = desireEvaluation.Desires
+                    .FirstOrDefault(d => d.Type == alignedDesireType.Value && d.Intensity > 0.0);
+
+                if (alignedDesire != null)
+                {
+                    selectedDesire = alignedDesire;
+                }
+            }
+        }
+
+        double effectiveIntensity = selectedDesire.Intensity;
+        if (goal != null && goal.Status == CharacterGoalStatus.Active)
+        {
+            var alignedDesireType = MapGoalToDesire(goal.GoalKey);
+            if (alignedDesireType.HasValue && selectedDesire.Type == alignedDesireType.Value)
+            {
+                effectiveIntensity = Math.Min(1.0, effectiveIntensity + 0.1);
+            }
+        }
+
+        var intentType = MapDesireToIntent(selectedDesire.Type);
 
         var intent = new CharacterIntent(
             type: intentType,
-            intensity: dominantDesire.Intensity,
-            sourceDesire: dominantDesire.Type,
-            motivation: dominantDesire.Motivation.Type,
+            intensity: effectiveIntensity,
+            sourceDesire: selectedDesire.Type,
+            motivation: selectedDesire.Motivation.Type,
             stateVersion: desireEvaluation.StateVersion
         );
 
@@ -47,6 +75,25 @@ public sealed class CharacterIntentPolicy : ICharacterIntentPolicy
             intent: intent,
             evaluatedAtUtc: context.EvaluatedAtUtc
         );
+    }
+
+    private static DesireType? MapGoalToDesire(string goalKey)
+    {
+        if (string.Equals(goalKey, "BuildRelationship", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(goalKey, "Socialize", StringComparison.OrdinalIgnoreCase))
+            return DesireType.NeedSocialConnection;
+
+        if (string.Equals(goalKey, "Rest", StringComparison.OrdinalIgnoreCase))
+            return DesireType.NeedRest;
+
+        if (string.Equals(goalKey, "Eat", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(goalKey, "Food", StringComparison.OrdinalIgnoreCase))
+            return DesireType.NeedFood;
+
+        if (string.Equals(goalKey, "ReduceStress", StringComparison.OrdinalIgnoreCase))
+            return DesireType.NeedReduceStress;
+
+        return null;
     }
 
     private static IntentType MapDesireToIntent(DesireType desireType) =>

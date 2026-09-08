@@ -227,9 +227,11 @@ public static class DependencyInjection
                 sp.GetRequiredService<Application.Interfaces.ISceneVisualStateReader>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Infrastructure.BackgroundJobs.CharacterActivityScheduler>>()));
 
-        // PR #34: Character Goals & Long-term State
+        // PR #34 & PR #55: Character Goals & Goal System
         services.AddScoped<ICharacterGoalRepository, Infrastructure.Persistence.Repositories.CharacterGoalRepository>();
         services.AddScoped<IGoalProgressService, Infrastructure.Services.Goals.GoalProgressService>();
+        services.AddScoped<ICharacterGoalPolicy, Infrastructure.Services.Goals.CharacterGoalPolicy>();
+        services.AddScoped<ICharacterGoalService, Infrastructure.Services.Goals.CharacterGoalService>();
 
         // PR #35: Autonomous Character Decision & Goal-Driven Visual Loop
         services.AddScoped<IAutonomousDecisionService, Application.Services.AutonomousDecisionService>();

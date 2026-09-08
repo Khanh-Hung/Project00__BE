@@ -1,7 +1,8 @@
-﻿namespace Domain.Enums;
+namespace Domain.Enums;
 
 public enum CharacterGoalStatus
 {
+    Scheduled = 0,
     Draft = 0,
     Active = 1,
     Paused = 2,

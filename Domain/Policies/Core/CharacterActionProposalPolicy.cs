@@ -33,9 +33,16 @@ public sealed class CharacterActionProposalPolicy : ICharacterActionProposalPoli
 
         var actionType = MapIntentToAction(intent.Type);
 
+        double effectiveIntensity = intent.Intensity;
+        var goal = context.GoalContext;
+        if (goal != null && goal.Status == CharacterGoalStatus.Active && IsActionAlignedWithGoal(actionType, goal.GoalKey))
+        {
+            effectiveIntensity = Math.Min(1.0, effectiveIntensity + 0.05);
+        }
+
         var proposal = new CharacterActionProposal(
             type: actionType,
-            intensity: intent.Intensity,
+            intensity: effectiveIntensity,
             sourceIntent: intent.Type,
             motivation: intent.Motivation,
             stateVersion: intent.StateVersion
@@ -60,4 +67,25 @@ public sealed class CharacterActionProposalPolicy : ICharacterActionProposalPoli
             IntentType.SeekSafety => ActionType.SeekSafety,
             _ => throw new ArgumentOutOfRangeException(nameof(intentType), intentType, "Unsupported intent type for action proposal.")
         };
+
+    private static bool IsActionAlignedWithGoal(ActionType actionType, string goalKey)
+    {
+        if (actionType == ActionType.Socialize &&
+            (string.Equals(goalKey, "BuildRelationship", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(goalKey, "Socialize", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (actionType == ActionType.Rest && string.Equals(goalKey, "Rest", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (actionType == ActionType.Eat &&
+            (string.Equals(goalKey, "Eat", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(goalKey, "Food", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (actionType == ActionType.ReduceStress && string.Equals(goalKey, "ReduceStress", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
 }
