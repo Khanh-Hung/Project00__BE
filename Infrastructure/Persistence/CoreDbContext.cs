@@ -41,6 +41,7 @@ public class CoreDbContext : DbContext
     public DbSet<CharacterGoal> CharacterGoals { get; set; }
     public DbSet<CharacterGoalMilestone> CharacterGoalMilestones { get; set; }
     public DbSet<GoalActivityContribution> GoalActivityContributions { get; set; }
+    public DbSet<CharacterGoalExecutionProgress> CharacterGoalExecutionProgresses { get; set; }
     public DbSet<CharacterWorldEvent> CharacterWorldEvents { get; set; }
     public DbSet<CharacterWorldEventReaction> CharacterWorldEventReactions { get; set; }
     public DbSet<CharacterAutonomyTick> CharacterAutonomyTicks { get; set; }

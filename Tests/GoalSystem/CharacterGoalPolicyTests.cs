@@ -127,4 +127,40 @@ public sealed class CharacterGoalPolicyTests
         Assert.Null(decisionUnsupported.SelectedGoal);
         Assert.Null(decisionUnsupported.Candidate);
     }
+
+    [Fact]
+    public void AlignedAction_ProducesGoalProgress()
+    {
+        // Aligned pairs must produce positive progress contribution
+        Assert.True(_policy.EvaluateActionProgress("BuildRelationship", "Socialize") > 0);
+        Assert.True(_policy.EvaluateActionProgress("BuildRelationship", "Chat") > 0);
+        Assert.True(_policy.EvaluateActionProgress("BuildRelationship", "Greet") > 0);
+        Assert.True(_policy.EvaluateActionProgress("Rest", "Rest") > 0);
+        Assert.True(_policy.EvaluateActionProgress("Eat", "Eat") > 0);
+        Assert.True(_policy.EvaluateActionProgress("ReduceStress", "Relax") > 0);
+    }
+
+    [Fact]
+    public void UnrelatedAction_DoesNotProduceGoalProgress()
+    {
+        // Unrelated actions must produce 0 contribution
+        Assert.Equal(0, _policy.EvaluateActionProgress("BuildRelationship", "Eat"));
+        Assert.Equal(0, _policy.EvaluateActionProgress("BuildRelationship", "Rest"));
+        Assert.Equal(0, _policy.EvaluateActionProgress("Rest", "Socialize"));
+        Assert.Equal(0, _policy.EvaluateActionProgress("Eat", "Sleep"));
+        Assert.Equal(0, _policy.EvaluateActionProgress("UnknownGoal", "Socialize"));
+        Assert.Equal(0, _policy.EvaluateActionProgress("BuildRelationship", "UnknownAction"));
+    }
+
+    [Fact]
+    public void SameGoalSameAction_IsDeterministic()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            var delta1 = _policy.EvaluateActionProgress("BuildRelationship", "Socialize");
+            var delta2 = _policy.EvaluateActionProgress("BuildRelationship", "Socialize");
+            Assert.Equal(delta1, delta2);
+            Assert.Equal(25, delta1);
+        }
+    }
 }

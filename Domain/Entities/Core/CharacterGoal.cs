@@ -20,6 +20,8 @@ public sealed class CharacterGoal : BaseEntity
     public double CurrentValue { get; private set; }
     public uint Version { get; private set; } = 1;
 
+    public int ProgressPercentage => (int)Math.Round(Progress * 100.0f);
+
     public DateTime? StartedAt { get; private set; }
     public DateTime? CompletedAt { get; private set; }
     public DateTime? CancelledAt { get; private set; }
@@ -70,7 +72,7 @@ public sealed class CharacterGoal : BaseEntity
         GoalType = goalType;
         Priority = priority;
         TargetValue = targetValue;
-        Progress = initialProgress;
+        Progress = (float)(initialProgress / 100.0);
         CurrentValue = (targetValue * initialProgress) / 100.0;
         Status = initialStatus;
 
@@ -119,34 +121,36 @@ public sealed class CharacterGoal : BaseEntity
             initialProgress: initialProgress);
     }
 
-    public void Activate(DateTimeOffset? now = null)
+    public void Activate(DateTimeOffset now)
     {
         if (Status == CharacterGoalStatus.Completed || Status == CharacterGoalStatus.Cancelled || Status == CharacterGoalStatus.Expired)
             throw new InvalidOperationException($"Cannot activate goal in terminal state '{Status}'.");
 
         Status = CharacterGoalStatus.Active;
-        StartedAt ??= now?.UtcDateTime ?? DateTime.UtcNow;
+        StartedAt ??= now.UtcDateTime;
         PausedAt = null;
         Version++;
         Touch();
     }
 
-    public void Activate(DateTime now) => Activate((DateTimeOffset)now);
+    public void Activate(DateTime now) => Activate(new DateTimeOffset(now, TimeSpan.Zero));
+    public void Activate() => Activate(DateTimeOffset.UtcNow);
 
-    public void Pause(DateTimeOffset? now = null)
+    public void Pause(DateTimeOffset now)
     {
         if (Status != CharacterGoalStatus.Active)
             throw new InvalidOperationException($"Cannot pause a goal with status '{Status}'. Must be Active.");
 
         Status = CharacterGoalStatus.Paused;
-        PausedAt = now?.UtcDateTime ?? DateTime.UtcNow;
+        PausedAt = now.UtcDateTime;
         Version++;
         Touch();
     }
 
-    public void Pause(DateTime now) => Pause((DateTimeOffset)now);
+    public void Pause(DateTime now) => Pause(new DateTimeOffset(now, TimeSpan.Zero));
+    public void Pause() => Pause(DateTimeOffset.UtcNow);
 
-    public void Resume(DateTimeOffset? now = null)
+    public void Resume(DateTimeOffset now)
     {
         if (Status != CharacterGoalStatus.Paused)
             throw new InvalidOperationException($"Cannot resume a goal with status '{Status}'. Must be Paused.");
@@ -157,15 +161,16 @@ public sealed class CharacterGoal : BaseEntity
         Touch();
     }
 
-    public void Resume(DateTime now) => Resume((DateTimeOffset)now);
+    public void Resume(DateTime now) => Resume(new DateTimeOffset(now, TimeSpan.Zero));
+    public void Resume() => Resume(DateTimeOffset.UtcNow);
 
-    public void Complete(DateTimeOffset? now = null)
+    public void Complete(DateTimeOffset now)
     {
         if (Status == CharacterGoalStatus.Completed)
             return;
 
-        if (Status == CharacterGoalStatus.Scheduled)
-            throw new InvalidOperationException("Scheduled goal cannot complete directly without becoming Active.");
+        if (Status == CharacterGoalStatus.Draft)
+            throw new InvalidOperationException("Draft goal cannot complete directly without becoming Active.");
 
         if (Status == CharacterGoalStatus.Paused)
             throw new InvalidOperationException("Paused goal cannot complete without Resume.");
@@ -174,17 +179,18 @@ public sealed class CharacterGoal : BaseEntity
             throw new InvalidOperationException($"Cannot complete goal in terminal state '{Status}'.");
 
         Status = CharacterGoalStatus.Completed;
-        CompletedAt = now?.UtcDateTime ?? DateTime.UtcNow;
-        Progress = 100f;
+        CompletedAt = now.UtcDateTime;
+        Progress = 1.0f;
         CurrentValue = Math.Max(CurrentValue, TargetValue);
 
         Version++;
         Touch();
     }
 
-    public void Complete(DateTime now) => Complete((DateTimeOffset)now);
+    public void Complete(DateTime now) => Complete(new DateTimeOffset(now, TimeSpan.Zero));
+    public void Complete() => Complete(DateTimeOffset.UtcNow);
 
-    public void Cancel(DateTimeOffset? now = null)
+    public void Cancel(DateTimeOffset now)
     {
         if (Status == CharacterGoalStatus.Cancelled)
             return;
@@ -193,14 +199,15 @@ public sealed class CharacterGoal : BaseEntity
             throw new InvalidOperationException($"Cannot cancel goal in terminal state '{Status}'.");
 
         Status = CharacterGoalStatus.Cancelled;
-        CancelledAt = now?.UtcDateTime ?? DateTime.UtcNow;
+        CancelledAt = now.UtcDateTime;
         Version++;
         Touch();
     }
 
-    public void Cancel(DateTime now) => Cancel((DateTimeOffset)now);
+    public void Cancel(DateTime now) => Cancel(new DateTimeOffset(now, TimeSpan.Zero));
+    public void Cancel() => Cancel(DateTimeOffset.UtcNow);
 
-    public void Expire(DateTimeOffset? now = null)
+    public void Expire(DateTimeOffset now)
     {
         if (Status == CharacterGoalStatus.Completed)
             throw new InvalidOperationException("Completed goal cannot be expired.");
@@ -216,23 +223,30 @@ public sealed class CharacterGoal : BaseEntity
         Touch();
     }
 
-    public void Expire(DateTime now) => Expire((DateTimeOffset)now);
+    public void Expire(DateTime now) => Expire(new DateTimeOffset(now, TimeSpan.Zero));
+    public void Expire() => Expire(DateTimeOffset.UtcNow);
 
-    public void UpdateProgress(int newProgress, DateTimeOffset? now = null)
+    /// <summary>
+    /// Updates goal progress as an integer percentage [0, 100].
+    /// Automatically marks the goal as Completed if percentage reaches 100.
+    /// </summary>
+    public void UpdateProgress(int percentage, DateTimeOffset now)
     {
         if (Status == CharacterGoalStatus.Completed || Status == CharacterGoalStatus.Cancelled || Status == CharacterGoalStatus.Expired)
             throw new InvalidOperationException($"Cannot update progress on goal in terminal state '{Status}'.");
 
-        if (newProgress < 0 || newProgress > 100)
-            throw new ArgumentOutOfRangeException(nameof(newProgress), "Progress must be between 0 and 100.");
+        if (Status != CharacterGoalStatus.Active)
+            throw new InvalidOperationException($"Cannot update progress on a goal with status '{Status}'. Must be Active.");
 
-        var time = now?.UtcDateTime ?? DateTime.UtcNow;
-        Progress = newProgress;
-        CurrentValue = (TargetValue * newProgress) / 100.0;
+        if (percentage < 0 || percentage > 100)
+            throw new ArgumentOutOfRangeException(nameof(percentage), "Progress percentage must be between 0 and 100.");
 
-        if (newProgress >= 100)
+        Progress = (float)(percentage / 100.0);
+        CurrentValue = (TargetValue * percentage) / 100.0;
+
+        if (percentage >= 100)
         {
-            Complete(time);
+            Complete(now);
         }
         else
         {
@@ -241,40 +255,95 @@ public sealed class CharacterGoal : BaseEntity
         }
     }
 
-    public void UpdateProgress(int newProgress, DateTime now) => UpdateProgress(newProgress, (DateTimeOffset)now);
+    public void UpdateProgress(int percentage) => UpdateProgress(percentage, DateTimeOffset.UtcNow);
 
-    public void SetProgress(int progress, DateTimeOffset? now = null) => UpdateProgress(progress, now);
-    public void SetProgress(int progress, DateTime now) => UpdateProgress(progress, (DateTimeOffset)now);
+    public void UpdateProgress(int percentage, DateTime now) => UpdateProgress(percentage, new DateTimeOffset(now, TimeSpan.Zero));
 
-    public void RecordProgress(int increment, DateTimeOffset? now = null)
+    /// <summary>
+    /// Legacy PR34 contribution API: adds raw domain contributionValue to CurrentValue,
+    /// calculates Progress as CurrentValue / TargetValue, and propagates contribution into milestones.
+    /// </summary>
+    public void RecordProgress(double incrementValue, DateTimeOffset now)
     {
-        if (Status == CharacterGoalStatus.Completed || Status == CharacterGoalStatus.Cancelled || Status == CharacterGoalStatus.Expired)
-            throw new InvalidOperationException($"Cannot record progress on goal in terminal state '{Status}'.");
-
         if (Status != CharacterGoalStatus.Active)
-            throw new InvalidOperationException($"Cannot record progress on a goal with status '{Status}'. Must be Active.");
+            throw new InvalidOperationException($"Cannot record progress on a goal with status '{Status}'.");
 
-        if (increment < 0)
-            throw new ArgumentOutOfRangeException(nameof(increment), "Progress increment must be non-negative.");
-
-        var newProgress = (int)Progress + increment;
-        if (newProgress > 100)
-            throw new ArgumentOutOfRangeException(nameof(increment), "Progress cannot exceed 100.");
-
-        UpdateProgress(newProgress, now);
-    }
-
-    public void RecordProgress(int increment, DateTime now) => RecordProgress(increment, (DateTimeOffset)now);
-
-    public void RecordProgress(double incrementValue, DateTimeOffset? now = null)
-    {
         if (double.IsNaN(incrementValue) || double.IsInfinity(incrementValue) || incrementValue < 0)
             throw new ArgumentOutOfRangeException(nameof(incrementValue), "Progress increment must be a valid non-negative number.");
 
-        RecordProgress((int)Math.Round(incrementValue), now);
+        var time = now.UtcDateTime;
+        CurrentValue += incrementValue;
+        Progress = (float)Math.Clamp(CurrentValue / TargetValue, 0.0, 1.0);
+
+        // Cascading milestone progress allocation with overflow propagation (PR34 legacy logic preserved)
+        double remainingForMilestones = incrementValue;
+        while (remainingForMilestones > 0)
+        {
+            var activeMilestone = _milestones
+                .Where(m => m.Status == CharacterGoalMilestoneStatus.Active)
+                .OrderBy(m => m.Order)
+                .FirstOrDefault();
+
+            if (activeMilestone == null)
+            {
+                var nextPending = _milestones
+                    .Where(m => m.Status == CharacterGoalMilestoneStatus.Pending)
+                    .OrderBy(m => m.Order)
+                    .FirstOrDefault();
+
+                if (nextPending == null)
+                    break;
+
+                nextPending.Activate();
+                activeMilestone = nextPending;
+            }
+
+            double needed = Math.Max(0, activeMilestone.TargetValue - activeMilestone.CurrentValue);
+            if (needed <= 0)
+            {
+                activeMilestone.Complete(time);
+                var nextPending = _milestones
+                    .Where(m => m.Status == CharacterGoalMilestoneStatus.Pending)
+                    .OrderBy(m => m.Order)
+                    .FirstOrDefault();
+                nextPending?.Activate();
+                continue;
+            }
+
+            if (remainingForMilestones >= needed)
+            {
+                activeMilestone.RecordProgress(needed, time);
+                remainingForMilestones -= needed;
+                
+                var nextPending = _milestones
+                    .Where(m => m.Status == CharacterGoalMilestoneStatus.Pending)
+                    .OrderBy(m => m.Order)
+                    .FirstOrDefault();
+                nextPending?.Activate();
+            }
+            else
+            {
+                activeMilestone.RecordProgress(remainingForMilestones, time);
+                remainingForMilestones = 0;
+            }
+        }
+
+        if (CurrentValue >= TargetValue)
+        {
+            Complete(now);
+        }
+        else
+        {
+            Version++;
+            Touch();
+        }
     }
 
-    public void RecordProgress(double incrementValue, DateTime now) => RecordProgress(incrementValue, (DateTimeOffset)now);
+    public void RecordProgress(double incrementValue, DateTime now) =>
+        RecordProgress(incrementValue, new DateTimeOffset(now, TimeSpan.Zero));
+
+    public void RecordProgress(double incrementValue) =>
+        RecordProgress(incrementValue, DateTimeOffset.UtcNow);
 
     public CharacterGoalMilestone AddMilestone(string title, int order, double targetValue, string? description = null)
     {

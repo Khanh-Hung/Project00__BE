@@ -79,4 +79,24 @@ public sealed class CharacterGoalPolicy : ICharacterGoalPolicy
             ),
             _ => null // Unsupported desire types do not spawn autonomous goals in MVP
         };
+
+    public int EvaluateActionProgress(string goalKey, string actionType)
+    {
+        if (string.IsNullOrWhiteSpace(goalKey) || string.IsNullOrWhiteSpace(actionType))
+            return 0;
+
+        return (goalKey.Trim(), actionType.Trim()) switch
+        {
+            ("BuildRelationship", "Socialize") => 25,
+            ("BuildRelationship", "Chat") => 25,
+            ("BuildRelationship", "Greet") => 15,
+            ("Rest", "Rest") => 25,
+            ("Rest", "Sleep") => 25,
+            ("Eat", "Eat") => 25,
+            ("ReduceStress", "Rest") => 25,
+            ("ReduceStress", "Relax") => 25,
+            ("ReduceStress", "Meditate") => 25,
+            _ => 0
+        };
+    }
 }

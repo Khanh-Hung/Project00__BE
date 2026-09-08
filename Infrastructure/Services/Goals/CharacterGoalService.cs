@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,7 +8,9 @@ using Application.Contracts.Goals;
 using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
+using Domain.Exceptions;
 using Domain.ValueObjects;
+using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -17,24 +18,26 @@ namespace Infrastructure.Services.Goals;
 
 /// <summary>
 /// Authoritative goal subsystem orchestration service.
-/// Coordinates deterministic goal selection, deduplicated persistence, and idempotent progress updates.
+/// Coordinates deterministic goal selection, deduplicated persistence, and durable idempotent progress updates.
 /// </summary>
 public sealed class CharacterGoalService : ICharacterGoalService
 {
+    private const int MaxConcurrencyRetries = 3;
+
+    private readonly CoreDbContext _dbContext;
     private readonly ICharacterGoalRepository _goalRepository;
     private readonly ICharacterGoalPolicy _goalPolicy;
     private readonly ISystemClock _clock;
     private readonly ILogger<CharacterGoalService> _logger;
 
-    // Process-local idempotency cache for goal progress executions
-    private static readonly ConcurrentDictionary<(Guid GoalId, Guid ExecutionId), CharacterGoalProgressFeedback> _executionCache = new();
-
     public CharacterGoalService(
+        CoreDbContext dbContext,
         ICharacterGoalRepository goalRepository,
         ICharacterGoalPolicy goalPolicy,
         ISystemClock clock,
         ILogger<CharacterGoalService> logger)
     {
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _goalRepository = goalRepository ?? throw new ArgumentNullException(nameof(goalRepository));
         _goalPolicy = goalPolicy ?? throw new ArgumentNullException(nameof(goalPolicy));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
@@ -77,7 +80,7 @@ public sealed class CharacterGoalService : ICharacterGoalService
                     await _goalRepository.AddAsync(newGoal, ct);
                     return newGoal;
                 }
-                catch (Exception ex) when (IsUniqueConstraintViolation(ex))
+                catch (DbUpdateException ex) when (IsActiveGoalUniqueViolation(ex))
                 {
                     _logger.LogInformation(
                         ex,
@@ -110,70 +113,311 @@ public sealed class CharacterGoalService : ICharacterGoalService
             return null;
         }
 
-        // Idempotency check: reuse previously recorded progress feedback for this ExecutionId
-        var cacheKey = (goalContext.GoalId, executionId);
-        if (_executionCache.TryGetValue(cacheKey, out var existingFeedback))
+        var actionTypeStr = actionExecution.ActionType?.ToString() ?? string.Empty;
+
+        // 1. Semantic alignment check between Goal and ActionExecution
+        int progressDelta = _goalPolicy.EvaluateActionProgress(goalContext.GoalKey, actionTypeStr);
+        var expectedFingerprint = CharacterGoalExecutionProgress.ComputeFingerprint(
+            characterId,
+            goalContext.GoalId,
+            executionId,
+            actionTypeStr,
+            progressDelta);
+
+        // 2. Durable DB Idempotency Check: query transition ledger for (GoalId, ExecutionId)
+        var existingProgress = await _dbContext.CharacterGoalExecutionProgresses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.GoalId == goalContext.GoalId && p.ExecutionId == executionId, ct);
+
+        if (existingProgress != null)
         {
-            return existingFeedback with { IsDuplicateExecution = true };
+            if (existingProgress.OperationFingerprint != expectedFingerprint)
+            {
+                _logger.LogWarning(
+                    "[CharacterGoalService] Idempotency conflict for GoalId={GoalId}, ExecutionId={ExecutionId}. Existing fingerprint '{Existing}' != incoming '{Incoming}'.",
+                    goalContext.GoalId, executionId, existingProgress.OperationFingerprint, expectedFingerprint);
+
+                throw new CharacterGoalIdempotencyConflictException(
+                    goalContext.GoalId,
+                    executionId,
+                    existingProgress.OperationFingerprint,
+                    expectedFingerprint,
+                    $"ExecutionId '{executionId}' has already been processed with a different semantic goal progress operation.");
+            }
+
+            _logger.LogInformation(
+                "[CharacterGoalService] Idempotent duplicate progress suppressed for GoalId={GoalId}, ExecutionId={ExecutionId}. Reusing recorded feedback.",
+                goalContext.GoalId, executionId);
+
+            var currentGoal = await _dbContext.CharacterGoals
+                .AsNoTracking()
+                .FirstOrDefaultAsync(g => g.Id == goalContext.GoalId, ct);
+
+            return new CharacterGoalProgressFeedback(
+                GoalId: goalContext.GoalId,
+                ExecutionId: executionId,
+                PreviousProgress: existingProgress.OldProgress,
+                NewProgress: existingProgress.NewProgress,
+                Status: currentGoal?.Status ?? CharacterGoalStatus.Active,
+                IsDuplicateExecution: true
+            );
         }
 
-        var goal = await _goalRepository.GetByIdAsync(goalContext.GoalId, ct);
-        if (goal == null)
+        // 3. Concurrency retry loop for applying progress to Goal aggregate and persisting audit record
+        for (var attempt = 1; attempt <= MaxConcurrencyRetries; attempt++)
         {
-            _logger.LogWarning(
-                "[CharacterGoalService] Goal {GoalId} not found when applying progress feedback.",
-                goalContext.GoalId);
-            return null;
+            try
+            {
+                var goal = await _dbContext.CharacterGoals
+                    .FirstOrDefaultAsync(g => g.Id == goalContext.GoalId, ct);
+
+                if (goal == null)
+                {
+                    _logger.LogWarning(
+                        "[CharacterGoalService] Goal {GoalId} not found when applying progress feedback.",
+                        goalContext.GoalId);
+                    return null;
+                }
+
+                if (goal.CharacterId != characterId)
+                {
+                    _logger.LogWarning(
+                        "[CharacterGoalService] Goal {GoalId} character mismatch (Expected={Expected}, Actual={Actual}).",
+                        goalContext.GoalId, characterId, goal.CharacterId);
+                    return null;
+                }
+
+                if (goal.Status == CharacterGoalStatus.Completed)
+                {
+                    throw new InvalidOperationException($"Completed goal '{goal.Id}' cannot receive further progress.");
+                }
+
+                if (goal.Status != CharacterGoalStatus.Active)
+                {
+                    return null;
+                }
+
+                int oldProgress = goal.ProgressPercentage;
+                int newProgress = oldProgress;
+
+                if (progressDelta > 0)
+                {
+                    newProgress = Math.Min(100, oldProgress + progressDelta);
+                    goal.UpdateProgress(newProgress, now);
+                }
+
+                var progressRecord = new CharacterGoalExecutionProgress(
+                    characterId: characterId,
+                    goalId: goal.Id,
+                    executionId: executionId,
+                    actionType: actionTypeStr,
+                    progressDelta: progressDelta,
+                    oldProgress: oldProgress,
+                    newProgress: newProgress,
+                    appliedAtUtc: now
+                );
+
+                await _dbContext.CharacterGoalExecutionProgresses.AddAsync(progressRecord, ct);
+                await _dbContext.SaveChangesAsync(ct);
+
+                _logger.LogInformation(
+                    "[CharacterGoalService] Successfully recorded goal progress for GoalId={GoalId}, ExecutionId={ExecutionId}. Progress: {Old}->{New} (Delta={Delta}).",
+                    goal.Id, executionId, oldProgress, newProgress, progressDelta);
+
+                return new CharacterGoalProgressFeedback(
+                    GoalId: goal.Id,
+                    ExecutionId: executionId,
+                    PreviousProgress: oldProgress,
+                    NewProgress: newProgress,
+                    Status: goal.Status,
+                    IsDuplicateExecution: false
+                );
+            }
+            catch (DbUpdateConcurrencyException ex) when (attempt < MaxConcurrencyRetries)
+            {
+                _logger.LogWarning(ex,
+                    "[CharacterGoalService] Concurrency conflict on attempt {Attempt} for GoalId={GoalId}. Retrying...",
+                    attempt, goalContext.GoalId);
+
+                _dbContext.ChangeTracker.Clear();
+            }
+            catch (DbUpdateException ex)
+            {
+                if (IsGoalProgressUniqueViolation(ex))
+                {
+                    _logger.LogInformation(ex,
+                        "[CharacterGoalService] Concurrent execution progress detected for GoalId={GoalId}, ExecutionId={ExecutionId}. Reloading recorded result.",
+                        goalContext.GoalId, executionId);
+
+                    _dbContext.ChangeTracker.Clear();
+
+                    var concurrentRecord = await _dbContext.CharacterGoalExecutionProgresses
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(p => p.GoalId == goalContext.GoalId && p.ExecutionId == executionId, ct);
+
+                    if (concurrentRecord != null)
+                    {
+                        if (concurrentRecord.OperationFingerprint != expectedFingerprint)
+                        {
+                            throw new CharacterGoalIdempotencyConflictException(
+                                goalContext.GoalId,
+                                executionId,
+                                concurrentRecord.OperationFingerprint,
+                                expectedFingerprint,
+                                $"ExecutionId '{executionId}' has already been processed with a different semantic goal progress operation.");
+                        }
+
+                        var currentGoal = await _dbContext.CharacterGoals
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(g => g.Id == goalContext.GoalId, ct);
+
+                        return new CharacterGoalProgressFeedback(
+                            GoalId: goalContext.GoalId,
+                            ExecutionId: executionId,
+                            PreviousProgress: concurrentRecord.OldProgress,
+                            NewProgress: concurrentRecord.NewProgress,
+                            Status: currentGoal?.Status ?? CharacterGoalStatus.Active,
+                            IsDuplicateExecution: true
+                        );
+                    }
+                }
+
+                throw;
+            }
         }
 
-        if (goal.CharacterId != characterId)
-        {
-            _logger.LogWarning(
-                "[CharacterGoalService] Goal {GoalId} character mismatch (Expected={Expected}, Actual={Actual}).",
-                goalContext.GoalId, characterId, goal.CharacterId);
-            return null;
-        }
+        _logger.LogError(
+            "[CharacterGoalService] Concurrency retries exhausted for GoalId={GoalId}, ExecutionId={ExecutionId}.",
+            goalContext.GoalId, executionId);
 
-        if (goal.Status == CharacterGoalStatus.Completed)
-        {
-            throw new InvalidOperationException($"Completed goal '{goal.Id}' cannot receive further progress.");
-        }
-
-        if (goal.Status != CharacterGoalStatus.Active)
-        {
-            return null;
-        }
-
-        int previousProgress = (int)goal.Progress;
-        int increment = 25; // Standard bounded progress step
-        int targetProgress = Math.Min(100, previousProgress + increment);
-
-        goal.UpdateProgress(targetProgress, now);
-        await _goalRepository.UpdateAsync(goal, ct);
-
-        var feedback = new CharacterGoalProgressFeedback(
-            GoalId: goal.Id,
-            ExecutionId: executionId,
-            PreviousProgress: previousProgress,
-            NewProgress: (int)goal.Progress,
-            Status: goal.Status,
-            IsDuplicateExecution: false
-        );
-
-        _executionCache.TryAdd(cacheKey, feedback);
-        return feedback;
+        return null;
     }
 
-    private static bool IsUniqueConstraintViolation(Exception ex)
+    public static bool IsActiveGoalUniqueViolation(DbUpdateException ex)
     {
-        if (ex is DbUpdateException dbEx)
+        var inner = ex.InnerException;
+        while (inner != null)
         {
-            var msg = dbEx.InnerException?.Message ?? dbEx.Message;
-            return msg.Contains("unique", StringComparison.OrdinalIgnoreCase) ||
-                   msg.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
-                   msg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
-                   msg.Contains("19", StringComparison.OrdinalIgnoreCase);
+            if (inner is Npgsql.PostgresException pg)
+            {
+                if (pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation || pg.SqlState == "23505")
+                {
+                    if (string.IsNullOrWhiteSpace(pg.ConstraintName) ||
+                        pg.ConstraintName.Contains("IX_CharacterGoals_CharacterId_Title", StringComparison.OrdinalIgnoreCase) ||
+                        pg.ConstraintName.Contains("CharacterGoals", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            var sqlStateProp = inner.GetType().GetProperty("SqlState");
+            if (sqlStateProp != null)
+            {
+                var sqlState = sqlStateProp.GetValue(inner)?.ToString();
+                if (sqlState == "23505")
+                {
+                    var msg = inner.Message ?? "";
+                    if (msg.Contains("IX_CharacterGoals_CharacterId_Title", StringComparison.OrdinalIgnoreCase) ||
+                        msg.Contains("CharacterGoals", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            var sqliteErrProp = inner.GetType().GetProperty("SqliteErrorCode");
+            if (sqliteErrProp != null)
+            {
+                var errCode = sqliteErrProp.GetValue(inner);
+                if (errCode is int code && code == 19)
+                {
+                    var innerMsg = inner.Message ?? "";
+                    if (innerMsg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) &&
+                        (innerMsg.Contains("CharacterGoals.CharacterId", StringComparison.OrdinalIgnoreCase) ||
+                         innerMsg.Contains("CharacterGoals.Title", StringComparison.OrdinalIgnoreCase) ||
+                         innerMsg.Contains("IX_CharacterGoals_CharacterId_Title", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            inner = inner.InnerException;
         }
+
+        var fullMsg = (ex.InnerException?.Message ?? "") + " " + (ex.Message ?? "");
+        if ((fullMsg.Contains("23505") || fullMsg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase)) &&
+            (fullMsg.Contains("IX_CharacterGoals_CharacterId_Title", StringComparison.OrdinalIgnoreCase) ||
+             (fullMsg.Contains("CharacterGoals", StringComparison.OrdinalIgnoreCase) && fullMsg.Contains("Title", StringComparison.OrdinalIgnoreCase))))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public static bool IsGoalProgressUniqueViolation(DbUpdateException ex)
+    {
+        var inner = ex.InnerException;
+        while (inner != null)
+        {
+            if (inner is Npgsql.PostgresException pg)
+            {
+                if (pg.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation || pg.SqlState == "23505")
+                {
+                    if (string.IsNullOrWhiteSpace(pg.ConstraintName) ||
+                        pg.ConstraintName.Contains("CharacterGoalExecutionProgresses", StringComparison.OrdinalIgnoreCase) ||
+                        pg.ConstraintName.Contains("GoalId_ExecutionId", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            var sqlStateProp = inner.GetType().GetProperty("SqlState");
+            if (sqlStateProp != null)
+            {
+                var sqlState = sqlStateProp.GetValue(inner)?.ToString();
+                if (sqlState == "23505")
+                {
+                    var msg = inner.Message ?? "";
+                    if (msg.Contains("CharacterGoalExecutionProgresses", StringComparison.OrdinalIgnoreCase) ||
+                        msg.Contains("GoalId_ExecutionId", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            var sqliteErrProp = inner.GetType().GetProperty("SqliteErrorCode");
+            if (sqliteErrProp != null)
+            {
+                var errCode = sqliteErrProp.GetValue(inner);
+                if (errCode is int code && code == 19)
+                {
+                    var innerMsg = inner.Message ?? "";
+                    if (innerMsg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) &&
+                        (innerMsg.Contains("CharacterGoalExecutionProgresses.GoalId", StringComparison.OrdinalIgnoreCase) ||
+                         innerMsg.Contains("CharacterGoalExecutionProgresses.ExecutionId", StringComparison.OrdinalIgnoreCase) ||
+                         innerMsg.Contains("CharacterGoalExecutionProgresses", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            inner = inner.InnerException;
+        }
+
+        var fullMsg = (ex.InnerException?.Message ?? "") + " " + (ex.Message ?? "");
+        if ((fullMsg.Contains("23505") || fullMsg.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase)) &&
+            (fullMsg.Contains("CharacterGoalExecutionProgresses", StringComparison.OrdinalIgnoreCase) ||
+             fullMsg.Contains("GoalId_ExecutionId", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
         return false;
     }
 }

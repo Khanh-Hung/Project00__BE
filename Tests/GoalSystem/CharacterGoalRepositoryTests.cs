@@ -1,12 +1,17 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Application.Contracts.Goals;
+using Application.Abstractions.Time;
 using Domain.Entities;
 using Domain.Enums;
+using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Repositories;
+using Infrastructure.Services.Goals;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Tests.GoalSystem;
@@ -66,7 +71,8 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
             Assert.Equal(CharacterGoalType.SkillDevelopment, retrieved.GoalType);
             Assert.Equal(CharacterGoalPriority.High, retrieved.Priority);
             Assert.Equal(CharacterGoalStatus.Active, retrieved.Status);
-            Assert.Equal(25f, retrieved.Progress);
+            Assert.Equal(0.25f, retrieved.Progress);
+            Assert.Equal(25, retrieved.ProgressPercentage);
         }
     }
 
@@ -134,21 +140,21 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
     {
         var charId = Guid.NewGuid();
 
-        // Goal A: Priority = Normal (1), Progress = 20
+        // Goal A: Priority = Normal (1), Progress = 20%
         var goalA = new CharacterGoal(
             charId, "GoalA",
             priority: CharacterGoalPriority.Normal,
             initialStatus: CharacterGoalStatus.Active,
             initialProgress: 20);
 
-        // Goal B: Priority = High (2), Progress = 10
+        // Goal B: Priority = High (2), Progress = 10%
         var goalB = new CharacterGoal(
             charId, "GoalB",
             priority: CharacterGoalPriority.High,
             initialStatus: CharacterGoalStatus.Active,
             initialProgress: 10);
 
-        // Goal C: Priority = High (2), Progress = 40
+        // Goal C: Priority = High (2), Progress = 40%
         var goalC = new CharacterGoal(
             charId, "GoalC",
             priority: CharacterGoalPriority.High,
@@ -199,5 +205,97 @@ public sealed class CharacterGoalRepositoryTests : IDisposable
             var repo2 = new CharacterGoalRepository(db2);
             await Assert.ThrowsAnyAsync<DbUpdateException>(() => repo2.AddAsync(goal2));
         }
+    }
+
+    [Fact]
+    public async Task GoalUniqueConstraintViolation_IsRecognized()
+    {
+        var charId = Guid.NewGuid();
+        var goal1 = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+        var goal2 = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+
+        using (var db1 = new CoreDbContext(_options))
+        {
+            await db1.CharacterGoals.AddAsync(goal1);
+            await db1.SaveChangesAsync();
+        }
+
+        using (var db2 = new CoreDbContext(_options))
+        {
+            await db2.CharacterGoals.AddAsync(goal2);
+            var ex = await Assert.ThrowsAsync<DbUpdateException>(() => db2.SaveChangesAsync());
+
+            // Must accurately recognize unique constraint violation on active character goals
+            Assert.True(CharacterGoalService.IsActiveGoalUniqueViolation(ex));
+        }
+    }
+
+    [Fact]
+    public void UnrelatedDbUpdateException_IsNotRecognized()
+    {
+        // Unrelated exception with arbitrary text that happens to contain "19" or "error"
+        var unrelatedInner = new Exception("Foreign key constraint failed at row 19 in table Users");
+        var unrelatedEx = new DbUpdateException("An error occurred saving entities", unrelatedInner);
+
+        Assert.False(CharacterGoalService.IsActiveGoalUniqueViolation(unrelatedEx));
+        Assert.False(CharacterGoalService.IsGoalProgressUniqueViolation(unrelatedEx));
+    }
+
+    [Fact]
+    public async Task ConcurrentGoalCreation_DeterministicRace_OneWinnerOneReloadsWinner()
+    {
+        var charId = Guid.NewGuid();
+        var goalKey = "BuildRelationship";
+
+        // Pre-create two independent services with distinct CoreDbContext instances connected to same DB
+        using var dbA = new CoreDbContext(_options);
+        using var dbB = new CoreDbContext(_options);
+
+        var repoA = new CharacterGoalRepository(dbA);
+        var repoB = new CharacterGoalRepository(dbB);
+
+        var policy = new CharacterGoalPolicy();
+        var clock = new FixedSystemClock(DateTimeOffset.UtcNow);
+
+        var serviceA = new CharacterGoalService(dbA, repoA, policy, clock, NullLogger<CharacterGoalService>.Instance);
+        var serviceB = new CharacterGoalService(dbB, repoB, policy, clock, NullLogger<CharacterGoalService>.Instance);
+
+        var desire = new CharacterDesire(
+            DesireType.NeedSocialConnection,
+            0.9,
+            DesireSource.SocialNeed,
+            new CharacterMotivation(MotivationType.ConnectionDriven, 0.9, DesireSource.SocialNeed));
+        var desireEval = new CharacterDesireEvaluation(charId, 1, new[] { desire }, desire);
+
+        // Run both workers concurrently
+        var taskA = serviceA.GetOrSelectActiveGoalAsync(charId, desireEval, clock.UtcNow);
+        var taskB = serviceB.GetOrSelectActiveGoalAsync(charId, desireEval, clock.UtcNow);
+
+        var results = await Task.WhenAll(taskA, taskB);
+
+        var goalFromA = results[0];
+        var goalFromB = results[1];
+
+        Assert.NotNull(goalFromA);
+        Assert.NotNull(goalFromB);
+
+        // Both must agree on the same winner goal id
+        Assert.Equal(goalFromA.Id, goalFromB.Id);
+        Assert.Equal(goalKey, goalFromA.Title);
+
+        // Verify exactly 1 active goal exists in the DB for this character
+        using var verifyDb = new CoreDbContext(_options);
+        var activeInDb = await verifyDb.CharacterGoals
+            .Where(g => g.CharacterId == charId && g.Status == CharacterGoalStatus.Active)
+            .ToListAsync();
+
+        Assert.Single(activeInDb);
+        Assert.Equal(goalFromA.Id, activeInDb[0].Id);
+    }
+
+    private sealed class FixedSystemClock : ISystemClock
+    {
+        public DateTimeOffset UtcNow { get; }
+        public FixedSystemClock(DateTimeOffset utcNow) => UtcNow = utcNow;
     }
 }

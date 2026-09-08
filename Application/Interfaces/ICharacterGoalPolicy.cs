@@ -17,4 +17,6 @@ public interface ICharacterGoalPolicy
         CharacterDesireEvaluation desireEvaluation,
         IReadOnlyList<CharacterGoal> activeGoals,
         DateTimeOffset now);
+
+    int EvaluateActionProgress(string goalKey, string actionType);
 }

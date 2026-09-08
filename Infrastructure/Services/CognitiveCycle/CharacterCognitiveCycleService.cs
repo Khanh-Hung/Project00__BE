@@ -367,8 +367,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                         GoalKey: activeGoal.GoalKey,
                         Status: activeGoal.Status,
                         Priority: (int)activeGoal.Priority,
-                        Progress: (int)activeGoal.Progress,
-                        Target: null
+                        Progress: activeGoal.ProgressPercentage
                     );
                 }
             }

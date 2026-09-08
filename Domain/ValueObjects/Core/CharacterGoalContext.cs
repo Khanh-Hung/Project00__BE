@@ -13,6 +13,5 @@ public sealed record CharacterGoalContext(
     string GoalKey,
     CharacterGoalStatus Status,
     int Priority,
-    int Progress,
-    string? Target = null
+    int Progress
 );

@@ -1,3 +1,4 @@
+using Domain.Exceptions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -121,7 +122,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         var context = new CharacterCognitiveCycleContext(
@@ -147,7 +148,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         // Caller attempts to inject goal context
@@ -226,7 +227,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
 
         // Safety gate that always blocks actions
         var blockingSafetyGate = new FakeBlockingSafetyGate("TEST_SAFETY_BLOCK", "Test safety block");
@@ -261,7 +262,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         var executionId = Guid.NewGuid();
@@ -282,7 +283,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
 
         var goalInDb = await repo.GetByIdAsync(result.GoalFeedback.GoalId);
         Assert.NotNull(goalInDb);
-        Assert.Equal(result.GoalFeedback.NewProgress, (int)goalInDb.Progress);
+        Assert.Equal(result.GoalFeedback.NewProgress, goalInDb.ProgressPercentage);
     }
 
     [Fact]
@@ -296,7 +297,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         await repo.AddAsync(goal);
 
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
 
         var executionId = Guid.NewGuid();
         var actionExec = new CharacterActionExecutionResult(
@@ -328,7 +329,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
 
         var goalInDb = await repo.GetByIdAsync(goal.Id);
         Assert.NotNull(goalInDb);
-        Assert.Equal(45f, goalInDb.Progress); // Did not double-increment
+        Assert.Equal(45, goalInDb.ProgressPercentage); // Did not double-increment
     }
 
     [Fact]
@@ -378,7 +379,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         await repo.AddAsync(goal);
 
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
 
         var executionId = Guid.NewGuid();
         var actionExec = new CharacterActionExecutionResult(
@@ -408,7 +409,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         var executionId = Guid.NewGuid();
@@ -434,7 +435,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
         var cycleService = CreateCycleService(db, goalService);
 
         var eventId = Guid.NewGuid();
@@ -491,7 +492,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
         // Service where progress persistence fails
-        var failingPersistenceGoalService = new FailingPersistenceGoalService(repo, new CharacterGoalPolicy(), clock);
+        var failingPersistenceGoalService = new FailingPersistenceGoalService(db, repo, new CharacterGoalPolicy(), clock);
         var cycleService = CreateCycleService(db, failingPersistenceGoalService);
 
         var context = new CharacterCognitiveCycleContext(
@@ -520,7 +521,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
 
         var motivation = new CharacterMotivation(MotivationType.ConnectionDriven, 0.8, DesireSource.SocialNeed);
         var desire = new CharacterDesire(DesireType.NeedSocialConnection, 0.8, DesireSource.SocialNeed, motivation);
@@ -542,7 +543,7 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         using var db = new CoreDbContext(_options);
         var repo = new CharacterGoalRepository(db);
         var clock = new TestSystemClock();
-        var goalService = new CharacterGoalService(repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
 
         var motivation = new CharacterMotivation(MotivationType.ConnectionDriven, 0.8, DesireSource.SocialNeed);
         var desire = new CharacterDesire(DesireType.NeedSocialConnection, 0.8, DesireSource.SocialNeed, motivation);
@@ -563,6 +564,253 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
         // Database has exactly 1 goal
         var count = await db.CharacterGoals.CountAsync(g => g.CharacterId == charId);
         Assert.Equal(1, count);
+    }
+
+
+
+    private static CharacterActionExecutionResult CreateAppliedActionResult(
+        Guid executionId,
+        Guid characterId,
+        ActionType actionType) =>
+        new(
+            ExecutionId: executionId,
+            CharacterId: characterId,
+            Status: CharacterActionExecutionStatus.Applied,
+            ActionType: actionType,
+            Intensity: 1.0,
+            SourceIntent: IntentType.SeekSocialConnection,
+            Motivation: MotivationType.ConnectionDriven,
+            StateVersionBefore: 1,
+            StateVersionAfter: 2,
+            AppliedDelta: null,
+            Snapshot: null,
+            Message: "Applied"
+        );
+
+    [Fact]
+    public async Task GoalProgress_SameExecutionIdSameSemanticOperation_IsIdempotent()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        using var db = new CoreDbContext(_options);
+        var repo = new CharacterGoalRepository(db);
+        var clock = new TestSystemClock();
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+
+        var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+        await repo.AddAsync(goal);
+
+        var goalContext = new CharacterGoalContext(goal.Id, goal.Title, goal.Status, (int)goal.Priority, goal.ProgressPercentage);
+        var actionResult = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+
+        // 1. First execution progress application
+        var firstResult = await goalService.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow);
+        Assert.NotNull(firstResult);
+        Assert.False(firstResult.IsDuplicateExecution);
+        Assert.Equal(0, firstResult.PreviousProgress);
+        Assert.Equal(25, firstResult.NewProgress);
+
+        // 2. Exact same semantic re-delivery
+        var duplicateResult = await goalService.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow);
+        Assert.NotNull(duplicateResult);
+        Assert.True(duplicateResult.IsDuplicateExecution);
+        Assert.Equal(0, duplicateResult.PreviousProgress);
+        Assert.Equal(25, duplicateResult.NewProgress);
+
+        // 3. Verify DB state: progress is still 25% (not 50%), and exactly 1 audit record exists
+        var savedGoal = await repo.GetByIdAsync(goal.Id);
+        Assert.NotNull(savedGoal);
+        Assert.Equal(25, savedGoal.ProgressPercentage);
+
+        var recordCount = await db.CharacterGoalExecutionProgresses.CountAsync(p => p.GoalId == goal.Id && p.ExecutionId == execId);
+        Assert.Equal(1, recordCount);
+    }
+
+    [Fact]
+    public async Task GoalProgress_SameExecutionIdDifferentSemanticOperation_IsConflict()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        using var db = new CoreDbContext(_options);
+        var repo = new CharacterGoalRepository(db);
+        var clock = new TestSystemClock();
+        var goalService = new CharacterGoalService(db, repo, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+
+        var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+        await repo.AddAsync(goal);
+
+        var goalContext = new CharacterGoalContext(goal.Id, goal.Title, goal.Status, (int)goal.Priority, goal.ProgressPercentage);
+
+        // First execution payload: Socialize
+        var actionResult1 = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+        var firstResult = await goalService.ApplyProgressFeedbackAsync(charId, execId, actionResult1, goalContext, FixedNow);
+        Assert.NotNull(firstResult);
+
+        // Divergent execution payload for same ExecutionId: Eat
+        var actionResultDivergent = CreateAppliedActionResult(execId, charId, ActionType.Eat);
+
+        // Must reject divergent payload with CharacterGoalIdempotencyConflictException
+        await Assert.ThrowsAsync<CharacterGoalIdempotencyConflictException>(() =>
+            goalService.ApplyProgressFeedbackAsync(charId, execId, actionResultDivergent, goalContext, FixedNow));
+    }
+
+    [Fact]
+    public async Task GoalProgress_ConcurrentSameExecutionId_AppliesOnlyOnce()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        using (var setupDb = new CoreDbContext(_options))
+        {
+            var setupRepo = new CharacterGoalRepository(setupDb);
+            var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+            await setupRepo.AddAsync(goal);
+        }
+
+        using var dbA = new CoreDbContext(_options);
+        using var dbB = new CoreDbContext(_options);
+
+        var repoA = new CharacterGoalRepository(dbA);
+        var repoB = new CharacterGoalRepository(dbB);
+        var clock = new TestSystemClock();
+
+        var serviceA = new CharacterGoalService(dbA, repoA, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var serviceB = new CharacterGoalService(dbB, repoB, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+
+        var goalA = await repoA.GetActiveByGoalKeyAsync(charId, "BuildRelationship");
+        var goalContext = new CharacterGoalContext(goalA!.Id, goalA.Title, goalA.Status, (int)goalA.Priority, goalA.ProgressPercentage);
+
+        var actionResult = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+
+        // Run both workers concurrently with same ExecutionId
+        var taskA = serviceA.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow);
+        var taskB = serviceB.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow);
+
+        var results = await Task.WhenAll(taskA, taskB);
+
+        var resA = results[0];
+        var resB = results[1];
+
+        Assert.NotNull(resA);
+        Assert.NotNull(resB);
+
+        // Exactly one should be non-duplicate and one duplicate
+        var isDuplicates = new[] { resA.IsDuplicateExecution, resB.IsDuplicateExecution };
+        Assert.Contains(true, isDuplicates);
+        Assert.Contains(false, isDuplicates);
+
+        // Verify database: goal progressed by exactly 25, not 50!
+        using var verifyDb = new CoreDbContext(_options);
+        var finalGoal = await verifyDb.CharacterGoals.FirstAsync(g => g.Id == goalA.Id);
+        Assert.Equal(25, finalGoal.ProgressPercentage);
+
+        var records = await verifyDb.CharacterGoalExecutionProgresses.Where(p => p.GoalId == goalA.Id && p.ExecutionId == execId).ToListAsync();
+        Assert.Single(records);
+    }
+
+    [Fact]
+    public async Task GoalProgress_ConcurrentDifferentExecutions_UsesOptimisticConcurrency()
+    {
+        var charId = Guid.NewGuid();
+        var exec1 = Guid.NewGuid();
+        var exec2 = Guid.NewGuid();
+
+        using (var setupDb = new CoreDbContext(_options))
+        {
+            var setupRepo = new CharacterGoalRepository(setupDb);
+            var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+            await setupRepo.AddAsync(goal);
+        }
+
+        using var dbA = new CoreDbContext(_options);
+        using var dbB = new CoreDbContext(_options);
+
+        var repoA = new CharacterGoalRepository(dbA);
+        var repoB = new CharacterGoalRepository(dbB);
+        var clock = new TestSystemClock();
+
+        var serviceA = new CharacterGoalService(dbA, repoA, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+        var serviceB = new CharacterGoalService(dbB, repoB, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+
+        var goalA = await repoA.GetActiveByGoalKeyAsync(charId, "BuildRelationship");
+        var goalContext = new CharacterGoalContext(goalA!.Id, goalA.Title, goalA.Status, (int)goalA.Priority, goalA.ProgressPercentage);
+
+        var action1 = CreateAppliedActionResult(exec1, charId, ActionType.Socialize);
+        var action2 = CreateAppliedActionResult(exec2, charId, ActionType.Socialize);
+
+        // Run both workers concurrently for two DIFFERENT executions on the same goal
+        var taskA = serviceA.ApplyProgressFeedbackAsync(charId, exec1, action1, goalContext, FixedNow);
+        var taskB = serviceB.ApplyProgressFeedbackAsync(charId, exec2, action2, goalContext, FixedNow);
+
+        var results = await Task.WhenAll(taskA, taskB);
+
+        Assert.NotNull(results[0]);
+        Assert.NotNull(results[1]);
+        Assert.False(results[0].IsDuplicateExecution);
+        Assert.False(results[1].IsDuplicateExecution);
+
+        // Verify database: both executions applied progress -> 0 + 25 + 25 = 50%
+        using var verifyDb = new CoreDbContext(_options);
+        var finalGoal = await verifyDb.CharacterGoals.FirstAsync(g => g.Id == goalA.Id);
+        Assert.Equal(50, finalGoal.ProgressPercentage);
+
+        var records = await verifyDb.CharacterGoalExecutionProgresses.Where(p => p.GoalId == goalA.Id).ToListAsync();
+        Assert.Equal(2, records.Count);
+    }
+
+    [Fact]
+    public async Task GoalProgress_RestartedProcessSimulation_DoesNotDoubleApply()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+
+        Guid goalId;
+        // Process 1 runs and terminates
+        using (var db1 = new CoreDbContext(_options))
+        {
+            var repo1 = new CharacterGoalRepository(db1);
+            var clock = new TestSystemClock();
+            var service1 = new CharacterGoalService(db1, repo1, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+
+            var goal = new CharacterGoal(charId, "BuildRelationship", initialStatus: CharacterGoalStatus.Active);
+            await repo1.AddAsync(goal);
+            goalId = goal.Id;
+
+            var goalContext = new CharacterGoalContext(goal.Id, goal.Title, goal.Status, (int)goal.Priority, goal.ProgressPercentage);
+            var actionResult = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+
+            var res1 = await service1.ApplyProgressFeedbackAsync(charId, execId, actionResult, goalContext, FixedNow);
+            Assert.NotNull(res1);
+            Assert.False(res1.IsDuplicateExecution);
+            Assert.Equal(25, res1.NewProgress);
+        }
+
+        // Process 2 starts fresh (simulating server reboot/restarted container - zero in-memory cache)
+        using (var db2 = new CoreDbContext(_options))
+        {
+            var repo2 = new CharacterGoalRepository(db2);
+            var clock = new TestSystemClock();
+            var service2 = new CharacterGoalService(db2, repo2, new CharacterGoalPolicy(), clock, NullLogger<CharacterGoalService>.Instance);
+
+            var goal2 = await repo2.GetByIdAsync(goalId);
+            Assert.NotNull(goal2);
+            Assert.Equal(25, goal2.ProgressPercentage);
+
+            var goalContext = new CharacterGoalContext(goal2.Id, goal2.Title, goal2.Status, (int)goal2.Priority, goal2.ProgressPercentage);
+            var duplicateAction = CreateAppliedActionResult(execId, charId, ActionType.Socialize);
+
+            var res2 = await service2.ApplyProgressFeedbackAsync(charId, execId, duplicateAction, goalContext, FixedNow);
+
+            // Must detect existing durable DB record and return duplicate without mutating goal
+            Assert.NotNull(res2);
+            Assert.True(res2.IsDuplicateExecution);
+            Assert.Equal(25, res2.NewProgress);
+
+            var verifyGoal = await repo2.GetByIdAsync(goalId);
+            Assert.Equal(25, verifyGoal!.ProgressPercentage);
+        }
     }
 
     private sealed class FakeBlockingSafetyGate : IActionSafetyGate
@@ -612,9 +860,9 @@ public sealed class CharacterGoalCognitiveIntegrationTests : IDisposable
     {
         private readonly CharacterGoalService _inner;
 
-        public FailingPersistenceGoalService(ICharacterGoalRepository repo, ICharacterGoalPolicy policy, ISystemClock clock)
+        public FailingPersistenceGoalService(CoreDbContext db, ICharacterGoalRepository repo, ICharacterGoalPolicy policy, ISystemClock clock)
         {
-            _inner = new CharacterGoalService(repo, policy, clock, NullLogger<CharacterGoalService>.Instance);
+            _inner = new CharacterGoalService(db, repo, policy, clock, NullLogger<CharacterGoalService>.Instance);
         }
 
         public Task<CharacterGoal?> GetOrSelectActiveGoalAsync(

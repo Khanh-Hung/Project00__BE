@@ -34,19 +34,18 @@ public sealed class CharacterGoalDomainTests
         // UpdateProgress validation
         var goal = new CharacterGoal(charId, "BuildRelationship", initialProgress: 50);
         Assert.Throws<ArgumentOutOfRangeException>(() => goal.UpdateProgress(101));
-        Assert.Throws<ArgumentOutOfRangeException>(() => goal.RecordProgress(60));
     }
 
     [Fact]
-    public void Goal_ScheduledCanBecomeActive()
+    public void Goal_DraftCanBecomeActive()
     {
         var charId = Guid.NewGuid();
         var goal = new CharacterGoal(
             charId,
             "BuildRelationship",
-            initialStatus: CharacterGoalStatus.Scheduled);
+            initialStatus: CharacterGoalStatus.Draft);
 
-        Assert.Equal(CharacterGoalStatus.Scheduled, goal.Status);
+        Assert.Equal(CharacterGoalStatus.Draft, goal.Status);
 
         goal.Activate();
 
@@ -67,7 +66,8 @@ public sealed class CharacterGoalDomainTests
 
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
         Assert.NotNull(goal.CompletedAt);
-        Assert.Equal(100f, goal.Progress);
+        Assert.Equal(1.0f, goal.Progress);
+        Assert.Equal(100, goal.ProgressPercentage);
     }
 
     [Fact]
@@ -128,7 +128,73 @@ public sealed class CharacterGoalDomainTests
         goal.UpdateProgress(100, now);
 
         Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
-        Assert.Equal(100f, goal.Progress);
+        Assert.Equal(1.0f, goal.Progress);
+        Assert.Equal(100, goal.ProgressPercentage);
+        Assert.NotNull(goal.CompletedAt);
+    }
+
+    [Fact]
+    public void LegacyGoalProgress_RecordContribution_UsesTargetValueSemantics()
+    {
+        var charId = Guid.NewGuid();
+        var goal = new CharacterGoal(charId, "GrandProject", CharacterGoalType.PersonalGrowth, targetValue: 1000);
+
+        goal.RecordProgress(50);
+
+        Assert.Equal(50, goal.CurrentValue);
+        Assert.Equal(0.05f, goal.Progress);
+        Assert.Equal(5, goal.ProgressPercentage);
+    }
+
+    [Fact]
+    public void LegacyGoalProgress_DoesNotTreatContributionAsPercentage()
+    {
+        var charId = Guid.NewGuid();
+        var goal = new CharacterGoal(charId, "LargeTask", CharacterGoalType.PersonalGrowth, targetValue: 500);
+
+        goal.RecordProgress(25);
+
+        Assert.Equal(25, goal.CurrentValue);
+        Assert.Equal(0.05f, goal.Progress);
+        Assert.NotEqual(0.25f, goal.Progress);
+        Assert.NotEqual(25f, goal.Progress);
+    }
+
+    [Fact]
+    public void LegacyGoalProgress_MilestoneContributionPropagationIsPreserved()
+    {
+        var charId = Guid.NewGuid();
+        var goal = new CharacterGoal(charId, "MultiStage", CharacterGoalType.PersonalGrowth, targetValue: 100);
+        var m1 = goal.AddMilestone("Step 1", 1, 40);
+        var m2 = goal.AddMilestone("Step 2", 2, 60);
+
+        Assert.Equal(CharacterGoalMilestoneStatus.Active, m1.Status);
+        Assert.Equal(CharacterGoalMilestoneStatus.Pending, m2.Status);
+
+        goal.RecordProgress(50);
+
+        // m1 (target 40) is complete, remaining 10 overflowed into m2
+        Assert.Equal(CharacterGoalMilestoneStatus.Completed, m1.Status);
+        Assert.Equal(40, m1.CurrentValue);
+        Assert.Equal(CharacterGoalMilestoneStatus.Active, m2.Status);
+        Assert.Equal(10, m2.CurrentValue);
+        Assert.Equal(50, goal.CurrentValue);
+        Assert.Equal(0.5f, goal.Progress);
+        Assert.Equal(50, goal.ProgressPercentage);
+    }
+
+    [Fact]
+    public void LegacyGoalProgress_CompletesGoalAtTargetValue()
+    {
+        var charId = Guid.NewGuid();
+        var goal = new CharacterGoal(charId, "TargetGoal", CharacterGoalType.PersonalGrowth, targetValue: 80);
+
+        goal.RecordProgress(85);
+
+        Assert.Equal(CharacterGoalStatus.Completed, goal.Status);
+        Assert.Equal(85, goal.CurrentValue);
+        Assert.Equal(1.0f, goal.Progress);
+        Assert.Equal(100, goal.ProgressPercentage);
         Assert.NotNull(goal.CompletedAt);
     }
 }
