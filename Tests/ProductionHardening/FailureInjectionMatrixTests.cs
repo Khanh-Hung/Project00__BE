@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -45,7 +46,7 @@ namespace Tests.ProductionHardening;
 /// 4. Memory feedback persistence failure does not roll back committed primary state mutation.
 /// 5. Relationship feedback persistence failure does not roll back committed primary state mutation.
 /// 6. Social presence feedback persistence failure does not roll back committed primary state mutation.
-/// 7. Outbox persistence failure rolls back simulation activity atomically (using SaveChangesInterceptor).
+/// 7. Outbox persistence failure rolls back simulation activity atomically (using DbCommandInterceptor).
 /// </summary>
 public class FailureInjectionMatrixTests : IDisposable
 {
@@ -404,9 +405,11 @@ public class FailureInjectionMatrixTests : IDisposable
     [Fact]
     public async Task Failure_7_LifeSimulation_OutboxFailure_RollsBackActivityAtomically()
     {
-        // Proves true atomic rollback when commit fails while BOTH Activity=Completed
-        // and Outbox=Added are in the Unit of Work.
-        var interceptor = new ThrowingCommitInterceptor();
+        // Proves true atomic database transaction rollback:
+        // EF Core begins transaction, executes SQL UPDATE on CharacterLifeActivities (Completed),
+        // and then when executing SQL INSERT on CharacterOutboxMessages, a database failure occurs.
+        // The transaction rolls back atomically, reverting the executed UPDATE in SQLite.
+        var interceptor = new OutboxRollbackCommandInterceptor();
         var optionsWithInterceptor = new DbContextOptionsBuilder<CoreDbContext>()
             .UseSqlite(_connection)
             .AddInterceptors(interceptor)
@@ -442,8 +445,6 @@ public class FailureInjectionMatrixTests : IDisposable
         }
 
         // 2. Run TickAsync with genuine repository and outbox repository sharing CoreDbContext
-        // The interceptor will trigger during SaveChangesAsync when BOTH Activity (Completed)
-        // and Outbox (Added) are in the ChangeTracker.
         await using (var db = new CoreDbContext(optionsWithInterceptor))
         {
             var activityRepo = new CharacterLifeActivityRepository(db);
@@ -460,21 +461,29 @@ public class FailureInjectionMatrixTests : IDisposable
 
             var simContext = new CharacterLifeSimulationContext(charId, now, Guid.NewGuid());
 
-            // TickAsync will attempt to complete activity AND insert outbox event.
-            // SaveChangesAsync fails via interceptor during commit!
-            await Assert.ThrowsAsync<DbUpdateException>(() =>
+            // TickAsync will execute UPDATE on CharacterLifeActivities, then attempt INSERT into CharacterOutboxMessages.
+            // The interceptor fails the INSERT at the SQL execution stage, triggering a database transaction rollback.
+            var ex = await Assert.ThrowsAsync<DbUpdateException>(() =>
                 service.TickAsync(simContext));
 
-            // Verify interceptor actually observed BOTH entities in Unit of Work before throwing
-            Assert.True(interceptor.Invocations > 0, "Interceptor must have intercepted the commit.");
+            Assert.IsType<SqliteException>(ex.InnerException);
+            Assert.Contains("Simulated disk I/O error during outbox insert", ex.InnerException.Message);
+
+            // Verify the UPDATE command actually executed against the database connection prior to outbox failure
+            Assert.True(interceptor.ExecutedUpdateCount > 0,
+                "The UPDATE command for CharacterLifeActivities must have actually executed against the database before outbox insertion failed.");
+            Assert.True(interceptor.HasInjectedFailure,
+                "The interceptor must have injected failure during the INSERT into CharacterOutboxMessages.");
         }
 
         // 3. Verify Atomic Rollback in Database
         await using (var db = new CoreDbContext(_options))
         {
             var reloadedActivity = await db.CharacterLifeActivities.AsNoTracking().FirstAsync(a => a.Id == activityId);
-            // Activity status MUST remain Scheduled (NOT Completed!)
+            // Activity status MUST remain Scheduled (NOT Completed!) because the transaction rolled back
             Assert.Equal(LifeActivityStatus.Scheduled, reloadedActivity.Status);
+            Assert.Null(reloadedActivity.StartedAtUtc);
+            Assert.Null(reloadedActivity.CompletedAtUtc);
 
             // Outbox messages MUST be 0 (NOT committed!)
             var outboxCount = await db.CharacterOutboxMessages.AsNoTracking().CountAsync();
@@ -482,32 +491,87 @@ public class FailureInjectionMatrixTests : IDisposable
         }
     }
 
-    private sealed class ThrowingCommitInterceptor : SaveChangesInterceptor
+    public sealed class OutboxRollbackCommandInterceptor : DbCommandInterceptor
     {
-        public bool ShouldThrow { get; set; } = true;
-        public int Invocations { get; private set; }
+        public int ExecutedUpdateCount { get; private set; }
+        public bool HasInjectedFailure { get; private set; }
 
-        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
-            DbContextEventData eventData,
+        public override DbDataReader ReaderExecuted(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result)
+        {
+            TrackExecuted(command);
+            return base.ReaderExecuted(command, eventData, result);
+        }
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result,
+            CancellationToken cancellationToken = default)
+        {
+            TrackExecuted(command);
+            return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
+        {
+            CheckAndInject(command);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            CheckAndInject(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override InterceptionResult<int> NonQueryExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result)
+        {
+            CheckAndInject(command);
+            return base.NonQueryExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
             InterceptionResult<int> result,
             CancellationToken cancellationToken = default)
         {
-            if (ShouldThrow && eventData.Context != null)
+            CheckAndInject(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void TrackExecuted(DbCommand command)
+        {
+            var sql = command.CommandText ?? string.Empty;
+            if (sql.Contains("CharacterLifeActivities", StringComparison.OrdinalIgnoreCase) &&
+                sql.Contains("UPDATE", StringComparison.OrdinalIgnoreCase))
             {
-                var hasCompletedActivity = eventData.Context.ChangeTracker.Entries<CharacterLifeActivity>()
-                    .Any(e => e.Entity.Status == LifeActivityStatus.Completed);
-
-                var hasAddedOutbox = eventData.Context.ChangeTracker.Entries<CharacterOutboxMessage>()
-                    .Any(e => e.State == EntityState.Added);
-
-                if (hasCompletedActivity && hasAddedOutbox)
-                {
-                    Invocations++;
-                    throw new DbUpdateException("Simulated database failure during atomic transaction commit.", new Exception("DB crash"));
-                }
+                ExecutedUpdateCount++;
             }
+        }
 
-            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        private void CheckAndInject(DbCommand command)
+        {
+            var sql = command.CommandText ?? string.Empty;
+            if (sql.Contains("CharacterOutboxMessages", StringComparison.OrdinalIgnoreCase) &&
+                sql.Contains("INSERT", StringComparison.OrdinalIgnoreCase))
+            {
+                HasInjectedFailure = true;
+                throw new SqliteException("Simulated disk I/O error during outbox insert within atomic transaction.", 10);
+            }
         }
     }
 
