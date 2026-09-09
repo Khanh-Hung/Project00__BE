@@ -26,6 +26,7 @@ using Infrastructure.Services.State;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Tests.GoalSystem;
 using Xunit;
 
 namespace Tests.AutonomousLoop;
@@ -87,6 +88,26 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         {
             WasEvaluated = true;
             return await _inner.EvaluateAsync(characterId, proposal, ct);
+        }
+    }
+
+    private sealed class TrackingCognitiveCycleService : ICharacterCognitiveCycleService
+    {
+        private readonly ICharacterCognitiveCycleService _inner;
+        private int _callCount;
+        public int CallCount => _callCount;
+
+        public TrackingCognitiveCycleService(ICharacterCognitiveCycleService inner)
+        {
+            _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        }
+
+        public Task<CharacterCognitiveCycleResult> RunAsync(
+            CharacterCognitiveCycleContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _callCount);
+            return _inner.RunAsync(context, cancellationToken);
         }
     }
 
@@ -214,7 +235,8 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         IActionSafetyGate? safetyGate = null,
         ICharacterIntentPolicy? intentPolicy = null,
         ICharacterActionProposalPolicy? proposalPolicy = null,
-        ICharacterDesirePolicy? desirePolicy = null)
+        ICharacterDesirePolicy? desirePolicy = null,
+        ICharacterCognitiveCycleService? cognitiveCycleService = null)
     {
         var db = dbContext ?? new CoreDbContext(_options);
 
@@ -253,15 +275,16 @@ public sealed class AutonomousLifeLoopTests : IDisposable
             goalService: effectiveGoalService
         );
 
+        var effectiveCycleService = cognitiveCycleService ?? cycleService;
         var tickRepository = new CharacterAutonomousLifeTickRepository(db);
 
         var autonomousService = new AutonomousCharacterService(
-            cycleService,
+            effectiveCycleService,
             tickRepository,
             NullLogger<AutonomousCharacterService>.Instance
         );
 
-        return (autonomousService, cycleService, db);
+        return (autonomousService, effectiveCycleService, db);
     }
 
     [Fact]
@@ -717,28 +740,66 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var tickId = Guid.NewGuid();
 
-        // Use two distinct DbContexts connected to the same underlying SQLite memory database
-        var db1 = new CoreDbContext(_options);
-        var db2 = new CoreDbContext(_options);
+        // 1. Use a SaveChangesInterceptor to deterministically suspend Worker B right before save
+        var interceptorB = new ConcurrencyBarrierInterceptor();
+        var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptorB)
+            .Options;
 
-        var (service1, _, _) = CreateServices(dbContext: db1);
-        var (service2, _, _) = CreateServices(dbContext: db2);
+        using var dbA = new CoreDbContext(_options);
+        using var dbB = new CoreDbContext(optionsB);
 
-        var task1 = service1.RunOnceAsync(charId, tickId, FixedNow);
-        var task2 = service2.RunOnceAsync(charId, tickId, FixedNow);
+        var (_, baseCycleA, _) = CreateServices(dbContext: dbA);
+        var (_, baseCycleB, _) = CreateServices(dbContext: dbB);
 
-        var results = await Task.WhenAll(task1, task2);
+        var trackingCycleA = new TrackingCognitiveCycleService(baseCycleA);
+        var trackingCycleB = new TrackingCognitiveCycleService(baseCycleB);
 
-        Assert.True(results[0].IsSuccess);
-        Assert.True(results[1].IsSuccess);
+        var (serviceA, _, _) = CreateServices(dbContext: dbA, cognitiveCycleService: trackingCycleA);
+        var (serviceB, _, _) = CreateServices(dbContext: dbB, cognitiveCycleService: trackingCycleB);
 
-        // Exactly one executed tick in DB
+        // 2. Worker B begins execution and checks existing ticks in DB (sees 0), generates candidate claim,
+        // and suspends inside SaveChangesAsync right before executing the INSERT
+        var taskB = Task.Run(async () => await serviceB.RunOnceAsync(charId, tickId, FixedNow));
+        await interceptorB.WaitForBeforeSaveAsync();
+
+        // 3. Worker A executes while Worker B is suspended:
+        // Worker A checks DB (sees 0), inserts candidate claim, commits to DB (winner),
+        // executes full cognitive cycle, mutates state, and completes tick.
+        var resultA = await serviceA.RunOnceAsync(charId, tickId, FixedNow);
+        Assert.True(resultA.IsSuccess);
+        Assert.Equal(AutonomousCycleStatus.Executed, resultA.Status);
+
+        // 4. Release Worker B to attempt its commit
+        // Database enforces UNIQUE(CharacterId, SimulationTickId) -> Worker B catches DbUpdateException,
+        // reloads winner from DB, and short-circuits as duplicate without executing cognitive cycle
+        interceptorB.Release();
+        var resultB = await taskB;
+        Assert.True(resultB.IsSuccess);
+
+        // 5. Authoritative database assertions:
         using var verifyDb = new CoreDbContext(_options);
-        var tickRecord = await verifyDb.CharacterAutonomousLifeTicks
-            .SingleAsync(t => t.CharacterId == charId && t.SimulationTickId == tickId);
-        Assert.Equal(AutonomousTickState.Completed, tickRecord.State);
 
-        // Character state version should be incremented exactly ONCE (version 1 -> version 2)
+        // Invariant 1: Exactly 1 tick row exists in DB
+        var tickRows = await verifyDb.CharacterAutonomousLifeTicks
+            .Where(t => t.CharacterId == charId && t.SimulationTickId == tickId)
+            .ToListAsync();
+        Assert.Single(tickRows);
+        Assert.Equal(AutonomousTickState.Completed, tickRows[0].State);
+        Assert.Equal(resultA.CycleId, tickRows[0].CycleId);
+
+        // Invariant 2: CognitiveCycle executed exactly ONCE across all workers
+        Assert.Equal(1, trackingCycleA.CallCount);
+        Assert.Equal(0, trackingCycleB.CallCount);
+
+        // Invariant 3: ActionExecution performed exactly ONCE (1 state transition in DB)
+        var transitions = await verifyDb.CharacterStateTransitions
+            .Where(t => t.CharacterId == charId)
+            .ToListAsync();
+        Assert.Single(transitions);
+
+        // Invariant 4: State mutation occurred exactly ONCE (version 1 -> 2)
         var state = await verifyDb.CharacterStates.SingleAsync(s => s.CharacterId == charId);
         Assert.Equal(2, state.Version);
     }
@@ -796,27 +857,88 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     }
 
     [Fact]
-    public async Task AutonomousTick_RetryAfterProcessRestart_DoesNotExecuteActionTwice()
+    public async Task AutonomousTick_CrashWhileInProgress_RetryingTickDoesNotExecuteActionOrMutateState()
     {
+        // Scenario: Worker process crashed while tick was InProgress (e.g., host killed before cognitive cycle ran).
+        // PR56 MVP Contract: An InProgress tick claim is terminal-for-recovery to prevent dual execution.
+        // A subsequent invocation for the same tick detects existing InProgress claim, does NOT execute the action,
+        // and does NOT mutate character state.
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var tickId = Guid.NewGuid();
 
-        // Worker A executes
+        // Simulate interrupted/crashed process that claimed the tick slot in DB
+        using (var seedDb = new CoreDbContext(_options))
+        {
+            var claimedTick = CharacterAutonomousLifeTick.CreateClaim(charId, tickId, FixedNow, FixedNow);
+            seedDb.CharacterAutonomousLifeTicks.Add(claimedTick);
+            await seedDb.SaveChangesAsync();
+        }
+
+        // Second invocation (retry / restarted worker)
+        using var runDb = new CoreDbContext(_options);
+        var (_, cycleService, _) = CreateServices(dbContext: runDb);
+        var trackingCycle = new TrackingCognitiveCycleService(cycleService);
+        var (serviceWithTracking, _, _) = CreateServices(dbContext: runDb, cognitiveCycleService: trackingCycle);
+
+        var retryResult = await serviceWithTracking.RunOnceAsync(charId, tickId, FixedNow);
+
+        // Cognitive cycle must NOT have executed
+        Assert.Equal(0, trackingCycle.CallCount);
+
+        // State version must remain at initialized version 1 (no mutation occurred)
+        using var verifyDb = new CoreDbContext(_options);
+        var state = await verifyDb.CharacterStates.SingleAsync(s => s.CharacterId == charId);
+        Assert.Equal(1, state.Version);
+
+        // Exactly one tick record remains in DB with InProgress state
+        var ticksInDb = await verifyDb.CharacterAutonomousLifeTicks
+            .Where(t => t.CharacterId == charId && t.SimulationTickId == tickId)
+            .ToListAsync();
+        Assert.Single(ticksInDb);
+        Assert.Equal(AutonomousTickState.InProgress, ticksInDb[0].State);
+
+        // Zero state transitions occurred
+        var transitions = await verifyDb.CharacterStateTransitions
+            .Where(t => t.CharacterId == charId)
+            .ToListAsync();
+        Assert.Empty(transitions);
+    }
+
+    [Fact]
+    public async Task AutonomousTick_CrashAfterActionExecution_RetryingTickDoesNotExecuteActionTwice()
+    {
+        // Scenario: Worker executed action and mutated character state, but crashed before or right as tick was finalized.
+        // PR56 Contract: The tick record and claimed ExecutionId ensure subsequent retry does not re-apply action.
+        var charId = await SeedCharacterStateAsync(hunger: 95m);
+        var tickId = Guid.NewGuid();
+
         var (serviceA, _, dbA) = CreateServices();
         var resultA = await serviceA.RunOnceAsync(charId, tickId, FixedNow);
         Assert.True(resultA.IsSuccess);
 
         var stateAfterA = await dbA.CharacterStates.FirstAsync(s => s.CharacterId == charId);
         var versionAfterA = stateAfterA.Version;
+        Assert.Equal(2, versionAfterA); // Initial 1 -> Mutated 2
 
-        // Worker B simulates restarted process running the same tick
-        var (serviceB, _, dbB) = CreateServices();
-        var resultB = await serviceB.RunOnceAsync(charId, tickId, FixedNow);
+        // Simulate restarted process retrying the same tick
+        var (_, cycleB, dbB) = CreateServices();
+        var trackingCycleB = new TrackingCognitiveCycleService(cycleB);
+        var (serviceBWithTracking, _, _) = CreateServices(dbContext: dbB, cognitiveCycleService: trackingCycleB);
 
-        Assert.True(resultB.IsSuccess);
-        // State version must remain identical - ActionExecution must not be applied twice
+        var resultB = await serviceBWithTracking.RunOnceAsync(charId, tickId, FixedNow);
+
+        // Cognitive cycle was not re-run
+        Assert.Equal(0, trackingCycleB.CallCount);
+
+        // State version must remain identical (version 2) - ActionExecution must not be applied twice
         var stateAfterB = await dbB.CharacterStates.FirstAsync(s => s.CharacterId == charId);
         Assert.Equal(versionAfterA, stateAfterB.Version);
+
+        // Total state transitions remain exactly 1
+        var transitions = await dbB.CharacterStateTransitions
+            .Where(t => t.CharacterId == charId)
+            .ToListAsync();
+        Assert.Single(transitions);
     }
 
     [Fact]
@@ -849,5 +971,18 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var divergentTime = FixedNow.AddHours(5);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.RunOnceAsync(charId, tickId, divergentTime));
+    }
+
+    [Fact]
+    public void AutonomousCognitiveEvent_LegacyConstructor_GeneratesUniqueTickId()
+    {
+#pragma warning disable CS0618 // Type or member is obsolete
+        var legacyEvent1 = new AutonomousCognitiveEvent(Guid.NewGuid(), Guid.NewGuid(), FixedNow);
+        var legacyEvent2 = new AutonomousCognitiveEvent(Guid.NewGuid(), Guid.NewGuid(), FixedNow);
+#pragma warning restore CS0618 // Type or member is obsolete
+
+        Assert.NotEqual(Guid.Empty, legacyEvent1.SimulationTickId);
+        Assert.NotEqual(Guid.Empty, legacyEvent2.SimulationTickId);
+        Assert.NotEqual(legacyEvent1.SimulationTickId, legacyEvent2.SimulationTickId);
     }
 }

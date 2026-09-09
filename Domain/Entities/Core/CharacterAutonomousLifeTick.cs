@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Domain.Entities;
 
@@ -10,9 +10,15 @@ public enum AutonomousTickState
 }
 
 /// <summary>
-/// Authoritative domain aggregate tracking factual autonomous life loop tick executions.
-/// Enforces durable database-level idempotency via unique constraint on (CharacterId, SimulationTickId).
+/// Authoritative domain aggregate acting as an idempotency ledger record for autonomous life ticks.
+/// Enforces durable database-level uniqueness on (CharacterId, SimulationTickId) to guarantee at-most-once execution.
 /// Strictly decouples SimulationTickId from CycleId, ExecutionId, and EventId.
+/// <para>
+/// Crash &amp; Recovery Boundary (PR56 MVP):
+/// This entity does not orchestrate the cognitive cycle lifecycle or distributed leases.
+/// In PR56 MVP, an InProgress claim is treated as terminal-for-recovery: retrying an InProgress tick
+/// is recognized as already claimed to prevent split-brain dual mutations. Distributed recovery is deferred to PR58.
+/// </para>
 /// </summary>
 public sealed class CharacterAutonomousLifeTick
 {

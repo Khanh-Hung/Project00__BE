@@ -68,6 +68,11 @@ public sealed record AutonomousCognitiveEvent(
 {
     public string TickType => EventName;
 
+    /// <summary>
+    /// Legacy / test convenience overload only.
+    /// In production autonomous cycles, callers MUST use the primary constructor with an authoritative SimulationTickId.
+    /// </summary>
+    [Obsolete("Legacy/test convenience constructor only. Production callers MUST use the primary constructor with an authoritative SimulationTickId.")]
     public AutonomousCognitiveEvent(
         Guid eventId,
         Guid characterId,

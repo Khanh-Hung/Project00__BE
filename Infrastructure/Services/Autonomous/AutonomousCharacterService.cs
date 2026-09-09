@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Abstractions.Data;
@@ -14,7 +14,14 @@ namespace Infrastructure.Services.Autonomous;
 /// Orchestrates a single deterministic autonomous life loop cycle.
 /// Strictly delegates cognitive evaluation and action execution to ICharacterCognitiveCycleService
 /// without creating a second cognitive pipeline or bypassing safety gates.
-/// Enforces durable database-level idempotency per (CharacterId, SimulationTickId).
+/// Enforces durable database-level idempotency per (CharacterId, SimulationTickId) ensuring strict at-most-once execution.
+/// <para>
+/// Crash &amp; Recovery Boundary (PR56 MVP):
+/// An InProgress claim in the database ledger is treated as terminal-for-recovery.
+/// In the event of an ungraceful crash or process termination, any subsequent retry for the same tick
+/// is recognized as already claimed to prevent split-brain dual executions without distributed fencing leases.
+/// Automated crash recovery and fencing tokens are handled in PR58.
+/// </para>
 /// </summary>
 public sealed class AutonomousCharacterService : IAutonomousCharacterService
 {
@@ -70,7 +77,16 @@ public sealed class AutonomousCharacterService : IAutonomousCharacterService
 
             var terminalStatus = authoritativeTick.TerminalStatus.HasValue
                 ? (AutonomousCycleStatus)authoritativeTick.TerminalStatus.Value
-                : AutonomousCycleStatus.Executed;
+                : (authoritativeTick.State == AutonomousTickState.Failed
+                    ? AutonomousCycleStatus.Failed
+                    : AutonomousCycleStatus.Executed);
+
+            var message = authoritativeTick.State switch
+            {
+                AutonomousTickState.Completed => $"SimulationTick '{simulationTickId:D}' already completed.",
+                AutonomousTickState.Failed => $"SimulationTick '{simulationTickId:D}' previously failed: {authoritativeTick.FailureReason ?? "Unknown error"}.",
+                _ => $"SimulationTick '{simulationTickId:D}' is already claimed or in-progress (State: {authoritativeTick.State}). In PR56 MVP boundary, in-progress claims are terminal-for-recovery to prevent dual execution; recovery is deferred to PR58."
+            };
 
             return AutonomousCycleResult.DuplicateOrAlreadyExecuted(
                 characterId,
@@ -78,7 +94,7 @@ public sealed class AutonomousCharacterService : IAutonomousCharacterService
                 authoritativeTick.CycleId,
                 simulationTimeUtc,
                 terminalStatus,
-                message: $"SimulationTick {simulationTickId} already processed (Status: {authoritativeTick.State})."
+                message: message
             );
         }
 
