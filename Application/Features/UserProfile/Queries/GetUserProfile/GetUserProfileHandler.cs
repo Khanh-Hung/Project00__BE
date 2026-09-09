@@ -11,17 +11,12 @@ namespace Application.Features.UserProfile.Queries.GetUserProfile;
 public sealed class GetUserProfileHandler : IRequestHandler<GetUserProfileQuery, Result<UserProfileDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IAccountServiceClient? _accountServiceClient;
+    private readonly IAccountServiceClient _accountServiceClient;
 
-    public GetUserProfileHandler(IUnitOfWork unitOfWork, IAccountServiceClient? accountServiceClient)
+    public GetUserProfileHandler(IUnitOfWork unitOfWork, IAccountServiceClient accountServiceClient)
     {
-        _unitOfWork = unitOfWork;
-        _accountServiceClient = accountServiceClient;
-    }
-
-    public GetUserProfileHandler(IUnitOfWork unitOfWork)
-        : this(unitOfWork, null)
-    {
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
     }
 
     public async Task<Result<UserProfileDto>> Handle(GetUserProfileQuery query, CancellationToken cancellationToken)
@@ -44,11 +39,7 @@ public sealed class GetUserProfileHandler : IRequestHandler<GetUserProfileQuery,
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
-        AccountUserDto? user = null;
-        if (_accountServiceClient != null)
-        {
-            user = await _accountServiceClient.GetUserAsync(query.UserId, cancellationToken);
-        }
+        var user = await _accountServiceClient.GetUserAsync(query.UserId, cancellationToken);
 
         var dto = new UserProfileDto(
             Id: profile.Id,

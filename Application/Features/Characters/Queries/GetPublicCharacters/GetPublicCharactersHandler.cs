@@ -11,22 +11,17 @@ namespace Application.Features.Characters.Queries.GetPublicCharacters;
 public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharactersQuery, Result<IReadOnlyList<CharacterDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IAccountServiceClient? _accountServiceClient;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
     public GetPublicCharactersHandler(
         IUnitOfWork unitOfWork,
-        IAccountServiceClient? accountServiceClient,
+        IAccountServiceClient accountServiceClient,
         ICurrentUserProvider currentUserProvider)
     {
-        _unitOfWork = unitOfWork;
-        _accountServiceClient = accountServiceClient;
-        _currentUserProvider = currentUserProvider;
-    }
-
-    public GetPublicCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
-        : this(unitOfWork, null, currentUserProvider)
-    {
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
     }
 
     public async Task<Result<IReadOnlyList<CharacterDto>>> Handle(GetPublicCharactersQuery query, CancellationToken cancellationToken)
@@ -46,7 +41,7 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
             .ToList();
 
         IReadOnlyDictionary<Guid, AccountUserDto> userMap = new Dictionary<Guid, AccountUserDto>();
-        if (_accountServiceClient != null && creatorGuids.Count > 0)
+        if (creatorGuids.Count > 0)
         {
             userMap = await _accountServiceClient.GetUsersAsync(creatorGuids, cancellationToken);
         }

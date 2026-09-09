@@ -13,22 +13,17 @@ namespace Application.Features.Chat.Commands.GenerateProactiveReachout;
 public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateProactiveReachoutCommand, Result<ProactiveReachoutResponse>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IAccountServiceClient? _accountServiceClient;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ILLMService _llmService;
 
     public GenerateProactiveReachoutHandler(
         IUnitOfWork unitOfWork,
-        IAccountServiceClient? accountServiceClient,
+        IAccountServiceClient accountServiceClient,
         ILLMService llmService)
     {
-        _unitOfWork = unitOfWork;
-        _accountServiceClient = accountServiceClient;
-        _llmService = llmService;
-    }
-
-    public GenerateProactiveReachoutHandler(IUnitOfWork unitOfWork, ILLMService llmService)
-        : this(unitOfWork, null, llmService)
-    {
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _llmService = llmService ?? throw new ArgumentNullException(nameof(llmService));
     }
 
     public async Task<Result<ProactiveReachoutResponse>> Handle(GenerateProactiveReachoutCommand command, CancellationToken cancellationToken)
@@ -58,11 +53,7 @@ public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateP
             await profileRepo.AddAsync(profile, cancellationToken);
         }
 
-        AccountUserDto? user = null;
-        if (_accountServiceClient != null)
-        {
-            user = await _accountServiceClient.GetUserAsync(command.Request.UserId, cancellationToken);
-        }
+        var user = await _accountServiceClient.GetUserAsync(command.Request.UserId, cancellationToken);
 
         // 1. Generate Proactive Reachout Message from AI embodying the Character reading the User's Profile
         var aiResult = await _llmService.GenerateProactiveReachoutAsync(

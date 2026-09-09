@@ -130,7 +130,7 @@ public class SecurityAuthorizationTests
 
         var unitOfWork = new UnitOfWork(context);
         var userBProvider = new TestCurrentUserProvider(userB.ToString());
-        var handler = new UpdateUserProfileHandler(unitOfWork, userBProvider);
+        var handler = new UpdateUserProfileHandler(unitOfWork, new FakeStubAccountServiceClient(), userBProvider);
 
         var request = new UpdateUserProfileRequest(Bio: "Hacked Bio");
         var result = await handler.Handle(new UpdateUserProfileCommand(userA, request), CancellationToken.None);
@@ -266,7 +266,7 @@ public class SecurityAuthorizationTests
 
         var unitOfWork = new UnitOfWork(context);
         var userBProvider = new TestCurrentUserProvider(userB.ToString());
-        var handler = new Application.Features.Characters.Queries.GetCharacterById.GetCharacterByIdHandler(unitOfWork, userBProvider);
+        var handler = new Application.Features.Characters.Queries.GetCharacterById.GetCharacterByIdHandler(unitOfWork, new FakeStubAccountServiceClient(), userBProvider);
 
         var result = await handler.Handle(new Application.Features.Characters.Queries.GetCharacterById.GetCharacterByIdQuery(character.Id), CancellationToken.None);
 
@@ -325,7 +325,7 @@ public class SecurityAuthorizationTests
 
         var unitOfWork = new UnitOfWork(context);
         var userAProvider = new TestCurrentUserProvider(userA.ToString());
-        var handler = new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersHandler(unitOfWork, userAProvider);
+        var handler = new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersHandler(unitOfWork, new FakeStubAccountServiceClient(), userAProvider);
 
         var result = await handler.Handle(new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersQuery(), CancellationToken.None);
 
@@ -344,11 +344,19 @@ public class SecurityAuthorizationTests
         await using var context = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(context);
         var unauthenticatedProvider = new TestCurrentUserProvider(null);
-        var handler = new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersHandler(unitOfWork, unauthenticatedProvider);
+        var handler = new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersHandler(unitOfWork, new FakeStubAccountServiceClient(), unauthenticatedProvider);
 
         var result = await handler.Handle(new Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersQuery(), CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCodes.Status401Unauthorized, result.StatusCode);
     }
+
+    private sealed class FakeStubAccountServiceClient : Application.Interfaces.IAccountServiceClient
+    {
+        public Task<AccountUserDto?> GetUserAsync(Guid userId, CancellationToken ct = default) => Task.FromResult<AccountUserDto?>(null);
+        public Task<IReadOnlyDictionary<Guid, AccountUserDto>> GetUsersAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyDictionary<Guid, AccountUserDto>>(new Dictionary<Guid, AccountUserDto>());
+    }
+
 }

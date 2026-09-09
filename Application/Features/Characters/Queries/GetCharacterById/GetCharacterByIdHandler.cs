@@ -12,22 +12,17 @@ namespace Application.Features.Characters.Queries.GetCharacterById;
 public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQuery, Result<CharacterDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IAccountServiceClient? _accountServiceClient;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
     public GetCharacterByIdHandler(
         IUnitOfWork unitOfWork,
-        IAccountServiceClient? accountServiceClient,
+        IAccountServiceClient accountServiceClient,
         ICurrentUserProvider currentUserProvider)
     {
-        _unitOfWork = unitOfWork;
-        _accountServiceClient = accountServiceClient;
-        _currentUserProvider = currentUserProvider;
-    }
-
-    public GetCharacterByIdHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
-        : this(unitOfWork, null, currentUserProvider)
-    {
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
     }
 
     public async Task<Result<CharacterDto>> Handle(GetCharacterByIdQuery query, CancellationToken cancellationToken)
@@ -53,7 +48,7 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
         }
 
         AccountUserDto? creator = null;
-        if (!string.IsNullOrEmpty(character.CreatedBy) && _accountServiceClient != null)
+        if (!string.IsNullOrEmpty(character.CreatedBy))
         {
             if (Guid.TryParse(character.CreatedBy, out var creatorGuid))
             {

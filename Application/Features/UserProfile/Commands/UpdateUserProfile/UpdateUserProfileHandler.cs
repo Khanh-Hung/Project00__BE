@@ -13,22 +13,17 @@ namespace Application.Features.UserProfile.Commands.UpdateUserProfile;
 public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfileCommand, Result<UserProfileDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IAccountServiceClient? _accountServiceClient;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
     public UpdateUserProfileHandler(
         IUnitOfWork unitOfWork,
-        IAccountServiceClient? accountServiceClient,
+        IAccountServiceClient accountServiceClient,
         ICurrentUserProvider currentUserProvider)
     {
-        _unitOfWork = unitOfWork;
-        _accountServiceClient = accountServiceClient;
-        _currentUserProvider = currentUserProvider;
-    }
-
-    public UpdateUserProfileHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
-        : this(unitOfWork, null, currentUserProvider)
-    {
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
     }
 
     public async Task<Result<UserProfileDto>> Handle(UpdateUserProfileCommand command, CancellationToken cancellationToken)
@@ -73,11 +68,7 @@ public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfile
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        AccountUserDto? user = null;
-        if (_accountServiceClient != null)
-        {
-            user = await _accountServiceClient.GetUserAsync(command.UserId, cancellationToken);
-        }
+        var user = await _accountServiceClient.GetUserAsync(command.UserId, cancellationToken);
 
         var dto = new UserProfileDto(
             Id: profile.Id,
