@@ -32,11 +32,11 @@ public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuer
             c => c.CreatedBy == currentUserId,
             cancellationToken);
 
-        var userRepo = _unitOfWork.GetRepository<User>();
-        User? creator = null;
+        var profileRepo = _unitOfWork.GetRepository<Domain.Entities.UserProfile>();
+        Domain.Entities.UserProfile? creatorProfile = null;
         if (Guid.TryParse(currentUserId, out var creatorGuid))
         {
-            creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
+            creatorProfile = await profileRepo.GetAsync(p => p.UserId == creatorGuid, cancellationToken);
         }
 
         var dtos = characters
@@ -59,9 +59,9 @@ public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuer
                     c.IsPublic,
                     c.CreatedAt,
                     c.CreatedBy,
-                    creator?.DisplayName,
-                    creator?.UserName,
-                    creator?.AvatarUrl,
+                    creatorProfile?.DisplayName,
+                    creatorProfile?.DisplayName,
+                    creatorProfile?.AvatarUrl,
                     c.DefaultAffectionScore,
                     c.DefaultMood,
                     customMilestones,

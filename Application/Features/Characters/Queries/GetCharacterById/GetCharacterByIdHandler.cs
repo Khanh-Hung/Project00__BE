@@ -41,13 +41,13 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             }
         }
 
-        User? creator = null;
+        Domain.Entities.UserProfile? creatorProfile = null;
         if (!string.IsNullOrEmpty(character.CreatedBy))
         {
-            var userRepo = _unitOfWork.GetRepository<User>();
+            var profileRepo = _unitOfWork.GetRepository<Domain.Entities.UserProfile>();
             if (Guid.TryParse(character.CreatedBy, out var creatorGuid))
             {
-                creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
+                creatorProfile = await profileRepo.GetAsync(p => p.UserId == creatorGuid, cancellationToken);
             }
         }
 
@@ -67,9 +67,9 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.IsPublic,
             character.CreatedAt,
             character.CreatedBy,
-            creator?.DisplayName ?? (character.CreatedBy == "system" ? "System" : null),
-            creator?.UserName,
-            creator?.AvatarUrl,
+            creatorProfile?.DisplayName ?? (character.CreatedBy == "system" ? "System" : null),
+            creatorProfile?.DisplayName,
+            creatorProfile?.AvatarUrl,
             character.DefaultAffectionScore,
             character.DefaultMood,
             customMilestones,

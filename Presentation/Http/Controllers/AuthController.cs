@@ -10,6 +10,12 @@ using System.Security.Claims;
 
 namespace Presentation.Http.Controllers;
 
+/// <summary>
+/// Legacy Auth Controller.
+/// Note: User management and authentication are now handled by the external Account Service (G:\New folder (7)).
+/// These endpoints are preserved for backward compatibility and fallback.
+/// </summary>
+[Obsolete("User management and authentication are handled by the dedicated Account Service. Use /api/v1/auth/* on the Account Service.")]
 [ApiController]
 [Route("api/v1/[controller]")]
 public sealed class AuthController : ControllerBase
@@ -48,7 +54,8 @@ public sealed class AuthController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetCurrentUser(CancellationToken ct)
     {
-        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier)
+        var userIdClaim = User.FindFirstValue("userId")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? User.FindFirstValue("sub");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
@@ -67,7 +74,8 @@ public sealed class AuthController : ControllerBase
     [Authorize]
     public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request, CancellationToken ct)
     {
-        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier)
+        var userIdClaim = User.FindFirstValue("userId")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? User.FindFirstValue("sub");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))

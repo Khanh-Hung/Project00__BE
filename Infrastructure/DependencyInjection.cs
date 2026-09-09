@@ -57,10 +57,10 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
-        // 4. Configure JWT Bearer Authentication
-        var secret = configuration["Jwt:Secret"] ?? "SuperSecretKeyForNyxorisRoleplayPlatformDev2026!@#";
-        var issuer = configuration["Jwt:Issuer"] ?? "NyxorisAuth";
-        var audience = configuration["Jwt:Audience"] ?? "NyxorisRoleplay";
+        // 4. Configure JWT Bearer Authentication (Aligned with Account Service)
+        var secret = configuration["Jwt:Secret"] ?? "oracle-tarot-super-secret-key-256-bits-minimum-required-for-hmac-sha-algorithm-security";
+        var issuer = configuration["Jwt:Issuer"] ?? "AccountService";
+        var audience = configuration["Jwt:Audience"] ?? "NyxorisClient";
 
         services.AddAuthentication(options =>
         {
@@ -73,16 +73,19 @@ public static class DependencyInjection
             options.SaveToken = true;
             options.TokenValidationParameters = new TokenValidationParameters
             {
-                ValidateIssuer = true,
-                ValidateAudience = true,
+                ValidateIssuer = !string.IsNullOrEmpty(issuer),
+                ValidateAudience = !string.IsNullOrEmpty(audience),
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
                 ValidIssuer = issuer,
                 ValidAudience = audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.FromMinutes(5)
             };
         });
+
+        // 4b. Add External Account Service Client
+        services.AddHttpClient<Application.Abstractions.Clients.IAccountServiceClient, Infrastructure.Clients.AccountServiceClient>();
 
         // 5. Add Storage Services (Local / Cloud)
         services.AddScoped<IStorageService, Infrastructure.Storage.LocalStorageService>();

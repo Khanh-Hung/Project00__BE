@@ -27,16 +27,16 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                  && (string.IsNullOrWhiteSpace(query.Category) || c.Category.ToLower() == query.Category.ToLower()),
             cancellationToken);
 
-        var userRepo = _unitOfWork.GetRepository<User>();
-        var users = await userRepo.GetAllAsync(ct: cancellationToken);
-        var userMap = users.ToDictionary(u => u.Id.ToString(), u => u);
+        var profileRepo = _unitOfWork.GetRepository<Domain.Entities.UserProfile>();
+        var profiles = await profileRepo.GetAllAsync(ct: cancellationToken);
+        var profileMap = profiles.ToDictionary(p => p.UserId.ToString(), p => p);
 
         var dtos = characters.Select(c =>
         {
-            User? creator = null;
+            Domain.Entities.UserProfile? creator = null;
             if (!string.IsNullOrEmpty(c.CreatedBy))
             {
-                userMap.TryGetValue(c.CreatedBy, out creator);
+                profileMap.TryGetValue(c.CreatedBy, out creator);
             }
 
             var customMilestones = !string.IsNullOrWhiteSpace(c.CustomMilestonesJson)
@@ -55,8 +55,8 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 c.IsPublic,
                 c.CreatedAt,
                 c.CreatedBy,
-                creator?.DisplayName ?? (c.CreatedBy == "system" ? "System" : null),
-                creator?.UserName,
+                creator?.DisplayName,
+                creator?.DisplayName,
                 creator?.AvatarUrl,
                 c.DefaultAffectionScore,
                 c.DefaultMood,
