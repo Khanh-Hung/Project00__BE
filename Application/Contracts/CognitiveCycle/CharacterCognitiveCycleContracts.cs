@@ -93,7 +93,8 @@ public sealed record CharacterCognitiveCycleContext(
     CharacterPerceptionContext? PerceptionContext = null,
     CharacterBlueprint? Blueprint = null,
     CharacterRelationshipContext? RelationshipContext = null,
-    CharacterGoalContext? GoalContext = null
+    CharacterGoalContext? GoalContext = null,
+    CharacterSocialPresenceContext? SocialPresenceContext = null
 );
 
 public enum CharacterCognitiveCycleStatus
@@ -133,7 +134,9 @@ public sealed record CharacterCognitiveCycleResult(
     string? Message = null,
     SafetyDecision? SafetyDecision = null,
     CharacterGoalContext? GoalContext = null,
-    CharacterGoalProgressFeedback? GoalFeedback = null
+    CharacterGoalProgressFeedback? GoalFeedback = null,
+    CharacterSocialPresenceContext? SocialPresenceContext = null,
+    CharacterSocialPresenceFeedback? SocialPresenceFeedback = null
 )
 {
     public bool IsSuccess => Status == CharacterCognitiveCycleStatus.CompletedWithAction
