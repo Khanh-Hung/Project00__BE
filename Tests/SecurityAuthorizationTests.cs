@@ -124,7 +124,7 @@ public class SecurityAuthorizationTests
         var userB = Guid.NewGuid();
 
         await using var context = new CoreDbContext(options);
-        var profileA = Domain.Entities.UserProfile.Create(userA, "User A", null, "Bio A", null, null, null);
+        var profileA = Domain.Entities.UserProfile.Create(userA, bio: "Bio A");
         await context.UserProfiles.AddAsync(profileA);
         await context.SaveChangesAsync();
 
@@ -132,7 +132,7 @@ public class SecurityAuthorizationTests
         var userBProvider = new TestCurrentUserProvider(userB.ToString());
         var handler = new UpdateUserProfileHandler(unitOfWork, userBProvider);
 
-        var request = new UpdateUserProfileRequest("Hacked Display Name", null, "Hacked Bio", null, null, null);
+        var request = new UpdateUserProfileRequest(Bio: "Hacked Bio");
         var result = await handler.Handle(new UpdateUserProfileCommand(userA, request), CancellationToken.None);
 
         Assert.False(result.IsSuccess);

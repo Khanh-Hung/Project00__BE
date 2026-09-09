@@ -11,12 +11,22 @@ namespace Application.Features.Characters.Queries.GetCharacterById;
 public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQuery, Result<CharacterDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _identityUnitOfWork;
     private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetCharacterByIdHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetCharacterByIdHandler(
+        IUnitOfWork unitOfWork,
+        IIdentityUnitOfWork identityUnitOfWork,
+        ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _identityUnitOfWork = identityUnitOfWork;
         _currentUserProvider = currentUserProvider;
+    }
+
+    public GetCharacterByIdHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+        : this(unitOfWork, null!, currentUserProvider)
+    {
     }
 
     public async Task<Result<CharacterDto>> Handle(GetCharacterByIdQuery query, CancellationToken cancellationToken)
@@ -42,9 +52,9 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
         }
 
         User? creator = null;
-        if (!string.IsNullOrEmpty(character.CreatedBy))
+        if (!string.IsNullOrEmpty(character.CreatedBy) && _identityUnitOfWork != null)
         {
-            var userRepo = _unitOfWork.GetRepository<User>();
+            var userRepo = _identityUnitOfWork.GetRepository<User>();
             if (Guid.TryParse(character.CreatedBy, out var creatorGuid))
             {
                 creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
@@ -67,9 +77,9 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.IsPublic,
             character.CreatedAt,
             character.CreatedBy,
-            creator?.DisplayName ?? (character.CreatedBy == "system" ? "System" : null),
-            creator?.UserName,
-            creator?.AvatarUrl,
+            CreatorName: creator?.DisplayName ?? (character.CreatedBy == "system" ? "System" : null),
+            CreatorUserName: creator?.UserName,
+            CreatorAvatar: creator?.AvatarUrl,
             character.DefaultAffectionScore,
             character.DefaultMood,
             customMilestones,

@@ -57,10 +57,24 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
-        // 4. Configure JWT Bearer Authentication
-        var secret = configuration["Jwt:Secret"] ?? "SuperSecretKeyForNyxorisRoleplayPlatformDev2026!@#";
-        var issuer = configuration["Jwt:Issuer"] ?? "NyxorisAuth";
-        var audience = configuration["Jwt:Audience"] ?? "NyxorisRoleplay";
+        // 4. Configure JWT Bearer Authentication (Aligned with Account Service)
+        var secret = configuration["Jwt:Secret"];
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Secret' is required but was not found or empty.");
+        }
+
+        var issuer = configuration["Jwt:Issuer"];
+        if (string.IsNullOrWhiteSpace(issuer))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Issuer' is required but was not found or empty.");
+        }
+
+        var audience = configuration["Jwt:Audience"];
+        if (string.IsNullOrWhiteSpace(audience))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Audience' is required but was not found or empty.");
+        }
 
         services.AddAuthentication(options =>
         {
@@ -73,14 +87,14 @@ public static class DependencyInjection
             options.SaveToken = true;
             options.TokenValidationParameters = new TokenValidationParameters
             {
-                ValidateIssuer = true,
-                ValidateAudience = true,
+                ValidateIssuer = !string.IsNullOrEmpty(issuer),
+                ValidateAudience = !string.IsNullOrEmpty(audience),
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
                 ValidIssuer = issuer,
                 ValidAudience = audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.FromMinutes(5)
             };
         });
 

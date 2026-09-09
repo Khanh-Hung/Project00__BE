@@ -8,6 +8,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> builder)
     {
+        builder.ToTable("Users", t => t.ExcludeFromMigrations());
         builder.HasKey(u => u.Id);
         builder.Property(u => u.Id).ValueGeneratedOnAdd();
         builder.Property(u => u.Email).IsRequired().HasMaxLength(256);

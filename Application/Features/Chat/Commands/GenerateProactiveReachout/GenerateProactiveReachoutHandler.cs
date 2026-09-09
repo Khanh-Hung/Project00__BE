@@ -13,11 +13,16 @@ namespace Application.Features.Chat.Commands.GenerateProactiveReachout;
 public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateProactiveReachoutCommand, Result<ProactiveReachoutResponse>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _identityUnitOfWork;
     private readonly ILLMService _llmService;
 
-    public GenerateProactiveReachoutHandler(IUnitOfWork unitOfWork, ILLMService llmService)
+    public GenerateProactiveReachoutHandler(
+        IUnitOfWork unitOfWork,
+        IIdentityUnitOfWork identityUnitOfWork,
+        ILLMService llmService)
     {
         _unitOfWork = unitOfWork;
+        _identityUnitOfWork = identityUnitOfWork;
         _llmService = llmService;
     }
 
@@ -40,8 +45,6 @@ public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateP
         {
             profile = Domain.Entities.UserProfile.Create(
                 userId: command.Request.UserId,
-                displayName: "Người Dùng",
-                avatarUrl: null,
                 bio: "Thích khám phá những điều thú vị và tìm kiếm bạn bè.",
                 interests: new List<string> { "Đọc Sách", "Nghe Nhạc", "Anime" },
                 personalityTraits: new List<string> { "Thân thiện", "Tò mò" },
@@ -50,8 +53,19 @@ public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateP
             await profileRepo.AddAsync(profile, cancellationToken);
         }
 
+        User? user = null;
+        if (_identityUnitOfWork != null)
+        {
+            var userRepo = _identityUnitOfWork.GetRepository<User>();
+            user = await userRepo.GetByIdAsync(command.Request.UserId, cancellationToken);
+        }
+
         // 1. Generate Proactive Reachout Message from AI embodying the Character reading the User's Profile
-        var aiResult = await _llmService.GenerateProactiveReachoutAsync(character, profile, cancellationToken);
+        var aiResult = await _llmService.GenerateProactiveReachoutAsync(
+            character,
+            profile,
+            user?.DisplayName ?? "Người Dùng",
+            cancellationToken);
 
         // 2. Reuse active session or create new unique ChatSession
         var existingSessions = await sessionRepo.GetAllAsync(

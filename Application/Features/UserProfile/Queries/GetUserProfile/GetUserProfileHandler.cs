@@ -10,10 +10,17 @@ namespace Application.Features.UserProfile.Queries.GetUserProfile;
 public sealed class GetUserProfileHandler : IRequestHandler<GetUserProfileQuery, Result<UserProfileDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _identityUnitOfWork;
 
-    public GetUserProfileHandler(IUnitOfWork unitOfWork)
+    public GetUserProfileHandler(IUnitOfWork unitOfWork, IIdentityUnitOfWork identityUnitOfWork)
     {
         _unitOfWork = unitOfWork;
+        _identityUnitOfWork = identityUnitOfWork;
+    }
+
+    public GetUserProfileHandler(IUnitOfWork unitOfWork)
+        : this(unitOfWork, null!)
+    {
     }
 
     public async Task<Result<UserProfileDto>> Handle(GetUserProfileQuery query, CancellationToken cancellationToken)
@@ -27,8 +34,6 @@ public sealed class GetUserProfileHandler : IRequestHandler<GetUserProfileQuery,
             // Auto-initialize default profile for user
             profile = Domain.Entities.UserProfile.Create(
                 userId: query.UserId,
-                displayName: "Người Dùng Mới",
-                avatarUrl: null,
                 bio: "Chưa có lời giới thiệu.",
                 interests: new List<string> { "Đọc Sách", "Nghe Nhạc", "Anime" },
                 personalityTraits: new List<string> { "Thân thiện", "Tò mò" },
@@ -38,11 +43,18 @@ public sealed class GetUserProfileHandler : IRequestHandler<GetUserProfileQuery,
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
+        User? user = null;
+        if (_identityUnitOfWork != null)
+        {
+            var userRepo = _identityUnitOfWork.GetRepository<User>();
+            user = await userRepo.GetByIdAsync(query.UserId, cancellationToken);
+        }
+
         var dto = new UserProfileDto(
             Id: profile.Id,
             UserId: profile.UserId,
-            DisplayName: profile.DisplayName,
-            AvatarUrl: profile.AvatarUrl,
+            DisplayName: user?.DisplayName ?? "Người Dùng",
+            AvatarUrl: user?.AvatarUrl,
             Bio: profile.Bio,
             Interests: profile.GetInterests(),
             PersonalityTraits: profile.GetPersonalityTraits(),

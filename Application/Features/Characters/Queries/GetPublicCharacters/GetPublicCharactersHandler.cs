@@ -10,12 +10,22 @@ namespace Application.Features.Characters.Queries.GetPublicCharacters;
 public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharactersQuery, Result<IReadOnlyList<CharacterDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _identityUnitOfWork;
     private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetPublicCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetPublicCharactersHandler(
+        IUnitOfWork unitOfWork,
+        IIdentityUnitOfWork identityUnitOfWork,
+        ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _identityUnitOfWork = identityUnitOfWork;
         _currentUserProvider = currentUserProvider;
+    }
+
+    public GetPublicCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+        : this(unitOfWork, null!, currentUserProvider)
+    {
     }
 
     public async Task<Result<IReadOnlyList<CharacterDto>>> Handle(GetPublicCharactersQuery query, CancellationToken cancellationToken)
@@ -27,9 +37,13 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                  && (string.IsNullOrWhiteSpace(query.Category) || c.Category.ToLower() == query.Category.ToLower()),
             cancellationToken);
 
-        var userRepo = _unitOfWork.GetRepository<User>();
-        var users = await userRepo.GetAllAsync(ct: cancellationToken);
-        var userMap = users.ToDictionary(u => u.Id.ToString(), u => u);
+        var userMap = new Dictionary<string, User>();
+        if (_identityUnitOfWork != null)
+        {
+            var userRepo = _identityUnitOfWork.GetRepository<User>();
+            var users = await userRepo.GetAllAsync(ct: cancellationToken);
+            userMap = users.ToDictionary(u => u.Id.ToString(), u => u);
+        }
 
         var dtos = characters.Select(c =>
         {
@@ -55,9 +69,9 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 c.IsPublic,
                 c.CreatedAt,
                 c.CreatedBy,
-                creator?.DisplayName ?? (c.CreatedBy == "system" ? "System" : null),
-                creator?.UserName,
-                creator?.AvatarUrl,
+                CreatorName: creator?.DisplayName ?? (c.CreatedBy == "system" ? "System" : null),
+                CreatorUserName: creator?.UserName,
+                CreatorAvatar: creator?.AvatarUrl,
                 c.DefaultAffectionScore,
                 c.DefaultMood,
                 customMilestones,

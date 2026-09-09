@@ -20,9 +20,23 @@ public class JwtTokenGenerator : IJwtTokenGenerator
 
     public string GenerateToken(User user)
     {
-        var secret = _configuration["Jwt:Secret"] ?? "SuperSecretKeyForNyxorisRoleplayPlatformDev2026!@#";
-        var issuer = _configuration["Jwt:Issuer"] ?? "NyxorisAuth";
-        var audience = _configuration["Jwt:Audience"] ?? "NyxorisRoleplay";
+        var secret = _configuration["Jwt:Secret"];
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Secret' is required but was not found or empty.");
+        }
+
+        var issuer = _configuration["Jwt:Issuer"];
+        if (string.IsNullOrWhiteSpace(issuer))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Issuer' is required but was not found or empty.");
+        }
+
+        var audience = _configuration["Jwt:Audience"];
+        if (string.IsNullOrWhiteSpace(audience))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Audience' is required but was not found or empty.");
+        }
         var expirationHours = int.TryParse(_configuration["Jwt:ExpirationHours"], out var hours) ? hours : 72;
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));

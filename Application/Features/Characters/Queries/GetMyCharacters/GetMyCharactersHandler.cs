@@ -11,12 +11,22 @@ namespace Application.Features.Characters.Queries.GetMyCharacters;
 public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuery, Result<IReadOnlyList<CharacterDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _identityUnitOfWork;
     private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetMyCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetMyCharactersHandler(
+        IUnitOfWork unitOfWork,
+        IIdentityUnitOfWork identityUnitOfWork,
+        ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _identityUnitOfWork = identityUnitOfWork;
         _currentUserProvider = currentUserProvider;
+    }
+
+    public GetMyCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+        : this(unitOfWork, null!, currentUserProvider)
+    {
     }
 
     public async Task<Result<IReadOnlyList<CharacterDto>>> Handle(GetMyCharactersQuery query, CancellationToken cancellationToken)
@@ -32,10 +42,10 @@ public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuer
             c => c.CreatedBy == currentUserId,
             cancellationToken);
 
-        var userRepo = _unitOfWork.GetRepository<User>();
         User? creator = null;
-        if (Guid.TryParse(currentUserId, out var creatorGuid))
+        if (Guid.TryParse(currentUserId, out var creatorGuid) && _identityUnitOfWork != null)
         {
+            var userRepo = _identityUnitOfWork.GetRepository<User>();
             creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
         }
 
@@ -59,9 +69,9 @@ public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuer
                     c.IsPublic,
                     c.CreatedAt,
                     c.CreatedBy,
-                    creator?.DisplayName,
-                    creator?.UserName,
-                    creator?.AvatarUrl,
+                    CreatorName: creator?.DisplayName,
+                    CreatorUserName: creator?.UserName,
+                    CreatorAvatar: creator?.AvatarUrl,
                     c.DefaultAffectionScore,
                     c.DefaultMood,
                     customMilestones,

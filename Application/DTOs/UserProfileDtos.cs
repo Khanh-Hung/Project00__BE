@@ -3,7 +3,7 @@ namespace Application.DTOs;
 public record UserProfileDto(
     Guid Id,
     Guid UserId,
-    string DisplayName,
+    string? DisplayName,
     string? AvatarUrl,
     string? Bio,
     List<string> Interests,
@@ -14,8 +14,6 @@ public record UserProfileDto(
 );
 
 public record UpdateUserProfileRequest(
-    string DisplayName,
-    string? AvatarUrl = null,
     string? Bio = null,
     List<string>? Interests = null,
     List<string>? PersonalityTraits = null,

@@ -12,12 +12,22 @@ namespace Application.Features.UserProfile.Commands.UpdateUserProfile;
 public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfileCommand, Result<UserProfileDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdentityUnitOfWork _identityUnitOfWork;
     private readonly ICurrentUserProvider _currentUserProvider;
 
-    public UpdateUserProfileHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public UpdateUserProfileHandler(
+        IUnitOfWork unitOfWork,
+        IIdentityUnitOfWork identityUnitOfWork,
+        ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
+        _identityUnitOfWork = identityUnitOfWork;
         _currentUserProvider = currentUserProvider;
+    }
+
+    public UpdateUserProfileHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+        : this(unitOfWork, null!, currentUserProvider)
+    {
     }
 
     public async Task<Result<UserProfileDto>> Handle(UpdateUserProfileCommand command, CancellationToken cancellationToken)
@@ -42,8 +52,6 @@ public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfile
         {
             profile = Domain.Entities.UserProfile.Create(
                 userId: command.UserId,
-                displayName: req.DisplayName,
-                avatarUrl: req.AvatarUrl,
                 bio: req.Bio,
                 interests: req.Interests,
                 personalityTraits: req.PersonalityTraits,
@@ -54,8 +62,6 @@ public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfile
         else
         {
             profile.Update(
-                displayName: req.DisplayName,
-                avatarUrl: req.AvatarUrl,
                 bio: req.Bio,
                 interests: req.Interests,
                 personalityTraits: req.PersonalityTraits,
@@ -66,11 +72,18 @@ public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfile
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        User? user = null;
+        if (_identityUnitOfWork != null)
+        {
+            var userRepo = _identityUnitOfWork.GetRepository<User>();
+            user = await userRepo.GetByIdAsync(command.UserId, cancellationToken);
+        }
+
         var dto = new UserProfileDto(
             Id: profile.Id,
             UserId: profile.UserId,
-            DisplayName: profile.DisplayName,
-            AvatarUrl: profile.AvatarUrl,
+            DisplayName: user?.DisplayName ?? "Người Dùng",
+            AvatarUrl: user?.AvatarUrl,
             Bio: profile.Bio,
             Interests: profile.GetInterests(),
             PersonalityTraits: profile.GetPersonalityTraits(),

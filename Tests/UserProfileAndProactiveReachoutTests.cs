@@ -24,8 +24,6 @@ public class UserProfileAndProactiveReachoutTests
         var userId = Guid.NewGuid();
         var profile = UserProfile.Create(
             userId: userId,
-            displayName: "Hoàng Long",
-            avatarUrl: "https://example.com/avatar.jpg",
             bio: "Mê lập trình và nghe nhạc đêm.",
             interests: new List<string> { "Lập Trình", "Nhạc Lofi", "Nuôi Mèo" },
             personalityTraits: new List<string> { "Hướng nội", "Ấm áp" },
@@ -33,7 +31,6 @@ public class UserProfileAndProactiveReachoutTests
         );
 
         Assert.Equal(userId, profile.UserId);
-        Assert.Equal("Hoàng Long", profile.DisplayName);
         Assert.Equal(3, profile.GetInterests().Count);
         Assert.Contains("Nuôi Mèo", profile.GetInterests());
         Assert.Equal(2, profile.GetPersonalityTraits().Count);
@@ -41,8 +38,6 @@ public class UserProfileAndProactiveReachoutTests
 
         // Update
         profile.Update(
-            displayName: "Long Coder",
-            avatarUrl: null,
             bio: "Cà phê và mèo.",
             interests: new List<string> { "Cà Phê", "Nuôi Mèo" },
             personalityTraits: new List<string> { "Hài hước" },
@@ -50,8 +45,6 @@ public class UserProfileAndProactiveReachoutTests
             updatedAt: Clock.Now
         );
 
-        Assert.Equal("Long Coder", profile.DisplayName);
-        Assert.Null(profile.AvatarUrl);
         Assert.Equal(2, profile.GetInterests().Count);
         Assert.Contains("Cà Phê", profile.GetInterests());
         Assert.Single(profile.GetPersonalityTraits());
@@ -61,15 +54,25 @@ public class UserProfileAndProactiveReachoutTests
     [Fact]
     public async Task GetUserProfileHandler_Auto_Initializes_Default_Profile_When_Missing()
     {
-        var options = new DbContextOptionsBuilder<CoreDbContext>()
+        var coreOptions = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var identityOptions = new DbContextOptionsBuilder<IdentityDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-        await using var dbContext = new CoreDbContext(options);
-        var unitOfWork = new UnitOfWork(dbContext);
-        var handler = new GetUserProfileHandler(unitOfWork);
+        await using var coreDbContext = new CoreDbContext(coreOptions);
+        await using var identityDbContext = new IdentityDbContext(identityOptions);
+        var unitOfWork = new UnitOfWork(coreDbContext);
+        var identityUnitOfWork = new IdentityUnitOfWork(identityDbContext);
+        var handler = new GetUserProfileHandler(unitOfWork, identityUnitOfWork);
 
         var userId = Guid.NewGuid();
+        var user = new User("user@example.com", "hash", "user123", "Người Dùng Mới");
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(user, userId);
+        await identityDbContext.Users.AddAsync(user);
+        await identityDbContext.SaveChangesAsync();
+
         var result = await handler.Handle(new GetUserProfileQuery(userId), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -82,14 +85,19 @@ public class UserProfileAndProactiveReachoutTests
     [Fact]
     public async Task GenerateProactiveReachoutHandler_Orchestrates_AI_And_Creates_Session()
     {
-        var options = new DbContextOptionsBuilder<CoreDbContext>()
+        var coreOptions = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var identityOptions = new DbContextOptionsBuilder<IdentityDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var characterId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        await using var dbContext = new CoreDbContext(options);
+        await using var coreDbContext = new CoreDbContext(coreOptions);
+        await using var identityDbContext = new IdentityDbContext(identityOptions);
+
         var character = new Character(
             name: "Lâm Uyển Nhi",
             title: "Họa Sĩ Tự Do",
@@ -102,18 +110,23 @@ public class UserProfileAndProactiveReachoutTests
 
         var profile = UserProfile.Create(
             userId: userId,
-            displayName: "Minh Quân",
             bio: "Thích vẽ tranh và đi dạo công viên.",
             interests: new List<string> { "Hội Họa", "Nuôi Mèo" }
         );
 
-        await dbContext.Characters.AddAsync(character);
-        await dbContext.UserProfiles.AddAsync(profile);
-        await dbContext.SaveChangesAsync();
+        var user = new User("quan@example.com", "hash", "quan", "Minh Quân");
+        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(user, userId);
+        await identityDbContext.Users.AddAsync(user);
+        await identityDbContext.SaveChangesAsync();
 
-        var unitOfWork = new UnitOfWork(dbContext);
+        await coreDbContext.Characters.AddAsync(character);
+        await coreDbContext.UserProfiles.AddAsync(profile);
+        await coreDbContext.SaveChangesAsync();
+
+        var unitOfWork = new UnitOfWork(coreDbContext);
+        var identityUnitOfWork = new IdentityUnitOfWork(identityDbContext);
         var fakeLLM = new FakeProactiveLLMService();
-        var handler = new GenerateProactiveReachoutHandler(unitOfWork, fakeLLM);
+        var handler = new GenerateProactiveReachoutHandler(unitOfWork, identityUnitOfWork, fakeLLM);
 
         var request = new ProactiveReachoutRequest(characterId, userId);
         var result = await handler.Handle(new GenerateProactiveReachoutCommand(request), CancellationToken.None);
@@ -124,7 +137,7 @@ public class UserProfileAndProactiveReachoutTests
         Assert.Contains("Chào Minh Quân nha!", result.Value.OpeningMessage);
         Assert.Equal("Cùng đam mê hội họa và ngắm hoàng hôn", result.Value.MatchReason);
 
-        var savedSession = await dbContext.ChatSessions.FirstOrDefaultAsync(s => s.Id == result.Value.SessionId);
+        var savedSession = await coreDbContext.ChatSessions.FirstOrDefaultAsync(s => s.Id == result.Value.SessionId);
         Assert.NotNull(savedSession);
         Assert.Single(savedSession.Messages);
         Assert.Contains("Chào Minh Quân nha!", savedSession.Messages[0].Content);
@@ -151,10 +164,13 @@ public class UserProfileAndProactiveReachoutTests
         public Task<GenerateAvatarResponse> GenerateSceneImageAsync(GenerateSceneImageRequest request, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<List<MemoryCandidate>> ExtractMemoryCandidatesAsync(Character character, IReadOnlyCollection<ChatMessageDto> recentMessages, CancellationToken ct = default) => Task.FromResult(new List<MemoryCandidate>());
 
-        public Task<ProactiveAiReachoutResult> GenerateProactiveReachoutAsync(Character character, UserProfile userProfile, CancellationToken ct = default)
+        public Task<ProactiveAiReachoutResult> GenerateProactiveReachoutAsync(Character character, UserProfile userProfile, CancellationToken ct = default) =>
+            GenerateProactiveReachoutAsync(character, userProfile, null, ct);
+
+        public Task<ProactiveAiReachoutResult> GenerateProactiveReachoutAsync(Character character, UserProfile userProfile, string? userDisplayName = null, CancellationToken ct = default)
         {
             return Task.FromResult(new ProactiveAiReachoutResult(
-                OpeningMessage: $"*[curious] lướt thấy trang bạn có chung sở thích vẽ tranh* Chào {userProfile.DisplayName} nha! Cậu cũng thích vẽ tranh phong cảnh hả?",
+                OpeningMessage: $"*[curious] lướt thấy trang bạn có chung sở thích vẽ tranh* Chào {userDisplayName ?? "bạn"} nha! Cậu cũng thích vẽ tranh phong cảnh hả?",
                 MatchReason: "Cùng đam mê hội họa và ngắm hoàng hôn"
             ));
         }

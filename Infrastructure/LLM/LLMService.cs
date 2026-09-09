@@ -646,13 +646,20 @@ public sealed class LLMService : ILLMService
         string? MatchReason
     );
 
+    public Task<ProactiveAiReachoutResult> GenerateProactiveReachoutAsync(
+        Character character,
+        Domain.Entities.UserProfile userProfile,
+        CancellationToken ct = default) => GenerateProactiveReachoutAsync(character, userProfile, null, ct);
+
     public async Task<ProactiveAiReachoutResult> GenerateProactiveReachoutAsync(
         Character character,
         Domain.Entities.UserProfile userProfile,
+        string? userDisplayName,
         CancellationToken ct = default)
     {
         var userInterests = userProfile.GetInterests();
         var userPersonality = userProfile.GetPersonalityTraits();
+        var displayName = string.IsNullOrWhiteSpace(userDisplayName) ? "Người Dùng" : userDisplayName.Trim();
 
         var systemPrompt = $$"""
             You are embodying the character '{{character.Name}}' ({{character.Title}} - Category: {{character.Category}}).
@@ -662,10 +669,10 @@ public sealed class LLMService : ILLMService
 
             SCENARIO:
             You are browsing social profiles or discovering new people in your world.
-            You just stumbled upon the personal profile of a user named '{{userProfile.DisplayName}}'.
+            You just stumbled upon the personal profile of a user named '{{displayName}}'.
 
             USER PROFILE DETAILS:
-            - Display Name: {{userProfile.DisplayName}}
+            - Display Name: {{displayName}}
             - Bio / Status: {{userProfile.Bio ?? "Không có"}} | Status: {{userProfile.StatusMessage ?? "Trực tuyến"}}
             - Interests / Tags: {{(userInterests.Count > 0 ? string.Join(", ", userInterests) : "Không có")}}
             - Personality Traits: {{(userPersonality.Count > 0 ? string.Join(", ", userPersonality) : "Thân thiện")}}
@@ -724,7 +731,7 @@ public sealed class LLMService : ILLMService
             // Fallback gracefully
         }
 
-        var fallbackMessage = $"*[curious] lướt thấy trang cá nhân của bạn, khẽ mỉm cười gõ phím* Chào {userProfile.DisplayName} nhé! Tình cờ thấy bạn cũng có nhiều sở thích thú vị, chúng ta làm quen được không?";
+        var fallbackMessage = $"*[curious] lướt thấy trang cá nhân của bạn, khẽ mỉm cười gõ phím* Chào {displayName} nhé! Tình cờ thấy bạn cũng có nhiều sở thích thú vị, chúng ta làm quen được không?";
         return new ProactiveAiReachoutResult(fallbackMessage, "Quan tâm đến hồ sơ cá nhân");
     }
 }
