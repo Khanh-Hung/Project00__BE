@@ -461,11 +461,72 @@ public sealed class CharacterSocialPresenceRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task SameExecutionId_SameActionDifferentTargetActivity_IsDivergentReplay()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+
+        // 1. Initial presence
+        using (var setupDb = new CoreDbContext(_options))
+        {
+            var repo = new CharacterSocialPresenceRepository(setupDb);
+            await repo.TryCreateAsync(CharacterSocialPresence.CreateDefault(charId, FixedNow));
+        }
+
+        // 2. First transition: ActionType = "Socialize", targetActivity = Socialize
+        using (var db1 = new CoreDbContext(_options))
+        {
+            var repo1 = new CharacterSocialPresenceRepository(db1);
+            var (presence1, transition1, isDuplicate1) = await repo1.RecordTransitionAtomicAsync(
+                charId, execId, "Socialize", LifeActivityType.Socialize,
+                RelationshipTargetType.User, targetId, FixedNow.AddMinutes(1));
+
+            Assert.False(isDuplicate1);
+            Assert.Equal(2u, presence1.Version);
+            Assert.Equal(LifeActivityType.Socialize, presence1.CurrentActivityType);
+        }
+
+        // 3. Replay with same ExecutionId, same ActionType ("Socialize"), same Target, but DIFFERENT targetActivity (Rest)
+        using (var db2 = new CoreDbContext(_options))
+        {
+            var repo2 = new CharacterSocialPresenceRepository(db2);
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                repo2.RecordTransitionAtomicAsync(
+                    charId, execId, "Socialize", LifeActivityType.Rest,
+                    RelationshipTargetType.User, targetId, FixedNow.AddMinutes(2)));
+
+            Assert.Contains("Divergent semantic replay", ex.Message);
+        }
+
+        // 4. Verify DB: Presence must NOT be mutated a second time, exactly one transition row
+        using (var verifyDb = new CoreDbContext(_options))
+        {
+            var presence = await verifyDb.CharacterSocialPresences.FirstAsync(p => p.CharacterId == charId);
+            Assert.Equal(2u, presence.Version); // NEVER mutated a second time
+            Assert.Equal(LifeActivityType.Socialize, presence.CurrentActivityType); // unchanged from first successful transition
+
+            var transitions = await verifyDb.CharacterSocialPresenceTransitions
+                .Where(t => t.CharacterId == charId)
+                .ToListAsync();
+            Assert.Single(transitions);
+            Assert.Equal(LifeActivityType.Socialize, transitions[0].NewActivityType);
+        }
+    }
+
+    [Fact]
     public async Task ConcurrentSameExecutionId_DivergentPayload_LoserDetectsDivergentFingerprintAndThrows()
     {
         var charId = Guid.NewGuid();
         var execId = Guid.NewGuid();
         var targetId = Guid.NewGuid();
+
+        // 1. Initial presence
+        using (var setupDb = new CoreDbContext(_options))
+        {
+            var repo = new CharacterSocialPresenceRepository(setupDb);
+            await repo.TryCreateAsync(CharacterSocialPresence.CreateDefault(charId, FixedNow));
+        }
 
         var interceptorB = new ConcurrencyBarrierInterceptor();
         var optionsB = new DbContextOptionsBuilder<CoreDbContext>()
@@ -479,22 +540,35 @@ public sealed class CharacterSocialPresenceRepositoryTests : IDisposable
         var repoA = new CharacterSocialPresenceRepository(dbA);
         var repoB = new CharacterSocialPresenceRepository(dbB);
 
-        // 1. Worker B starts with "Rest" action payload and pauses
+        // 2. Worker B starts with same ActionType ("Socialize") but DIFFERENT targetActivity (Rest) and pauses
         var taskB = Task.Run(async () => await repoB.RecordTransitionAtomicAsync(
-            charId, execId, "Rest", LifeActivityType.Rest,
+            charId, execId, "Socialize", LifeActivityType.Rest,
             RelationshipTargetType.User, targetId, FixedNow));
         await interceptorB.WaitForBeforeSaveAsync();
 
-        // 2. Worker A executes to completion with "Socialize" action payload
+        // 3. Worker A executes to completion with "Socialize" and targetActivity Socialize (winner)
         var (presenceA, transitionA, isDuplicateA) = await repoA.RecordTransitionAtomicAsync(
             charId, execId, "Socialize", LifeActivityType.Socialize,
             RelationshipTargetType.User, targetId, FixedNow);
         Assert.False(isDuplicateA);
+        Assert.Equal(2u, presenceA.Version);
 
-        // 3. Worker B resumes, catches DB conflict, reloads winner, detects divergent fingerprint, and throws InvalidOperationException
+        // 4. Worker B resumes, catches DB conflict, reloads winner, detects divergent fingerprint due to different targetActivity, and throws InvalidOperationException
         interceptorB.Release();
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => taskB);
         Assert.Contains("Divergent semantic replay", ex.Message);
+
+        // 5. Verify DB: exactly 1 transition, presence mutated exactly once (Version = 2)
+        using var verifyDb = new CoreDbContext(_options);
+        var presence = await verifyDb.CharacterSocialPresences.FirstAsync(p => p.CharacterId == charId);
+        Assert.Equal(2u, presence.Version);
+        Assert.Equal(LifeActivityType.Socialize, presence.CurrentActivityType);
+
+        var transitions = await verifyDb.CharacterSocialPresenceTransitions
+            .Where(t => t.CharacterId == charId)
+            .ToListAsync();
+        Assert.Single(transitions);
+        Assert.Equal(LifeActivityType.Socialize, transitions[0].NewActivityType);
     }
 
     private sealed class ThrowingSaveChangesInterceptor : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor

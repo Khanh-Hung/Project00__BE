@@ -121,7 +121,7 @@ public sealed class CharacterSocialPresenceRepository : ICharacterSocialPresence
             throw new ArgumentException("ActionType cannot be null or whitespace.", nameof(actionType));
 
         var expectedFingerprint = CharacterSocialPresenceTransition.ComputeFingerprint(
-            characterId, executionId, actionType, targetType, targetId);
+            characterId, executionId, actionType, targetActivity, targetType, targetId);
 
         // 1. Fast-path idempotency check
         var existingTransition = await _context.CharacterSocialPresenceTransitions

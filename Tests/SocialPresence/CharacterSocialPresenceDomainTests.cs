@@ -306,13 +306,28 @@ public sealed class CharacterSocialPresenceDomainTests
         var execId = Guid.NewGuid();
         var targetId = Guid.NewGuid();
 
-        var hash1 = CharacterSocialPresenceTransition.ComputeFingerprint(charId, execId, "Socialize", RelationshipTargetType.User, targetId);
-        var hash2 = CharacterSocialPresenceTransition.ComputeFingerprint(charId, execId, "Socialize", RelationshipTargetType.User, targetId);
-        var hashDifferentAction = CharacterSocialPresenceTransition.ComputeFingerprint(charId, execId, "Rest", RelationshipTargetType.User, targetId);
+        var hash1 = CharacterSocialPresenceTransition.ComputeFingerprint(charId, execId, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.User, targetId);
+        var hash2 = CharacterSocialPresenceTransition.ComputeFingerprint(charId, execId, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.User, targetId);
+        var hashDifferentAction = CharacterSocialPresenceTransition.ComputeFingerprint(charId, execId, "Rest", LifeActivityType.Socialize, RelationshipTargetType.User, targetId);
 
         Assert.Equal(hash1, hash2);
         Assert.NotEqual(hash1, hashDifferentAction);
         Assert.Equal(64, hash1.Length); // 256 bits in hex
+    }
+
+    [Fact]
+    public void Fingerprint_DifferentTargetActivity_ProducesDifferentFingerprint()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+
+        var fp1 = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId, execId, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.User, targetId);
+        var fp2 = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId, execId, "Socialize", LifeActivityType.Rest, RelationshipTargetType.User, targetId);
+
+        Assert.NotEqual(fp1, fp2);
     }
 
     [Fact]
@@ -326,39 +341,44 @@ public sealed class CharacterSocialPresenceDomainTests
         var targetId2 = Guid.NewGuid();
 
         var baseline = CharacterSocialPresenceTransition.ComputeFingerprint(
-            charId1, execId1, "Socialize", RelationshipTargetType.User, targetId1);
+            charId1, execId1, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.User, targetId1);
 
         // 1. Different CharacterId
         var diffChar = CharacterSocialPresenceTransition.ComputeFingerprint(
-            charId2, execId1, "Socialize", RelationshipTargetType.User, targetId1);
+            charId2, execId1, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.User, targetId1);
         Assert.NotEqual(baseline, diffChar);
 
         // 2. Different ExecutionId
         var diffExec = CharacterSocialPresenceTransition.ComputeFingerprint(
-            charId1, execId2, "Socialize", RelationshipTargetType.User, targetId1);
+            charId1, execId2, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.User, targetId1);
         Assert.NotEqual(baseline, diffExec);
 
         // 3. Different ActionType
         var diffAction = CharacterSocialPresenceTransition.ComputeFingerprint(
-            charId1, execId1, "Eat", RelationshipTargetType.User, targetId1);
+            charId1, execId1, "Eat", LifeActivityType.Socialize, RelationshipTargetType.User, targetId1);
         Assert.NotEqual(baseline, diffAction);
 
-        // 4. Different TargetType
+        // 4. Different TargetActivity
+        var diffActivity = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId1, execId1, "Socialize", LifeActivityType.Rest, RelationshipTargetType.User, targetId1);
+        Assert.NotEqual(baseline, diffActivity);
+
+        // 5. Different TargetType
         var diffTargetType = CharacterSocialPresenceTransition.ComputeFingerprint(
-            charId1, execId1, "Socialize", RelationshipTargetType.Character, targetId1);
+            charId1, execId1, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.Character, targetId1);
         Assert.NotEqual(baseline, diffTargetType);
 
         var nullTargetType = CharacterSocialPresenceTransition.ComputeFingerprint(
-            charId1, execId1, "Socialize", null, targetId1);
+            charId1, execId1, "Socialize", LifeActivityType.Socialize, null, targetId1);
         Assert.NotEqual(baseline, nullTargetType);
 
-        // 5. Different TargetId
+        // 6. Different TargetId
         var diffTargetId = CharacterSocialPresenceTransition.ComputeFingerprint(
-            charId1, execId1, "Socialize", RelationshipTargetType.User, targetId2);
+            charId1, execId1, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.User, targetId2);
         Assert.NotEqual(baseline, diffTargetId);
 
         var nullTargetId = CharacterSocialPresenceTransition.ComputeFingerprint(
-            charId1, execId1, "Socialize", RelationshipTargetType.User, null);
+            charId1, execId1, "Socialize", LifeActivityType.Socialize, RelationshipTargetType.User, null);
         Assert.NotEqual(baseline, nullTargetId);
     }
 

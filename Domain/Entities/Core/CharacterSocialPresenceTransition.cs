@@ -64,17 +64,17 @@ public sealed class CharacterSocialPresenceTransition : BaseEntity
         VersionBefore = versionBefore;
         VersionAfter = versionAfter;
         AppliedAtUtc = appliedAtUtc.UtcDateTime;
-        OperationFingerprint = ComputeFingerprint(characterId, executionId, ActionType, targetType, targetId);
+        OperationFingerprint = ComputeFingerprint(characterId, executionId, ActionType, newActivityType, targetType, targetId);
     }
 
     /// <summary>
     /// Computes deterministic SHA-256 fingerprint representing the complete semantic input of the social presence transition.
     /// <para>
-    /// <b>Semantic Invariant:</b> Only caller-provided semantic inputs (CharacterId, ExecutionId, ActionType, TargetType, TargetId)
+    /// <b>Semantic Invariant:</b> Only caller-provided semantic inputs (CharacterId, ExecutionId, ActionType, TargetActivity, TargetType, TargetId)
     /// are hashed into the fingerprint.
     /// </para>
     /// <para>
-    /// <b>Derived State Exclusion:</b> Aggregate transition fields (OldStatus, NewStatus, OldActivityType, NewActivityType,
+    /// <b>Derived State Exclusion:</b> Aggregate transition fields (OldStatus, NewStatus, OldActivityType,
     /// VersionBefore, VersionAfter) are purely derived from the database state at the moment of mutation. They are not
     /// caller semantic intent, so they are intentionally excluded to ensure deterministic idempotency verification across retries.
     /// </para>
@@ -83,10 +83,11 @@ public sealed class CharacterSocialPresenceTransition : BaseEntity
         Guid characterId,
         Guid executionId,
         string actionType,
+        LifeActivityType targetActivity,
         RelationshipTargetType? targetType,
         Guid? targetId)
     {
-        var raw = $"{characterId:D}:{executionId:D}:{actionType.Trim().ToUpperInvariant()}:{targetType?.ToString() ?? "None"}:{targetId?.ToString("D") ?? "None"}";
+        var raw = $"{characterId:D}:{executionId:D}:{actionType.Trim().ToUpperInvariant()}:{targetActivity}:{targetType?.ToString() ?? "None"}:{targetId?.ToString("D") ?? "None"}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
