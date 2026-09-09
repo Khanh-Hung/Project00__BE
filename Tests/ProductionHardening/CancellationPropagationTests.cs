@@ -22,6 +22,8 @@ using Infrastructure.Services.Time;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Infrastructure.Services.Autonomous;
+using Infrastructure.Services.SocialPresence;
 using Tests.LifeSimulation;
 using Xunit;
 
@@ -216,5 +218,65 @@ public class CancellationPropagationTests : IDisposable
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             healthCheck.CheckHealthAsync(context, cts.Token));
+    }
+
+    [Fact]
+    public async Task AutonomousCharacterService_Cancellation_Propagates()
+    {
+        await using var db = new CoreDbContext(_options);
+        var cycleService = CreateCycleService(db);
+        var tickRepo = new CharacterAutonomousLifeTickRepository(db);
+        var autoService = new AutonomousCharacterService(
+            cycleService,
+            tickRepo,
+            NullLogger<AutonomousCharacterService>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            autoService.RunOnceAsync(Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow, cts.Token));
+    }
+
+    [Fact]
+    public async Task WorldCognitiveEventConsumer_Cancellation_Propagates()
+    {
+        await using var db = new CoreDbContext(_options);
+        var cycleService = CreateCycleService(db);
+        var consumptionRepo = new WorldCognitiveEventConsumptionRepository(db);
+        var consumer = new WorldCognitiveEventConsumer(
+            consumptionRepo,
+            cycleService,
+            new SystemClock(),
+            NullLogger<WorldCognitiveEventConsumer>.Instance);
+
+        var worldEvt = new WorldCognitiveEvent(
+            EventId: Guid.NewGuid(),
+            CharacterId: Guid.NewGuid(),
+            OccurredAtUtc: DateTimeOffset.UtcNow,
+            Source: "WorldTest",
+            EventName: "WeatherChanged");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            consumer.ConsumeAsync(worldEvt, cts.Token));
+    }
+
+    [Fact]
+    public async Task SocialPresenceTransitionService_Cancellation_Propagates()
+    {
+        await using var db = new CoreDbContext(_options);
+        var repo = new CharacterSocialPresenceRepository(db);
+        var service = new SocialPresenceTransitionService(
+            repo,
+            NullLogger<SocialPresenceTransitionService>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            service.GetOrCreateAsync(Guid.NewGuid(), DateTimeOffset.UtcNow, cts.Token));
     }
 }
