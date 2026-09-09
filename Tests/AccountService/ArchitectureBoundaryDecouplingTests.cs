@@ -22,6 +22,11 @@ public sealed class ArchitectureBoundaryDecouplingTests
         public string? CurrentUserId => null;
     }
 
+    public class DummyDispatchProxy : System.Reflection.DispatchProxy
+    {
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args) => null;
+    }
+
     private sealed class TrackingAccountServiceClient : IAccountServiceClient
     {
         public List<Guid> RequestedSingleUserIds { get; } = new();
@@ -135,5 +140,99 @@ public sealed class ArchitectureBoundaryDecouplingTests
 
         var dto4 = result.Value.First(c => c.Id == c4.Id);
         Assert.Equal("System", dto4.CreatorName);
+    }
+
+    [Theory]
+    [InlineData(typeof(Application.Features.Characters.Queries.GetCharacterById.GetCharacterByIdHandler))]
+    [InlineData(typeof(Application.Features.Characters.Queries.GetMyCharacters.GetMyCharactersHandler))]
+    [InlineData(typeof(Application.Features.Characters.Queries.GetPublicCharacters.GetPublicCharactersHandler))]
+    [InlineData(typeof(Application.Features.UserProfile.Queries.GetUserProfile.GetUserProfileHandler))]
+    [InlineData(typeof(Application.Features.UserProfile.Commands.UpdateUserProfile.UpdateUserProfileHandler))]
+    [InlineData(typeof(Application.Features.Chat.Commands.GenerateProactiveReachout.GenerateProactiveReachoutHandler))]
+    public void Handler_HasSingleConstructor_And_ThrowsWhenAccountServiceClientIsNull(Type handlerType)
+    {
+        var constructors = handlerType.GetConstructors();
+        Assert.Single(constructors);
+
+        var ctor = constructors[0];
+        var parameters = ctor.GetParameters();
+
+        var accountParamIndex = Array.FindIndex(parameters, p => p.ParameterType == typeof(IAccountServiceClient));
+        Assert.True(accountParamIndex >= 0, $"{handlerType.Name} constructor must have an IAccountServiceClient parameter.");
+
+        // Build args with null for IAccountServiceClient and non-null mock/dummy for others
+        var args = new object?[parameters.Length];
+        for (var i = 0; i < parameters.Length; i++)
+        {
+            if (i == accountParamIndex)
+            {
+                args[i] = null;
+            }
+            else
+            {
+                // Instantiate or mock parameter
+                var pType = parameters[i].ParameterType;
+                if (pType == typeof(IUnitOfWork))
+                {
+                    var options = new DbContextOptionsBuilder<CoreDbContext>()
+                        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                        .Options;
+                    args[i] = new UnitOfWork(new CoreDbContext(options));
+                }
+                else if (pType == typeof(ICurrentUserProvider))
+                {
+                    args[i] = new FakeCurrentUserProvider();
+                }
+                else if (pType == typeof(ILLMService))
+                {
+                    args[i] = System.Reflection.DispatchProxy.Create<ILLMService, DummyDispatchProxy>();
+                }
+                else
+                {
+                    // Generic fallback
+                    args[i] = Activator.CreateInstance(pType);
+                }
+            }
+        }
+
+        var ex = Assert.Throws<System.Reflection.TargetInvocationException>(() => ctor.Invoke(args));
+        Assert.IsType<ArgumentNullException>(ex.InnerException);
+        Assert.Equal("accountServiceClient", ((ArgumentNullException)ex.InnerException).ParamName);
+    }
+
+    [Fact]
+    public void ApplicationAssembly_DoesNotReference_HttpTransportTypes_Or_IdentityTypes()
+    {
+        var appAssembly = typeof(IAccountServiceClient).Assembly;
+
+        foreach (var type in appAssembly.GetTypes())
+        {
+            // Assert no properties or methods use HttpStatusCode, HttpClient, HttpResponseMessage
+            foreach (var prop in type.GetProperties())
+            {
+                Assert.False(prop.PropertyType.FullName?.Contains("HttpStatusCode") == true,
+                    $"Application type {type.FullName} has property {prop.Name} referencing HttpStatusCode.");
+                Assert.False(prop.PropertyType.FullName?.Contains("System.Net.Http") == true,
+                    $"Application type {type.FullName} has property {prop.Name} referencing System.Net.Http.");
+            }
+
+            foreach (var method in type.GetMethods())
+            {
+                Assert.False(method.ReturnType.FullName?.Contains("HttpStatusCode") == true,
+                    $"Application type {type.FullName} method {method.Name} returns HttpStatusCode.");
+                Assert.False(method.ReturnType.FullName?.Contains("System.Net.Http") == true,
+                    $"Application type {type.FullName} method {method.Name} returns System.Net.Http type.");
+
+                foreach (var param in method.GetParameters())
+                {
+                    Assert.False(param.ParameterType.FullName?.Contains("HttpStatusCode") == true,
+                        $"Application type {type.FullName} method {method.Name} has parameter {param.Name} referencing HttpStatusCode.");
+                }
+            }
+
+            // Assert no Identity legacy types exist in Application
+            Assert.False(type.Name.Contains("IdentityDbContext"), $"Unexpected {type.FullName} in Application.");
+            Assert.False(type.Name.Contains("IdentityUnitOfWork"), $"Unexpected {type.FullName} in Application.");
+        }
     }
 }

@@ -55,7 +55,7 @@ public sealed class AccountServiceClient : IAccountServiceClient
         if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
         {
             _logger.LogError("Authentication/authorization failed when calling Account Service for user {UserId}. Status: {StatusCode}", userId, response.StatusCode);
-            throw new AccountServiceException($"Unauthorized or forbidden access when contacting Account Service (Status: {(int)response.StatusCode}). Check service credentials.", response.StatusCode);
+            throw new AccountServiceException($"Unauthorized or forbidden access when contacting Account Service (Status: {(int)response.StatusCode}). Check service credentials.", (int)response.StatusCode);
         }
 
         if ((int)response.StatusCode >= 500)
@@ -67,7 +67,7 @@ public sealed class AccountServiceClient : IAccountServiceClient
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Account Service returned unexpected non-success code {StatusCode} for user {UserId}", response.StatusCode, userId);
-            throw new AccountServiceException($"Account Service returned unexpected status code {(int)response.StatusCode} for user '{userId}'.", response.StatusCode);
+            throw new AccountServiceException($"Account Service returned unexpected status code {(int)response.StatusCode} for user '{userId}'.", (int)response.StatusCode);
         }
 
         return await response.Content.ReadFromJsonAsync<AccountUserDto>(JsonOptions, ct);
@@ -110,7 +110,7 @@ public sealed class AccountServiceClient : IAccountServiceClient
         if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
         {
             _logger.LogError("Authentication/authorization failed during batch lookup in Account Service. Status: {StatusCode}", response.StatusCode);
-            throw new AccountServiceException($"Unauthorized or forbidden access during batch lookup in Account Service (Status: {(int)response.StatusCode}). Check service credentials.", response.StatusCode);
+            throw new AccountServiceException($"Unauthorized or forbidden access during batch lookup in Account Service (Status: {(int)response.StatusCode}). Check service credentials.", (int)response.StatusCode);
         }
 
         if ((int)response.StatusCode >= 500)
@@ -122,7 +122,7 @@ public sealed class AccountServiceClient : IAccountServiceClient
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Account Service returned unexpected non-success code {StatusCode} during batch lookup", response.StatusCode);
-            throw new AccountServiceException($"Account Service returned unexpected status code {(int)response.StatusCode} during batch lookup.", response.StatusCode);
+            throw new AccountServiceException($"Account Service returned unexpected status code {(int)response.StatusCode} during batch lookup.", (int)response.StatusCode);
         }
 
         var users = await response.Content.ReadFromJsonAsync<List<AccountUserDto>>(JsonOptions, ct);

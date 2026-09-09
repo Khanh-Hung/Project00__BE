@@ -77,7 +77,7 @@ public sealed class AccountServiceClientTests
     }
 
     [Fact]
-    public async Task GetUserAsync_WhenUnauthorizedOrForbidden_ThrowsAccountServiceException()
+    public async Task GetUserAsync_WhenUnauthorized_ThrowsAccountServiceException()
     {
         var userId = Guid.NewGuid();
 
@@ -90,7 +90,40 @@ public sealed class AccountServiceClientTests
         var client = new AccountServiceClient(httpClient, NullLogger<AccountServiceClient>.Instance);
 
         var ex = await Assert.ThrowsAsync<AccountServiceException>(() => client.GetUserAsync(userId));
-        Assert.Equal(HttpStatusCode.Unauthorized, ex.StatusCode);
+        Assert.Equal((int)HttpStatusCode.Unauthorized, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetUserAsync_WhenForbidden_ThrowsAccountServiceException()
+    {
+        var userId = Guid.NewGuid();
+
+        var handler = new MockHttpMessageHandler
+        {
+            HandlerFunc = (req, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden))
+        };
+
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5000/") };
+        var client = new AccountServiceClient(httpClient, NullLogger<AccountServiceClient>.Instance);
+
+        var ex = await Assert.ThrowsAsync<AccountServiceException>(() => client.GetUserAsync(userId));
+        Assert.Equal((int)HttpStatusCode.Forbidden, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetUserAsync_WhenTimeoutOccurs_ThrowsAccountServiceUnavailableException()
+    {
+        var userId = Guid.NewGuid();
+
+        var handler = new MockHttpMessageHandler
+        {
+            HandlerFunc = (req, ct) => throw new OperationCanceledException("HttpClient timeout")
+        };
+
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5000/") };
+        var client = new AccountServiceClient(httpClient, NullLogger<AccountServiceClient>.Instance);
+
+        await Assert.ThrowsAsync<AccountServiceUnavailableException>(() => client.GetUserAsync(userId));
     }
 
     [Fact]
@@ -223,16 +256,63 @@ public sealed class AccountServiceClientTests
     }
 
     [Fact]
-    public async Task GetUsersAsync_WhenNetworkFails_ThrowsAccountServiceUnavailableException()
+    public async Task GetUsersAsync_WhenUnauthorized_ThrowsAccountServiceException()
     {
         var handler = new MockHttpMessageHandler
         {
-            HandlerFunc = (req, ct) => throw new HttpRequestException("Network failure")
+            HandlerFunc = (req, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized))
+        };
+
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5000/") };
+        var client = new AccountServiceClient(httpClient, NullLogger<AccountServiceClient>.Instance);
+
+        var ex = await Assert.ThrowsAsync<AccountServiceException>(() => client.GetUsersAsync(new[] { Guid.NewGuid() }));
+        Assert.Equal((int)HttpStatusCode.Unauthorized, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetUsersAsync_WhenForbidden_ThrowsAccountServiceException()
+    {
+        var handler = new MockHttpMessageHandler
+        {
+            HandlerFunc = (req, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden))
+        };
+
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5000/") };
+        var client = new AccountServiceClient(httpClient, NullLogger<AccountServiceClient>.Instance);
+
+        var ex = await Assert.ThrowsAsync<AccountServiceException>(() => client.GetUsersAsync(new[] { Guid.NewGuid() }));
+        Assert.Equal((int)HttpStatusCode.Forbidden, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetUsersAsync_WhenTimeoutOccurs_ThrowsAccountServiceUnavailableException()
+    {
+        var handler = new MockHttpMessageHandler
+        {
+            HandlerFunc = (req, ct) => throw new OperationCanceledException("Batch timeout")
         };
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5000/") };
         var client = new AccountServiceClient(httpClient, NullLogger<AccountServiceClient>.Instance);
 
         await Assert.ThrowsAsync<AccountServiceUnavailableException>(() => client.GetUsersAsync(new[] { Guid.NewGuid() }));
+    }
+
+    [Fact]
+    public async Task GetUsersAsync_WhenCallerCancels_PropagatesOperationCanceledException()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var handler = new MockHttpMessageHandler
+        {
+            HandlerFunc = (req, ct) => Task.FromCanceled<HttpResponseMessage>(ct)
+        };
+
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5000/") };
+        var client = new AccountServiceClient(httpClient, NullLogger<AccountServiceClient>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetUsersAsync(new[] { Guid.NewGuid() }, cts.Token));
     }
 }
