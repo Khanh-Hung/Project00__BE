@@ -16,20 +16,6 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("CoreConnection");
-        var identityConnectionString = configuration.GetConnectionString("IdentityConnection");
-
-        services.AddDbContext<IdentityDbContext>(options =>
-        {
-            if (!string.IsNullOrWhiteSpace(identityConnectionString))
-            {
-                options.UseNpgsql(identityConnectionString);
-            }
-            else
-            {
-                options.UseInMemoryDatabase("IdentityDb");
-            }
-            options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
-        });
 
         services.AddDbContext<CoreDbContext>(options =>
         {
@@ -48,19 +34,42 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddScoped<Application.Abstractions.Auth.ICurrentUserProvider, CurrentUserProvider>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
-        services.AddScoped<Application.Abstractions.Data.IIdentityUnitOfWork, IdentityUnitOfWork>();
 
-        // 3. Add Auth Services (Hasher & JWT) and Unified System Clock / DateTime Provider
+        // Account Service HTTP Client (Identity Authority)
+        services.AddHttpClient<Application.Interfaces.IAccountServiceClient, Infrastructure.Clients.AccountServiceClient>((sp, client) =>
+        {
+            var baseUrl = configuration["AccountService:BaseUrl"];
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                baseUrl = "http://localhost:5000";
+            }
+            client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(5);
+        });
+
+        // Unified System Clock / DateTime Provider
         services.AddSingleton<Infrastructure.Services.Time.SystemClock>();
         services.AddSingleton<Application.Abstractions.Time.ISystemClock>(sp => sp.GetRequiredService<Infrastructure.Services.Time.SystemClock>());
         services.AddSingleton<Domain.Common.DateTimes.IDateTimeProvider>(sp => sp.GetRequiredService<Infrastructure.Services.Time.SystemClock>());
-        services.AddSingleton<IPasswordHasher, PasswordHasher>();
-        services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
-        // 4. Configure JWT Bearer Authentication
-        var secret = configuration["Jwt:Secret"] ?? "SuperSecretKeyForNyxorisRoleplayPlatformDev2026!@#";
-        var issuer = configuration["Jwt:Issuer"] ?? "NyxorisAuth";
-        var audience = configuration["Jwt:Audience"] ?? "NyxorisRoleplay";
+        // 4. Configure JWT Bearer Authentication (Aligned with Account Service)
+        var secret = configuration["Jwt:Secret"];
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Secret' is required but was not found or empty.");
+        }
+
+        var issuer = configuration["Jwt:Issuer"];
+        if (string.IsNullOrWhiteSpace(issuer))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Issuer' is required but was not found or empty.");
+        }
+
+        var audience = configuration["Jwt:Audience"];
+        if (string.IsNullOrWhiteSpace(audience))
+        {
+            throw new InvalidOperationException("Configuration 'Jwt:Audience' is required but was not found or empty.");
+        }
 
         services.AddAuthentication(options =>
         {
@@ -73,14 +82,14 @@ public static class DependencyInjection
             options.SaveToken = true;
             options.TokenValidationParameters = new TokenValidationParameters
             {
-                ValidateIssuer = true,
-                ValidateAudience = true,
+                ValidateIssuer = !string.IsNullOrEmpty(issuer),
+                ValidateAudience = !string.IsNullOrEmpty(audience),
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
                 ValidIssuer = issuer,
                 ValidAudience = audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.FromMinutes(5)
             };
         });
 

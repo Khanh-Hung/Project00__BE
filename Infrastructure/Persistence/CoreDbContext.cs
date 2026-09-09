@@ -110,8 +110,7 @@ public class CoreDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.Ignore<User>(); // Managed exclusively by IdentityDbContext
-        modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly(), type => type != typeof(Configurations.UserConfiguration));
+        modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
 
         // Provider-aware index filter adjustment: PostgreSQL uses boolean literals ("IsCanonical" = true), SQLite uses ("IsCanonical" = 1)
         var isSqlite = Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true;

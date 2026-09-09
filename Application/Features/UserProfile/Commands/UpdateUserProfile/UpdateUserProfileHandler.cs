@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using MediatR;
@@ -12,12 +13,17 @@ namespace Application.Features.UserProfile.Commands.UpdateUserProfile;
 public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfileCommand, Result<UserProfileDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
-    public UpdateUserProfileHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public UpdateUserProfileHandler(
+        IUnitOfWork unitOfWork,
+        IAccountServiceClient accountServiceClient,
+        ICurrentUserProvider currentUserProvider)
     {
-        _unitOfWork = unitOfWork;
-        _currentUserProvider = currentUserProvider;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
     }
 
     public async Task<Result<UserProfileDto>> Handle(UpdateUserProfileCommand command, CancellationToken cancellationToken)
@@ -42,8 +48,6 @@ public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfile
         {
             profile = Domain.Entities.UserProfile.Create(
                 userId: command.UserId,
-                displayName: req.DisplayName,
-                avatarUrl: req.AvatarUrl,
                 bio: req.Bio,
                 interests: req.Interests,
                 personalityTraits: req.PersonalityTraits,
@@ -54,8 +58,6 @@ public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfile
         else
         {
             profile.Update(
-                displayName: req.DisplayName,
-                avatarUrl: req.AvatarUrl,
                 bio: req.Bio,
                 interests: req.Interests,
                 personalityTraits: req.PersonalityTraits,
@@ -66,11 +68,13 @@ public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfile
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        var user = await _accountServiceClient.GetUserAsync(command.UserId, cancellationToken);
+
         var dto = new UserProfileDto(
             Id: profile.Id,
             UserId: profile.UserId,
-            DisplayName: profile.DisplayName,
-            AvatarUrl: profile.AvatarUrl,
+            DisplayName: user?.DisplayName ?? "Người Dùng",
+            AvatarUrl: user?.AvatarUrl,
             Bio: profile.Bio,
             Interests: profile.GetInterests(),
             PersonalityTraits: profile.GetPersonalityTraits(),

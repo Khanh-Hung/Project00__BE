@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Application.Interfaces;
 using Domain.Entities;
 using MediatR;
 
@@ -10,12 +11,17 @@ namespace Application.Features.Characters.Queries.GetPublicCharacters;
 public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharactersQuery, Result<IReadOnlyList<CharacterDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetPublicCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetPublicCharactersHandler(
+        IUnitOfWork unitOfWork,
+        IAccountServiceClient accountServiceClient,
+        ICurrentUserProvider currentUserProvider)
     {
-        _unitOfWork = unitOfWork;
-        _currentUserProvider = currentUserProvider;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
     }
 
     public async Task<Result<IReadOnlyList<CharacterDto>>> Handle(GetPublicCharactersQuery query, CancellationToken cancellationToken)
@@ -27,16 +33,25 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                  && (string.IsNullOrWhiteSpace(query.Category) || c.Category.ToLower() == query.Category.ToLower()),
             cancellationToken);
 
-        var userRepo = _unitOfWork.GetRepository<User>();
-        var users = await userRepo.GetAllAsync(ct: cancellationToken);
-        var userMap = users.ToDictionary(u => u.Id.ToString(), u => u);
+        var creatorGuids = characters
+            .Where(c => !string.IsNullOrEmpty(c.CreatedBy) && c.CreatedBy != "system")
+            .Select(c => Guid.TryParse(c.CreatedBy, out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        IReadOnlyDictionary<Guid, AccountUserDto> userMap = new Dictionary<Guid, AccountUserDto>();
+        if (creatorGuids.Count > 0)
+        {
+            userMap = await _accountServiceClient.GetUsersAsync(creatorGuids, cancellationToken);
+        }
 
         var dtos = characters.Select(c =>
         {
-            User? creator = null;
-            if (!string.IsNullOrEmpty(c.CreatedBy))
+            AccountUserDto? creator = null;
+            if (!string.IsNullOrEmpty(c.CreatedBy) && Guid.TryParse(c.CreatedBy, out var creatorGuid))
             {
-                userMap.TryGetValue(c.CreatedBy, out creator);
+                userMap.TryGetValue(creatorGuid, out creator);
             }
 
             var customMilestones = !string.IsNullOrWhiteSpace(c.CustomMilestonesJson)
@@ -55,9 +70,9 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                 c.IsPublic,
                 c.CreatedAt,
                 c.CreatedBy,
-                creator?.DisplayName ?? (c.CreatedBy == "system" ? "System" : null),
-                creator?.UserName,
-                creator?.AvatarUrl,
+                CreatorName: creator?.DisplayName ?? (c.CreatedBy == "system" ? "System" : null),
+                CreatorUserName: creator?.UserName,
+                CreatorAvatar: creator?.AvatarUrl,
                 c.DefaultAffectionScore,
                 c.DefaultMood,
                 customMilestones,

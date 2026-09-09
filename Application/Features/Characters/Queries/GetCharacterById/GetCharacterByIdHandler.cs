@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Application.Interfaces;
 using Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -11,12 +12,17 @@ namespace Application.Features.Characters.Queries.GetCharacterById;
 public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQuery, Result<CharacterDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetCharacterByIdHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetCharacterByIdHandler(
+        IUnitOfWork unitOfWork,
+        IAccountServiceClient accountServiceClient,
+        ICurrentUserProvider currentUserProvider)
     {
-        _unitOfWork = unitOfWork;
-        _currentUserProvider = currentUserProvider;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
     }
 
     public async Task<Result<CharacterDto>> Handle(GetCharacterByIdQuery query, CancellationToken cancellationToken)
@@ -41,13 +47,12 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             }
         }
 
-        User? creator = null;
+        AccountUserDto? creator = null;
         if (!string.IsNullOrEmpty(character.CreatedBy))
         {
-            var userRepo = _unitOfWork.GetRepository<User>();
             if (Guid.TryParse(character.CreatedBy, out var creatorGuid))
             {
-                creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
+                creator = await _accountServiceClient.GetUserAsync(creatorGuid, cancellationToken);
             }
         }
 
@@ -67,9 +72,9 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             character.IsPublic,
             character.CreatedAt,
             character.CreatedBy,
-            creator?.DisplayName ?? (character.CreatedBy == "system" ? "System" : null),
-            creator?.UserName,
-            creator?.AvatarUrl,
+            CreatorName: creator?.DisplayName ?? (character.CreatedBy == "system" ? "System" : null),
+            CreatorUserName: creator?.UserName,
+            CreatorAvatar: creator?.AvatarUrl,
             character.DefaultAffectionScore,
             character.DefaultMood,
             customMilestones,

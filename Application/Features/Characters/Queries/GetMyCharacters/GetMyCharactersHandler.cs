@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Application.Interfaces;
 using Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -11,12 +12,17 @@ namespace Application.Features.Characters.Queries.GetMyCharacters;
 public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuery, Result<IReadOnlyList<CharacterDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
-    public GetMyCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
+    public GetMyCharactersHandler(
+        IUnitOfWork unitOfWork,
+        IAccountServiceClient accountServiceClient,
+        ICurrentUserProvider currentUserProvider)
     {
-        _unitOfWork = unitOfWork;
-        _currentUserProvider = currentUserProvider;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _currentUserProvider = currentUserProvider ?? throw new ArgumentNullException(nameof(currentUserProvider));
     }
 
     public async Task<Result<IReadOnlyList<CharacterDto>>> Handle(GetMyCharactersQuery query, CancellationToken cancellationToken)
@@ -32,11 +38,10 @@ public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuer
             c => c.CreatedBy == currentUserId,
             cancellationToken);
 
-        var userRepo = _unitOfWork.GetRepository<User>();
-        User? creator = null;
+        AccountUserDto? creator = null;
         if (Guid.TryParse(currentUserId, out var creatorGuid))
         {
-            creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
+            creator = await _accountServiceClient.GetUserAsync(creatorGuid, cancellationToken);
         }
 
         var dtos = characters
@@ -59,9 +64,9 @@ public sealed class GetMyCharactersHandler : IRequestHandler<GetMyCharactersQuer
                     c.IsPublic,
                     c.CreatedAt,
                     c.CreatedBy,
-                    creator?.DisplayName,
-                    creator?.UserName,
-                    creator?.AvatarUrl,
+                    CreatorName: creator?.DisplayName,
+                    CreatorUserName: creator?.UserName,
+                    CreatorAvatar: creator?.AvatarUrl,
                     c.DefaultAffectionScore,
                     c.DefaultMood,
                     customMilestones,

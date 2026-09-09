@@ -13,12 +13,17 @@ namespace Application.Features.Chat.Commands.GenerateProactiveReachout;
 public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateProactiveReachoutCommand, Result<ProactiveReachoutResponse>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountServiceClient _accountServiceClient;
     private readonly ILLMService _llmService;
 
-    public GenerateProactiveReachoutHandler(IUnitOfWork unitOfWork, ILLMService llmService)
+    public GenerateProactiveReachoutHandler(
+        IUnitOfWork unitOfWork,
+        IAccountServiceClient accountServiceClient,
+        ILLMService llmService)
     {
-        _unitOfWork = unitOfWork;
-        _llmService = llmService;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
+        _llmService = llmService ?? throw new ArgumentNullException(nameof(llmService));
     }
 
     public async Task<Result<ProactiveReachoutResponse>> Handle(GenerateProactiveReachoutCommand command, CancellationToken cancellationToken)
@@ -40,8 +45,6 @@ public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateP
         {
             profile = Domain.Entities.UserProfile.Create(
                 userId: command.Request.UserId,
-                displayName: "Người Dùng",
-                avatarUrl: null,
                 bio: "Thích khám phá những điều thú vị và tìm kiếm bạn bè.",
                 interests: new List<string> { "Đọc Sách", "Nghe Nhạc", "Anime" },
                 personalityTraits: new List<string> { "Thân thiện", "Tò mò" },
@@ -50,8 +53,14 @@ public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateP
             await profileRepo.AddAsync(profile, cancellationToken);
         }
 
+        var user = await _accountServiceClient.GetUserAsync(command.Request.UserId, cancellationToken);
+
         // 1. Generate Proactive Reachout Message from AI embodying the Character reading the User's Profile
-        var aiResult = await _llmService.GenerateProactiveReachoutAsync(character, profile, cancellationToken);
+        var aiResult = await _llmService.GenerateProactiveReachoutAsync(
+            character,
+            profile,
+            user?.DisplayName ?? "Người Dùng",
+            cancellationToken);
 
         // 2. Reuse active session or create new unique ChatSession
         var existingSessions = await sessionRepo.GetAllAsync(

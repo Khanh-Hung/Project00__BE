@@ -61,4 +61,10 @@ public interface ILLMService
         Character character,
         UserProfile userProfile,
         CancellationToken ct = default);
+
+    Task<ProactiveAiReachoutResult> GenerateProactiveReachoutAsync(
+        Character character,
+        UserProfile userProfile,
+        string? userDisplayName,
+        CancellationToken ct = default) => GenerateProactiveReachoutAsync(character, userProfile, ct);
 }

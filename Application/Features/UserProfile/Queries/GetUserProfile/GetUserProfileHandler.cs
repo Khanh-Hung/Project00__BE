@@ -1,6 +1,7 @@
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using MediatR;
@@ -10,10 +11,12 @@ namespace Application.Features.UserProfile.Queries.GetUserProfile;
 public sealed class GetUserProfileHandler : IRequestHandler<GetUserProfileQuery, Result<UserProfileDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountServiceClient _accountServiceClient;
 
-    public GetUserProfileHandler(IUnitOfWork unitOfWork)
+    public GetUserProfileHandler(IUnitOfWork unitOfWork, IAccountServiceClient accountServiceClient)
     {
-        _unitOfWork = unitOfWork;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _accountServiceClient = accountServiceClient ?? throw new ArgumentNullException(nameof(accountServiceClient));
     }
 
     public async Task<Result<UserProfileDto>> Handle(GetUserProfileQuery query, CancellationToken cancellationToken)
@@ -27,8 +30,6 @@ public sealed class GetUserProfileHandler : IRequestHandler<GetUserProfileQuery,
             // Auto-initialize default profile for user
             profile = Domain.Entities.UserProfile.Create(
                 userId: query.UserId,
-                displayName: "Người Dùng Mới",
-                avatarUrl: null,
                 bio: "Chưa có lời giới thiệu.",
                 interests: new List<string> { "Đọc Sách", "Nghe Nhạc", "Anime" },
                 personalityTraits: new List<string> { "Thân thiện", "Tò mò" },
@@ -38,11 +39,13 @@ public sealed class GetUserProfileHandler : IRequestHandler<GetUserProfileQuery,
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
+        var user = await _accountServiceClient.GetUserAsync(query.UserId, cancellationToken);
+
         var dto = new UserProfileDto(
             Id: profile.Id,
             UserId: profile.UserId,
-            DisplayName: profile.DisplayName,
-            AvatarUrl: profile.AvatarUrl,
+            DisplayName: user?.DisplayName ?? "Người Dùng",
+            AvatarUrl: user?.AvatarUrl,
             Bio: profile.Bio,
             Interests: profile.GetInterests(),
             PersonalityTraits: profile.GetPersonalityTraits(),
