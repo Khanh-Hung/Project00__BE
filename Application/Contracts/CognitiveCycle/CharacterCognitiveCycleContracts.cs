@@ -11,7 +11,8 @@ namespace Application.Contracts.CognitiveCycle;
 public enum CognitiveEventType
 {
     UserMessage = 1,
-    WorldEvent = 2
+    WorldEvent = 2,
+    Autonomous = 3
 }
 
 public abstract record CharacterCognitiveEvent(
@@ -25,6 +26,7 @@ public abstract record CharacterCognitiveEvent(
     {
         UserMessageCognitiveEvent => CognitiveEventType.UserMessage,
         WorldCognitiveEvent => CognitiveEventType.WorldEvent,
+        AutonomousCognitiveEvent => CognitiveEventType.Autonomous,
         _ => throw new InvalidOperationException($"Unsupported cognitive event type: {GetType().Name}")
     };
 
@@ -54,6 +56,33 @@ public sealed record WorldCognitiveEvent(
     string Source = "World",
     string? Category = null
 ) : CharacterCognitiveEvent(EventId, CharacterId, OccurredAtUtc, Source);
+
+public sealed record AutonomousCognitiveEvent(
+    Guid EventId,
+    Guid CharacterId,
+    Guid SimulationTickId,
+    DateTimeOffset OccurredAtUtc,
+    string Source = "Autonomous",
+    string EventName = "AutonomousTick"
+) : CharacterCognitiveEvent(EventId, CharacterId, OccurredAtUtc, Source)
+{
+    public string TickType => EventName;
+
+    /// <summary>
+    /// Legacy / test convenience overload only.
+    /// In production autonomous cycles, callers MUST use the primary constructor with an authoritative SimulationTickId.
+    /// </summary>
+    [Obsolete("Legacy/test convenience constructor only. Production callers MUST use the primary constructor with an authoritative SimulationTickId.")]
+    public AutonomousCognitiveEvent(
+        Guid eventId,
+        Guid characterId,
+        DateTimeOffset occurredAtUtc,
+        string source = "Autonomous",
+        string eventName = "AutonomousTick")
+        : this(eventId, characterId, Guid.NewGuid(), occurredAtUtc, source, eventName)
+    {
+    }
+}
 
 public sealed record CharacterCognitiveCycleContext(
     Guid CycleId,
