@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
 using MediatR;
@@ -12,21 +13,21 @@ namespace Application.Features.UserProfile.Commands.UpdateUserProfile;
 public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfileCommand, Result<UserProfileDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IIdentityUnitOfWork _identityUnitOfWork;
+    private readonly IAccountServiceClient? _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
     public UpdateUserProfileHandler(
         IUnitOfWork unitOfWork,
-        IIdentityUnitOfWork identityUnitOfWork,
+        IAccountServiceClient? accountServiceClient,
         ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
-        _identityUnitOfWork = identityUnitOfWork;
+        _accountServiceClient = accountServiceClient;
         _currentUserProvider = currentUserProvider;
     }
 
     public UpdateUserProfileHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
-        : this(unitOfWork, null!, currentUserProvider)
+        : this(unitOfWork, null, currentUserProvider)
     {
     }
 
@@ -72,11 +73,10 @@ public sealed class UpdateUserProfileHandler : IRequestHandler<UpdateUserProfile
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        User? user = null;
-        if (_identityUnitOfWork != null)
+        AccountUserDto? user = null;
+        if (_accountServiceClient != null)
         {
-            var userRepo = _identityUnitOfWork.GetRepository<User>();
-            user = await userRepo.GetByIdAsync(command.UserId, cancellationToken);
+            user = await _accountServiceClient.GetUserAsync(command.UserId, cancellationToken);
         }
 
         var dto = new UserProfileDto(

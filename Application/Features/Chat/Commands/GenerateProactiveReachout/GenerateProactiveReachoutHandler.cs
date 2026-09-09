@@ -13,17 +13,22 @@ namespace Application.Features.Chat.Commands.GenerateProactiveReachout;
 public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateProactiveReachoutCommand, Result<ProactiveReachoutResponse>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IIdentityUnitOfWork _identityUnitOfWork;
+    private readonly IAccountServiceClient? _accountServiceClient;
     private readonly ILLMService _llmService;
 
     public GenerateProactiveReachoutHandler(
         IUnitOfWork unitOfWork,
-        IIdentityUnitOfWork identityUnitOfWork,
+        IAccountServiceClient? accountServiceClient,
         ILLMService llmService)
     {
         _unitOfWork = unitOfWork;
-        _identityUnitOfWork = identityUnitOfWork;
+        _accountServiceClient = accountServiceClient;
         _llmService = llmService;
+    }
+
+    public GenerateProactiveReachoutHandler(IUnitOfWork unitOfWork, ILLMService llmService)
+        : this(unitOfWork, null, llmService)
+    {
     }
 
     public async Task<Result<ProactiveReachoutResponse>> Handle(GenerateProactiveReachoutCommand command, CancellationToken cancellationToken)
@@ -53,11 +58,10 @@ public sealed class GenerateProactiveReachoutHandler : IRequestHandler<GenerateP
             await profileRepo.AddAsync(profile, cancellationToken);
         }
 
-        User? user = null;
-        if (_identityUnitOfWork != null)
+        AccountUserDto? user = null;
+        if (_accountServiceClient != null)
         {
-            var userRepo = _identityUnitOfWork.GetRepository<User>();
-            user = await userRepo.GetByIdAsync(command.Request.UserId, cancellationToken);
+            user = await _accountServiceClient.GetUserAsync(command.Request.UserId, cancellationToken);
         }
 
         // 1. Generate Proactive Reachout Message from AI embodying the Character reading the User's Profile

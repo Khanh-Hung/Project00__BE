@@ -20,7 +20,10 @@ public sealed class IdentityQualityGuardDependencyInjectionTests
             ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
             ["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] = "DevelopmentStub",
             ["AiProviders:ImageGeneration:QualityGuard:AllowStubEvaluatorInProduction"] = "false",
-            ["ConnectionStrings:CoreConnection"] = "DataSource=:memory:"
+            ["ConnectionStrings:CoreConnection"] = "DataSource=:memory:",
+            ["Jwt:Secret"] = "test-jwt-secret-key-at-least-256-bits-long-for-hmac-sha",
+            ["Jwt:Issuer"] = "AccountService",
+            ["Jwt:Audience"] = "NyxorisClient"
         };
 
         IConfiguration config = new ConfigurationBuilder()
@@ -44,7 +47,10 @@ public sealed class IdentityQualityGuardDependencyInjectionTests
             ["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] = "DevelopmentStub",
             ["AiProviders:ImageGeneration:QualityGuard:AllowStubEvaluatorInProduction"] = "true",
             ["ConnectionStrings:CoreConnection"] = "DataSource=:memory:",
-            ["AiProviders:ImageProvider"] = "ComfyUI"
+            ["AiProviders:ImageProvider"] = "ComfyUI",
+            ["Jwt:Secret"] = "test-jwt-secret-key-at-least-256-bits-long-for-hmac-sha",
+            ["Jwt:Issuer"] = "AccountService",
+            ["Jwt:Audience"] = "NyxorisClient"
         };
 
         IConfiguration config = new ConfigurationBuilder()
@@ -70,7 +76,10 @@ public sealed class IdentityQualityGuardDependencyInjectionTests
             ["AiProviders:ImageGeneration:QualityGuard:Enabled"] = "true",
             ["AiProviders:ImageGeneration:QualityGuard:EvaluatorType"] = "Clip",
             ["ConnectionStrings:CoreConnection"] = "DataSource=:memory:",
-            ["AiProviders:ImageProvider"] = "ComfyUI"
+            ["AiProviders:ImageProvider"] = "ComfyUI",
+            ["Jwt:Secret"] = "test-jwt-secret-key-at-least-256-bits-long-for-hmac-sha",
+            ["Jwt:Issuer"] = "AccountService",
+            ["Jwt:Audience"] = "NyxorisClient"
         };
 
         IConfiguration config = new ConfigurationBuilder()

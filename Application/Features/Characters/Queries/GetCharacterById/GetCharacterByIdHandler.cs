@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Application.Interfaces;
 using Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -11,21 +12,21 @@ namespace Application.Features.Characters.Queries.GetCharacterById;
 public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQuery, Result<CharacterDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IIdentityUnitOfWork _identityUnitOfWork;
+    private readonly IAccountServiceClient? _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
     public GetCharacterByIdHandler(
         IUnitOfWork unitOfWork,
-        IIdentityUnitOfWork identityUnitOfWork,
+        IAccountServiceClient? accountServiceClient,
         ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
-        _identityUnitOfWork = identityUnitOfWork;
+        _accountServiceClient = accountServiceClient;
         _currentUserProvider = currentUserProvider;
     }
 
     public GetCharacterByIdHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
-        : this(unitOfWork, null!, currentUserProvider)
+        : this(unitOfWork, null, currentUserProvider)
     {
     }
 
@@ -51,13 +52,12 @@ public sealed class GetCharacterByIdHandler : IRequestHandler<GetCharacterByIdQu
             }
         }
 
-        User? creator = null;
-        if (!string.IsNullOrEmpty(character.CreatedBy) && _identityUnitOfWork != null)
+        AccountUserDto? creator = null;
+        if (!string.IsNullOrEmpty(character.CreatedBy) && _accountServiceClient != null)
         {
-            var userRepo = _identityUnitOfWork.GetRepository<User>();
             if (Guid.TryParse(character.CreatedBy, out var creatorGuid))
             {
-                creator = await userRepo.GetByIdAsync(creatorGuid, cancellationToken);
+                creator = await _accountServiceClient.GetUserAsync(creatorGuid, cancellationToken);
             }
         }
 

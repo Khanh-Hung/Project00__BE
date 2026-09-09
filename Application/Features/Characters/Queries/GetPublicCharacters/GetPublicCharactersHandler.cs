@@ -2,6 +2,7 @@ using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
 using Application.Abstractions.Responses;
 using Application.DTOs;
+using Application.Interfaces;
 using Domain.Entities;
 using MediatR;
 
@@ -10,21 +11,21 @@ namespace Application.Features.Characters.Queries.GetPublicCharacters;
 public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharactersQuery, Result<IReadOnlyList<CharacterDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IIdentityUnitOfWork _identityUnitOfWork;
+    private readonly IAccountServiceClient? _accountServiceClient;
     private readonly ICurrentUserProvider _currentUserProvider;
 
     public GetPublicCharactersHandler(
         IUnitOfWork unitOfWork,
-        IIdentityUnitOfWork identityUnitOfWork,
+        IAccountServiceClient? accountServiceClient,
         ICurrentUserProvider currentUserProvider)
     {
         _unitOfWork = unitOfWork;
-        _identityUnitOfWork = identityUnitOfWork;
+        _accountServiceClient = accountServiceClient;
         _currentUserProvider = currentUserProvider;
     }
 
     public GetPublicCharactersHandler(IUnitOfWork unitOfWork, ICurrentUserProvider currentUserProvider)
-        : this(unitOfWork, null!, currentUserProvider)
+        : this(unitOfWork, null, currentUserProvider)
     {
     }
 
@@ -37,20 +38,25 @@ public sealed class GetPublicCharactersHandler : IRequestHandler<GetPublicCharac
                  && (string.IsNullOrWhiteSpace(query.Category) || c.Category.ToLower() == query.Category.ToLower()),
             cancellationToken);
 
-        var userMap = new Dictionary<string, User>();
-        if (_identityUnitOfWork != null)
+        var creatorGuids = characters
+            .Where(c => !string.IsNullOrEmpty(c.CreatedBy) && c.CreatedBy != "system")
+            .Select(c => Guid.TryParse(c.CreatedBy, out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        IReadOnlyDictionary<Guid, AccountUserDto> userMap = new Dictionary<Guid, AccountUserDto>();
+        if (_accountServiceClient != null && creatorGuids.Count > 0)
         {
-            var userRepo = _identityUnitOfWork.GetRepository<User>();
-            var users = await userRepo.GetAllAsync(ct: cancellationToken);
-            userMap = users.ToDictionary(u => u.Id.ToString(), u => u);
+            userMap = await _accountServiceClient.GetUsersAsync(creatorGuids, cancellationToken);
         }
 
         var dtos = characters.Select(c =>
         {
-            User? creator = null;
-            if (!string.IsNullOrEmpty(c.CreatedBy))
+            AccountUserDto? creator = null;
+            if (!string.IsNullOrEmpty(c.CreatedBy) && Guid.TryParse(c.CreatedBy, out var creatorGuid))
             {
-                userMap.TryGetValue(c.CreatedBy, out creator);
+                userMap.TryGetValue(creatorGuid, out creator);
             }
 
             var customMilestones = !string.IsNullOrWhiteSpace(c.CustomMilestonesJson)

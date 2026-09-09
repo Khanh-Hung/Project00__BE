@@ -10,7 +10,7 @@ using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
-using Infrastructure.Persistence.Repositories;
+using Infrastructure.Persistence.Repositories.Core;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -57,21 +57,14 @@ public class UserProfileAndProactiveReachoutTests
         var coreOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
-        var identityOptions = new DbContextOptionsBuilder<IdentityDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
 
         await using var coreDbContext = new CoreDbContext(coreOptions);
-        await using var identityDbContext = new IdentityDbContext(identityOptions);
         var unitOfWork = new UnitOfWork(coreDbContext);
-        var identityUnitOfWork = new IdentityUnitOfWork(identityDbContext);
-        var handler = new GetUserProfileHandler(unitOfWork, identityUnitOfWork);
+        var fakeAccountService = new FakeAccountServiceClient();
+        var handler = new GetUserProfileHandler(unitOfWork, fakeAccountService);
 
         var userId = Guid.NewGuid();
-        var user = new User("user@example.com", "hash", "user123", "Người Dùng Mới");
-        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(user, userId);
-        await identityDbContext.Users.AddAsync(user);
-        await identityDbContext.SaveChangesAsync();
+        fakeAccountService.AddUser(userId, "user123", "Người Dùng Mới", null);
 
         var result = await handler.Handle(new GetUserProfileQuery(userId), CancellationToken.None);
 
@@ -88,15 +81,11 @@ public class UserProfileAndProactiveReachoutTests
         var coreOptions = new DbContextOptionsBuilder<CoreDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
-        var identityOptions = new DbContextOptionsBuilder<IdentityDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
 
         var characterId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
         await using var coreDbContext = new CoreDbContext(coreOptions);
-        await using var identityDbContext = new IdentityDbContext(identityOptions);
 
         var character = new Character(
             name: "Lâm Uyển Nhi",
@@ -114,19 +103,15 @@ public class UserProfileAndProactiveReachoutTests
             interests: new List<string> { "Hội Họa", "Nuôi Mèo" }
         );
 
-        var user = new User("quan@example.com", "hash", "quan", "Minh Quân");
-        typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(user, userId);
-        await identityDbContext.Users.AddAsync(user);
-        await identityDbContext.SaveChangesAsync();
-
         await coreDbContext.Characters.AddAsync(character);
         await coreDbContext.UserProfiles.AddAsync(profile);
         await coreDbContext.SaveChangesAsync();
 
         var unitOfWork = new UnitOfWork(coreDbContext);
-        var identityUnitOfWork = new IdentityUnitOfWork(identityDbContext);
+        var fakeAccountService = new FakeAccountServiceClient();
+        fakeAccountService.AddUser(userId, "quan", "Minh Quân", null);
         var fakeLLM = new FakeProactiveLLMService();
-        var handler = new GenerateProactiveReachoutHandler(unitOfWork, identityUnitOfWork, fakeLLM);
+        var handler = new GenerateProactiveReachoutHandler(unitOfWork, fakeAccountService, fakeLLM);
 
         var request = new ProactiveReachoutRequest(characterId, userId);
         var result = await handler.Handle(new GenerateProactiveReachoutCommand(request), CancellationToken.None);
@@ -141,6 +126,30 @@ public class UserProfileAndProactiveReachoutTests
         Assert.NotNull(savedSession);
         Assert.Single(savedSession.Messages);
         Assert.Contains("Chào Minh Quân nha!", savedSession.Messages[0].Content);
+    }
+
+    private sealed class FakeAccountServiceClient : IAccountServiceClient
+    {
+        private readonly Dictionary<Guid, AccountUserDto> _users = new();
+
+        public void AddUser(Guid userId, string? userName, string? displayName, string? avatarUrl)
+        {
+            _users[userId] = new AccountUserDto(userId, userName, displayName, avatarUrl);
+        }
+
+        public Task<AccountUserDto?> GetUserAsync(Guid userId, CancellationToken ct = default)
+        {
+            _users.TryGetValue(userId, out var user);
+            return Task.FromResult(user);
+        }
+
+        public Task<IReadOnlyDictionary<Guid, AccountUserDto>> GetUsersAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct = default)
+        {
+            var dict = userIds
+                .Where(_users.ContainsKey)
+                .ToDictionary(id => id, id => _users[id]);
+            return Task.FromResult<IReadOnlyDictionary<Guid, AccountUserDto>>(dict);
+        }
     }
 
     private sealed class FakeProactiveLLMService : ILLMService

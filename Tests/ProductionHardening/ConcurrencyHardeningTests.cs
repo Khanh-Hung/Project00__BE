@@ -213,15 +213,19 @@ public class ConcurrencyHardeningTests : IDisposable
         await Assert.ThrowsAsync<DbUpdateException>(() => db2.SaveChangesAsync());
     }
 
+    private sealed class UnmappedTestEntity : BaseEntity
+    {
+    }
+
     [Fact]
     public void GenericRepository_ThrowsInvalidOperationException_WhenEntityNotMappedInCoreDbContext()
     {
         using var db = new CoreDbContext(_options);
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            new GenericRepository<User>(db));
+            new GenericRepository<UnmappedTestEntity>(db));
 
-        Assert.Contains("User", ex.Message);
+        Assert.Contains("UnmappedTestEntity", ex.Message);
         Assert.Contains("not mapped in CoreDbContext", ex.Message);
     }
 
@@ -232,9 +236,9 @@ public class ConcurrencyHardeningTests : IDisposable
         var uow = new UnitOfWork(db);
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            uow.GetRepository<User>());
+            uow.GetRepository<UnmappedTestEntity>());
 
-        Assert.Contains("User", ex.Message);
+        Assert.Contains("UnmappedTestEntity", ex.Message);
         Assert.Contains("not mapped in CoreDbContext", ex.Message);
     }
 }
