@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Application.Contracts.ActionExecution;
 using Application.Contracts.CognitiveCycle;
 using Application.Contracts.Goals;
@@ -37,6 +37,7 @@ public sealed record AutonomousCycleResult(
     CharacterSafetyDecision? SafetyDecision,
     CharacterActionExecutionResult? ActionExecutionResult,
     CharacterGoalProgressFeedback? GoalProgressFeedback,
+    CharacterSocialPresenceFeedback? SocialPresenceFeedback = null,
     string? Message = null)
 {
     public bool IsSuccess => Status == AutonomousCycleStatus.Executed;
@@ -122,6 +123,7 @@ public sealed record AutonomousCycleResult(
             SafetyDecision: cycleResult.SafetyDecision,
             ActionExecutionResult: cycleResult.ActionExecution,
             GoalProgressFeedback: cycleResult.GoalFeedback,
+            SocialPresenceFeedback: cycleResult.SocialPresenceFeedback,
             Message: cycleResult.Message
         );
     }

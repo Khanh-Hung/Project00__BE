@@ -31,6 +31,9 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
     private readonly IPersonalityAdaptationService? _personalityAdaptationService;
     private readonly ICharacterPersonalityRepository? _personalityRepository;
     private readonly ICharacterGoalService? _goalService;
+    private readonly ISocialBehaviorPolicy? _socialBehaviorPolicy;
+    private readonly ISocialPresenceTransitionService? _socialPresenceTransitionService;
+    private readonly ICharacterSocialPresenceRepository? _socialPresenceRepository;
     private readonly ILogger<CharacterCognitiveCycleService> _logger;
 
     public CharacterCognitiveCycleService(
@@ -50,7 +53,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         ICharacterRelationshipFeedbackService? relationshipFeedbackService = null,
         IPersonalityAdaptationService? personalityAdaptationService = null,
         ICharacterPersonalityRepository? personalityRepository = null,
-        ICharacterGoalService? goalService = null)
+        ICharacterGoalService? goalService = null,
+        ISocialBehaviorPolicy? socialBehaviorPolicy = null,
+        ISocialPresenceTransitionService? socialPresenceTransitionService = null,
+        ICharacterSocialPresenceRepository? socialPresenceRepository = null)
     {
         _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
         _experiencePolicy = experiencePolicy ?? throw new ArgumentNullException(nameof(experiencePolicy));
@@ -69,6 +75,9 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         _personalityAdaptationService = personalityAdaptationService;
         _personalityRepository = personalityRepository;
         _goalService = goalService;
+        _socialBehaviorPolicy = socialBehaviorPolicy;
+        _socialPresenceTransitionService = socialPresenceTransitionService;
+        _socialPresenceRepository = socialPresenceRepository;
     }
 
     public async Task<CharacterCognitiveCycleResult> RunAsync(
@@ -270,6 +279,20 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 personalitySnapshot: personalitySnapshot);
         }
 
+        // Validate caller did not attempt to inject SocialPresenceContext
+        if (context.SocialPresenceContext != null)
+        {
+            _logger.LogWarning(
+                "[CharacterCognitiveCycleService] Caller attempted to inject SocialPresenceContext for CharacterId={CharacterId}, CycleId={CycleId}. Rejecting invalid input.",
+                characterId, cycleId);
+
+            return CharacterCognitiveCycleResult.InvalidInput(
+                cycleId, executionId, characterId, triggeredAtUtc,
+                message: "SocialPresenceContext cannot be pre-populated by caller. Social presence is managed authoritatively by the cognitive cycle.",
+                @event: cognitiveEvent,
+                personalitySnapshot: personalitySnapshot);
+        }
+
         // 2. Perception & Stimulus Mapping (PR39/PR46: Map event to normalized Domain stimulus)
         var basePerceptionContext = context.PerceptionContext != null
             ? (stimulus != null ? context.PerceptionContext with { Stimulus = stimulus } : context.PerceptionContext)
@@ -341,6 +364,28 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             memoryContext = CharacterMemoryContext.Empty;
         }
 
+        // 3.5 Authoritative Social Presence Loading (PR57: Contextual social presence state, graceful degradation)
+        CharacterSocialPresenceContext? socialPresenceContext = null;
+        if (_socialPresenceRepository != null)
+        {
+            try
+            {
+                var presence = await _socialPresenceRepository.GetByCharacterIdAsync(characterId, cancellationToken);
+                socialPresenceContext = presence?.ToContext();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[CharacterCognitiveCycleService] Failed to load social presence for CharacterId={CharacterId}. Gracefully falling back to null.",
+                    characterId);
+                socialPresenceContext = null;
+            }
+        }
+
         var perceptionContext = basePerceptionContext with
         {
             MemoryContext = memoryContext,
@@ -407,9 +452,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 personalitySnapshot: personalitySnapshot,
                 message: "No active or compatible goal found for autonomous cycle.");
 
-            var withMemory = await AttachMemoryFeedbackAsync(context, noGoalResult, cancellationToken);
+            var withMemory = await AttachMemoryFeedbackAsync(context, noGoalResult with { SocialPresenceContext = socialPresenceContext }, cancellationToken);
             var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
-            return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            var withPersonality = await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            return await AttachSocialPresenceFeedbackAsync(context, withPersonality, cancellationToken);
         }
 
         // 8. Intent (PR42 modulated by active GoalContext)
@@ -432,13 +478,39 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 personalitySnapshot: personalitySnapshot,
                 message: "No actionable intent formed from desires.");
 
-            var withMemory = await AttachMemoryFeedbackAsync(context, noIntentResult with { GoalContext = goalContext }, cancellationToken);
+            var withMemory = await AttachMemoryFeedbackAsync(context, noIntentResult with { GoalContext = goalContext, SocialPresenceContext = socialPresenceContext }, cancellationToken);
             var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
-            return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            var withPersonality = await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            return await AttachSocialPresenceFeedbackAsync(context, withPersonality, cancellationToken);
         }
 
-        // 9. Action Proposal (PR43 modulated by active GoalContext)
-        var proposalContext = new CharacterActionProposalContext(triggeredAtUtc, goalContext);
+        // 9. Action Proposal (PR43 modulated by active GoalContext and SocialBehaviorDecision)
+        SocialBehaviorDecision? socialDecision = null;
+        if (_socialBehaviorPolicy != null)
+        {
+            try
+            {
+                socialDecision = _socialBehaviorPolicy.Evaluate(
+                    characterId,
+                    socialPresenceContext,
+                    relationshipContext,
+                    goalContext,
+                    personalitySnapshot);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[CharacterCognitiveCycleService] Failed to evaluate social behavior policy for CharacterId={CharacterId}. Continuing cycle without social modulation.",
+                    characterId);
+                socialDecision = null;
+            }
+        }
+
+        var proposalContext = new CharacterActionProposalContext(triggeredAtUtc, goalContext, socialDecision);
         var actionProposal = _actionProposalPolicy.Evaluate(intent, proposalContext);
 
         // Early Exit: No Proposal formed
@@ -458,9 +530,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 personalitySnapshot: personalitySnapshot,
                 message: "No actionable proposal formed from intent.");
 
-            var withMemory = await AttachMemoryFeedbackAsync(context, noProposalResult with { GoalContext = goalContext }, cancellationToken);
+            var withMemory = await AttachMemoryFeedbackAsync(context, noProposalResult with { GoalContext = goalContext, SocialPresenceContext = socialPresenceContext }, cancellationToken);
             var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
-            return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            var withPersonality = await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            return await AttachSocialPresenceFeedbackAsync(context, withPersonality, cancellationToken);
         }
 
         // 9.5 Safety / Policy Gate Evaluation (PR52: Mandatory execution boundary)
@@ -483,9 +556,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
                 message: $"Action proposal blocked by safety policy '{safetyDecision.PolicyCode}': {safetyDecision.Reason}",
                 safetyDecision: safetyDecision);
 
-            var withMemory = await AttachMemoryFeedbackAsync(context, blockedResult with { GoalContext = goalContext }, cancellationToken);
+            var withMemory = await AttachMemoryFeedbackAsync(context, blockedResult with { GoalContext = goalContext, SocialPresenceContext = socialPresenceContext }, cancellationToken);
             var withRelationship = await AttachRelationshipFeedbackAsync(context, withMemory, cancellationToken);
-            return await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            var withPersonality = await AttachPersonalityAdaptationAsync(context, withRelationship, cancellationToken);
+            return await AttachSocialPresenceFeedbackAsync(context, withPersonality, cancellationToken);
         }
 
         // 10. Action Execution (PR44)
@@ -559,7 +633,7 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         };
 
         // 12. Persist Memory Feedback (PR47: Independent identity, error does not roll back state)
-        var resultWithGoalContext = cycleResult with { GoalContext = goalContext };
+        var resultWithGoalContext = cycleResult with { GoalContext = goalContext, SocialPresenceContext = socialPresenceContext };
         var resultWithMemory = await AttachMemoryFeedbackAsync(context, resultWithGoalContext, cancellationToken);
 
         // 13. Persist Relationship Feedback (PR48: Independent identity, error does not roll back state)
@@ -569,7 +643,10 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
         var resultWithPersonality = await AttachPersonalityAdaptationAsync(context, resultWithRelationship, cancellationToken);
 
         // 15. Persist Goal Progress Feedback (PR55: Independent identity, error does not roll back state)
-        var finalResult = await AttachGoalFeedbackAsync(context, resultWithPersonality, cancellationToken);
+        var resultWithGoal = await AttachGoalFeedbackAsync(context, resultWithPersonality, cancellationToken);
+
+        // 16. Persist Social Presence Feedback (PR57: Independent identity, error does not roll back state)
+        var finalResult = await AttachSocialPresenceFeedbackAsync(context, resultWithGoal, cancellationToken);
 
         _logger.LogInformation(
             "Cognitive cycle completed. CharacterId={CharacterId}, CycleId={CycleId}, ExecutionId={ExecutionId}, EventId={EventId}, StateVersionAtStart={StateVersionAtStart}, Status={Status}, ActionType={ActionType}, SafetyPolicy={SafetyPolicy}",
@@ -583,6 +660,56 @@ public sealed class CharacterCognitiveCycleService : ICharacterCognitiveCycleSer
             finalResult.SafetyDecision?.PolicyCode ?? "None");
 
         return finalResult;
+    }
+
+    private async Task<CharacterCognitiveCycleResult> AttachSocialPresenceFeedbackAsync(
+        CharacterCognitiveCycleContext context,
+        CharacterCognitiveCycleResult result,
+        CancellationToken ct)
+    {
+        if (_socialPresenceTransitionService == null || result.ActionExecution == null)
+        {
+            return result;
+        }
+
+        try
+        {
+            RelationshipTargetType? targetType = result.SocialPresenceContext?.TargetType;
+            Guid? targetId = result.SocialPresenceContext?.TargetId;
+
+            if (result.RelationshipContext != null)
+            {
+                targetType = result.RelationshipContext.TargetType;
+                targetId = result.RelationshipContext.TargetId;
+            }
+            else if (result.Event?.Target != null)
+            {
+                targetType = result.Event.Target.Value.TargetType;
+                targetId = result.Event.Target.Value.TargetId;
+            }
+
+            var feedback = await _socialPresenceTransitionService.ApplyActionExecutionFeedbackAsync(
+                characterId: result.CharacterId,
+                executionId: result.ExecutionId,
+                actionExecution: result.ActionExecution,
+                now: result.TriggeredAtUtc,
+                targetType: targetType,
+                targetId: targetId,
+                ct: ct);
+
+            return result with { SocialPresenceFeedback = feedback };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[CharacterCognitiveCycleService] Failed to record social presence feedback for CharacterId={CharacterId}, ExecutionId={ExecutionId}. State transition remains committed.",
+                result.CharacterId, result.ExecutionId);
+            return result;
+        }
     }
 
     private async Task<CharacterCognitiveCycleResult> AttachGoalFeedbackAsync(

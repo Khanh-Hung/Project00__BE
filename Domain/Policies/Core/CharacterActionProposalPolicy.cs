@@ -40,6 +40,12 @@ public sealed class CharacterActionProposalPolicy : ICharacterActionProposalPoli
             effectiveIntensity = Math.Min(1.0, effectiveIntensity + 0.05);
         }
 
+        var socialDecision = context.SocialDecision;
+        if (socialDecision != null && socialDecision.ShouldAct && socialDecision.ProposedAction == actionType)
+        {
+            effectiveIntensity = Math.Min(1.0, effectiveIntensity + socialDecision.IntensityBonus);
+        }
+
         var proposal = new CharacterActionProposal(
             type: actionType,
             intensity: effectiveIntensity,

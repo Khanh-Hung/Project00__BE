@@ -282,6 +282,12 @@ public static class DependencyInjection
         services.AddScoped<Application.Abstractions.Data.ICharacterAutonomousLifeTickRepository, Infrastructure.Persistence.Repositories.Core.CharacterAutonomousLifeTickRepository>();
         services.AddScoped<Application.Interfaces.IAutonomousCharacterService, Infrastructure.Services.Autonomous.AutonomousCharacterService>();
 
+        // PR #57: Social Behavior / Character Social Presence
+        services.AddSingleton<Domain.Policies.ISocialBehaviorPolicy, Domain.Policies.SocialBehaviorPolicy>();
+        services.AddScoped<Application.Abstractions.Data.ICharacterSocialPresenceRepository, Infrastructure.Persistence.Repositories.Core.CharacterSocialPresenceRepository>();
+        services.AddScoped<Application.Interfaces.ISocialPresenceTransitionService, Infrastructure.Services.SocialPresence.SocialPresenceTransitionService>();
+        services.AddScoped<Application.Interfaces.ICharacterSocialPresenceService, Infrastructure.Services.SocialPresence.CharacterSocialPresenceService>();
+
         // PR #50: Life Simulation Foundation & PR #51: Life Simulation World Events / Outbox
         services.AddSingleton<Application.Abstractions.Time.ILifeSimulationClock, Infrastructure.Services.Time.SystemLifeSimulationClock>();
         services.AddScoped<Application.Abstractions.Data.ICharacterLifeActivityRepository, Infrastructure.Persistence.Repositories.Core.CharacterLifeActivityRepository>();
