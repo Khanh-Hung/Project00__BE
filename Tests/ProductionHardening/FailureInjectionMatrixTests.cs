@@ -29,6 +29,7 @@ using Infrastructure.Services.State;
 using Infrastructure.Services.Time;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tests.LifeSimulation;
 using Xunit;
@@ -44,7 +45,7 @@ namespace Tests.ProductionHardening;
 /// 4. Memory feedback persistence failure does not roll back committed primary state mutation.
 /// 5. Relationship feedback persistence failure does not roll back committed primary state mutation.
 /// 6. Social presence feedback persistence failure does not roll back committed primary state mutation.
-/// 7. Outbox persistence failure rolls back simulation activity atomically.
+/// 7. Outbox persistence failure rolls back simulation activity atomically (using SaveChangesInterceptor).
 /// </summary>
 public class FailureInjectionMatrixTests : IDisposable
 {
@@ -72,49 +73,56 @@ public class FailureInjectionMatrixTests : IDisposable
     }
 
     [Fact]
-    public async Task Failure_1_CognitiveCycle_MissingAuthoritativeState_DoesNotReportFalseSuccess()
+    public async Task Failure_1_CognitiveCycle_PipelineThrows_NeverReportsSuccess()
     {
-        await using var db = new CoreDbContext(_options);
+        var charId = Guid.NewGuid();
+        var cycleId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+        var now = FixedNow;
 
-        var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
-        var stateService = new CharacterStateService(db, transitionService, new CharacterStateEvolutionPolicy(), NullLogger<CharacterStateService>.Instance);
-        var execService = new CharacterActionExecutionService(transitionService, new CharacterActionExecutionPolicy(), NullLogger<CharacterActionExecutionService>.Instance);
-        var safetyGate = new ActionSafetyGate(stateService, new[] { new DefaultActionSafetyPolicy() }, NullLogger<ActionSafetyGate>.Instance);
+        await using (var db = new CoreDbContext(_options))
+        {
+            var state = new CharacterState(charId, now.UtcDateTime, hunger: 90m);
+            db.CharacterStates.Add(state);
+            await db.SaveChangesAsync();
+        }
 
-        var cycleService = new CharacterCognitiveCycleService(
-            stateService: stateService,
-            experiencePolicy: new CharacterInternalExperiencePolicy(),
-            appraisalPolicy: new CharacterAppraisalPolicy(),
-            emotionPolicy: new CharacterEmotionPolicy(),
-            desirePolicy: new CharacterDesirePolicy(),
-            intentPolicy: new CharacterIntentPolicy(),
-            actionProposalPolicy: new CharacterActionProposalPolicy(),
-            safetyGate: safetyGate,
-            actionExecutionService: execService,
-            logger: NullLogger<CharacterCognitiveCycleService>.Instance);
+        await using (var db = new CoreDbContext(_options))
+        {
+            var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
+            var stateService = new CharacterStateService(db, transitionService, new CharacterStateEvolutionPolicy(), NullLogger<CharacterStateService>.Instance);
+            var execService = new CharacterActionExecutionService(transitionService, new CharacterActionExecutionPolicy(), NullLogger<CharacterActionExecutionService>.Instance);
 
-        var nonExistentCharId = Guid.NewGuid();
-        var context = new CharacterCognitiveCycleContext(
-            CycleId: Guid.NewGuid(),
-            ExecutionId: Guid.NewGuid(),
-            CharacterId: nonExistentCharId,
-            TriggeredAtUtc: FixedNow);
+            var throwingGate = new FaultyActionSafetyGate();
 
-        var result = await cycleService.RunAsync(context);
+            var cycleService = new CharacterCognitiveCycleService(
+                stateService: stateService,
+                experiencePolicy: new CharacterInternalExperiencePolicy(),
+                appraisalPolicy: new CharacterAppraisalPolicy(),
+                emotionPolicy: new CharacterEmotionPolicy(),
+                desirePolicy: new CharacterDesirePolicy(),
+                intentPolicy: new CharacterIntentPolicy(),
+                actionProposalPolicy: new CharacterActionProposalPolicy(),
+                safetyGate: throwingGate,
+                actionExecutionService: execService,
+                logger: NullLogger<CharacterCognitiveCycleService>.Instance
+            );
 
-        // MUST NOT report false success
-        Assert.Equal(CharacterCognitiveCycleStatus.NotFound, result.Status);
-        Assert.False(result.IsSuccess);
-        Assert.Null(result.ActionExecution);
-        Assert.Contains("not found", result.Message, StringComparison.OrdinalIgnoreCase);
+            var context = new CharacterCognitiveCycleContext(cycleId, execId, charId, now);
 
-        // Zero state transitions
-        var transitions = await db.CharacterStateTransitions.ToListAsync();
-        Assert.Empty(transitions);
+            // Unhandled infrastructure exceptions MUST throw, never report false success
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                cycleService.RunAsync(context));
+
+            // State in DB MUST remain at original version and hunger
+            var persistedState = await db.CharacterStates.AsNoTracking().FirstAsync(s => s.CharacterId == charId);
+            Assert.Equal(1, persistedState.Version);
+            Assert.Equal(90m, persistedState.Hunger);
+        }
     }
 
     [Fact]
-    public async Task Failure_2_ActionExecution_StateVersionMismatch_LeavesStateUnchanged()
+    public async Task Failure_2_ActionExecution_FailureBeforeMutation_LeavesStateUnchanged()
     {
         var charId = Guid.NewGuid();
         var execId = Guid.NewGuid();
@@ -122,7 +130,7 @@ public class FailureInjectionMatrixTests : IDisposable
 
         await using (var db = new CoreDbContext(_options))
         {
-            var state = new CharacterState(charId, now.UtcDateTime, hunger: 50m, energy: 50m, stress: 50m);
+            var state = new CharacterState(charId, now.UtcDateTime, hunger: 80m);
             db.CharacterStates.Add(state);
             await db.SaveChangesAsync();
         }
@@ -147,69 +155,31 @@ public class FailureInjectionMatrixTests : IDisposable
             Assert.Equal(CharacterActionExecutionStatus.ConcurrencyConflict, execResult.Status);
             Assert.False(execResult.IsApplied);
 
-            // Verify State in DB was NOT mutated
+            // State in DB MUST NOT be changed
             var persistedState = await db.CharacterStates.AsNoTracking().FirstAsync(s => s.CharacterId == charId);
             Assert.Equal(1, persistedState.Version);
-            Assert.Equal(50m, persistedState.Hunger);
+            Assert.Equal(80m, persistedState.Hunger);
 
-            // Zero state transitions
+            // Transitions table MUST be empty
             var transitions = await db.CharacterStateTransitions.ToListAsync();
             Assert.Empty(transitions);
         }
     }
 
     [Fact]
-    public async Task Failure_3_ActionExecution_FailureAfterMutation_PreservesAppliedSideEffectSemantics()
+    public async Task Failure_3_ActionExecution_FailureAfterMutation_PreservesAppliedStateSemantics()
     {
+        // Genuinely inject failure immediately after ActionExecution has committed state mutation.
+        // Proves that when subsequent feedback operations fail, the cycle preserves IsApplied = true,
+        // does not report false failure, and authoritative CharacterState remains committed at new version.
         var charId = Guid.NewGuid();
-        var execId = Guid.NewGuid();
-        var now = FixedNow;
-
-        var snapshot = new CharacterState(charId, now.UtcDateTime).ToSnapshot();
-        var appliedResult = CharacterActionExecutionResult.Applied(
-            executionId: execId,
-            characterId: charId,
-            proposal: new CharacterActionProposal(ActionType.Eat, 0.8, IntentType.SeekFood, MotivationType.HungerDriven, 1),
-            versionBefore: 1,
-            versionAfter: 2,
-            delta: new CharacterStateDelta(hungerDelta: -30m),
-            snapshot: snapshot);
-
-        // Verify IsApplied authoritative signal
-        Assert.True(appliedResult.IsApplied);
-        Assert.Equal(CharacterActionExecutionStatus.Applied, appliedResult.Status);
-
-        // Cycle result mapped from Applied action execution MUST preserve CompletedWithAction status
-        var cycleResult = CharacterCognitiveCycleResult.CompletedWithAction(
-            cycleId: Guid.NewGuid(),
-            executionId: execId,
-            characterId: charId,
-            triggeredAtUtc: now,
-            stateVersionAtStart: 1,
-            experience: null,
-            appraisal: null,
-            emotion: null,
-            desires: null,
-            intent: null,
-            actionProposal: null,
-            actionExecution: appliedResult);
-
-        Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, cycleResult.Status);
-        Assert.NotNull(cycleResult.ActionExecution);
-        Assert.True(cycleResult.ActionExecution.IsApplied);
-    }
-
-    [Fact]
-    public async Task Failure_4_MemoryFeedbackPersistence_Throws_LeavesPrimaryStateMutationCommitted()
-    {
-        var charId = Guid.NewGuid();
-        var execId = Guid.NewGuid();
         var cycleId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
         var now = FixedNow;
 
         await using (var db = new CoreDbContext(_options))
         {
-            var state = new CharacterState(charId, now.UtcDateTime, hunger: 80m, energy: 70m);
+            var state = new CharacterState(charId, now.UtcDateTime, hunger: 85m);
             db.CharacterStates.Add(state);
             await db.SaveChangesAsync();
         }
@@ -218,12 +188,13 @@ public class FailureInjectionMatrixTests : IDisposable
         {
             var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
             var stateService = new CharacterStateService(db, transitionService, new CharacterStateEvolutionPolicy(), NullLogger<CharacterStateService>.Instance);
-            var execPolicy = new CharacterActionExecutionPolicy();
-            var execService = new CharacterActionExecutionService(transitionService, execPolicy, NullLogger<CharacterActionExecutionService>.Instance);
-            var safetyGate = new ActionSafetyGate(stateService, new[] { new DefaultActionSafetyPolicy() }, NullLogger<ActionSafetyGate>.Instance);
+            var execService = new CharacterActionExecutionService(transitionService, new CharacterActionExecutionPolicy(), NullLogger<CharacterActionExecutionService>.Instance);
+            var gate = new ActionSafetyGate(stateService, new[] { new DefaultActionSafetyPolicy() }, NullLogger<ActionSafetyGate>.Instance);
 
-            // Faulty MemoryFeedbackService that throws on persist
-            var faultyMemoryService = new FaultyMemoryFeedbackService();
+            // Inject faulty memory feedback service that throws AFTER action execution has mutated state
+            var faultyMemory = new FaultyMemoryFeedbackService();
+            // Inject faulty relationship feedback service that throws AFTER action execution
+            var faultyRel = new FaultyRelationshipFeedbackService();
 
             var cycleService = new CharacterCognitiveCycleService(
                 stateService: stateService,
@@ -233,51 +204,49 @@ public class FailureInjectionMatrixTests : IDisposable
                 desirePolicy: new CharacterDesirePolicy(),
                 intentPolicy: new CharacterIntentPolicy(),
                 actionProposalPolicy: new CharacterActionProposalPolicy(),
-                safetyGate: safetyGate,
+                safetyGate: gate,
                 actionExecutionService: execService,
                 logger: NullLogger<CharacterCognitiveCycleService>.Instance,
-                memoryFeedbackService: faultyMemoryService);
+                memoryFeedbackService: faultyMemory,
+                relationshipFeedbackService: faultyRel
+            );
 
-            var context = new CharacterCognitiveCycleContext(
-                CycleId: cycleId,
-                ExecutionId: execId,
-                CharacterId: charId,
-                TriggeredAtUtc: now);
+            var context = new CharacterCognitiveCycleContext(cycleId, execId, charId, now);
 
-            // Run cycle with faulty memory service
+            // Run cycle: ActionExecution commits state mutation, then subsequent feedback services fail
             var result = await cycleService.RunAsync(context);
 
-            // Cycle status remains CompletedWithAction because state was applied!
+            // Invariant: Cycle completed with action and action execution is Applied
             Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result.Status);
             Assert.NotNull(result.ActionExecution);
+            Assert.Equal(CharacterActionExecutionStatus.Applied, result.ActionExecution.Status);
             Assert.True(result.ActionExecution.IsApplied);
 
-            // Memory feedback is null due to failure
-            Assert.Null(result.MemoryFeedback);
-
-            // Primary CharacterState mutation in DB MUST remain committed!
+            // Primary CharacterState mutation in DB MUST remain committed at version 2
             var persistedState = await db.CharacterStates.AsNoTracking().FirstAsync(s => s.CharacterId == charId);
             Assert.Equal(2, persistedState.Version);
-            Assert.True(persistedState.Hunger < 80m);
+            Assert.True(persistedState.Hunger < 85m);
 
-            // Transition ledger must contain the committed state transition
+            // Transition ledger entry MUST remain committed
             var transition = await db.CharacterStateTransitions.AsNoTracking()
                 .FirstOrDefaultAsync(t => t.CharacterId == charId && t.ExecutionId == execId);
             Assert.NotNull(transition);
+            Assert.Equal(1, transition.VersionBefore);
+            Assert.Equal(2, transition.VersionAfter);
         }
     }
 
     [Fact]
-    public async Task Failure_5_RelationshipFeedbackPersistence_Throws_LeavesPrimaryStateMutationCommitted()
+    public async Task Failure_4_Feedback_MemoryStorageFailure_DoesNotRollbackCommittedPrimaryState()
     {
         var charId = Guid.NewGuid();
-        var execId = Guid.NewGuid();
         var cycleId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
         var now = FixedNow;
 
         await using (var db = new CoreDbContext(_options))
         {
-            var state = new CharacterState(charId, now.UtcDateTime, hunger: 80m, energy: 70m);
+            var state = new CharacterState(charId, now.UtcDateTime, hunger: 80m);
             db.CharacterStates.Add(state);
             await db.SaveChangesAsync();
         }
@@ -286,12 +255,10 @@ public class FailureInjectionMatrixTests : IDisposable
         {
             var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
             var stateService = new CharacterStateService(db, transitionService, new CharacterStateEvolutionPolicy(), NullLogger<CharacterStateService>.Instance);
-            var execPolicy = new CharacterActionExecutionPolicy();
-            var execService = new CharacterActionExecutionService(transitionService, execPolicy, NullLogger<CharacterActionExecutionService>.Instance);
-            var safetyGate = new ActionSafetyGate(stateService, new[] { new DefaultActionSafetyPolicy() }, NullLogger<ActionSafetyGate>.Instance);
+            var execService = new CharacterActionExecutionService(transitionService, new CharacterActionExecutionPolicy(), NullLogger<CharacterActionExecutionService>.Instance);
+            var gate = new ActionSafetyGate(stateService, new[] { new DefaultActionSafetyPolicy() }, NullLogger<ActionSafetyGate>.Instance);
 
-            // Faulty RelationshipFeedbackService that throws on persist
-            var faultyRelService = new FaultyRelationshipFeedbackService();
+            var faultyMemory = new FaultyMemoryFeedbackService();
 
             var cycleService = new CharacterCognitiveCycleService(
                 stateService: stateService,
@@ -301,23 +268,21 @@ public class FailureInjectionMatrixTests : IDisposable
                 desirePolicy: new CharacterDesirePolicy(),
                 intentPolicy: new CharacterIntentPolicy(),
                 actionProposalPolicy: new CharacterActionProposalPolicy(),
-                safetyGate: safetyGate,
+                safetyGate: gate,
                 actionExecutionService: execService,
                 logger: NullLogger<CharacterCognitiveCycleService>.Instance,
-                relationshipFeedbackService: faultyRelService);
+                memoryFeedbackService: faultyMemory
+            );
 
-            var context = new CharacterCognitiveCycleContext(
-                CycleId: cycleId,
-                ExecutionId: execId,
-                CharacterId: charId,
-                TriggeredAtUtc: now);
-
+            var context = new CharacterCognitiveCycleContext(cycleId, execId, charId, now);
             var result = await cycleService.RunAsync(context);
 
-            // Cycle status remains CompletedWithAction because state was applied
             Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result.Status);
             Assert.NotNull(result.ActionExecution);
             Assert.True(result.ActionExecution.IsApplied);
+
+            // Memory feedback is null due to graceful degradation
+            Assert.Null(result.MemoryFeedback);
 
             // Primary CharacterState mutation in DB MUST remain committed
             var persistedState = await db.CharacterStates.AsNoTracking().FirstAsync(s => s.CharacterId == charId);
@@ -327,16 +292,16 @@ public class FailureInjectionMatrixTests : IDisposable
     }
 
     [Fact]
-    public async Task Failure_6_SocialPresenceFeedbackPersistence_Throws_LeavesPrimaryStateMutationCommitted()
+    public async Task Failure_5_Feedback_RelationshipPersistenceFailure_DoesNotRollbackCommittedPrimaryState()
     {
         var charId = Guid.NewGuid();
-        var execId = Guid.NewGuid();
         var cycleId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
         var now = FixedNow;
 
         await using (var db = new CoreDbContext(_options))
         {
-            var state = new CharacterState(charId, now.UtcDateTime, hunger: 80m, energy: 70m);
+            var state = new CharacterState(charId, now.UtcDateTime, hunger: 80m);
             db.CharacterStates.Add(state);
             await db.SaveChangesAsync();
         }
@@ -345,12 +310,10 @@ public class FailureInjectionMatrixTests : IDisposable
         {
             var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
             var stateService = new CharacterStateService(db, transitionService, new CharacterStateEvolutionPolicy(), NullLogger<CharacterStateService>.Instance);
-            var execPolicy = new CharacterActionExecutionPolicy();
-            var execService = new CharacterActionExecutionService(transitionService, execPolicy, NullLogger<CharacterActionExecutionService>.Instance);
-            var safetyGate = new ActionSafetyGate(stateService, new[] { new DefaultActionSafetyPolicy() }, NullLogger<ActionSafetyGate>.Instance);
+            var execService = new CharacterActionExecutionService(transitionService, new CharacterActionExecutionPolicy(), NullLogger<CharacterActionExecutionService>.Instance);
+            var gate = new ActionSafetyGate(stateService, new[] { new DefaultActionSafetyPolicy() }, NullLogger<ActionSafetyGate>.Instance);
 
-            // Faulty SocialPresenceTransitionService that throws on feedback recording
-            var faultySocialService = new FaultySocialPresenceTransitionService();
+            var faultyRel = new FaultyRelationshipFeedbackService();
 
             var cycleService = new CharacterCognitiveCycleService(
                 stateService: stateService,
@@ -360,20 +323,70 @@ public class FailureInjectionMatrixTests : IDisposable
                 desirePolicy: new CharacterDesirePolicy(),
                 intentPolicy: new CharacterIntentPolicy(),
                 actionProposalPolicy: new CharacterActionProposalPolicy(),
-                safetyGate: safetyGate,
+                safetyGate: gate,
                 actionExecutionService: execService,
                 logger: NullLogger<CharacterCognitiveCycleService>.Instance,
-                socialPresenceTransitionService: faultySocialService);
+                relationshipFeedbackService: faultyRel
+            );
 
-            var context = new CharacterCognitiveCycleContext(
-                CycleId: cycleId,
-                ExecutionId: execId,
-                CharacterId: charId,
-                TriggeredAtUtc: now);
-
+            var context = new CharacterCognitiveCycleContext(cycleId, execId, charId, now);
             var result = await cycleService.RunAsync(context);
 
-            // Cycle status remains CompletedWithAction because state was applied
+            Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result.Status);
+            Assert.NotNull(result.ActionExecution);
+            Assert.True(result.ActionExecution.IsApplied);
+
+            // Relationship feedback is null due to graceful degradation
+            Assert.Null(result.RelationshipFeedback);
+
+            // Primary CharacterState mutation in DB MUST remain committed
+            var persistedState = await db.CharacterStates.AsNoTracking().FirstAsync(s => s.CharacterId == charId);
+            Assert.Equal(2, persistedState.Version);
+            Assert.True(persistedState.Hunger < 80m);
+        }
+    }
+
+    [Fact]
+    public async Task Failure_6_Feedback_SocialPresenceFailure_DoesNotRollbackCommittedPrimaryState()
+    {
+        var charId = Guid.NewGuid();
+        var cycleId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+        var now = FixedNow;
+
+        await using (var db = new CoreDbContext(_options))
+        {
+            var state = new CharacterState(charId, now.UtcDateTime, hunger: 80m);
+            db.CharacterStates.Add(state);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = new CoreDbContext(_options))
+        {
+            var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
+            var stateService = new CharacterStateService(db, transitionService, new CharacterStateEvolutionPolicy(), NullLogger<CharacterStateService>.Instance);
+            var execService = new CharacterActionExecutionService(transitionService, new CharacterActionExecutionPolicy(), NullLogger<CharacterActionExecutionService>.Instance);
+            var gate = new ActionSafetyGate(stateService, new[] { new DefaultActionSafetyPolicy() }, NullLogger<ActionSafetyGate>.Instance);
+
+            var faultyPresence = new FaultySocialPresenceTransitionService();
+
+            var cycleService = new CharacterCognitiveCycleService(
+                stateService: stateService,
+                experiencePolicy: new CharacterInternalExperiencePolicy(),
+                appraisalPolicy: new CharacterAppraisalPolicy(),
+                emotionPolicy: new CharacterEmotionPolicy(),
+                desirePolicy: new CharacterDesirePolicy(),
+                intentPolicy: new CharacterIntentPolicy(),
+                actionProposalPolicy: new CharacterActionProposalPolicy(),
+                safetyGate: gate,
+                actionExecutionService: execService,
+                logger: NullLogger<CharacterCognitiveCycleService>.Instance,
+                socialPresenceTransitionService: faultyPresence
+            );
+
+            var context = new CharacterCognitiveCycleContext(cycleId, execId, charId, now);
+            var result = await cycleService.RunAsync(context);
+
             Assert.Equal(CharacterCognitiveCycleStatus.CompletedWithAction, result.Status);
             Assert.NotNull(result.ActionExecution);
             Assert.True(result.ActionExecution.IsApplied);
@@ -391,50 +404,118 @@ public class FailureInjectionMatrixTests : IDisposable
     [Fact]
     public async Task Failure_7_LifeSimulation_OutboxFailure_RollsBackActivityAtomically()
     {
+        // Proves true atomic rollback when commit fails while BOTH Activity=Completed
+        // and Outbox=Added are in the Unit of Work.
+        var interceptor = new ThrowingCommitInterceptor();
+        var optionsWithInterceptor = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
         var charId = Guid.NewGuid();
         var now = FixedNow;
+        var activityId = Guid.NewGuid();
 
+        // 1. Seed initial character and scheduled activity
         await using (var db = new CoreDbContext(_options))
         {
             var character = new Character(
                 "Test", "Title", "https://example.com/avatar.jpg",
                 "Prompt", "Hi", "Category") { Id = charId };
             db.Characters.Add(character);
+
             var state = new CharacterState(charId, now.UtcDateTime);
             db.CharacterStates.Add(state);
+
+            var activity = new CharacterLifeActivity(
+                characterId: charId,
+                activityType: LifeActivityType.Work,
+                startAtUtc: now.UtcDateTime.AddMinutes(-30),
+                plannedEndAtUtc: now.UtcDateTime.AddMinutes(-5),
+                status: LifeActivityStatus.Scheduled,
+                metadata: null,
+                createdAtUtc: now.UtcDateTime.AddMinutes(-35),
+                id: activityId
+            );
+            db.CharacterLifeActivities.Add(activity);
             await db.SaveChangesAsync();
         }
 
-        await using (var db = new CoreDbContext(_options))
+        // 2. Run TickAsync with genuine repository and outbox repository sharing CoreDbContext
+        // The interceptor will trigger during SaveChangesAsync when BOTH Activity (Completed)
+        // and Outbox (Added) are in the ChangeTracker.
+        await using (var db = new CoreDbContext(optionsWithInterceptor))
         {
             var activityRepo = new CharacterLifeActivityRepository(db);
-            // Faulty outbox repo that throws upon adding message
-            var faultyOutboxRepo = new FaultyCharacterOutboxRepository();
+            var outboxRepo = new CharacterOutboxRepository(db);
             var simClock = new FakeLifeSimulationClock();
             var systemClock = new SystemClock();
 
             var service = new LifeSimulationService(
                 activityRepo,
-                faultyOutboxRepo,
+                outboxRepo,
                 simClock,
                 systemClock,
                 NullLogger<LifeSimulationService>.Instance);
 
             var simContext = new CharacterLifeSimulationContext(charId, now, Guid.NewGuid());
 
-            // Scheduling an activity first
-            var activity = new CharacterLifeActivity(charId, LifeActivityType.Work, now.UtcDateTime.AddMinutes(-30), now.UtcDateTime.AddMinutes(-5));
-            db.CharacterLifeActivities.Add(activity);
-            await db.SaveChangesAsync();
-
-            // When TickAsync runs, it will attempt to complete activity and write outbox event.
-            // Since outbox throws, the entire operation MUST throw and activity must NOT be committed as completed!
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            // TickAsync will attempt to complete activity AND insert outbox event.
+            // SaveChangesAsync fails via interceptor during commit!
+            await Assert.ThrowsAsync<DbUpdateException>(() =>
                 service.TickAsync(simContext));
 
-            // Verify activity was NOT committed as completed in the database
-            var reloadedActivity = await db.CharacterLifeActivities.AsNoTracking().FirstAsync(a => a.Id == activity.Id);
+            // Verify interceptor actually observed BOTH entities in Unit of Work before throwing
+            Assert.True(interceptor.Invocations > 0, "Interceptor must have intercepted the commit.");
+        }
+
+        // 3. Verify Atomic Rollback in Database
+        await using (var db = new CoreDbContext(_options))
+        {
+            var reloadedActivity = await db.CharacterLifeActivities.AsNoTracking().FirstAsync(a => a.Id == activityId);
+            // Activity status MUST remain Scheduled (NOT Completed!)
             Assert.Equal(LifeActivityStatus.Scheduled, reloadedActivity.Status);
+
+            // Outbox messages MUST be 0 (NOT committed!)
+            var outboxCount = await db.CharacterOutboxMessages.AsNoTracking().CountAsync();
+            Assert.Equal(0, outboxCount);
+        }
+    }
+
+    private sealed class ThrowingCommitInterceptor : SaveChangesInterceptor
+    {
+        public bool ShouldThrow { get; set; } = true;
+        public int Invocations { get; private set; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (ShouldThrow && eventData.Context != null)
+            {
+                var hasCompletedActivity = eventData.Context.ChangeTracker.Entries<CharacterLifeActivity>()
+                    .Any(e => e.Entity.Status == LifeActivityStatus.Completed);
+
+                var hasAddedOutbox = eventData.Context.ChangeTracker.Entries<CharacterOutboxMessage>()
+                    .Any(e => e.State == EntityState.Added);
+
+                if (hasCompletedActivity && hasAddedOutbox)
+                {
+                    Invocations++;
+                    throw new DbUpdateException("Simulated database failure during atomic transaction commit.", new Exception("DB crash"));
+                }
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class FaultyActionSafetyGate : IActionSafetyGate
+    {
+        public Task<SafetyDecision> EvaluateAsync(Guid characterId, CharacterActionProposal proposal, CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("Simulated safety evaluation infrastructure failure.");
         }
     }
 
@@ -467,24 +548,5 @@ public class FailureInjectionMatrixTests : IDisposable
         {
             throw new InvalidOperationException("Simulated social presence persistence failure.");
         }
-    }
-
-    private sealed class FaultyCharacterOutboxRepository : ICharacterOutboxRepository
-    {
-        public Task AddAsync(CharacterOutboxMessage message, CancellationToken ct = default)
-        {
-            throw new InvalidOperationException("Simulated transactional outbox failure.");
-        }
-
-        public Task AddRangeAsync(IEnumerable<CharacterOutboxMessage> messages, CancellationToken ct = default)
-        {
-            throw new InvalidOperationException("Simulated transactional outbox failure.");
-        }
-
-        public Task<CharacterOutboxMessage> AddOrGetAsync(CharacterOutboxMessage message, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<CharacterOutboxMessage?> GetByIdAsync(Guid id, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<CharacterOutboxMessage?> GetByEventIdAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<IReadOnlyList<CharacterOutboxMessage>> GetPendingMessagesAsync(Guid? characterId = null, int limit = 50, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task SaveChangesAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 }
