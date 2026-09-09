@@ -168,6 +168,10 @@ public sealed class AutonomousCharacterService : IAutonomousCharacterService
             authoritativeTick.MarkCompleted((int)result.Status, simulationTimeUtc);
             await _tickRepository.UpdateAsync(authoritativeTick, cancellationToken);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,

@@ -182,6 +182,10 @@ public sealed class ActivityExecutionService : IActivityExecutionService
                     ct: ct
                 );
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[ActivityExecutionService] Failed recording goal contribution for ExecutionId={ExecutionId}, GoalId={GoalId}, ActivityId={ActivityId}",
@@ -230,6 +234,10 @@ public sealed class ActivityExecutionService : IActivityExecutionService
                     await _dbContext.SaveChangesAsync(ct);
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[ActivityExecutionService] Visual moment composition failed for ExecutionId={ExecutionId}, ActivityId={ActivityId}. Activity execution remains successful.", executionId, activity.Id);
@@ -241,6 +249,10 @@ public sealed class ActivityExecutionService : IActivityExecutionService
         try
         {
             await _dbContext.SaveChangesAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
