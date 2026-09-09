@@ -109,34 +109,8 @@ public sealed class SocialPresenceTransitionService : ISocialPresenceTransitionS
         }
 
         var actionTypeStr = actionExecution.ActionType?.ToString() ?? "Unknown";
-        var expectedFingerprint = CharacterSocialPresenceTransition.ComputeFingerprint(
-            characterId, executionId, actionTypeStr, targetType, targetId);
 
-        // 1. Check existing transition for idempotency
-        var existingTransition = await _repository.GetTransitionAsync(characterId, executionId, ct);
-        if (existingTransition != null)
-        {
-            if (existingTransition.OperationFingerprint != expectedFingerprint)
-            {
-                throw new InvalidOperationException(
-                    $"Divergent semantic replay for ExecutionId '{executionId:D}' on CharacterId '{characterId:D}'. Existing fingerprint: {existingTransition.OperationFingerprint}, Incoming: {expectedFingerprint}");
-            }
-
-            var currentPresence = await GetOrCreateAsync(characterId, now, ct);
-            return new CharacterSocialPresenceFeedback(
-                PresenceId: currentPresence.Id,
-                CharacterId: characterId,
-                ExecutionId: executionId,
-                Status: existingTransition.NewStatus,
-                CurrentActivityType: existingTransition.NewActivityType,
-                TargetType: existingTransition.TargetType,
-                TargetId: existingTransition.TargetId,
-                UpdatedAtUtc: new DateTimeOffset(existingTransition.AppliedAtUtc, TimeSpan.Zero),
-                IsSuccess: true
-            );
-        }
-
-        // 2. Map ActionType to LifeActivityType
+        // Map ActionType to LifeActivityType
         var targetActivity = actionExecution.ActionType switch
         {
             ActionType.Socialize => LifeActivityType.Socialize,
@@ -148,76 +122,25 @@ public sealed class SocialPresenceTransitionService : ISocialPresenceTransitionS
             _ => LifeActivityType.Idle
         };
 
-        var presence = await GetOrCreateAsync(characterId, now, ct);
-        var oldStatus = presence.Status;
-        var oldActivity = presence.CurrentActivityType;
-        var versionBefore = presence.Version;
-
-        // If offline, reactivate to Active when an action executes
-        if (presence.Status == SocialPresenceStatus.Offline)
-        {
-            presence.Activate(now);
-        }
-
-        presence.UpdateActivity(targetActivity, now, targetType, targetId);
-        await _repository.UpdateAsync(presence, ct);
-
-        var transition = new CharacterSocialPresenceTransition(
-            characterId: characterId,
-            executionId: executionId,
-            actionType: actionTypeStr,
-            oldStatus: oldStatus,
-            newStatus: presence.Status,
-            oldActivityType: oldActivity,
-            newActivityType: presence.CurrentActivityType,
-            targetType: targetType,
-            targetId: targetId,
-            versionBefore: versionBefore,
-            versionAfter: presence.Version,
-            appliedAtUtc: now
-        );
-
-        try
-        {
-            await _repository.AddTransitionAsync(transition, ct);
-        }
-        catch (DbUpdateException)
-        {
-            // Concurrent race on transition insert: reload existing
-            var concurrent = await _repository.GetTransitionAsync(characterId, executionId, ct);
-            if (concurrent != null)
-            {
-                if (concurrent.OperationFingerprint != expectedFingerprint)
-                {
-                    throw new InvalidOperationException(
-                        $"Divergent semantic replay for ExecutionId '{executionId:D}' on CharacterId '{characterId:D}'. Existing fingerprint: {concurrent.OperationFingerprint}, Incoming: {expectedFingerprint}");
-                }
-
-                return new CharacterSocialPresenceFeedback(
-                    PresenceId: presence.Id,
-                    CharacterId: characterId,
-                    ExecutionId: executionId,
-                    Status: concurrent.NewStatus,
-                    CurrentActivityType: concurrent.NewActivityType,
-                    TargetType: concurrent.TargetType,
-                    TargetId: concurrent.TargetId,
-                    UpdatedAtUtc: new DateTimeOffset(concurrent.AppliedAtUtc, TimeSpan.Zero),
-                    IsSuccess: true
-                );
-            }
-
-            throw;
-        }
+        var (presence, transition, isDuplicate) = await _repository.RecordTransitionAtomicAsync(
+            characterId,
+            executionId,
+            actionTypeStr,
+            targetActivity,
+            targetType,
+            targetId,
+            now,
+            ct);
 
         return new CharacterSocialPresenceFeedback(
             PresenceId: presence.Id,
             CharacterId: characterId,
             ExecutionId: executionId,
-            Status: presence.Status,
-            CurrentActivityType: presence.CurrentActivityType,
-            TargetType: targetType,
-            TargetId: targetId,
-            UpdatedAtUtc: now,
+            Status: transition.NewStatus,
+            CurrentActivityType: transition.NewActivityType,
+            TargetType: transition.TargetType,
+            TargetId: transition.TargetId,
+            UpdatedAtUtc: new DateTimeOffset(transition.AppliedAtUtc, TimeSpan.Zero),
             IsSuccess: true
         );
     }

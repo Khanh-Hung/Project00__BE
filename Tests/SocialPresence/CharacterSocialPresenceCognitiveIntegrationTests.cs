@@ -385,5 +385,16 @@ public sealed class CharacterSocialPresenceCognitiveIntegrationTests : IDisposab
 
         public Task<IReadOnlyList<CharacterSocialPresenceTransition>> GetRecentTransitionsAsync(Guid characterId, int limit = 10, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<CharacterSocialPresenceTransition>>(Array.Empty<CharacterSocialPresenceTransition>());
+
+        public Task<(CharacterSocialPresence Presence, CharacterSocialPresenceTransition Transition, bool IsDuplicate)> RecordTransitionAtomicAsync(
+            Guid characterId,
+            Guid executionId,
+            string actionType,
+            LifeActivityType targetActivity,
+            RelationshipTargetType? targetType,
+            Guid? targetId,
+            DateTimeOffset now,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("Simulated database failure during atomic transition record.");
     }
 }

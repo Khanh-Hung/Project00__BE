@@ -314,4 +314,95 @@ public sealed class CharacterSocialPresenceDomainTests
         Assert.NotEqual(hash1, hashDifferentAction);
         Assert.Equal(64, hash1.Length); // 256 bits in hex
     }
+
+    [Fact]
+    public void ComputeFingerprint_IsSensitiveToEverySemanticInput()
+    {
+        var charId1 = Guid.NewGuid();
+        var charId2 = Guid.NewGuid();
+        var execId1 = Guid.NewGuid();
+        var execId2 = Guid.NewGuid();
+        var targetId1 = Guid.NewGuid();
+        var targetId2 = Guid.NewGuid();
+
+        var baseline = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId1, execId1, "Socialize", RelationshipTargetType.User, targetId1);
+
+        // 1. Different CharacterId
+        var diffChar = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId2, execId1, "Socialize", RelationshipTargetType.User, targetId1);
+        Assert.NotEqual(baseline, diffChar);
+
+        // 2. Different ExecutionId
+        var diffExec = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId1, execId2, "Socialize", RelationshipTargetType.User, targetId1);
+        Assert.NotEqual(baseline, diffExec);
+
+        // 3. Different ActionType
+        var diffAction = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId1, execId1, "Eat", RelationshipTargetType.User, targetId1);
+        Assert.NotEqual(baseline, diffAction);
+
+        // 4. Different TargetType
+        var diffTargetType = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId1, execId1, "Socialize", RelationshipTargetType.Character, targetId1);
+        Assert.NotEqual(baseline, diffTargetType);
+
+        var nullTargetType = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId1, execId1, "Socialize", null, targetId1);
+        Assert.NotEqual(baseline, nullTargetType);
+
+        // 5. Different TargetId
+        var diffTargetId = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId1, execId1, "Socialize", RelationshipTargetType.User, targetId2);
+        Assert.NotEqual(baseline, diffTargetId);
+
+        var nullTargetId = CharacterSocialPresenceTransition.ComputeFingerprint(
+            charId1, execId1, "Socialize", RelationshipTargetType.User, null);
+        Assert.NotEqual(baseline, nullTargetId);
+    }
+
+    [Fact]
+    public void ComputeFingerprint_IsIndependentOfDerivedStates()
+    {
+        var charId = Guid.NewGuid();
+        var execId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+
+        // Two transitions with identical caller semantic inputs:
+        // (CharacterId, ExecutionId, ActionType="Socialize", TargetType=User, TargetId)
+        // but completely divergent aggregate derived states (Old/New status, Old/New activity, VersionBefore/After)
+        var transition1 = new CharacterSocialPresenceTransition(
+            characterId: charId,
+            executionId: execId,
+            actionType: "Socialize",
+            oldStatus: SocialPresenceStatus.Active,
+            newStatus: SocialPresenceStatus.Active,
+            oldActivityType: LifeActivityType.Idle,
+            newActivityType: LifeActivityType.Socialize,
+            versionBefore: 1,
+            versionAfter: 2,
+            appliedAtUtc: FixedNow,
+            targetType: RelationshipTargetType.User,
+            targetId: targetId
+        );
+
+        var transition2 = new CharacterSocialPresenceTransition(
+            characterId: charId,
+            executionId: execId,
+            actionType: "Socialize",
+            oldStatus: SocialPresenceStatus.Offline,
+            newStatus: SocialPresenceStatus.Away,
+            oldActivityType: LifeActivityType.Rest,
+            newActivityType: LifeActivityType.Socialize,
+            versionBefore: 5,
+            versionAfter: 7,
+            appliedAtUtc: FixedNow.AddHours(2),
+            targetType: RelationshipTargetType.User,
+            targetId: targetId
+        );
+
+        // Idempotency semantic invariant: fingerprints MUST match because semantic inputs are identical
+        Assert.Equal(transition1.OperationFingerprint, transition2.OperationFingerprint);
+    }
 }

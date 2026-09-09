@@ -67,6 +67,18 @@ public sealed class CharacterSocialPresenceTransition : BaseEntity
         OperationFingerprint = ComputeFingerprint(characterId, executionId, ActionType, targetType, targetId);
     }
 
+    /// <summary>
+    /// Computes deterministic SHA-256 fingerprint representing the complete semantic input of the social presence transition.
+    /// <para>
+    /// <b>Semantic Invariant:</b> Only caller-provided semantic inputs (CharacterId, ExecutionId, ActionType, TargetType, TargetId)
+    /// are hashed into the fingerprint.
+    /// </para>
+    /// <para>
+    /// <b>Derived State Exclusion:</b> Aggregate transition fields (OldStatus, NewStatus, OldActivityType, NewActivityType,
+    /// VersionBefore, VersionAfter) are purely derived from the database state at the moment of mutation. They are not
+    /// caller semantic intent, so they are intentionally excluded to ensure deterministic idempotency verification across retries.
+    /// </para>
+    /// </summary>
     public static string ComputeFingerprint(
         Guid characterId,
         Guid executionId,
