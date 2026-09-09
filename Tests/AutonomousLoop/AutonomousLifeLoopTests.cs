@@ -16,6 +16,7 @@ using Domain.Policies;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Repositories;
+using Infrastructure.Persistence.Repositories.Core;
 using Infrastructure.Services.ActionExecution;
 using Infrastructure.Services.Autonomous;
 using Infrastructure.Services.CognitiveCycle;
@@ -208,13 +209,14 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     }
 
     private (IAutonomousCharacterService Service, ICharacterCognitiveCycleService CycleService, CoreDbContext Db) CreateServices(
+        CoreDbContext? dbContext = null,
         ICharacterGoalService? goalService = null,
         IActionSafetyGate? safetyGate = null,
         ICharacterIntentPolicy? intentPolicy = null,
         ICharacterActionProposalPolicy? proposalPolicy = null,
         ICharacterDesirePolicy? desirePolicy = null)
     {
-        var db = new CoreDbContext(_options);
+        var db = dbContext ?? new CoreDbContext(_options);
 
         var transitionService = new CharacterStateTransitionService(
             db, NullLogger<CharacterStateTransitionService>.Instance);
@@ -251,8 +253,11 @@ public sealed class AutonomousLifeLoopTests : IDisposable
             goalService: effectiveGoalService
         );
 
+        var tickRepository = new CharacterAutonomousLifeTickRepository(db);
+
         var autonomousService = new AutonomousCharacterService(
             cycleService,
+            tickRepository,
             NullLogger<AutonomousCharacterService>.Instance
         );
 
@@ -264,12 +269,14 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(socialNeed: 95m);
         var (service, _, _) = CreateServices();
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.Executed, result.Status);
         Assert.Equal(charId, result.CharacterId);
+        Assert.Equal(tickId, result.SimulationTickId);
         Assert.NotEqual(Guid.Empty, result.CycleId);
         Assert.Equal(FixedNow, result.SimulationTimeUtc);
         Assert.NotNull(result.Desire);
@@ -288,9 +295,10 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, _) = CreateServices();
+        var tickId = Guid.NewGuid();
         var customTimestamp = new DateTimeOffset(2026, 12, 25, 8, 30, 0, TimeSpan.Zero);
 
-        var result = await service.RunOnceAsync(charId, customTimestamp);
+        var result = await service.RunOnceAsync(charId, tickId, customTimestamp);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(customTimestamp, result.SimulationTimeUtc);
@@ -303,11 +311,11 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 90m, energy: 20m);
         var (service, _, db) = CreateServices();
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.True(result.IsSuccess);
-        // Authoritative state was hunger=90, so dominant need/desire should be Hunger
         Assert.Equal(DesireType.NeedFood, result.Desire!.DominantDesire.Type);
 
         var updatedState = await db.CharacterStates.FirstAsync(s => s.CharacterId == charId);
@@ -318,9 +326,10 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     public async Task RunOnceAsync_GeneratesDistinctCycleIdExecutionIdAndEventId()
     {
         var charId = await SeedCharacterStateAsync(socialNeed: 95m);
-        var (service, cycleService, _) = CreateServices();
+        var (service, _, _) = CreateServices();
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.True(result.IsSuccess);
         var cycleId = result.CycleId;
@@ -328,6 +337,8 @@ public sealed class AutonomousLifeLoopTests : IDisposable
 
         Assert.NotEqual(Guid.Empty, cycleId);
         Assert.NotEqual(Guid.Empty, executionId);
+        Assert.NotEqual(tickId, cycleId);
+        Assert.NotEqual(tickId, executionId);
         Assert.NotEqual(cycleId, executionId);
     }
 
@@ -336,12 +347,12 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, db) = CreateServices();
+        var tickId = Guid.NewGuid();
 
-        // Ensure 0 goals exist initially
         var initialGoals = await db.CharacterGoals.Where(g => g.CharacterId == charId).ToListAsync();
         Assert.Empty(initialGoals);
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.GoalId);
@@ -359,8 +370,8 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(socialNeed: 95m);
         var (service, _, db) = CreateServices();
+        var tickId = Guid.NewGuid();
 
-        // Pre-create an active goal with 20% progress
         var existingGoal = new CharacterGoal(
             characterId: charId,
             title: "BuildRelationship",
@@ -372,7 +383,7 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         db.CharacterGoals.Add(existingGoal);
         await db.SaveChangesAsync();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(existingGoal.Id, result.GoalId);
@@ -389,11 +400,12 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, db) = CreateServices(safetyGate: new BlockingSafetyGate());
+        var tickId = Guid.NewGuid();
 
         var stateBefore = await db.CharacterStates.FirstAsync(s => s.CharacterId == charId);
         var versionBefore = stateBefore.Version;
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.SafetyBlocked, result.Status);
@@ -401,7 +413,6 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         Assert.False(result.SafetyDecision.IsAllowed);
         Assert.Null(result.ActionExecutionResult);
 
-        // State version must remain unmutated
         var stateAfter = await db.CharacterStates.FirstAsync(s => s.CharacterId == charId);
         Assert.Equal(versionBefore, stateAfter.Version);
     }
@@ -411,8 +422,9 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, db) = CreateServices(safetyGate: new BlockingSafetyGate());
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.SafetyBlocked, result.Status);
@@ -424,8 +436,9 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 0m, energy: 100m, stress: 0m, socialNeed: 0m, comfort: 100m);
         var (service, _, _) = CreateServices(desirePolicy: new ZeroDesirePolicy());
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.NoDesire, result.Status);
@@ -437,8 +450,9 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, _) = CreateServices(goalService: new NullGoalService());
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.NoGoal, result.Status);
@@ -450,8 +464,9 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, _) = CreateServices(intentPolicy: new NullIntentPolicy());
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.NoIntent, result.Status);
@@ -463,8 +478,9 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, _) = CreateServices(proposalPolicy: new NullActionProposalPolicy());
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.NoActionProposal, result.Status);
@@ -484,10 +500,10 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var failingGoalService = new FailingProgressGoalService(baseGoalService);
 
         var (service, _, _) = CreateServices(goalService: failingGoalService);
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
-        // Cognitive cycle commits state mutation; goal feedback failure is logged and isolated
         Assert.True(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.Executed, result.Status);
         Assert.NotNull(result.ActionExecutionResult);
@@ -504,7 +520,16 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var (service, _, _) = CreateServices();
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.RunOnceAsync(Guid.Empty, FixedNow));
+            service.RunOnceAsync(Guid.Empty, Guid.NewGuid(), FixedNow));
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_EmptySimulationTickId_ThrowsArgumentException()
+    {
+        var (service, _, _) = CreateServices();
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.RunOnceAsync(Guid.NewGuid(), Guid.Empty, FixedNow));
     }
 
     [Fact]
@@ -513,7 +538,7 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var (service, _, _) = CreateServices();
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.RunOnceAsync(Guid.NewGuid(), default));
+            service.RunOnceAsync(Guid.NewGuid(), Guid.NewGuid(), default));
     }
 
     [Fact]
@@ -521,8 +546,9 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var (service, _, _) = CreateServices();
         var nonExistentId = Guid.NewGuid();
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(nonExistentId, FixedNow);
+        var result = await service.RunOnceAsync(nonExistentId, tickId, FixedNow);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(AutonomousCycleStatus.Failed, result.Status);
@@ -534,9 +560,11 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var eventId = Guid.NewGuid();
         var charId = Guid.NewGuid();
+        var tickId = Guid.NewGuid();
         var autoEvent = new AutonomousCognitiveEvent(
             EventId: eventId,
             CharacterId: charId,
+            SimulationTickId: tickId,
             OccurredAtUtc: FixedNow
         );
 
@@ -544,6 +572,7 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         Assert.Equal("Autonomous", autoEvent.Source);
         Assert.Equal("AutonomousTick", autoEvent.EventName);
         Assert.Equal("AutonomousTick", autoEvent.TickType);
+        Assert.Equal(tickId, autoEvent.SimulationTickId);
         Assert.Null(autoEvent.Target);
     }
 
@@ -561,8 +590,9 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var trackingGate = new TrackingSafetyGate(baseGate);
 
         var (service, _, _) = CreateServices(safetyGate: trackingGate);
+        var tickId = Guid.NewGuid();
 
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.True(result.IsSuccess);
         Assert.True(trackingGate.WasEvaluated);
@@ -573,9 +603,10 @@ public sealed class AutonomousLifeLoopTests : IDisposable
     {
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, _) = CreateServices();
+        var tickId = Guid.NewGuid();
 
         var specificTime = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        var result = await service.RunOnceAsync(charId, specificTime);
+        var result = await service.RunOnceAsync(charId, tickId, specificTime);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(specificTime, result.SimulationTimeUtc);
@@ -588,11 +619,13 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var charId = await SeedCharacterStateAsync(socialNeed: 95m);
         var (service, _, db) = CreateServices();
 
-        var result1 = await service.RunOnceAsync(charId, FixedNow);
+        var tick1 = Guid.NewGuid();
+        var result1 = await service.RunOnceAsync(charId, tick1, FixedNow);
         Assert.True(result1.IsSuccess);
         var progress1 = result1.GoalProgressFeedback!.NewProgress;
 
-        var result2 = await service.RunOnceAsync(charId, FixedNow.AddMinutes(10));
+        var tick2 = Guid.NewGuid();
+        var result2 = await service.RunOnceAsync(charId, tick2, FixedNow.AddMinutes(10));
         Assert.True(result2.IsSuccess);
         var progress2 = result2.GoalProgressFeedback!.NewProgress;
 
@@ -609,7 +642,6 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var charId = await SeedCharacterStateAsync(hunger: 95m);
         var (service, _, db) = CreateServices();
 
-        // Create an already completed goal
         var completedGoal = new CharacterGoal(
             characterId: charId,
             title: "Eat",
@@ -621,11 +653,10 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         db.CharacterGoals.Add(completedGoal);
         await db.SaveChangesAsync();
 
-        // Run cycle: goal policy will either create a new goal or completed goal will not receive progress
-        var result = await service.RunOnceAsync(charId, FixedNow);
+        var tickId = Guid.NewGuid();
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
 
         Assert.True(result.IsSuccess);
-        // The completed goal remains completed
         var reloadedCompleted = await db.CharacterGoals.FirstAsync(g => g.Id == completedGoal.Id);
         Assert.Equal(CharacterGoalStatus.Completed, reloadedCompleted.Status);
         Assert.Equal(100, reloadedCompleted.ProgressPercentage);
@@ -638,9 +669,11 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         var charId2 = await SeedCharacterStateAsync(hunger: 95m, energy: 30m);
 
         var (service, _, _) = CreateServices();
+        var tick1 = Guid.NewGuid();
+        var tick2 = Guid.NewGuid();
 
-        var result1 = await service.RunOnceAsync(charId1, FixedNow);
-        var result2 = await service.RunOnceAsync(charId2, FixedNow);
+        var result1 = await service.RunOnceAsync(charId1, tick1, FixedNow);
+        var result2 = await service.RunOnceAsync(charId2, tick2, FixedNow);
 
         Assert.True(result1.IsSuccess);
         Assert.True(result2.IsSuccess);
@@ -648,5 +681,173 @@ public sealed class AutonomousLifeLoopTests : IDisposable
         Assert.Equal(result1.Desire!.DominantDesire.Type, result2.Desire!.DominantDesire.Type);
         Assert.Equal(result1.Intent!.Intent!.Type, result2.Intent!.Intent!.Type);
         Assert.Equal(result1.ActionProposal!.Proposal!.Type, result2.ActionProposal!.Proposal!.Type);
+    }
+
+    // =========================================================================
+    // MANDATORY PR56 TESTS: Durable Idempotency & Tick Identity Invariants
+    // =========================================================================
+
+    [Fact]
+    public async Task AutonomousTick_SameTick_IsIdempotent()
+    {
+        var charId = await SeedCharacterStateAsync(socialNeed: 95m);
+        var (service, _, db) = CreateServices();
+        var tickId = Guid.NewGuid();
+
+        var firstResult = await service.RunOnceAsync(charId, tickId, FixedNow);
+        Assert.True(firstResult.IsSuccess);
+        Assert.Equal(AutonomousCycleStatus.Executed, firstResult.Status);
+
+        var stateAfterFirst = await db.CharacterStates.FirstAsync(s => s.CharacterId == charId);
+        var versionAfterFirst = stateAfterFirst.Version;
+
+        // Second invocation with identical character and tick
+        var secondResult = await service.RunOnceAsync(charId, tickId, FixedNow);
+        Assert.True(secondResult.IsSuccess);
+        Assert.Equal(firstResult.SimulationTickId, secondResult.SimulationTickId);
+
+        // State version must NOT have advanced a second time
+        var stateAfterSecond = await db.CharacterStates.FirstAsync(s => s.CharacterId == charId);
+        Assert.Equal(versionAfterFirst, stateAfterSecond.Version);
+    }
+
+    [Fact]
+    public async Task AutonomousTick_SameTick_ConcurrentInvocations_ExecuteAtMostOnce()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 95m);
+        var tickId = Guid.NewGuid();
+
+        // Use two distinct DbContexts connected to the same underlying SQLite memory database
+        var db1 = new CoreDbContext(_options);
+        var db2 = new CoreDbContext(_options);
+
+        var (service1, _, _) = CreateServices(dbContext: db1);
+        var (service2, _, _) = CreateServices(dbContext: db2);
+
+        var task1 = service1.RunOnceAsync(charId, tickId, FixedNow);
+        var task2 = service2.RunOnceAsync(charId, tickId, FixedNow);
+
+        var results = await Task.WhenAll(task1, task2);
+
+        Assert.True(results[0].IsSuccess);
+        Assert.True(results[1].IsSuccess);
+
+        // Exactly one executed tick in DB
+        using var verifyDb = new CoreDbContext(_options);
+        var tickRecord = await verifyDb.CharacterAutonomousLifeTicks
+            .SingleAsync(t => t.CharacterId == charId && t.SimulationTickId == tickId);
+        Assert.Equal(AutonomousTickState.Completed, tickRecord.State);
+
+        // Character state version should be incremented exactly ONCE (version 1 -> version 2)
+        var state = await verifyDb.CharacterStates.SingleAsync(s => s.CharacterId == charId);
+        Assert.Equal(2, state.Version);
+    }
+
+    [Fact]
+    public async Task AutonomousTick_DifferentTicks_CanExecuteIndependently()
+    {
+        var charId = await SeedCharacterStateAsync(socialNeed: 95m);
+        var (service, _, db) = CreateServices();
+
+        var tick1 = Guid.NewGuid();
+        var tick2 = Guid.NewGuid();
+
+        var result1 = await service.RunOnceAsync(charId, tick1, FixedNow);
+        var result2 = await service.RunOnceAsync(charId, tick2, FixedNow.AddMinutes(5));
+
+        Assert.True(result1.IsSuccess);
+        Assert.True(result2.IsSuccess);
+        Assert.NotEqual(result1.SimulationTickId, result2.SimulationTickId);
+
+        var state = await db.CharacterStates.SingleAsync(s => s.CharacterId == charId);
+        Assert.True(state.Version >= 3);
+    }
+
+    [Fact]
+    public async Task AutonomousTick_SimulationTickId_IsDistinctFromCycleId()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 95m);
+        var (service, _, _) = CreateServices();
+        var tickId = Guid.NewGuid();
+
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(tickId, result.SimulationTickId);
+        Assert.NotEqual(tickId, result.CycleId);
+    }
+
+    [Fact]
+    public async Task AutonomousTick_CycleId_IsDistinctFromExecutionId()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 95m);
+        var (service, _, _) = CreateServices();
+        var tickId = Guid.NewGuid();
+
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
+
+        Assert.True(result.IsSuccess);
+        var cycleId = result.CycleId;
+        var executionId = result.ActionExecutionResult!.ExecutionId;
+
+        Assert.NotEqual(cycleId, executionId);
+        Assert.NotEqual(tickId, cycleId);
+        Assert.NotEqual(tickId, executionId);
+    }
+
+    [Fact]
+    public async Task AutonomousTick_RetryAfterProcessRestart_DoesNotExecuteActionTwice()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 95m);
+        var tickId = Guid.NewGuid();
+
+        // Worker A executes
+        var (serviceA, _, dbA) = CreateServices();
+        var resultA = await serviceA.RunOnceAsync(charId, tickId, FixedNow);
+        Assert.True(resultA.IsSuccess);
+
+        var stateAfterA = await dbA.CharacterStates.FirstAsync(s => s.CharacterId == charId);
+        var versionAfterA = stateAfterA.Version;
+
+        // Worker B simulates restarted process running the same tick
+        var (serviceB, _, dbB) = CreateServices();
+        var resultB = await serviceB.RunOnceAsync(charId, tickId, FixedNow);
+
+        Assert.True(resultB.IsSuccess);
+        // State version must remain identical - ActionExecution must not be applied twice
+        var stateAfterB = await dbB.CharacterStates.FirstAsync(s => s.CharacterId == charId);
+        Assert.Equal(versionAfterA, stateAfterB.Version);
+    }
+
+    [Fact]
+    public async Task AutonomousTick_ActionAlreadyApplied_DoesNotReportFalseFailure()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 95m);
+        var (service, _, db) = CreateServices();
+        var tickId = Guid.NewGuid();
+
+        var result1 = await service.RunOnceAsync(charId, tickId, FixedNow);
+        Assert.True(result1.IsSuccess);
+
+        // When action has already been applied, re-running the tick should not report Failed
+        var result2 = await service.RunOnceAsync(charId, tickId, FixedNow);
+        Assert.NotEqual(AutonomousCycleStatus.Failed, result2.Status);
+        Assert.True(result2.IsSuccess);
+    }
+
+    [Fact]
+    public async Task AutonomousTick_DivergentPayloadForSameTick_IsRejected()
+    {
+        var charId = await SeedCharacterStateAsync(hunger: 95m);
+        var (service, _, _) = CreateServices();
+        var tickId = Guid.NewGuid();
+
+        var result = await service.RunOnceAsync(charId, tickId, FixedNow);
+        Assert.True(result.IsSuccess);
+
+        // Retrying the same tick with divergent timestamp must be rejected
+        var divergentTime = FixedNow.AddHours(5);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.RunOnceAsync(charId, tickId, divergentTime));
     }
 }

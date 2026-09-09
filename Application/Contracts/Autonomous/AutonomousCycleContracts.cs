@@ -20,11 +20,13 @@ public enum AutonomousCycleStatus
     NoGoal = 4,
     NoIntent = 5,
     NoActionProposal = 6,
-    Failed = 7
+    Failed = 7,
+    InvalidInput = 8
 }
 
 public sealed record AutonomousCycleResult(
     Guid CharacterId,
+    Guid SimulationTickId,
     Guid CycleId,
     DateTimeOffset SimulationTimeUtc,
     AutonomousCycleStatus Status,
@@ -41,6 +43,7 @@ public sealed record AutonomousCycleResult(
 
     public static AutonomousCycleResult FromCognitiveCycleResult(
         Guid characterId,
+        Guid simulationTickId,
         Guid cycleId,
         DateTimeOffset simulationTimeUtc,
         CharacterCognitiveCycleResult cycleResult)
@@ -49,46 +52,66 @@ public sealed record AutonomousCycleResult(
 
         AutonomousCycleStatus status;
 
-        if (cycleResult.Status == CharacterCognitiveCycleStatus.CompletedWithAction)
+        switch (cycleResult.Status)
         {
-            status = AutonomousCycleStatus.Executed;
-        }
-        else if (cycleResult.SafetyDecision != null && !cycleResult.SafetyDecision.IsAllowed)
-        {
-            status = AutonomousCycleStatus.SafetyBlocked;
-        }
-        else if (cycleResult.Status == CharacterCognitiveCycleStatus.CompletedWithoutAction)
-        {
-            if (cycleResult.Desires == null ||
-                cycleResult.Desires.DominantDesire == null ||
-                cycleResult.Desires.DominantDesire.Intensity <= 0.0)
-            {
-                status = AutonomousCycleStatus.NoDesire;
-            }
-            else if (cycleResult.GoalContext == null)
-            {
-                status = AutonomousCycleStatus.NoGoal;
-            }
-            else if (cycleResult.Intent?.Intent == null)
-            {
-                status = AutonomousCycleStatus.NoIntent;
-            }
-            else if (cycleResult.ActionProposal?.Proposal == null)
-            {
-                status = AutonomousCycleStatus.NoActionProposal;
-            }
-            else
-            {
-                status = AutonomousCycleStatus.Failed;
-            }
-        }
-        else
-        {
-            status = AutonomousCycleStatus.Failed;
+            case CharacterCognitiveCycleStatus.CompletedWithAction:
+            case CharacterCognitiveCycleStatus.AlreadyExecuted:
+                status = AutonomousCycleStatus.Executed;
+                break;
+
+            case CharacterCognitiveCycleStatus.InvalidInput:
+                status = AutonomousCycleStatus.InvalidInput;
+                break;
+
+            case CharacterCognitiveCycleStatus.CompletedWithoutAction:
+                if (cycleResult.SafetyDecision != null && !cycleResult.SafetyDecision.IsAllowed)
+                {
+                    status = AutonomousCycleStatus.SafetyBlocked;
+                }
+                else if (cycleResult.Desires == null ||
+                         cycleResult.Desires.DominantDesire == null ||
+                         cycleResult.Desires.DominantDesire.Intensity <= 0.0)
+                {
+                    status = AutonomousCycleStatus.NoDesire;
+                }
+                else if (cycleResult.GoalContext == null)
+                {
+                    status = AutonomousCycleStatus.NoGoal;
+                }
+                else if (cycleResult.Intent?.Intent == null)
+                {
+                    status = AutonomousCycleStatus.NoIntent;
+                }
+                else if (cycleResult.ActionProposal?.Proposal == null)
+                {
+                    status = AutonomousCycleStatus.NoActionProposal;
+                }
+                else
+                {
+                    status = AutonomousCycleStatus.Failed;
+                }
+                break;
+
+            case CharacterCognitiveCycleStatus.NotFound:
+            case CharacterCognitiveCycleStatus.ConcurrencyConflict:
+            case CharacterCognitiveCycleStatus.IdempotencyConflict:
+            case CharacterCognitiveCycleStatus.Failed:
+            default:
+                // If action execution was already applied, we must NOT report false failure to caller
+                if (cycleResult.ActionExecution != null && cycleResult.ActionExecution.IsApplied)
+                {
+                    status = AutonomousCycleStatus.Executed;
+                }
+                else
+                {
+                    status = AutonomousCycleStatus.Failed;
+                }
+                break;
         }
 
         return new AutonomousCycleResult(
             CharacterId: characterId,
+            SimulationTickId: simulationTickId,
             CycleId: cycleId,
             SimulationTimeUtc: simulationTimeUtc,
             Status: status,
@@ -103,13 +126,38 @@ public sealed record AutonomousCycleResult(
         );
     }
 
+    public static AutonomousCycleResult DuplicateOrAlreadyExecuted(
+        Guid characterId,
+        Guid simulationTickId,
+        Guid cycleId,
+        DateTimeOffset simulationTimeUtc,
+        AutonomousCycleStatus status = AutonomousCycleStatus.Executed,
+        string? message = null) =>
+        new(
+            CharacterId: characterId,
+            SimulationTickId: simulationTickId,
+            CycleId: cycleId,
+            SimulationTimeUtc: simulationTimeUtc,
+            Status: status,
+            Desire: null,
+            GoalId: null,
+            Intent: null,
+            ActionProposal: null,
+            SafetyDecision: null,
+            ActionExecutionResult: null,
+            GoalProgressFeedback: null,
+            Message: message ?? "Autonomous tick already executed."
+        );
+
     public static AutonomousCycleResult FailedResult(
         Guid characterId,
+        Guid simulationTickId,
         Guid cycleId,
         DateTimeOffset simulationTimeUtc,
         string message) =>
         new(
             CharacterId: characterId,
+            SimulationTickId: simulationTickId,
             CycleId: cycleId,
             SimulationTimeUtc: simulationTimeUtc,
             Status: AutonomousCycleStatus.Failed,

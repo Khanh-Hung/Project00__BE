@@ -9,7 +9,6 @@ public sealed record CharacterDesireEvaluation
     public int StateVersion { get; init; }
     public IReadOnlyList<CharacterDesire> Desires { get; init; }
     public CharacterDesire DominantDesire { get; init; }
-    public CharacterDesire? PrimaryDesire => DominantDesire;
     public CharacterMotivation DominantMotivation => DominantDesire.Motivation;
 
     public CharacterDesireEvaluation(

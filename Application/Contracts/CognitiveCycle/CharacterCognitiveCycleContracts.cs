@@ -60,12 +60,23 @@ public sealed record WorldCognitiveEvent(
 public sealed record AutonomousCognitiveEvent(
     Guid EventId,
     Guid CharacterId,
+    Guid SimulationTickId,
     DateTimeOffset OccurredAtUtc,
     string Source = "Autonomous",
     string EventName = "AutonomousTick"
 ) : CharacterCognitiveEvent(EventId, CharacterId, OccurredAtUtc, Source)
 {
     public string TickType => EventName;
+
+    public AutonomousCognitiveEvent(
+        Guid eventId,
+        Guid characterId,
+        DateTimeOffset occurredAtUtc,
+        string source = "Autonomous",
+        string eventName = "AutonomousTick")
+        : this(eventId, characterId, Guid.NewGuid(), occurredAtUtc, source, eventName)
+    {
+    }
 }
 
 public sealed record CharacterCognitiveCycleContext(

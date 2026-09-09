@@ -279,6 +279,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Interfaces.ICharacterCognitiveCycleService, Infrastructure.Services.CognitiveCycle.CharacterCognitiveCycleService>();
 
         // PR #56: Autonomous Life Loop
+        services.AddScoped<Application.Abstractions.Data.ICharacterAutonomousLifeTickRepository, Infrastructure.Persistence.Repositories.Core.CharacterAutonomousLifeTickRepository>();
         services.AddScoped<Application.Interfaces.IAutonomousCharacterService, Infrastructure.Services.Autonomous.AutonomousCharacterService>();
 
         // PR #50: Life Simulation Foundation & PR #51: Life Simulation World Events / Outbox

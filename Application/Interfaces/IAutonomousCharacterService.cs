@@ -9,6 +9,7 @@ public interface IAutonomousCharacterService
 {
     Task<AutonomousCycleResult> RunOnceAsync(
         Guid characterId,
+        Guid simulationTickId,
         DateTimeOffset simulationTimeUtc,
         CancellationToken cancellationToken = default);
 }
