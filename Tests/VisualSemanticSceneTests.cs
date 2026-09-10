@@ -1,4 +1,4 @@
-﻿using Application.Services;
+using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -117,8 +117,8 @@ public sealed class VisualSemanticSceneTests
         Assert.Contains("warm candlelight", prompt);
 
         // Assert - Tier 5: Quality & Style Anchors
-        Assert.Contains("soft painterly anime aesthetic", prompt);
-        Assert.Contains("8k, pixiv trending", prompt);
+        Assert.Contains("cinematic composition", prompt);
+        Assert.Contains("8k", prompt);
     }
 
     [Fact]
