@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Application.Exceptions;
 using Application.Interfaces;
+using Domain.ValueObjects;
 
 namespace Infrastructure.ImageGeneration.ComfyUI;
 
@@ -31,6 +32,7 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
             && !string.IsNullOrWhiteSpace(model)
             && _supportedModels.Contains(model.Trim());
     }
+
 
     public Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName)
     {

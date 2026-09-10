@@ -37,6 +37,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
     private readonly IGenerationMetrics _metrics;
     private readonly IGenerationFingerprintService _fingerprintService;
     private readonly GenerationRetryBudget _retryBudget;
+    private readonly IImageGenerationCapabilityPolicy _capabilityPolicy;
 
     public ImageGenerationOrchestrator(
         CoreDbContext dbContext,
@@ -50,7 +51,8 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         IArtifactAcceptanceService acceptanceService,
         IGenerationMetrics? metrics = null,
         IGenerationFingerprintService? fingerprintService = null,
-        GenerationRetryBudget? retryBudget = null)
+        GenerationRetryBudget? retryBudget = null,
+        IImageGenerationCapabilityPolicy? capabilityPolicy = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
@@ -64,6 +66,13 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         _metrics = metrics ?? new Infrastructure.Telemetry.GenerationMetrics(NullLogger<Infrastructure.Telemetry.GenerationMetrics>.Instance);
         _fingerprintService = fingerprintService ?? new GenerationFingerprintService();
         _retryBudget = retryBudget ?? GenerationRetryBudget.Default;
+        _capabilityPolicy = capabilityPolicy ?? new Infrastructure.ImageGeneration.WorkflowCapabilityPolicy(
+            new Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder[]
+            {
+                new Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder(),
+                new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder(),
+                new Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder()
+            });
     }
 
     public async Task<JobExecutionResult> OrchestrateSceneImageGenerationAsync(
@@ -461,6 +470,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                     try
                     {
+                        // Authoritative Application-boundary capability validation: fail fast before provider submission!
+                        imageReq.ValidateCapability(_capabilityPolicy);
+
                         var genSw = Stopwatch.StartNew();
                         genResult = await _imageService.GenerateImageWithResultAsync(imageReq, attemptCt);
                         genSw.Stop();

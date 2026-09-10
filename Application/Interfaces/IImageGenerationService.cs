@@ -29,6 +29,39 @@ public sealed record ImageGenerationRequest(
     Dictionary<string, object>? ExtraParameters = null
 )
 {
+    /// <summary>
+    /// Gets the capability tuple (Model, Workflow, WorkflowVersion) for this request.
+    /// </summary>
+    public ImageGenerationCapability Capability => new(Model ?? string.Empty, Workflow, WorkflowVersion);
+
+    /// <summary>
+    /// Resolves the effective generation capability required for this request.
+    /// Maps empty reference image requests under VisualIdentity to TextToImage v1.
+    /// </summary>
+    public ImageGenerationCapability ResolveEffectiveCapability()
+    {
+        var targetWorkflow = Workflow;
+        if (string.IsNullOrWhiteSpace(ReferenceImageUrl) && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
+        {
+            targetWorkflow = "TextToImage";
+        }
+        return new ImageGenerationCapability(Model ?? string.Empty, targetWorkflow, WorkflowVersion);
+    }
+
+    /// <summary>
+    /// Validates capability compatibility at the Application boundary before submitting to provider.
+    /// </summary>
+    public void ValidateCapability(IImageGenerationCapabilityPolicy capabilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(capabilityPolicy);
+        var capability = ResolveEffectiveCapability();
+        if (!capabilityPolicy.IsSupported(capability))
+        {
+            throw new Application.Exceptions.GpuNonTransientException(
+                $"Generation capability '{capability}' is not supported. Workflow '{capability.Workflow}' v{capability.WorkflowVersion} is not compatible with model '{Model}'.");
+        }
+    }
+
     public static ImageGenerationRequest FromSnapshot(
         VisualSnapshot snapshot,
         string compiledPrompt,

@@ -107,6 +107,7 @@ public static class DependencyInjection
         services.AddSingleton<Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder, Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder>();
         services.AddSingleton<Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder, Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder>();
         services.AddSingleton<Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder, Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder>();
+        services.AddSingleton<IImageGenerationCapabilityPolicy, Infrastructure.ImageGeneration.WorkflowCapabilityPolicy>();
         services.AddScoped<Infrastructure.ImageGeneration.ComfyUIImageGenerationService>();
 
         var imageProvider = configuration["AiProviders:ImageProvider"];

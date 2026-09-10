@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using Application.Exceptions;
 using Application.Interfaces;
+using Domain.ValueObjects;
 using Infrastructure.ImageGeneration.ComfyUI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -62,19 +63,16 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
         if (int.TryParse(_configuration["AiProviders:ComfyUI:PollIntervalMs"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInterval)) pollIntervalMs = parsedInterval;
         if (int.TryParse(_configuration["AiProviders:ComfyUI:TimeoutSeconds"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTimeout)) timeoutSeconds = parsedTimeout;
 
-        var targetWorkflow = request.Workflow;
-        if (string.IsNullOrWhiteSpace(request.ReferenceImageUrl) && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
-        {
-            targetWorkflow = "TextToImage";
-        }
-        var targetVersion = request.WorkflowVersion;
+        var capability = request.ResolveEffectiveCapability();
+        var targetWorkflow = capability.Workflow;
+        var targetVersion = capability.WorkflowVersion;
         string promptId = request.ProviderJobId ?? string.Empty;
         IComfyUIWorkflowBuilder? builder = null;
 
         if (string.IsNullOrWhiteSpace(promptId))
         {
-            // 1. Select Workflow Builder by exact (Workflow, WorkflowVersion, Model) compatibility match - fail-fast before network calls!
-            builder = _workflowBuilders.FirstOrDefault(b => b.CanHandle(targetWorkflow, targetVersion, request.Model))
+            // 1. Select Workflow Builder by exact compatibility match - defense-in-depth before network calls!
+            builder = _workflowBuilders.FirstOrDefault(b => b.CanHandle(capability))
                 ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not compatible with model '{request.Model}'.");
 
             // 2. Ensure Reference and Previous Scene Images are uploaded if required by workflow
