@@ -73,7 +73,11 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
 
         if (string.IsNullOrWhiteSpace(promptId))
         {
-            // 1. Ensure Reference and Previous Scene Images are uploaded if required by workflow
+            // 1. Select Workflow Builder by exact (Workflow, WorkflowVersion, Model) compatibility match - fail-fast before network calls!
+            builder = _workflowBuilders.FirstOrDefault(b => b.CanHandle(targetWorkflow, targetVersion, request.Model))
+                ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not compatible with model '{request.Model}'.");
+
+            // 2. Ensure Reference and Previous Scene Images are uploaded if required by workflow
             string resolvedReferenceImageName = string.Empty;
             if (!string.IsNullOrWhiteSpace(request.ReferenceImageUrl))
             {
@@ -93,17 +97,12 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
                 }
             }
 
-            // 2. Select Workflow Builder by exact (Workflow, WorkflowVersion) match - NO SILENT FALLBACK!
-            builder = _workflowBuilders.FirstOrDefault(b =>
-                string.Equals(b.WorkflowName, targetWorkflow, StringComparison.OrdinalIgnoreCase) &&
-                b.WorkflowVersion == targetVersion)
-                ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not available on this server.");
-
             var workflowGraph = builder.BuildWorkflow(request, resolvedReferenceImageName, resolvedPreviousSceneImageName);
 
             // 3. Post Prompt Graph to ComfyUI Client
             promptId = await _comfyClient.QueuePromptAsync(workflowGraph, ct);
-            _logger.LogInformation("ComfyUI prompt enqueued: PromptId={PromptId}, Workflow={Workflow}, Version={Version}", promptId, targetWorkflow, targetVersion);
+            _logger.LogInformation("ComfyUI prompt enqueued: PromptId={PromptId}, Workflow={Workflow}, Version={Version}, Model={Model}",
+                promptId, targetWorkflow, targetVersion, request.Model);
 
             // Immediately persist ProviderJobId before beginning polling
             if (request.OnPromptQueuedAsync != null)

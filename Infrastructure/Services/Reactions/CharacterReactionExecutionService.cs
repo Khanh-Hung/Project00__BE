@@ -22,6 +22,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
     private readonly ISceneVisualStateReader _visualStateReader;
     private readonly ICharacterStateTransitionStager _stateTransitionService;
+    private readonly IVisualGenerationProfileProvider _profileProvider;
     private readonly ILogger<CharacterReactionExecutionService> _logger;
 
     public CharacterReactionExecutionService(
@@ -31,7 +32,8 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
         ICharacterStateTransitionStager stateTransitionService,
-        ILogger<CharacterReactionExecutionService> logger)
+        ILogger<CharacterReactionExecutionService> logger,
+        IVisualGenerationProfileProvider? profileProvider = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _goalProgressService = goalProgressService ?? throw new ArgumentNullException(nameof(goalProgressService));
@@ -40,6 +42,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
         _stateTransitionService = stateTransitionService ?? throw new ArgumentNullException(nameof(stateTransitionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _profileProvider = profileProvider ?? new VisualGenerationProfileProvider();
     }
 
     public async Task<ReactionExecutionResult> ExecuteReactionAsync(
@@ -315,9 +318,11 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
 
                 sceneIntentId = sceneIntent.Id;
 
+                var generationProfile = _profileProvider.ResolveProfile(character);
+
                 var pipelineResult = await _sceneCompositionPipeline.ExecuteAsync(
                     intent: sceneIntent,
-                    generationProfile: GenerationProfile.CreateDefault(),
+                    generationProfile: generationProfile,
                     sceneRevision: sceneRevision,
                     ct: ct
                 );
