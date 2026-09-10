@@ -1,5 +1,6 @@
 using Application.Interfaces;
 using Domain.Entities;
+using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,5 +20,14 @@ public sealed class CharacterVisualProfileReader : ICharacterVisualProfileReader
         return await _dbContext.CharacterVisualProfiles
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.CharacterId == characterId, ct);
+    }
+
+    public async Task<CharacterVisualIdentity?> GetVisualIdentityByCharacterIdAsync(Guid characterId, CancellationToken ct = default)
+    {
+        var character = await _dbContext.Characters
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == characterId, ct);
+
+        return character?.VisualIdentity;
     }
 }

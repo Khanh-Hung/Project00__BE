@@ -34,7 +34,7 @@ public sealed class PollinationsImageGenerationService : IImageGenerationService
         var negativePrompt = !string.IsNullOrWhiteSpace(request.NegativePrompt)
             ? request.NegativePrompt.Trim()
             : defaultNegative;
-        var randomSeed = request.Seed ?? Random.Shared.Next(1, 99999999);
+        var randomSeed = Random.Shared.Next(1, 99999999);
         var imageUrl = $"https://image.pollinations.ai/prompt/{Uri.EscapeDataString(finalPrompt)}?width={request.Width}&height={request.Height}&nologo=true&enhance=false&negative_prompt={Uri.EscapeDataString(negativePrompt)}&seed={randomSeed}";
 
         try

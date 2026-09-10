@@ -20,7 +20,8 @@ public sealed class SceneGenerationRequestMapper
         SceneSpecification scene,
         VisualContextResolutionResult visualContext,
         GenerationProfile generationProfile,
-        IScenePromptComposer promptComposer)
+        IScenePromptComposer promptComposer,
+        CharacterVisualIdentity? explicitIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(scene, nameof(scene));
         ArgumentNullException.ThrowIfNull(visualContext, nameof(visualContext));
@@ -38,25 +39,79 @@ public sealed class SceneGenerationRequestMapper
             englishPromptTags: new[] { prompt.PositivePrompt }
         );
 
-        var configuredDefaultStyle = _configuration?["AiProviders:ImageGeneration:DefaultStyle"];
-        var defaultVisualStyle = VisualStyle.Unspecified;
-        if (!string.IsNullOrWhiteSpace(configuredDefaultStyle) && Enum.TryParse<VisualStyle>(configuredDefaultStyle, ignoreCase: true, out var parsedStyle))
+        var sourceIdentity = explicitIdentity ?? visualContext.VisualIdentity;
+
+        // Precedence: Explicit Character Style > Configured DefaultStyle > Unspecified
+        string? effectiveStyle = null;
+        var effectiveVisualStyle = VisualStyle.Unspecified;
+
+        if (!string.IsNullOrWhiteSpace(sourceIdentity?.Style))
         {
-            defaultVisualStyle = parsedStyle;
+            effectiveStyle = sourceIdentity.Style.Trim();
+            if (sourceIdentity.VisualStyle != VisualStyle.Unspecified)
+            {
+                effectiveVisualStyle = sourceIdentity.VisualStyle;
+            }
+            else if (Enum.TryParse<VisualStyle>(effectiveStyle, ignoreCase: true, out var parsedStyle))
+            {
+                effectiveVisualStyle = parsedStyle;
+            }
+        }
+        else if (sourceIdentity?.VisualStyle is { } vs and not VisualStyle.Unspecified)
+        {
+            effectiveVisualStyle = vs;
+            effectiveStyle = vs.ToString();
+        }
+        else
+        {
+            var configuredDefaultStyle = _configuration?["AiProviders:ImageGeneration:DefaultStyle"]?.Trim();
+            if (!string.IsNullOrWhiteSpace(configuredDefaultStyle))
+            {
+                effectiveStyle = configuredDefaultStyle;
+                if (Enum.TryParse<VisualStyle>(configuredDefaultStyle, ignoreCase: true, out var parsedDefaultStyle))
+                {
+                    effectiveVisualStyle = parsedDefaultStyle;
+                }
+            }
         }
 
-        var identity = visualContext.CurrentAppearance != null
-            ? new CharacterVisualIdentity(
-                Hair: visualContext.CurrentAppearance.HairColor,
-                Eyes: visualContext.CurrentAppearance.EyeColor,
-                Skin: visualContext.CurrentAppearance.SkinTone,
-                ClothingStyle: scene.OutfitContext ?? visualContext.CurrentAppearance.CurrentOutfit,
+        CharacterVisualIdentity? identity = null;
+        if (visualContext.CurrentAppearance != null)
+        {
+            identity = new CharacterVisualIdentity(
+                Hair: visualContext.CurrentAppearance.HairColor ?? sourceIdentity?.Hair,
+                Eyes: visualContext.CurrentAppearance.EyeColor ?? sourceIdentity?.Eyes,
+                Skin: visualContext.CurrentAppearance.SkinTone ?? sourceIdentity?.Skin,
+                ClothingStyle: scene.OutfitContext ?? visualContext.CurrentAppearance.CurrentOutfit ?? sourceIdentity?.ClothingStyle,
+                Face: sourceIdentity?.Face,
+                Body: sourceIdentity?.Body,
+                Accessories: sourceIdentity?.Accessories,
+                CanonicalReferenceUrl: visualContext.CanonicalIdentityReference?.ReferenceUrl ?? sourceIdentity?.CanonicalReferenceUrl,
+                FullBodyUrl: sourceIdentity?.FullBodyUrl,
+                Gender: sourceIdentity?.Gender,
+                Style: effectiveStyle,
+                VisualStyle: effectiveVisualStyle
+            );
+        }
+        else if (sourceIdentity != null)
+        {
+            identity = sourceIdentity with
+            {
+                ClothingStyle = scene.OutfitContext ?? sourceIdentity.ClothingStyle,
+                CanonicalReferenceUrl = visualContext.CanonicalIdentityReference?.ReferenceUrl ?? sourceIdentity.CanonicalReferenceUrl,
+                Style = effectiveStyle,
+                VisualStyle = effectiveVisualStyle
+            };
+        }
+        else if (!string.IsNullOrWhiteSpace(effectiveStyle) || effectiveVisualStyle != VisualStyle.Unspecified)
+        {
+            identity = new CharacterVisualIdentity(
+                ClothingStyle: scene.OutfitContext,
                 CanonicalReferenceUrl: visualContext.CanonicalIdentityReference?.ReferenceUrl,
-                FullBodyUrl: null,
-                Style: configuredDefaultStyle,
-                VisualStyle: defaultVisualStyle
-            )
-            : null;
+                Style: effectiveStyle,
+                VisualStyle: effectiveVisualStyle
+            );
+        }
 
         var sessionState = new SessionSceneState(
             CurrentLocation: scene.Location,

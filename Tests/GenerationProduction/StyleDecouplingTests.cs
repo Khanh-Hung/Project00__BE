@@ -1,10 +1,15 @@
 using System.Net;
+using Application.DTOs;
 using Application.Interfaces;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
 using Infrastructure.ImageGeneration;
+using Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -244,6 +249,207 @@ public class StyleDecouplingTests
         // Neither model causes realistic style to be overridden
         Assert.Contains("photorealistic", promptA);
         Assert.DoesNotContain("anime", promptA);
+    }
+
+    [Fact]
+    public void Test8_CharacterExplicitStyle_Realistic_SurvivesIntoVisualSnapshot_OverridingDefaultStyle()
+    {
+        // Arrange: Character explicitly set to Realistic, but config DefaultStyle is Anime
+        var inMemorySettings = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:DefaultStyle"] = "Anime"
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(inMemorySettings)
+            .Build();
+
+        var mapper = new SceneGenerationRequestMapper(configuration);
+        var promptComposer = new ScenePromptComposer();
+
+        var charId = Guid.NewGuid();
+        var characterIdentity = new CharacterVisualIdentity(
+            Presentation: GenderPresentation.Female,
+            Hair: "Dark brown wavy",
+            Eyes: "Amber",
+            Skin: "Olive",
+            ClothingStyle: "Casual leather jacket",
+            Style: "Realistic",
+            VisualStyle: VisualStyle.Realistic
+        );
+
+        var profile = new CharacterVisualProfile(
+            characterId: charId,
+            eyeColor: "Amber",
+            hairColor: "Dark brown wavy",
+            skinTone: "Olive",
+            currentOutfit: "Casual leather jacket"
+        );
+
+        var spec = new SceneSpecification(
+            characterId: charId,
+            location: "Downtown Cafe",
+            action: "Sipping coffee",
+            sceneRevision: 1
+        );
+
+        var visualContext = new VisualContextResolutionResult(
+            CharacterId: charId,
+            VisualProfileVersion: 1,
+            CanonicalIdentityReference: null,
+            CurrentAppearance: profile,
+            PredecessorVisualMemory: null,
+            RelevantOlderMemories: Array.Empty<CharacterVisualMemory>(),
+            TransitionType: SceneTransitionType.LocationTransition,
+            SelectionSummary: "Test context",
+            VisualIdentity: characterIdentity
+        );
+
+        var genProfile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors");
+
+        // Act
+        var snapshot = mapper.MapToVisualSnapshot(spec, visualContext, genProfile, promptComposer);
+        var compiledPrompt = _compiler.CompileScenePrompt(snapshot);
+        var compiledNegative = _compiler.CompileNegativePrompt(snapshot);
+
+        // Assert: Explicit style "Realistic" survived into snapshot, overriding default "Anime"
+        Assert.NotNull(snapshot.VisualIdentity);
+        Assert.Equal(VisualStyle.Realistic, snapshot.VisualIdentity.ResolvedStyle);
+        Assert.Equal(VisualStyle.Realistic, snapshot.VisualIdentity.VisualStyle);
+
+        // Worker prompt contains realistic style tokens rather than anime style tokens
+        Assert.Contains("photorealistic", compiledPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("anime", compiledPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pixiv", compiledPrompt, StringComparison.OrdinalIgnoreCase);
+
+        // Negative prompt contains anti-anime tokens
+        Assert.Contains("anime", compiledNegative, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Test9_CharacterWithoutExplicitStyle_InheritsConfiguredDefaultStyle()
+    {
+        // Arrange: Character has no explicit style, config DefaultStyle is Anime
+        var inMemorySettings = new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:DefaultStyle"] = "Anime"
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(inMemorySettings)
+            .Build();
+
+        var mapper = new SceneGenerationRequestMapper(configuration);
+        var promptComposer = new ScenePromptComposer();
+
+        var charId = Guid.NewGuid();
+        // Character has no explicit style
+        var characterIdentity = new CharacterVisualIdentity(
+            Presentation: GenderPresentation.Female,
+            Hair: "Blonde",
+            Eyes: "Blue"
+        );
+
+        var profile = new CharacterVisualProfile(
+            characterId: charId,
+            eyeColor: "Blue",
+            hairColor: "Blonde"
+        );
+
+        var spec = new SceneSpecification(
+            characterId: charId,
+            location: "Park",
+            action: "Walking",
+            sceneRevision: 1
+        );
+
+        var visualContext = new VisualContextResolutionResult(
+            CharacterId: charId,
+            VisualProfileVersion: 1,
+            CanonicalIdentityReference: null,
+            CurrentAppearance: profile,
+            PredecessorVisualMemory: null,
+            RelevantOlderMemories: Array.Empty<CharacterVisualMemory>(),
+            TransitionType: SceneTransitionType.LocationTransition,
+            SelectionSummary: "Test context",
+            VisualIdentity: characterIdentity
+        );
+
+        var genProfile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors");
+
+        // Act
+        var snapshot = mapper.MapToVisualSnapshot(spec, visualContext, genProfile, promptComposer);
+        var compiledPrompt = _compiler.CompileScenePrompt(snapshot);
+        var compiledNegative = _compiler.CompileNegativePrompt(snapshot);
+
+        // Assert: Fallback to configured Anime style for backward compatibility
+        Assert.NotNull(snapshot.VisualIdentity);
+        Assert.Equal(VisualStyle.Anime, snapshot.VisualIdentity.ResolvedStyle);
+        Assert.Equal(VisualStyle.Anime, snapshot.VisualIdentity.VisualStyle);
+
+        // Worker prompt contains anime tokens and negative contains photorealistic
+        Assert.Contains("anime style", compiledPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("photorealistic", compiledNegative, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Test10_SceneCompositionPipeline_PropagatesCharacterStyleFromDb_ToVisualSnapshot()
+    {
+        // Arrange: Setup in-memory SQLite DbContext with Character entity having explicit style
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var db = new CoreDbContext(options);
+        db.Database.EnsureCreated();
+
+        var charId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var character = new Character(
+            name: "Kaelen",
+            title: "Wanderer",
+            avatarUrl: "https://cdn.project00.ai/kaelen.png",
+            personalityPrompt: "Stoic",
+            greeting: "Hello",
+            category: "Fantasy"
+        );
+        typeof(Character).GetProperty("Id")!.SetValue(character, charId);
+        typeof(Character).GetProperty("VisualIdentity")!.SetValue(character, new CharacterVisualIdentity(
+            Hair: "Black",
+            Eyes: "Grey",
+            Style: "Realistic",
+            VisualStyle: VisualStyle.Realistic
+        ));
+
+        var session = new ChatSession(charId, Guid.NewGuid(), "Roleplay");
+        typeof(ChatSession).GetProperty("Id")!.SetValue(session, sessionId);
+
+        db.Characters.Add(character);
+        db.ChatSessions.Add(session);
+        await db.SaveChangesAsync();
+
+        var pipeline = Tests.SceneCompositionTestHelper.CreatePipeline(db);
+        var intent = new SceneIntent(
+            characterId: charId,
+            locationHint: "Mountain pass",
+            actionHint: "Looking at the horizon",
+            sessionId: sessionId
+        );
+        var genProfile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors");
+
+        // Act: Execute the complete pipeline
+        var result = await pipeline.ExecuteAsync(intent, genProfile, sceneRevision: 1);
+
+        // Assert: Frozen snapshot preserved character style from DB
+        Assert.NotNull(result.VisualSnapshot);
+        Assert.NotNull(result.VisualSnapshot.VisualIdentity);
+        Assert.Equal(VisualStyle.Realistic, result.VisualSnapshot.VisualIdentity.ResolvedStyle);
+        Assert.Equal(VisualStyle.Realistic, result.VisualSnapshot.VisualIdentity.VisualStyle);
+
+        var prompt = _compiler.CompileScenePrompt(result.VisualSnapshot);
+        Assert.Contains("photorealistic", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("anime", prompt, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class FakeHttpMessageHandler : HttpMessageHandler

@@ -38,6 +38,7 @@ public sealed class SceneCompositionContextFactory : ISceneCompositionContextFac
     {
         // Execute sequential queries to preserve DbContext thread-safety under shared scoped lifetimes
         var profile = await _profileReader.GetProfileByCharacterIdAsync(characterId, ct);
+        var visualIdentity = await _profileReader.GetVisualIdentityByCharacterIdAsync(characterId, ct);
         var canonical = await _canonicalReader.GetActiveCanonicalReferenceAsync(characterId, ct);
         var memories = await _memoryReader.GetRelevantMemoriesAsync(characterId, locationContext, maxResults: 3, ct);
         var predecessorMemory = await _memoryReader.GetLatestMemoryAsync(characterId, ct);
@@ -66,7 +67,8 @@ public sealed class SceneCompositionContextFactory : ISceneCompositionContextFac
             CharacterVisualProfile: profile,
             CanonicalVisualReference: canonical,
             RelevantVisualMemories: memories ?? (IReadOnlyList<CharacterVisualMemory>)Array.Empty<CharacterVisualMemory>(),
-            TransitionType: transitionType
+            TransitionType: transitionType,
+            VisualIdentity: visualIdentity
         );
     }
 }

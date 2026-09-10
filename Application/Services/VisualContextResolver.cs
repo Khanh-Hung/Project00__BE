@@ -68,7 +68,8 @@ public sealed class VisualContextResolver : IVisualContextResolver
             PredecessorVisualMemory: predecessorMemory,
             RelevantOlderMemories: selectedMemories,
             TransitionType: transitionType,
-            SelectionSummary: summary
+            SelectionSummary: summary,
+            VisualIdentity: context.VisualIdentity
         );
 
         return Task.FromResult(result);
