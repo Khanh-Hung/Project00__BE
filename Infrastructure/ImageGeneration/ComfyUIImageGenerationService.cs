@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using Application.Exceptions;
 using Application.Interfaces;
+using Domain.ValueObjects;
 using Infrastructure.ImageGeneration.ComfyUI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -73,8 +74,9 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
 
         if (string.IsNullOrWhiteSpace(promptId))
         {
-            // 1. Select Workflow Builder by exact (Workflow, WorkflowVersion, Model) compatibility match - fail-fast before network calls!
-            builder = _workflowBuilders.FirstOrDefault(b => b.CanHandle(targetWorkflow, targetVersion, request.Model))
+            // 1. Resolve capability and select Workflow Builder by exact compatibility match - fail-fast before network calls!
+            var capability = new ImageGenerationCapability(request.Model ?? string.Empty, targetWorkflow, targetVersion);
+            builder = _workflowBuilders.FirstOrDefault(b => b.CanHandle(capability))
                 ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not compatible with model '{request.Model}'.");
 
             // 2. Ensure Reference and Previous Scene Images are uploaded if required by workflow

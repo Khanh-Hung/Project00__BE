@@ -22,6 +22,11 @@ public sealed record GenerationProfile(
 )
 {
     /// <summary>
+    /// Gets the capability tuple (Model, Workflow, WorkflowVersion) for this profile.
+    /// </summary>
+    public ImageGenerationCapability Capability => new(Model, Workflow, WorkflowVersion);
+
+    /// <summary>
     /// Immutably creates a copy of this GenerationProfile with overridden conditioning parameters and derived seed.
     /// Preserves Model, Width, Height, Steps, Cfg, Sampler, Scheduler, Workflow, WorkflowVersion,
     /// and all other root/nested JSON properties in ParametersJson.

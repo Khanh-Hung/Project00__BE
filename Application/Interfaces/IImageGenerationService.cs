@@ -29,6 +29,11 @@ public sealed record ImageGenerationRequest(
     Dictionary<string, object>? ExtraParameters = null
 )
 {
+    /// <summary>
+    /// Gets the capability tuple (Model, Workflow, WorkflowVersion) for this request.
+    /// </summary>
+    public ImageGenerationCapability Capability => new(Model ?? string.Empty, Workflow, WorkflowVersion);
+
     public static ImageGenerationRequest FromSnapshot(
         VisualSnapshot snapshot,
         string compiledPrompt,

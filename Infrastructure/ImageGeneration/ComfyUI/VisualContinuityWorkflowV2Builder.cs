@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Application.Exceptions;
 using Application.Interfaces;
+using Domain.ValueObjects;
 
 namespace Infrastructure.ImageGeneration.ComfyUI;
 
@@ -37,6 +38,11 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
             && WorkflowVersion == workflowVersion
             && !string.IsNullOrWhiteSpace(model)
             && _supportedModels.Contains(model.Trim());
+    }
+
+    public bool CanHandle(ImageGenerationCapability capability)
+    {
+        return CanHandle(capability.Workflow, capability.WorkflowVersion, capability.Model);
     }
 
     public Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName)
