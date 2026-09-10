@@ -23,7 +23,8 @@ public sealed record VisualSnapshot(
     string? NegativeConstraints = null,
     DateTime? CreatedAt = null,
     VisualSceneDescription? SceneDescription = null,
-    Slot2Context Context = Slot2Context.ColdStart
+    Slot2Context Context = Slot2Context.ColdStart,
+    IdentityConditioningIntent? IdentityConditioning = null
 )
 {
     /// <summary>
@@ -44,7 +45,8 @@ public sealed record VisualSnapshot(
         string? negativeConstraints = null,
         string? fallbackReferenceUrl = null,
         VisualSceneDescription? sceneDescription = null,
-        Slot2Context? slot2Context = null)
+        Slot2Context? slot2Context = null,
+        IdentityConditioningIntent? identityConditioning = null)
     {
         ArgumentNullException.ThrowIfNull(generationProfile, nameof(generationProfile));
 
@@ -64,6 +66,15 @@ public sealed record VisualSnapshot(
             ? Slot2Context.ColdStart
             : Slot2Context.SameScene);
 
+        var resolvedConditioning = identityConditioning ?? visualIdentity?.CreateConditioningIntent(
+            previousSceneReferenceUrl: previousSceneImageUrl,
+            context: resolvedContext
+        ) ?? IdentityConditioningIntent.FromReferences(
+            canonicalReferenceUrl: resolvedIdentityRef,
+            previousSceneReferenceUrl: previousSceneImageUrl,
+            context: resolvedContext
+        );
+
         return new VisualSnapshot(
             TurnId: turnId,
             SessionId: sessionId,
@@ -80,7 +91,8 @@ public sealed record VisualSnapshot(
             NegativeConstraints: defaultNegatives,
             CreatedAt: DateTime.UtcNow,
             SceneDescription: sceneDescription,
-            Context: resolvedContext
+            Context: resolvedContext,
+            IdentityConditioning: resolvedConditioning
         );
     }
 }

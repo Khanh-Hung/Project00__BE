@@ -124,6 +124,15 @@ public sealed class SceneGenerationRequestMapper
             ? Slot2Context.SameScene
             : Slot2Context.ColdStart;
 
+        var conditioningIntent = identity?.CreateConditioningIntent(
+            previousSceneReferenceUrl: null,
+            context: slot2Context
+        ) ?? IdentityConditioningIntent.FromReferences(
+            canonicalReferenceUrl: visualContext.CanonicalIdentityReference?.ReferenceUrl,
+            previousSceneReferenceUrl: null,
+            context: slot2Context
+        );
+
         return VisualSnapshot.Create(
             turnId: scene.TurnId ?? Guid.Empty,
             sessionId: scene.SessionId ?? Guid.Empty,
@@ -139,7 +148,8 @@ public sealed class SceneGenerationRequestMapper
             negativeConstraints: prompt.NegativePrompt,
             fallbackReferenceUrl: visualContext.CanonicalIdentityReference?.ReferenceUrl,
             sceneDescription: sceneDesc,
-            slot2Context: slot2Context
+            slot2Context: slot2Context,
+            identityConditioning: conditioningIntent
         );
     }
 }

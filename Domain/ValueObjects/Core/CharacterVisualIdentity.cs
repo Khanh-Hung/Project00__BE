@@ -82,4 +82,27 @@ public sealed record CharacterVisualIdentity(
             return VisualStyle.Unspecified;
         }
     }
+
+    /// <summary>
+    /// Creates a model-agnostic identity conditioning intent from this character visual identity.
+    /// Expresses WHAT identity preservation is required without model or infrastructure dependencies.
+    /// </summary>
+    public IdentityConditioningIntent CreateConditioningIntent(
+        string? previousSceneReferenceUrl = null,
+        float? preservationStrength = null,
+        Slot2Context context = Slot2Context.ColdStart,
+        Slot2ConditioningMode continuityMode = Slot2ConditioningMode.SceneStyleContinuity)
+    {
+        var referenceUrl = !string.IsNullOrWhiteSpace(CanonicalReferenceUrl)
+            ? CanonicalReferenceUrl
+            : (!string.IsNullOrWhiteSpace(FullBodyUrl) ? FullBodyUrl : null);
+
+        return IdentityConditioningIntent.FromReferences(
+            canonicalReferenceUrl: referenceUrl,
+            previousSceneReferenceUrl: previousSceneReferenceUrl,
+            preservationStrength: preservationStrength,
+            context: context,
+            continuityMode: continuityMode
+        );
+    }
 }

@@ -77,12 +77,18 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
         var sampler = !string.IsNullOrWhiteSpace(request.Sampler) ? request.Sampler : "euler_ancestral";
         var scheduler = !string.IsNullOrWhiteSpace(request.Scheduler) ? request.Scheduler : "karras";
 
-        // Parse IP-Adapter weights from ParametersJson
-        float ipAdapterWeight = request.IdentityScale ?? 0.60f;
+        // Parse IP-Adapter weights from IdentityConditioningIntent / ParametersJson
+        var conditioningIntent = request.EffectiveIdentityConditioning;
+        float ipAdapterWeight = conditioningIntent.PreservationStrength ?? request.IdentityScale ?? 0.60f;
         float ipAdapterEndAt = 0.85f;
         float sceneContinuityWeight = request.SceneScale ?? 0.20f;
         float sceneContinuityEndAt = 0.40f;
-        string sceneWeightType = "style transfer";
+        string sceneWeightType = conditioningIntent.ContinuityMode switch
+        {
+            Domain.Enums.Slot2ConditioningMode.FullLinearContinuity => "linear",
+            Domain.Enums.Slot2ConditioningMode.SceneStyleContinuity => "style transfer",
+            _ => "style transfer"
+        };
 
         if (!string.IsNullOrWhiteSpace(request.ParametersJson))
         {
