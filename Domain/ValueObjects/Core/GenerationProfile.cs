@@ -9,7 +9,7 @@ namespace Domain.ValueObjects;
 /// </summary>
 public sealed record GenerationProfile(
     long Seed,
-    string Model = "meinamix_meinaV11.safetensors",
+    string Model,
     int Width = 512,
     int Height = 768,
     int Steps = 30,
@@ -117,8 +117,8 @@ public sealed record GenerationProfile(
     }
 
     public static GenerationProfile CreateDefault(
+        string model,
         long? seed = null,
-        string? model = null,
         int? width = null,
         int? height = null,
         int? steps = null,
@@ -129,9 +129,11 @@ public sealed record GenerationProfile(
         int? workflowVersion = null,
         string? parametersJson = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(model, nameof(model));
+
         return new GenerationProfile(
             Seed: seed ?? Random.Shared.NextInt64(1, 999999999),
-            Model: model ?? "meinamix_meinaV11.safetensors",
+            Model: model.Trim(),
             Width: width ?? 512,
             Height: height ?? 768,
             Steps: steps ?? 30,
