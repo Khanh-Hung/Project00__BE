@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Application.Common;
 using Application.Enums;
 using Application.Services;
@@ -25,7 +25,7 @@ public sealed class IdentityMitigationProfileResolverTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: baseSeed)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: baseSeed)
         );
 
         var (profile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
@@ -50,7 +50,7 @@ public sealed class IdentityMitigationProfileResolverTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: baseSeed)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: baseSeed)
         );
 
         var (mitigatedProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
@@ -85,7 +85,7 @@ public sealed class IdentityMitigationProfileResolverTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: baseSeed)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: baseSeed)
         );
 
         var (mitigatedProfile, derivedSeed) = IdentityMitigationProfileResolver.ResolveMitigation(
@@ -119,7 +119,7 @@ public sealed class IdentityMitigationProfileResolverTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: baseSeed)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: baseSeed)
         );
 
         var (prof1, seed1) = IdentityMitigationProfileResolver.ResolveMitigation(snapshot, QualityMitigationAction.Pass, 1, baseSeed);
@@ -162,7 +162,7 @@ public sealed class IdentityMitigationProfileResolverTests
         }
         """;
 
-        var profile = GenerationProfile.CreateDefault(seed: 1000L, parametersJson: customJson);
+        var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 1000L, parametersJson: customJson);
 
         var overridden = profile.WithConditioningOverride(
             slot1Weight: 0.65f,
@@ -200,7 +200,7 @@ public sealed class IdentityMitigationProfileResolverTests
     public void WithConditioningOverride_MalformedJson_FailsFast()
     {
         var malformedJson = "{ invalid_json: 123 ";
-        var profile = GenerationProfile.CreateDefault(seed: 1000L, parametersJson: malformedJson);
+        var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 1000L, parametersJson: malformedJson);
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
             profile.WithConditioningOverride(0.65f, 0.85f, 0.06f, 0.15f, "style transfer", 2000L));

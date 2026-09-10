@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.DTOs;
 using Application.Exceptions;
 using Application.Interfaces;
@@ -101,7 +101,7 @@ public sealed class VisualIdentityInvariantTests
 
     private static VisualSnapshot CreateTestSnapshot(Guid sessionId, Guid turnId, int revision = 1, string? canonicalRef = "https://cloud.storage/canonical_face.png", string? parametersJson = "{\"ipAdapter\":{\"weight\":0.45,\"endAt\":0.70}}")
     {
-        var profile = GenerationProfile.CreateDefault(
+        var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors",
             workflow: "VisualIdentity",
             workflowVersion: 1,
             parametersJson: parametersJson
@@ -328,7 +328,7 @@ public sealed class VisualIdentityInvariantTests
                 LastUpdatedAt: Clock.Now
             ),
             transientState: new TransientVisualState(Action: "Holding wine glass", Pose: "Standing", Expression: "Charming smile"),
-            generationProfile: GenerationProfile.CreateDefault()
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var compiledPositive = visualCompiler.CompileScenePrompt(snapshot);
@@ -1217,7 +1217,7 @@ public sealed class VisualIdentityInvariantTests
         var turnId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var charId = Guid.NewGuid();
-        var profile = GenerationProfile.CreateDefault(seed: 12345, width: 512, height: 768);
+        var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 12345, width: 512, height: 768);
         var sceneState = new SessionSceneState("Sanctuary", "Central", "Dress", "Day", null, "Calm", 1, Clock.Now);
 
         // 1. Canonical Reference provided: strictly selects Canonical

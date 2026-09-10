@@ -1,4 +1,4 @@
-using Application.Interfaces;
+﻿using Application.Interfaces;
 using Application.Services;
 using Domain.Common.DateTimes;
 using Domain.Entities;
@@ -311,7 +311,7 @@ public sealed class GenerationCancellationTests
                 VisualIdentity: null,
                 SceneState: new Domain.ValueObjects.SessionSceneState("scene", "neutral"),
                 TransientState: null,
-                GenerationProfile: Domain.ValueObjects.GenerationProfile.CreateDefault()
+                GenerationProfile: Domain.ValueObjects.GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
             );
 
             var acceptRequest = new ArtifactAcceptanceRequest(

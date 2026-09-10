@@ -1,4 +1,4 @@
-using Application.DTOs;
+﻿using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
@@ -53,7 +53,7 @@ public sealed class ArtifactPromotionConcurrencyTests : IDisposable
             VisualIdentity: null,
             SceneState: new SessionSceneState("throne room", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 42L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 42L)
         );
 
         var job = new ImageGenerationJob(

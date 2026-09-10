@@ -86,6 +86,7 @@ public sealed class SceneToGenerationIntegrationTests : IDisposable
 
         var genProfile = new GenerationProfile(
             Seed: 99999L,
+            Model: "meinamix_meinaV11.safetensors",
             Workflow: "VisualIdentity",
             WorkflowVersion: 1,
             Width: 1024,

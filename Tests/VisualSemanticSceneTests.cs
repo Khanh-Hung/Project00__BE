@@ -1,4 +1,4 @@
-using Application.Services;
+﻿using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
@@ -69,7 +69,7 @@ public sealed class VisualSemanticSceneTests
             }
         );
 
-        var profile = GenerationProfile.CreateDefault(
+        var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors",
             seed: 424242,
             workflow: "VisualIdentity",
             workflowVersion: 1
@@ -177,7 +177,7 @@ public sealed class VisualSemanticSceneTests
             englishPromptTags: new[] { "standing", "Silver Hair", "WHITE ROBE", "peaceful" } // overlaps with existing tags
         );
 
-        var profile = GenerationProfile.CreateDefault(seed: 12345);
+        var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 12345);
 
         var snapshot = VisualSnapshot.Create(
             turnId: turnId,

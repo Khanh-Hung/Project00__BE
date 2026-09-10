@@ -1,4 +1,4 @@
-using Application.DTOs;
+﻿using Application.DTOs;
 using Application.Enums;
 using Application.Interfaces;
 using Application.Services;
@@ -54,7 +54,7 @@ public sealed class GenerationProductionConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene-temple", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var payload = new SceneImageGenerationOutboxPayload(

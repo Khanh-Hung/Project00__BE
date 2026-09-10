@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Abstractions.Auth;
 using Application.Common;
 using Application.DTOs;
@@ -53,7 +53,7 @@ public sealed class VisualIdempotencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 1000L)
         );
 
         // Seed initial Turn data

@@ -1,4 +1,4 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs;
 using Application.Enums;
 using Application.Interfaces;
@@ -41,7 +41,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -147,7 +147,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -252,7 +252,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 1000L)
         );
 
         var request = new ArtifactAcceptanceRequest(
@@ -308,7 +308,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var request = new ArtifactAcceptanceRequest(
@@ -364,7 +364,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var request = new ArtifactAcceptanceRequest(
@@ -413,7 +413,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -496,7 +496,7 @@ public sealed class AtomicAttemptAcceptanceConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(

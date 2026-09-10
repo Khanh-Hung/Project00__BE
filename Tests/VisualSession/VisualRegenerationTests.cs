@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Abstractions.Auth;
 using Application.Common;
 using Application.DTOs;
@@ -68,7 +68,7 @@ public sealed class VisualRegenerationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("castle", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 1000L)
         );
 
         var turn = new CharacterTurn(

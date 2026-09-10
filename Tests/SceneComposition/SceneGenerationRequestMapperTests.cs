@@ -65,6 +65,7 @@ public sealed class SceneGenerationRequestMapperTests
 
         var genProfile = new GenerationProfile(
             Seed: 42L,
+            Model: "meinamix_meinaV11.safetensors",
             Workflow: "VisualIdentity",
             WorkflowVersion: 1,
             Width: 1024,

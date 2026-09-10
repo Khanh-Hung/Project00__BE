@@ -1,4 +1,4 @@
-using Application.DTOs;
+﻿using Application.DTOs;
 using Application.Enums;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
@@ -26,7 +26,7 @@ public sealed class VisualConcurrencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 1000L)
         );
     }
 

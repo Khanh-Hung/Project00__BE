@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
 using Application.Abstractions.Auth;
 using Application.Abstractions.Data;
@@ -60,7 +60,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
         string outfit = "White Dress",
         int revision = 1)
     {
-        var profile = GenerationProfile.CreateDefault(
+        var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors",
             workflow: "VisualIdentity",
             workflowVersion: 1,
             parametersJson: "{\"ipAdapter\":{\"weight\":0.45,\"endAt\":0.70}}"
@@ -914,7 +914,7 @@ public sealed class UserTriggeredTurnImageGenerationTests
                 VisualIdentity: null,
                 SceneState: new SessionSceneState("courtyard", "standing"),
                 TransientState: null,
-                GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L + i)
+                GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 1000L + i)
             );
 
             return new CharacterTurn(

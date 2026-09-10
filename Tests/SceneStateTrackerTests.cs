@@ -1,4 +1,4 @@
-using Domain.Entities;
+﻿using Domain.Entities;
 using Domain.ValueObjects;
 using Xunit;
 
@@ -159,7 +159,7 @@ public class SceneStateTrackerTests
             visualIdentity: dna,
             sceneState: stateTurn1,
             transientState: transientTurn1,
-            generationProfile: GenerationProfile.CreateDefault(),
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors"),
             previousSceneImageUrl: null
         );
 
@@ -185,7 +185,7 @@ public class SceneStateTrackerTests
             visualIdentity: dna,
             sceneState: stateTurn2,
             transientState: transientTurn2,
-            generationProfile: GenerationProfile.CreateDefault(),
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors"),
             previousSceneImageUrl: "https://cloud.storage/scene_turn1.png"
         );
 
@@ -310,7 +310,7 @@ public class SceneStateTrackerTests
             visualIdentity: null,
             sceneState: nextState,
             transientState: transient,
-            generationProfile: GenerationProfile.CreateDefault(seed: 999),
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 999),
             sceneDescription: delta.SceneDescription
         );
 

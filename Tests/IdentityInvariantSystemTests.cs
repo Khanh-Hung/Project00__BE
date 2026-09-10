@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Abstractions.Data;
 using Application.Common;
 using Application.DTOs;
@@ -76,7 +76,7 @@ public sealed class IdentityInvariantSystemTests
             visualIdentity: identity,
             sceneState: new SessionSceneState("Garden", "Center", "Robes", "Day", null, "Quiet", 1, DateTime.UtcNow),
             transientState: null,
-            generationProfile: GenerationProfile.CreateDefault()
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var positive = _compiler.CompileScenePrompt(snapshot);
@@ -107,7 +107,7 @@ public sealed class IdentityInvariantSystemTests
             visualIdentity: identity,
             sceneState: new SessionSceneState("Armory", "Center", "Armor", "Day", null, "Quiet", 1, DateTime.UtcNow),
             transientState: null,
-            generationProfile: GenerationProfile.CreateDefault()
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var positive = _compiler.CompileScenePrompt(snapshot);
@@ -143,7 +143,7 @@ public sealed class IdentityInvariantSystemTests
             visualIdentity: identity,
             sceneState: new SessionSceneState("Grand Hall", "Throne", "Robes", "Night", null, "Solemn", 5, DateTime.UtcNow),
             transientState: null,
-            generationProfile: GenerationProfile.CreateDefault()
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var positive = _compiler.CompileScenePrompt(snapshot);

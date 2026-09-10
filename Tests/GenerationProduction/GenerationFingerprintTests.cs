@@ -1,4 +1,4 @@
-using Application.Services;
+﻿using Application.Services;
 using Domain.ValueObjects;
 using Xunit;
 
@@ -24,7 +24,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene-forest", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var snapshot2 = new VisualSnapshot(
@@ -35,7 +35,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene-forest", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var fp1 = _fingerprintService.ComputeFingerprint(
@@ -85,7 +85,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         // Case A: Prompt contains "|" delimiter, negative prompt is "world"
@@ -126,7 +126,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var fpA = _fingerprintService.ComputeFingerprint(
@@ -154,7 +154,7 @@ public sealed class GenerationFingerprintTests
     public void ComputeFingerprint_PrioritizesProfileModel_WhenModelIdentifierOmitted()
     {
         var jobId = Guid.NewGuid();
-        var profileWithFlux = GenerationProfile.CreateDefault() with { Model = "ComfyUI/Flux.1-Dev" };
+        var profileWithFlux = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors") with { Model = "ComfyUI/Flux.1-Dev" };
         var snapshot = new VisualSnapshot(
             TurnId: Guid.NewGuid(),
             SessionId: Guid.NewGuid(),
@@ -175,7 +175,7 @@ public sealed class GenerationFingerprintTests
             attemptNumber: 1
         );
 
-        var profileWithSdxl = GenerationProfile.CreateDefault() with { Model = "ComfyUI/SDXL" };
+        var profileWithSdxl = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors") with { Model = "ComfyUI/SDXL" };
         var fpSdxl = _fingerprintService.ComputeFingerprint(
             jobId: jobId,
             snapshot: snapshot with { GenerationProfile = profileWithSdxl },
@@ -199,7 +199,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var fp1 = _fingerprintService.ComputeFingerprint(
@@ -233,7 +233,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var fpSdxl = _fingerprintService.ComputeFingerprint(
@@ -269,7 +269,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var fpPass = _fingerprintService.ComputeFingerprint(
@@ -305,7 +305,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault() with { ParametersJson = "{\"ipAdapter\":{\"weight\":0.60}}" }
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors") with { ParametersJson = "{\"ipAdapter\":{\"weight\":0.60}}" }
         );
 
         var snapshot2 = snapshot1 with
@@ -344,7 +344,7 @@ public sealed class GenerationFingerprintTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var fpV1 = _fingerprintService.ComputeFingerprint(

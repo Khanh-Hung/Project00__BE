@@ -1,4 +1,4 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs;
 using Application.Enums;
 using Application.Interfaces;
@@ -63,7 +63,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -138,7 +138,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L),
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L),
             PreviousSceneImageUrl: "https://cdn.project00.ai/turn1_good.png"
         );
 
@@ -222,7 +222,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -348,7 +348,7 @@ public sealed class ArtifactLifecycleIntegrationTests
                 VisualIdentity: null,
                 SceneState: new SessionSceneState("courtyard", "standing"),
                 TransientState: null,
-                GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+                GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
             );
 
             // Seed expired job in DB (expired lease within 90s budget)
@@ -397,7 +397,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -524,7 +524,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -669,7 +669,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 100000L),
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 100000L),
             PreviousSceneImageUrl: "https://cdn.project00.ai/turn1_good.png"
         );
 
@@ -800,7 +800,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("throne room", "sitting"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 123456L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 123456L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -931,7 +931,7 @@ public sealed class ArtifactLifecycleIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("throne room", "sitting"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 123456L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 123456L)
         );
 
         var payload = new SceneImageGenerationOutboxPayload(

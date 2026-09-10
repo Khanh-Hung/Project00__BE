@@ -1,4 +1,4 @@
-using Application.DTOs;
+﻿using Application.DTOs;
 using Application.Interfaces;
 using Application.Services;
 using Domain.Common.DateTimes;
@@ -44,7 +44,7 @@ public sealed class ArtifactLifecycleConsistencyIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("garden", "walking"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 777L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 777L)
         );
 
         // 1. Create and claim ImageGenerationJob
