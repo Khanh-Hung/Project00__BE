@@ -16,7 +16,9 @@ public sealed record CharacterVisualIdentity(
     string? CanonicalReferenceUrl = null,
     string? FullBodyUrl = null,
     GenderPresentation Presentation = GenderPresentation.Unspecified,
-    IReadOnlyList<SignatureFeature>? SignatureFeatures = null
+    IReadOnlyList<SignatureFeature>? SignatureFeatures = null,
+    string? Style = null,
+    VisualStyle VisualStyle = VisualStyle.Unspecified
 )
 {
     public GenderPresentation ResolvedGender
@@ -48,6 +50,36 @@ public sealed record CharacterVisualIdentity(
                 return GenderPresentation.NonBinary;
 
             return GenderPresentation.Unspecified;
+        }
+    }
+
+    public VisualStyle ResolvedStyle
+    {
+        get
+        {
+            if (VisualStyle != VisualStyle.Unspecified)
+                return VisualStyle;
+
+            if (string.IsNullOrWhiteSpace(Style))
+                return VisualStyle.Unspecified;
+
+            if (Enum.TryParse<VisualStyle>(Style, ignoreCase: true, out var parsed))
+                return parsed;
+
+            if (Style.Equals("3D", StringComparison.OrdinalIgnoreCase) ||
+                Style.Equals("ThreeDimensional", StringComparison.OrdinalIgnoreCase) ||
+                Style.Equals("3D Render", StringComparison.OrdinalIgnoreCase))
+                return VisualStyle.ThreeDimensional;
+
+            if (Style.Equals("Semi-Realistic", StringComparison.OrdinalIgnoreCase) ||
+                Style.Equals("SemiRealistic", StringComparison.OrdinalIgnoreCase))
+                return VisualStyle.SemiRealistic;
+
+            if (Style.Equals("Pixel Art", StringComparison.OrdinalIgnoreCase) ||
+                Style.Equals("PixelArt", StringComparison.OrdinalIgnoreCase))
+                return VisualStyle.PixelArt;
+
+            return VisualStyle.Unspecified;
         }
     }
 }
