@@ -26,7 +26,8 @@ public sealed record ImageGenerationRequest(
     string? ParametersJson = null,
     string? ProviderJobId = null,
     Func<string, CancellationToken, Task>? OnPromptQueuedAsync = null,
-    Dictionary<string, object>? ExtraParameters = null
+    Dictionary<string, object>? ExtraParameters = null,
+    IdentityConditioningIntent? IdentityConditioning = null
 )
 {
     /// <summary>
@@ -35,13 +36,26 @@ public sealed record ImageGenerationRequest(
     public ImageGenerationCapability Capability => new(Model ?? string.Empty, Workflow, WorkflowVersion);
 
     /// <summary>
+    /// Gets the effective model-agnostic identity conditioning intent for this generation request.
+    /// Guaranteed non-null: falls back to intent derived from ReferenceImageUrl and PreviousSceneImageUrl.
+    /// </summary>
+    public IdentityConditioningIntent EffectiveIdentityConditioning =>
+        IdentityConditioning ?? IdentityConditioningIntent.FromReferences(
+            canonicalReferenceUrl: ReferenceImageUrl,
+            previousSceneReferenceUrl: PreviousSceneImageUrl,
+            preservationStrength: IdentityScale
+        );
+
+    /// <summary>
     /// Resolves the effective generation capability required for this request.
     /// Maps empty reference image requests under VisualIdentity to TextToImage v1.
     /// </summary>
     public ImageGenerationCapability ResolveEffectiveCapability()
     {
         var targetWorkflow = Workflow;
-        if (string.IsNullOrWhiteSpace(ReferenceImageUrl) && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
+        var conditioning = EffectiveIdentityConditioning;
+        var hasIdentityRef = !string.IsNullOrWhiteSpace(ReferenceImageUrl) || conditioning.IsRequired;
+        if (!hasIdentityRef && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
         {
             targetWorkflow = "TextToImage";
         }
@@ -71,13 +85,40 @@ public sealed record ImageGenerationRequest(
         Func<string, CancellationToken, Task>? onPromptQueuedAsync = null)
     {
         var profile = snapshot.GenerationProfile;
+        var previousSceneUrl = previousSceneImageUrlOverride ?? snapshot.PreviousSceneImageUrl;
+        IdentityConditioningIntent conditioningIntent;
+        if (snapshot.IdentityConditioning != null)
+        {
+            if (previousSceneImageUrlOverride != null && previousSceneImageUrlOverride != snapshot.IdentityConditioning.PreviousSceneReferenceUrl)
+            {
+                var hasAnyRef = !string.IsNullOrWhiteSpace(snapshot.IdentityConditioning.CanonicalReferenceUrl) || !string.IsNullOrWhiteSpace(previousSceneImageUrlOverride);
+                conditioningIntent = snapshot.IdentityConditioning with
+                {
+                    PreviousSceneReferenceUrl = previousSceneImageUrlOverride,
+                    IsRequired = hasAnyRef
+                };
+            }
+            else
+            {
+                conditioningIntent = snapshot.IdentityConditioning;
+            }
+        }
+        else
+        {
+            conditioningIntent = IdentityConditioningIntent.FromReferences(
+                canonicalReferenceUrl: snapshot.IdentityReferenceUrl,
+                previousSceneReferenceUrl: previousSceneUrl,
+                context: snapshot.Context
+            );
+        }
+
         return new ImageGenerationRequest(
             Prompt: compiledPrompt,
             NegativePrompt: compiledNegative ?? snapshot.NegativeConstraints,
             Width: profile.Width,
             Height: profile.Height,
             ReferenceImageUrl: snapshot.IdentityReferenceUrl,
-            PreviousSceneImageUrl: previousSceneImageUrlOverride ?? snapshot.PreviousSceneImageUrl, // Reserved for future continuity workflows
+            PreviousSceneImageUrl: previousSceneUrl,
             Steps: profile.Steps,
             GuidanceScale: profile.Cfg,
             Seed: profile.Seed,
@@ -88,7 +129,8 @@ public sealed record ImageGenerationRequest(
             WorkflowVersion: profile.WorkflowVersion,
             ParametersJson: profile.ParametersJson,
             ProviderJobId: providerJobId,
-            OnPromptQueuedAsync: onPromptQueuedAsync
+            OnPromptQueuedAsync: onPromptQueuedAsync,
+            IdentityConditioning: conditioningIntent
         );
     }
 }
