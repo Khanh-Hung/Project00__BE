@@ -21,7 +21,7 @@ public sealed record ImageGenerationRequest(
     string? Model = null,
     string? Sampler = null,
     string? Scheduler = null,
-    string Workflow = "VisualIdentity",
+    string? Workflow = null,
     int WorkflowVersion = 1,
     string? ParametersJson = null,
     string? ProviderJobId = null,
@@ -33,7 +33,7 @@ public sealed record ImageGenerationRequest(
     /// <summary>
     /// Gets the capability tuple (Model, Workflow, WorkflowVersion) for this request.
     /// </summary>
-    public ImageGenerationCapability Capability => new(Model ?? string.Empty, Workflow, WorkflowVersion);
+    public ImageGenerationCapability Capability => new(Model ?? string.Empty, Workflow ?? string.Empty, WorkflowVersion);
 
     /// <summary>
     /// Gets the effective model-agnostic identity conditioning intent for this generation request.
@@ -48,18 +48,48 @@ public sealed record ImageGenerationRequest(
 
     /// <summary>
     /// Resolves the effective generation capability required for this request.
-    /// Maps empty reference image requests under VisualIdentity to TextToImage v1.
+    /// Preserves explicit caller workflow selection without silent rewriting.
+    /// When workflow is unspecified (null or whitespace), automatically resolves the appropriate capability
+    /// from the authoritative EffectiveIdentityConditioning intent:
+    /// - HasPreviousSceneReference => VisualContinuity v2
+    /// - HasCanonicalReference or IsRequired => VisualIdentity v1
+    /// - No conditioning => TextToImage v1
     /// </summary>
     public ImageGenerationCapability ResolveEffectiveCapability()
     {
-        var targetWorkflow = Workflow;
         var conditioning = EffectiveIdentityConditioning;
-        var hasIdentityRef = !string.IsNullOrWhiteSpace(ReferenceImageUrl) || conditioning.IsRequired;
-        if (!hasIdentityRef && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
+
+        // 1. If workflow is genuinely unspecified, resolve from authoritative conditioning intent
+        if (string.IsNullOrWhiteSpace(Workflow))
         {
-            targetWorkflow = "TextToImage";
+            if (conditioning.HasPreviousSceneReference)
+            {
+                return new ImageGenerationCapability(Model ?? string.Empty, "VisualContinuity", 2);
+            }
+
+            if (conditioning.HasCanonicalReference || conditioning.IsRequired)
+            {
+                return new ImageGenerationCapability(Model ?? string.Empty, "VisualIdentity", 1);
+            }
+
+            return new ImageGenerationCapability(Model ?? string.Empty, "TextToImage", 1);
         }
-        return new ImageGenerationCapability(Model ?? string.Empty, targetWorkflow, WorkflowVersion);
+
+        var targetWorkflow = Workflow.Trim();
+        var targetVersion = (string.Equals(targetWorkflow, "VisualContinuity", StringComparison.OrdinalIgnoreCase) && WorkflowVersion == 1)
+            ? 2
+            : WorkflowVersion;
+
+        // 2. Backward compatibility: if VisualIdentity was specified but no identity conditioning/reference exists,
+        // map to TextToImage v1 (matching PR63 baseline behavior)
+        var hasIdentityRef = !string.IsNullOrWhiteSpace(ReferenceImageUrl) || conditioning.IsRequired;
+        if (!hasIdentityRef && string.Equals(targetWorkflow, "VisualIdentity", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ImageGenerationCapability(Model ?? string.Empty, "TextToImage", 1);
+        }
+
+        // 3. Explicit workflow chosen by caller MUST be preserved without silent override
+        return new ImageGenerationCapability(Model ?? string.Empty, targetWorkflow, targetVersion);
     }
 
     /// <summary>
@@ -119,6 +149,15 @@ public sealed record ImageGenerationRequest(
             );
         }
 
+        var targetWorkflow = profile.Workflow;
+        var targetWorkflowVersion = profile.WorkflowVersion;
+        if (string.Equals(targetWorkflow, "VisualIdentity", StringComparison.OrdinalIgnoreCase)
+            && conditioningIntent.HasPreviousSceneReference)
+        {
+            targetWorkflow = null;
+            targetWorkflowVersion = 2;
+        }
+
         return new ImageGenerationRequest(
             Prompt: compiledPrompt,
             NegativePrompt: compiledNegative ?? snapshot.NegativeConstraints,
@@ -132,8 +171,8 @@ public sealed record ImageGenerationRequest(
             Model: profile.Model,
             Sampler: profile.Sampler,
             Scheduler: profile.Scheduler,
-            Workflow: profile.Workflow,
-            WorkflowVersion: profile.WorkflowVersion,
+            Workflow: targetWorkflow,
+            WorkflowVersion: targetWorkflowVersion,
             ParametersJson: profile.ParametersJson,
             ProviderJobId: providerJobId,
             OnPromptQueuedAsync: onPromptQueuedAsync,
