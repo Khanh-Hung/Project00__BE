@@ -76,7 +76,7 @@ public sealed class PostgresActivityConstraintTests : IDisposable
         using var brokenDb = new CoreDbContext(brokenOptions);
         var stateReader = new SceneVisualStateReader(brokenDb, NullLogger<SceneVisualStateReader>.Instance);
         var scheduler = new CharacterActivityScheduler(
-            brokenDb, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
+            brokenDb, decisionService, fakePipeline, stateReader, new Application.Services.VisualGenerationProfileProvider(), NullLogger<CharacterActivityScheduler>.Instance);
 
         // Must rethrow the non-unique DbUpdateException / SqliteException
         await Assert.ThrowsAnyAsync<Exception>(() => scheduler.ProcessCharacterAsync(character, testTime, timeBucket));

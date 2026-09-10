@@ -62,15 +62,6 @@ public sealed class CharacterActivityScheduler
     {
     }
 
-    public CharacterActivityScheduler(
-        CoreDbContext dbContext,
-        ICharacterActivityDecisionService decisionService,
-        ISceneCompositionPipelineService sceneCompositionPipeline,
-        ISceneVisualStateReader visualStateReader,
-        ILogger<CharacterActivityScheduler> logger)
-        : this(dbContext, decisionService, sceneCompositionPipeline, visualStateReader, new Application.Services.VisualGenerationProfileProvider(), logger)
-    {
-    }
 
     public async Task<int> ExecuteCycleAsync(
         DateTime? currentTime = null,

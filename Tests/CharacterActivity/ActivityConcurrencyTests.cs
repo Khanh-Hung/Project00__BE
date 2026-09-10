@@ -60,7 +60,7 @@ public sealed class ActivityConcurrencyTests : IDisposable
             await using var workerDb = new CoreDbContext(_options);
             var stateReader = new SceneVisualStateReader(workerDb, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
-                workerDb, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
+                workerDb, decisionService, fakePipeline, stateReader, new Application.Services.VisualGenerationProfileProvider(), NullLogger<CharacterActivityScheduler>.Instance);
 
             return await scheduler.ProcessCharacterAsync(character, testTime, timeBucket);
         }).ToList();
