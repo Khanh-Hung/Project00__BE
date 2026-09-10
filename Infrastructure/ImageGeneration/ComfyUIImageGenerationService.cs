@@ -75,6 +75,11 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
             builder = _workflowBuilders.FirstOrDefault(b => b.CanHandle(capability))
                 ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not compatible with model '{request.Model}'.");
 
+            if (request.EffectiveIdentityConditioning.IsRequired && !builder.SupportsIdentityConditioning)
+            {
+                throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} does not support identity conditioning required by this request.");
+            }
+
             // 2. Ensure Reference and Previous Scene Images are uploaded if required by workflow
             string resolvedReferenceImageName = string.Empty;
             if (!string.IsNullOrWhiteSpace(request.ReferenceImageUrl))

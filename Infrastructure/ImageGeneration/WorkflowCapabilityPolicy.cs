@@ -24,4 +24,12 @@ public sealed class WorkflowCapabilityPolicy : IImageGenerationCapabilityPolicy
 
         return _builders.Any(b => b.CanHandle(capability));
     }
+
+    public bool SupportsIdentityConditioning(ImageGenerationCapability capability)
+    {
+        if (capability == null || string.IsNullOrWhiteSpace(capability.Model))
+            return false;
+
+        return _builders.Any(b => b.CanHandle(capability) && b.SupportsIdentityConditioning);
+    }
 }

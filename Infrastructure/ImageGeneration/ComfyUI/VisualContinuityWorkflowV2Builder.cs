@@ -16,6 +16,7 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
 {
     public string WorkflowName => "VisualContinuity";
     public int WorkflowVersion => 2;
+    public bool SupportsIdentityConditioning => true;
 
     public static readonly IReadOnlySet<string> DefaultSupportedModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {

@@ -9,4 +9,9 @@ namespace Application.Interfaces;
 public interface IImageGenerationCapabilityPolicy
 {
     bool IsSupported(ImageGenerationCapability capability);
+
+    /// <summary>
+    /// Evaluates whether the generation capability supports character identity and continuity conditioning.
+    /// </summary>
+    bool SupportsIdentityConditioning(ImageGenerationCapability capability);
 }

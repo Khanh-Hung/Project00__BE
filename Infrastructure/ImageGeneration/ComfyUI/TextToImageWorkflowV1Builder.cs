@@ -8,6 +8,7 @@ public sealed class TextToImageWorkflowV1Builder : IComfyUIWorkflowBuilder
 {
     public string WorkflowName => "TextToImage";
     public int WorkflowVersion => 1;
+    public bool SupportsIdentityConditioning => false;
 
     public static readonly IReadOnlySet<string> DefaultSupportedModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {

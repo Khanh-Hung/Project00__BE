@@ -12,6 +12,13 @@ public interface IComfyUIWorkflowBuilder
 
     bool CanHandle(ImageGenerationCapability capability)
         => CanHandle(capability.Workflow, capability.WorkflowVersion, capability.Model);
+
+    /// <summary>
+    /// Indicates whether this workflow builder supports character visual identity and continuity conditioning.
+    /// Default is false (e.g. text-to-image workflows).
+    /// </summary>
+    bool SupportsIdentityConditioning => false;
+
     Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName);
 
     Dictionary<string, object> BuildWorkflow(
