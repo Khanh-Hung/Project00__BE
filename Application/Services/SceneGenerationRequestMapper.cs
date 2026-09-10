@@ -3,11 +3,19 @@ using Application.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.ValueObjects;
+using Microsoft.Extensions.Configuration;
 
 namespace Application.Services;
 
 public sealed class SceneGenerationRequestMapper
 {
+    private readonly IConfiguration? _configuration;
+
+    public SceneGenerationRequestMapper(IConfiguration? configuration = null)
+    {
+        _configuration = configuration;
+    }
+
     public VisualSnapshot MapToVisualSnapshot(
         SceneSpecification scene,
         VisualContextResolutionResult visualContext,
@@ -30,6 +38,13 @@ public sealed class SceneGenerationRequestMapper
             englishPromptTags: new[] { prompt.PositivePrompt }
         );
 
+        var configuredDefaultStyle = _configuration?["AiProviders:ImageGeneration:DefaultStyle"];
+        var defaultVisualStyle = VisualStyle.Unspecified;
+        if (!string.IsNullOrWhiteSpace(configuredDefaultStyle) && Enum.TryParse<VisualStyle>(configuredDefaultStyle, ignoreCase: true, out var parsedStyle))
+        {
+            defaultVisualStyle = parsedStyle;
+        }
+
         var identity = visualContext.CurrentAppearance != null
             ? new CharacterVisualIdentity(
                 Hair: visualContext.CurrentAppearance.HairColor,
@@ -37,7 +52,9 @@ public sealed class SceneGenerationRequestMapper
                 Skin: visualContext.CurrentAppearance.SkinTone,
                 ClothingStyle: scene.OutfitContext ?? visualContext.CurrentAppearance.CurrentOutfit,
                 CanonicalReferenceUrl: visualContext.CanonicalIdentityReference?.ReferenceUrl,
-                FullBodyUrl: null
+                FullBodyUrl: null,
+                Style: configuredDefaultStyle,
+                VisualStyle: defaultVisualStyle
             )
             : null;
 

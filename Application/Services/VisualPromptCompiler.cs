@@ -43,9 +43,16 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         }
         else
         {
-            traits.Add($"1girl, {character.Name}");
+            traits.Add($"1person, {character.Name}");
             if (!string.IsNullOrWhiteSpace(character.Category)) traits.Add(character.Category);
             if (!string.IsNullOrWhiteSpace(character.Title)) traits.Add(character.Title);
+        }
+
+        var visualStyle = identity?.ResolvedStyle ?? VisualStyle.Unspecified;
+        var styleDef = VisualStyleDefinition.Resolve(visualStyle, identity?.Style);
+        if (!string.IsNullOrWhiteSpace(styleDef.PositiveTokens))
+        {
+            traits.Add(styleDef.PositiveTokens);
         }
 
         var identityTags = string.Join(", ", traits.Where(t => !string.IsNullOrWhiteSpace(t)));
@@ -101,7 +108,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         }
         else
         {
-            characterTags.Add($"1girl, {character.Name}");
+            characterTags.Add($"1person, {character.Name}");
             if (!string.IsNullOrWhiteSpace(character.Title)) characterTags.Add(character.Title);
         }
 
@@ -139,7 +146,15 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         var expressionPart = string.Join(", ", expressionTags.Where(t => !string.IsNullOrWhiteSpace(t)));
         var scenePart = string.Join(", ", sceneTags.Where(t => !string.IsNullOrWhiteSpace(t)));
 
+        var visualStyle = identity?.ResolvedStyle ?? VisualStyle.Unspecified;
+        var styleDef = VisualStyleDefinition.Resolve(visualStyle, identity?.Style);
+
         var parts = new List<string> { identityPart, expressionPart, scenePart, "cinematic composition, dramatic lighting, detailed background" };
+        if (!string.IsNullOrWhiteSpace(styleDef.PositiveTokens))
+        {
+            parts.Add(styleDef.PositiveTokens);
+        }
+
         return string.Join(", ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 
@@ -190,7 +205,7 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         }
         else
         {
-            allTags.Add("1girl");
+            allTags.Add("1person");
         }
 
         // Tier 2: Persistent Scene State (Room, Position, Outfit, Time, Held Items)
@@ -250,7 +265,14 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
         }
 
         // Tier 5: Aesthetic Quality & Style Anchors
-        allTags.Add("cinematic composition, dramatic lighting, detailed background, soft painterly anime aesthetic, 8k, pixiv trending");
+        allTags.Add("cinematic composition, dramatic lighting, detailed background, 8k");
+
+        var visualStyle = identity?.ResolvedStyle ?? VisualStyle.Unspecified;
+        var styleDef = VisualStyleDefinition.Resolve(visualStyle, identity?.Style);
+        if (!string.IsNullOrWhiteSpace(styleDef.PositiveTokens))
+        {
+            allTags.Add(styleDef.PositiveTokens);
+        }
 
         var cleanTags = DeduplicateAndClean(allTags);
         return string.Join(", ", cleanTags);
@@ -294,9 +316,17 @@ public sealed class VisualPromptCompiler : IVisualPromptCompiler
                     }
                 }
             }
+
+            // Tier 4: Style-specific negative tokens
+            var visualStyle = identity.ResolvedStyle;
+            var styleDef = VisualStyleDefinition.Resolve(visualStyle, identity.Style);
+            if (!string.IsNullOrWhiteSpace(styleDef.NegativeTokens))
+            {
+                negativeTags.Add(styleDef.NegativeTokens);
+            }
         }
 
-        // Tier 4: Custom negative constraints if provided
+        // Tier 5: Custom negative constraints if provided
         if (!string.IsNullOrWhiteSpace(customNegative))
         {
             negativeTags.Add(customNegative);
