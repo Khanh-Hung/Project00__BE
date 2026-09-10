@@ -122,7 +122,8 @@ public sealed class VisualStateResolver : IVisualStateResolver
                 outfitHint: delta.OutfitChange ?? updatedSceneState.CurrentOutfit,
                 objectHints: !string.IsNullOrWhiteSpace(updatedSceneState.HeldItems) ? new[] { updatedSceneState.HeldItems } : null,
                 sessionId: session.Id,
-                turnId: turnId
+                turnId: turnId,
+                visualIdentity: character.VisualIdentity
             );
 
             var pipelineResult = await _sceneCompositionPipeline.ExecuteAsync(

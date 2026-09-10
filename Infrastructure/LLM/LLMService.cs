@@ -273,7 +273,7 @@ public sealed class LLMService : ILLMService
 
         if (string.IsNullOrWhiteSpace(cleanAvatarPrompt))
         {
-            cleanAvatarPrompt = $"masterpiece, best quality, {genderTag}, solo, close-up face portrait, face focus, looking at viewer, highly detailed face, expressive eyes, vibrant colors, cinematic lighting, 8k, pixiv trending";
+            cleanAvatarPrompt = $"masterpiece, best quality, {genderTag}, solo, close-up face portrait, face focus, looking at viewer, highly detailed face, expressive eyes, vibrant colors, cinematic lighting, 8k";
         }
 
         if (!cleanAvatarPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
@@ -288,7 +288,7 @@ public sealed class LLMService : ILLMService
 
         if (string.IsNullOrWhiteSpace(cleanFullBodyPrompt))
         {
-            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, dynamic graceful posture, slight 3/4 turn, looking at viewer, delicate beautiful face, expressive luminous eyes, vibrant colors, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, soft painterly anime aesthetic, 8k, pixiv trending";
+            cleanFullBodyPrompt = $"masterpiece, best quality, {genderTag}, solo, waist-up standing portrait, dynamic graceful posture, slight 3/4 turn, looking at viewer, delicate face, expressive luminous eyes, vibrant colors, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, soft painterly aesthetic, dramatic lighting, 8k";
         }
 
         if (!cleanFullBodyPrompt.Contains("solo", StringComparison.OrdinalIgnoreCase))
@@ -298,7 +298,7 @@ public sealed class LLMService : ILLMService
 
         if (!cleanFullBodyPrompt.Contains("ethereal", StringComparison.OrdinalIgnoreCase))
         {
-            cleanFullBodyPrompt += ", slight 3/4 turn, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, luminous eyes, delicate beautiful face, soft painterly anime aesthetic, masterpiece, best quality";
+            cleanFullBodyPrompt += ", slight 3/4 turn, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, luminous eyes, delicate face, soft painterly aesthetic, dramatic lighting, masterpiece, best quality";
         }
 
         var generatedSeed = Random.Shared.Next(1, int.MaxValue);
@@ -430,7 +430,7 @@ public sealed class LLMService : ILLMService
                 Permanent Anatomical DNA (CRITICAL - MUST STRICTLY PRESERVE):
                 - Hair: {v.Hair ?? "long blonde wavy hair, floral gold hair ornaments"}
                 - Eyes: {v.Eyes ?? "emerald green eyes"}
-                - Face: {v.Face ?? "gentle beautiful anime face"}
+                - Face: {v.Face ?? "gentle expressive face"}
                 - Body Type/Proportions: {v.Body ?? "1m65, slender, graceful figure"}
                 """;
         }
@@ -440,7 +440,7 @@ public sealed class LLMService : ILLMService
                 Permanent Anatomical DNA (CRITICAL - MUST STRICTLY PRESERVE):
                 - Hair: long blonde hair
                 - Eyes: emerald green eyes
-                - Face: gentle beautiful anime face
+                - Face: gentle expressive face
                 """;
         }
 
@@ -469,7 +469,7 @@ public sealed class LLMService : ILLMService
         }
 
         var scenePromptBuilder = $"""
-            You are a World-Class Visual Novel & Anime Scene Prompt Engineer for Animagine-XL.
+            You are a World-Class Scene Prompt Engineer.
             
             Character:
             - Name: {request.CharacterName ?? "Character"}
@@ -485,8 +485,8 @@ public sealed class LLMService : ILLMService
             - Character action/dialogue: "{request.MessageContent}"
             
             TASK:
-            Generate a rich, cohesive English Anime scene prompt (35 - 50 comma-separated tags):
-            1. CHARACTER ANCHORS: 1girl, solo, {request.CharacterName ?? "anime character"}, exact hair and eye traits from DNA.
+            Generate a rich, cohesive English scene prompt (35 - 50 comma-separated tags):
+            1. CHARACTER ANCHORS: 1girl, solo, {request.CharacterName ?? "character"}, exact hair and eye traits from DNA.
             2. ACTIVE OUTFIT: Render the EXACT current active outfit described above (e.g. if wearing nightgown/swimsuit/holy dress, strictly depict that specific clothing).
             3. POSE & FRAMING: Cowboy shot or full body shot, matching the dialogue action and current physical pose.
             4. CURRENT LOCATION & LIGHTING: Render the exact current location, background scenery, and lighting.
@@ -508,7 +508,7 @@ public sealed class LLMService : ILLMService
             };
 
             var promptResult = await _geminiClient.GenerateTextAsync(
-                "You are an expert anime visual novel scene prompt engineer. Output only comma-separated English tags.",
+                "You are an expert scene prompt engineer. Output only comma-separated English tags.",
                 contents,
                 temperature: 0.7,
                 maxOutputTokens: 250,

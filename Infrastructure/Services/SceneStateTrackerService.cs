@@ -92,7 +92,7 @@ public sealed class SceneStateTrackerService : ISceneStateTrackerService
               - detailedEnvironment: Fact-anchored English description of background setting based on current room.
               - lightingStyle: Fact-anchored English description of lighting based on current time & room.
               - atmosphere: Fact-anchored English atmosphere/tone.
-              - englishPromptTags: 5-10 concise, fact-anchored English anime prompt tags.
+              - englishPromptTags: 5-10 concise, fact-anchored English prompt tags.
             - CAMERA INERTIA & FRAMING STABILITY:
               - By default, maintain stable framing: shotType = "medium shot" and cameraAngle = "slight 3/4 turn, eye level".
               - ONLY shift to "close-up portrait" when dialogue explicitly describes intimate/close interaction (e.g. whispering, touching face, gazing into eyes).

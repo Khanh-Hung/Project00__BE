@@ -1,4 +1,6 @@
-﻿namespace Domain.Entities;
+using Domain.ValueObjects;
+
+namespace Domain.Entities;
 
 /// <summary>
 /// Raw unnormalized scene generation intent extracted from chat dialogue, character turns, or user commands.
@@ -27,6 +29,7 @@ public sealed class SceneIntent
 
     public IReadOnlyList<string> ObjectHints { get; private set; }
     public IReadOnlyList<string> AtmosphereHints { get; private set; }
+    public CharacterVisualIdentity? VisualIdentity { get; private set; }
 
     public SceneIntent(
         Guid characterId,
@@ -45,7 +48,8 @@ public sealed class SceneIntent
         string? hairstyleHint = null,
         IEnumerable<string>? objectHints = null,
         IEnumerable<string>? atmosphereHints = null,
-        Guid? id = null)
+        Guid? id = null,
+        CharacterVisualIdentity? visualIdentity = null)
     {
         if (characterId == Guid.Empty)
             throw new ArgumentException("CharacterId cannot be empty.", nameof(characterId));
@@ -73,5 +77,6 @@ public sealed class SceneIntent
         HairstyleHint = hairstyleHint?.Trim();
         ObjectHints = objectHints?.Where(o => !string.IsNullOrWhiteSpace(o)).Select(o => o.Trim()).ToList() ?? new List<string>();
         AtmosphereHints = atmosphereHints?.Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a.Trim()).ToList() ?? new List<string>();
+        VisualIdentity = visualIdentity;
     }
 }

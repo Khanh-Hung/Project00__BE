@@ -52,6 +52,11 @@ public sealed class SceneCompositionPipelineService : ISceneCompositionPipelineS
             locationContext: intent.LocationHint,
             ct: ct);
 
+        if (context.VisualIdentity == null && intent.VisualIdentity != null)
+        {
+            context = context with { VisualIdentity = intent.VisualIdentity };
+        }
+
         // 2. Resolve Authoritative Visual Continuity & Scene Evolution State
         var continuityRequest = new VisualContinuityRequest(intent, context, sceneRevision);
         var continuityResult = await _visualContinuityResolver.ResolveAsync(continuityRequest, ct);

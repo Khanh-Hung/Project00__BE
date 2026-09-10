@@ -18,13 +18,13 @@ public sealed record GenderPromptInvariant(
         {
             GenderPresentation.Male => new GenderPromptInvariant(
                 Gender: GenderPresentation.Male,
-                PositiveTokens: "1man, male, masculine face, handsome male knight, defined masculine jawline, flat male chest",
-                NegativeTokens: "1girl, anime girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face"
+                PositiveTokens: "1man, male, masculine face, defined masculine jawline, flat male chest",
+                NegativeTokens: "1girl, female, woman, breasts, cleavage, feminine curves, female body shape, feminine face"
             ),
             GenderPresentation.Female => new GenderPromptInvariant(
                 Gender: GenderPresentation.Female,
                 PositiveTokens: "1girl, female, feminine face",
-                NegativeTokens: "1man, anime man, male, boy, masculine face, facial hair, beard, mustache"
+                NegativeTokens: "1man, male, boy, masculine face, facial hair, beard, mustache"
             ),
             GenderPresentation.Androgynous => new GenderPromptInvariant(
                 Gender: GenderPresentation.Androgynous,

@@ -29,8 +29,11 @@ public sealed class PollinationsImageGenerationService : IImageGenerationService
         ImageGenerationRequest request,
         CancellationToken ct = default)
     {
-        var finalPrompt = $"masterpiece, best quality, otome isekai manhwa webtoon art style, roxana anime aesthetic, {request.Prompt.Trim()}, large bright luminous sparkling anime eyes, detailed eyelashes, charming gentle smile, cute small lips, sharp clean lineart, vivid anime coloring, 8k";
-        var negativePrompt = "sleepy eyes, half-closed eyes, narrow eyes, squinting, heavy makeup, duck face, pout, 3d render, realistic, photorealistic, plastic skin, doll, uncanny, creepy, alien face, deformed, bad eyes, bad mouth, blurry, extra fingers, mutated anatomy";
+        var finalPrompt = request.Prompt.Trim();
+        var defaultNegative = "sleepy eyes, half-closed eyes, narrow eyes, squinting, heavy makeup, duck face, pout, plastic skin, doll, uncanny, creepy, alien face, deformed, bad eyes, bad mouth, blurry, extra fingers, mutated anatomy";
+        var negativePrompt = !string.IsNullOrWhiteSpace(request.NegativePrompt)
+            ? request.NegativePrompt.Trim()
+            : defaultNegative;
         var randomSeed = Random.Shared.Next(1, 99999999);
         var imageUrl = $"https://image.pollinations.ai/prompt/{Uri.EscapeDataString(finalPrompt)}?width={request.Width}&height={request.Height}&nologo=true&enhance=false&negative_prompt={Uri.EscapeDataString(negativePrompt)}&seed={randomSeed}";
 

@@ -1,5 +1,6 @@
 using Domain.Entities;
 using Domain.Enums;
+using Domain.ValueObjects;
 
 namespace Application.DTOs;
 
@@ -16,7 +17,8 @@ public sealed record SceneCompositionContext(
     CharacterVisualProfile? CharacterVisualProfile = null,
     CharacterVisualReference? CanonicalVisualReference = null,
     IReadOnlyList<CharacterVisualMemory>? RelevantVisualMemories = null,
-    SceneTransitionType TransitionType = SceneTransitionType.LocationTransition
+    SceneTransitionType TransitionType = SceneTransitionType.LocationTransition,
+    CharacterVisualIdentity? VisualIdentity = null
 );
 
 /// <summary>
@@ -30,7 +32,8 @@ public sealed record VisualContextResolutionResult(
     CharacterVisualMemory? PredecessorVisualMemory,
     IReadOnlyList<CharacterVisualMemory> RelevantOlderMemories,
     SceneTransitionType TransitionType,
-    string SelectionSummary
+    string SelectionSummary,
+    CharacterVisualIdentity? VisualIdentity = null
 );
 
 /// <summary>
