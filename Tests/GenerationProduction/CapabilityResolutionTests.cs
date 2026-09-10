@@ -107,20 +107,23 @@ public sealed class CapabilityResolutionTests
         return db;
     }
 
-    private static VisualSnapshot CreateTestSnapshot(string model, CharacterVisualIdentity? identity = null)
+    private static VisualSnapshot CreateTestSnapshot(string model, CharacterVisualIdentity? identity = null, string? referenceUrl = "https://cdn.project00.ai/characters/char1_canonical.png")
     {
+        var visualIdentity = identity ?? new CharacterVisualIdentity(
+            Presentation: GenderPresentation.Female,
+            Hair: "silver hair",
+            Eyes: "crimson eyes",
+            Style: "Anime",
+            VisualStyle: VisualStyle.Anime,
+            CanonicalReferenceUrl: referenceUrl
+        );
+
         return VisualSnapshot.Create(
             turnId: Guid.NewGuid(),
             sessionId: Guid.NewGuid(),
             characterId: Guid.NewGuid(),
             sceneRevision: 1,
-            visualIdentity: identity ?? new CharacterVisualIdentity(
-                Presentation: GenderPresentation.Female,
-                Hair: "silver hair",
-                Eyes: "crimson eyes",
-                Style: "Anime",
-                VisualStyle: VisualStyle.Anime
-            ),
+            visualIdentity: visualIdentity,
             sceneState: new SessionSceneState(
                 CurrentLocation: "Garden",
                 CurrentPosition: "Center",
@@ -136,7 +139,8 @@ public sealed class CapabilityResolutionTests
                 Gaze: "looking at viewer",
                 Pose: "standing"
             ),
-            generationProfile: GenerationProfile.CreateDefault(model: model, workflow: "VisualIdentity", workflowVersion: 1)
+            generationProfile: GenerationProfile.CreateDefault(model: model, workflow: "VisualIdentity", workflowVersion: 1),
+            fallbackReferenceUrl: referenceUrl
         );
     }
 
@@ -150,6 +154,7 @@ public sealed class CapabilityResolutionTests
         const string supportedModel = "meinamix_meinaV11.safetensors";
 
         var capability = new ImageGenerationCapability(supportedModel, "VisualIdentity", 1);
+        var policy = new WorkflowCapabilityPolicy(new[] { builder });
 
         // Assert builder accepts capability via default interface method
         Assert.True(builder.CanHandle(capability));
@@ -158,50 +163,72 @@ public sealed class CapabilityResolutionTests
         // Case insensitivity check
         var upperCapability = new ImageGenerationCapability(supportedModel.ToUpperInvariant(), "VisualIdentity", 1);
         Assert.True(builder.CanHandle(upperCapability));
+        Assert.True(policy.IsSupported(upperCapability));
 
         // Profile mapping check
         var profile = GenerationProfile.CreateDefault(model: supportedModel, workflow: "VisualIdentity", workflowVersion: 1);
         Assert.Equal(capability, profile.Capability);
         Assert.True(builder.CanHandle(profile.Capability));
+        Assert.True(policy.IsSupported(profile.Capability));
 
-        // Request mapping check
+        // Request mapping check with reference image (VisualIdentity v1)
         var request = new ImageGenerationRequest(
+            Prompt: "masterpiece",
+            Model: supportedModel,
+            Workflow: "VisualIdentity",
+            WorkflowVersion: 1,
+            ReferenceImageUrl: "https://cdn.project00.ai/characters/char1.png"
+        );
+        Assert.Equal(capability, request.Capability);
+        Assert.True(builder.CanHandle(request.Capability));
+        Assert.True(policy.IsSupported(request.ResolveEffectiveCapability()));
+
+        // When ReferenceImageUrl is missing, VisualIdentity resolves to TextToImage v1
+        var emptyRefRequest = new ImageGenerationRequest(
             Prompt: "masterpiece",
             Model: supportedModel,
             Workflow: "VisualIdentity",
             WorkflowVersion: 1
         );
-        Assert.Equal(capability, request.Capability);
-        Assert.True(builder.CanHandle(request.Capability));
-        Assert.True(GenerationCapabilityValidator.IsSupported(request.ResolveEffectiveCapability()));
+        Assert.Equal("TextToImage", emptyRefRequest.ResolveEffectiveCapability().Workflow);
+        // Single builder policy (VisualIdentity only) cannot handle TextToImage
+        Assert.False(policy.IsSupported(emptyRefRequest.ResolveEffectiveCapability()));
+        // Multi-builder policy handles TextToImage v1
+        var multiPolicy = new WorkflowCapabilityPolicy(new IComfyUIWorkflowBuilder[]
+        {
+            builder,
+            new TextToImageWorkflowV1Builder()
+        });
+        Assert.True(multiPolicy.IsSupported(emptyRefRequest.ResolveEffectiveCapability()));
     }
 
     // =========================================================================
     // Test 2: Unsupported Model -> Rejected
     // =========================================================================
     [Fact]
-    public void Test2_UnsupportedModel_IsRejectedByBuilder_AndValidator()
+    public void Test2_UnsupportedModel_IsRejectedByBuilder_AndPolicy()
     {
         IComfyUIWorkflowBuilder builder = new VisualIdentityWorkflowV1Builder();
+        var policy = new WorkflowCapabilityPolicy(new[] { builder });
 
         // Unknown model
         var unsupportedCap = new ImageGenerationCapability("sdxl_base_1.0.safetensors", "VisualIdentity", 1);
         Assert.False(builder.CanHandle(unsupportedCap));
-        Assert.False(GenerationCapabilityValidator.IsSupported(unsupportedCap));
+        Assert.False(policy.IsSupported(unsupportedCap));
 
         // Another unsupported architecture
         var fluxCap = new ImageGenerationCapability("flux1-dev.safetensors", "VisualIdentity", 1);
         Assert.False(builder.CanHandle(fluxCap));
-        Assert.False(GenerationCapabilityValidator.IsSupported(fluxCap));
+        Assert.False(policy.IsSupported(fluxCap));
 
         // Null / whitespace model
         var emptyCap = new ImageGenerationCapability("", "VisualIdentity", 1);
         Assert.False(builder.CanHandle(emptyCap));
-        Assert.False(GenerationCapabilityValidator.IsSupported(emptyCap));
+        Assert.False(policy.IsSupported(emptyCap));
 
         var whitespaceCap = new ImageGenerationCapability("   ", "VisualIdentity", 1);
         Assert.False(builder.CanHandle(whitespaceCap));
-        Assert.False(GenerationCapabilityValidator.IsSupported(whitespaceCap));
+        Assert.False(policy.IsSupported(whitespaceCap));
     }
 
     // =========================================================================
@@ -213,6 +240,7 @@ public sealed class CapabilityResolutionTests
         IComfyUIWorkflowBuilder v1Builder = new VisualIdentityWorkflowV1Builder();
         IComfyUIWorkflowBuilder v2Builder = new VisualContinuityWorkflowV2Builder();
         IComfyUIWorkflowBuilder t2iBuilder = new TextToImageWorkflowV1Builder();
+        var policy = new WorkflowCapabilityPolicy(new[] { v1Builder, v2Builder, t2iBuilder });
         const string model = "meinamix_meinaV11.safetensors";
 
         // 3a. Unknown workflow
@@ -220,22 +248,22 @@ public sealed class CapabilityResolutionTests
         Assert.False(v1Builder.CanHandle(unknownWfCap));
         Assert.False(v2Builder.CanHandle(unknownWfCap));
         Assert.False(t2iBuilder.CanHandle(unknownWfCap));
-        Assert.False(GenerationCapabilityValidator.IsSupported(unknownWfCap));
+        Assert.False(policy.IsSupported(unknownWfCap));
 
         // 3b. Unsupported version: VisualIdentity with version 2 (VisualIdentity is v1)
         var viV2Cap = new ImageGenerationCapability(model, "VisualIdentity", 2);
         Assert.False(v1Builder.CanHandle(viV2Cap));
-        Assert.False(GenerationCapabilityValidator.IsSupported(viV2Cap));
+        Assert.False(policy.IsSupported(viV2Cap));
 
         // 3c. Unsupported version: VisualContinuity with version 1 (VisualContinuity is v2)
         var vcV1Cap = new ImageGenerationCapability(model, "VisualContinuity", 1);
         Assert.False(v2Builder.CanHandle(vcV1Cap));
-        Assert.False(GenerationCapabilityValidator.IsSupported(vcV1Cap));
+        Assert.False(policy.IsSupported(vcV1Cap));
 
         // 3d. Unsupported version: TextToImage with version 2 (TextToImage is v1)
         var t2iV2Cap = new ImageGenerationCapability(model, "TextToImage", 2);
         Assert.False(t2iBuilder.CanHandle(t2iV2Cap));
-        Assert.False(GenerationCapabilityValidator.IsSupported(t2iV2Cap));
+        Assert.False(policy.IsSupported(t2iV2Cap));
     }
 
     // =========================================================================
@@ -447,6 +475,44 @@ public sealed class CapabilityResolutionTests
         Assert.True(customV1Builder.CanHandle(customCap));
         // Base model was replaced in custom builder constructor
         Assert.False(customV1Builder.CanHandle(viCap));
+    }
+
+    // =========================================================================
+    // Test 5b: Custom Supported Model in Builder Passes Application Capability Validation
+    // =========================================================================
+    [Fact]
+    public async Task Test5b_CustomSupportedModel_AllowedByBuilder_IsNotRejectedByApplicationPolicy()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        using var db = CreateSqliteDbContext(connection);
+
+        const string customModel = "custom_finetuned_checkpoint.safetensors";
+        var customBuilder = new VisualIdentityWorkflowV1Builder(new[] { customModel });
+        var capabilityPolicy = new WorkflowCapabilityPolicy(new[] { customBuilder });
+        var spyProvider = new SpyImageGenerationProviderService();
+
+        var customCap = new ImageGenerationCapability(customModel, "VisualIdentity", 1);
+        Assert.True(capabilityPolicy.IsSupported(customCap));
+
+        var orchestrator = new ImageGenerationOrchestrator(
+            db, new VisualPromptCompiler(), spyProvider, NullLogger<ImageGenerationOrchestrator>.Instance,
+            new SystemDateTimeProvider(), new DevelopmentPassThroughIdentityQualityEvaluator(),
+            new IdentityQualityGuardPolicy(), new PredecessorLineageResolver(db, NullLogger<PredecessorLineageResolver>.Instance),
+            new ArtifactAcceptanceService(db, new SystemDateTimeProvider(), NullLogger<ArtifactAcceptanceService>.Instance),
+            capabilityPolicy: capabilityPolicy
+        );
+
+        var snapshot = CreateTestSnapshot(model: customModel);
+        var payload = new SceneImageGenerationOutboxPayload(snapshot.TurnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid());
+
+        // Act: orchestrator runs
+        var result = await orchestrator.OrchestrateSceneImageGenerationAsync(payload, Guid.NewGuid(), "worker-1", DateTime.UtcNow);
+
+        // Assert: It succeeded past Application capability validation and reached the provider!
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.Equal(1, spyProvider.GenerateWithResultCallCount);
     }
 
     // =========================================================================

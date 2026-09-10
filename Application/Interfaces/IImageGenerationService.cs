@@ -51,10 +51,15 @@ public sealed record ImageGenerationRequest(
     /// <summary>
     /// Validates capability compatibility at the Application boundary before submitting to provider.
     /// </summary>
-    public void ValidateCapability(IEnumerable<string>? customSupportedModels = null)
+    public void ValidateCapability(IImageGenerationCapabilityPolicy capabilityPolicy)
     {
+        ArgumentNullException.ThrowIfNull(capabilityPolicy);
         var capability = ResolveEffectiveCapability();
-        Application.Common.GenerationCapabilityValidator.Validate(capability, customSupportedModels);
+        if (!capabilityPolicy.IsSupported(capability))
+        {
+            throw new Application.Exceptions.GpuNonTransientException(
+                $"Generation capability '{capability}' is not supported. Workflow '{capability.Workflow}' v{capability.WorkflowVersion} is not compatible with model '{Model}'.");
+        }
     }
 
     public static ImageGenerationRequest FromSnapshot(
