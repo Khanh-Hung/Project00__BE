@@ -461,6 +461,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                     try
                     {
+                        // Authoritative Application-boundary capability validation: fail fast before provider submission!
+                        imageReq.ValidateCapability();
+
                         var genSw = Stopwatch.StartNew();
                         genResult = await _imageService.GenerateImageWithResultAsync(imageReq, attemptCt);
                         genSw.Stop();

@@ -63,19 +63,15 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
         if (int.TryParse(_configuration["AiProviders:ComfyUI:PollIntervalMs"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInterval)) pollIntervalMs = parsedInterval;
         if (int.TryParse(_configuration["AiProviders:ComfyUI:TimeoutSeconds"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTimeout)) timeoutSeconds = parsedTimeout;
 
-        var targetWorkflow = request.Workflow;
-        if (string.IsNullOrWhiteSpace(request.ReferenceImageUrl) && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
-        {
-            targetWorkflow = "TextToImage";
-        }
-        var targetVersion = request.WorkflowVersion;
+        var capability = request.ResolveEffectiveCapability();
+        var targetWorkflow = capability.Workflow;
+        var targetVersion = capability.WorkflowVersion;
         string promptId = request.ProviderJobId ?? string.Empty;
         IComfyUIWorkflowBuilder? builder = null;
 
         if (string.IsNullOrWhiteSpace(promptId))
         {
-            // 1. Resolve capability and select Workflow Builder by exact compatibility match - fail-fast before network calls!
-            var capability = new ImageGenerationCapability(request.Model ?? string.Empty, targetWorkflow, targetVersion);
+            // 1. Select Workflow Builder by exact compatibility match - defense-in-depth before network calls!
             builder = _workflowBuilders.FirstOrDefault(b => b.CanHandle(capability))
                 ?? throw new GpuNonTransientException($"ComfyUI workflow '{targetWorkflow}' with version {targetVersion} is not compatible with model '{request.Model}'.");
 

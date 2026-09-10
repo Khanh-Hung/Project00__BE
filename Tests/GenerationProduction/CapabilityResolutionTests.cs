@@ -73,6 +73,30 @@ public sealed class CapabilityResolutionTests
         }
     }
 
+    private sealed class SpyImageGenerationProviderService : IImageGenerationService
+    {
+        public int GenerateCallCount { get; private set; }
+        public int GenerateWithResultCallCount { get; private set; }
+
+        public Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default)
+        {
+            GenerateCallCount++;
+            return Task.FromResult("https://cdn.project00.ai/rendered/spy.png");
+        }
+
+        public Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            GenerateCallCount++;
+            return Task.FromResult("https://cdn.project00.ai/rendered/spy.png");
+        }
+
+        public Task<ImageGenerationResult> GenerateImageWithResultAsync(ImageGenerationRequest request, CancellationToken ct = default)
+        {
+            GenerateWithResultCallCount++;
+            return Task.FromResult(new ImageGenerationResult("https://cdn.project00.ai/rendered/spy.png", "SpyProvider", "job-1", 100, 42));
+        }
+    }
+
     private static CoreDbContext CreateSqliteDbContext(SqliteConnection connection)
     {
         var options = new DbContextOptionsBuilder<CoreDbContext>()
@@ -122,12 +146,12 @@ public sealed class CapabilityResolutionTests
     [Fact]
     public void Test1_SupportedModel_VisualIdentityV1_IsAcceptedByBuilder_AndExposesCapability()
     {
-        var builder = new VisualIdentityWorkflowV1Builder();
+        IComfyUIWorkflowBuilder builder = new VisualIdentityWorkflowV1Builder();
         const string supportedModel = "meinamix_meinaV11.safetensors";
 
         var capability = new ImageGenerationCapability(supportedModel, "VisualIdentity", 1);
 
-        // Assert builder accepts capability
+        // Assert builder accepts capability via default interface method
         Assert.True(builder.CanHandle(capability));
         Assert.True(builder.CanHandle("VisualIdentity", 1, supportedModel));
 
@@ -149,30 +173,35 @@ public sealed class CapabilityResolutionTests
         );
         Assert.Equal(capability, request.Capability);
         Assert.True(builder.CanHandle(request.Capability));
+        Assert.True(GenerationCapabilityValidator.IsSupported(request.ResolveEffectiveCapability()));
     }
 
     // =========================================================================
     // Test 2: Unsupported Model -> Rejected
     // =========================================================================
     [Fact]
-    public void Test2_UnsupportedModel_IsRejectedByBuilder()
+    public void Test2_UnsupportedModel_IsRejectedByBuilder_AndValidator()
     {
-        var builder = new VisualIdentityWorkflowV1Builder();
+        IComfyUIWorkflowBuilder builder = new VisualIdentityWorkflowV1Builder();
 
         // Unknown model
         var unsupportedCap = new ImageGenerationCapability("sdxl_base_1.0.safetensors", "VisualIdentity", 1);
         Assert.False(builder.CanHandle(unsupportedCap));
+        Assert.False(GenerationCapabilityValidator.IsSupported(unsupportedCap));
 
         // Another unsupported architecture
         var fluxCap = new ImageGenerationCapability("flux1-dev.safetensors", "VisualIdentity", 1);
         Assert.False(builder.CanHandle(fluxCap));
+        Assert.False(GenerationCapabilityValidator.IsSupported(fluxCap));
 
         // Null / whitespace model
         var emptyCap = new ImageGenerationCapability("", "VisualIdentity", 1);
         Assert.False(builder.CanHandle(emptyCap));
+        Assert.False(GenerationCapabilityValidator.IsSupported(emptyCap));
 
         var whitespaceCap = new ImageGenerationCapability("   ", "VisualIdentity", 1);
         Assert.False(builder.CanHandle(whitespaceCap));
+        Assert.False(GenerationCapabilityValidator.IsSupported(whitespaceCap));
     }
 
     // =========================================================================
@@ -181,9 +210,9 @@ public sealed class CapabilityResolutionTests
     [Fact]
     public void Test3_UnsupportedWorkflowOrVersion_IsRejected()
     {
-        var v1Builder = new VisualIdentityWorkflowV1Builder();
-        var v2Builder = new VisualContinuityWorkflowV2Builder();
-        var t2iBuilder = new TextToImageWorkflowV1Builder();
+        IComfyUIWorkflowBuilder v1Builder = new VisualIdentityWorkflowV1Builder();
+        IComfyUIWorkflowBuilder v2Builder = new VisualContinuityWorkflowV2Builder();
+        IComfyUIWorkflowBuilder t2iBuilder = new TextToImageWorkflowV1Builder();
         const string model = "meinamix_meinaV11.safetensors";
 
         // 3a. Unknown workflow
@@ -191,22 +220,26 @@ public sealed class CapabilityResolutionTests
         Assert.False(v1Builder.CanHandle(unknownWfCap));
         Assert.False(v2Builder.CanHandle(unknownWfCap));
         Assert.False(t2iBuilder.CanHandle(unknownWfCap));
+        Assert.False(GenerationCapabilityValidator.IsSupported(unknownWfCap));
 
         // 3b. Unsupported version: VisualIdentity with version 2 (VisualIdentity is v1)
         var viV2Cap = new ImageGenerationCapability(model, "VisualIdentity", 2);
         Assert.False(v1Builder.CanHandle(viV2Cap));
+        Assert.False(GenerationCapabilityValidator.IsSupported(viV2Cap));
 
         // 3c. Unsupported version: VisualContinuity with version 1 (VisualContinuity is v2)
         var vcV1Cap = new ImageGenerationCapability(model, "VisualContinuity", 1);
         Assert.False(v2Builder.CanHandle(vcV1Cap));
+        Assert.False(GenerationCapabilityValidator.IsSupported(vcV1Cap));
 
         // 3d. Unsupported version: TextToImage with version 2 (TextToImage is v1)
         var t2iV2Cap = new ImageGenerationCapability(model, "TextToImage", 2);
         Assert.False(t2iBuilder.CanHandle(t2iV2Cap));
+        Assert.False(GenerationCapabilityValidator.IsSupported(t2iV2Cap));
     }
 
     // =========================================================================
-    // Test 4: Fail Before Provider -> Zero QueuePrompt Calls
+    // Test 4: Fail Before Provider -> Zero Provider Calls and Zero QueuePrompt
     // =========================================================================
     [Fact]
     public async Task Test4a_UnsupportedModel_GuaranteesZeroQueuePromptAndZeroUploadCalls_InComfyUIService()
@@ -233,7 +266,7 @@ public sealed class CapabilityResolutionTests
             ReferenceImageUrl: "https://cdn.project00.ai/ref.png"
         );
 
-        // Act & Assert
+        // Act & Assert: Defense-in-depth in ComfyUIService
         var ex = await Assert.ThrowsAsync<GpuNonTransientException>(() =>
             service.GenerateImageWithResultAsync(request));
 
@@ -331,15 +364,60 @@ public sealed class CapabilityResolutionTests
         Assert.Equal(0, mockInput.UploadCallCount);
     }
 
+    [Fact]
+    public async Task Test4d_ApplicationCapabilityValidation_GuaranteesProviderServiceIsNeverCalled_WhenCapabilityUnsupported()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        using var db = CreateSqliteDbContext(connection);
+
+        // Use Spy provider service to track any calls reaching the provider boundary
+        var spyProviderService = new SpyImageGenerationProviderService();
+
+        var compiler = new VisualPromptCompiler();
+        var dateTimeProvider = new SystemDateTimeProvider();
+        var lineageResolver = new PredecessorLineageResolver(db, NullLogger<PredecessorLineageResolver>.Instance);
+        var acceptanceService = new ArtifactAcceptanceService(db, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
+        var qualityEvaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var qualityGuardPolicy = new IdentityQualityGuardPolicy();
+
+        var orchestrator = new ImageGenerationOrchestrator(
+            db, compiler, spyProviderService, NullLogger<ImageGenerationOrchestrator>.Instance,
+            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService
+        );
+
+        // Snapshot with unsupported capability
+        var snapshot = CreateTestSnapshot(model: "unsupported_flux_checkpoint.safetensors");
+        var turnId = snapshot.TurnId;
+        var charId = snapshot.CharacterId;
+        var genRequestId = Guid.NewGuid();
+        var outboxId = Guid.NewGuid();
+        var payload = new SceneImageGenerationOutboxPayload(turnId, charId, Guid.NewGuid(), snapshot, genRequestId);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<GpuNonTransientException>(() =>
+            orchestrator.OrchestrateSceneImageGenerationAsync(payload, outboxId, "worker-1", DateTime.UtcNow));
+
+        Assert.Contains("Terminal generation failure", ex.Message);
+        Assert.Contains("unsupported_flux_checkpoint.safetensors", ex.Message);
+
+        // CRUCIAL ARCHITECTURAL PROOF:
+        // Application capability validation failed BEFORE calling IImageGenerationService!
+        // Provider was NEVER called!
+        Assert.Equal(0, spyProviderService.GenerateCallCount);
+        Assert.Equal(0, spyProviderService.GenerateWithResultCallCount);
+    }
+
     // =========================================================================
     // Test 5: All 3 Existing Builders Accept Currently Supported Combinations
     // =========================================================================
     [Fact]
     public void Test5_AllCurrentBuilders_AcceptTheirSupportedCombinations_AndRejectCrossMismatches()
     {
-        var v1Builder = new VisualIdentityWorkflowV1Builder();
-        var v2Builder = new VisualContinuityWorkflowV2Builder();
-        var t2iBuilder = new TextToImageWorkflowV1Builder();
+        IComfyUIWorkflowBuilder v1Builder = new VisualIdentityWorkflowV1Builder();
+        IComfyUIWorkflowBuilder v2Builder = new VisualContinuityWorkflowV2Builder();
+        IComfyUIWorkflowBuilder t2iBuilder = new TextToImageWorkflowV1Builder();
         const string baselineModel = "meinamix_meinaV11.safetensors";
 
         var viCap = new ImageGenerationCapability(baselineModel, "VisualIdentity", 1);
@@ -363,7 +441,7 @@ public sealed class CapabilityResolutionTests
 
         // Custom models passed in constructor
         const string customModel = "custom_finetuned_checkpoint.safetensors";
-        var customV1Builder = new VisualIdentityWorkflowV1Builder(new[] { customModel });
+        IComfyUIWorkflowBuilder customV1Builder = new VisualIdentityWorkflowV1Builder(new[] { customModel });
         var customCap = new ImageGenerationCapability(customModel, "VisualIdentity", 1);
 
         Assert.True(customV1Builder.CanHandle(customCap));

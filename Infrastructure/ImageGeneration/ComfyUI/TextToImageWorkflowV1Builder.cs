@@ -32,10 +32,6 @@ public sealed class TextToImageWorkflowV1Builder : IComfyUIWorkflowBuilder
             && _supportedModels.Contains(model.Trim());
     }
 
-    public bool CanHandle(ImageGenerationCapability capability)
-    {
-        return CanHandle(capability.Workflow, capability.WorkflowVersion, capability.Model);
-    }
 
     public Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName)
     {

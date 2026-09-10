@@ -34,6 +34,29 @@ public sealed record ImageGenerationRequest(
     /// </summary>
     public ImageGenerationCapability Capability => new(Model ?? string.Empty, Workflow, WorkflowVersion);
 
+    /// <summary>
+    /// Resolves the effective generation capability required for this request.
+    /// Maps empty reference image requests under VisualIdentity to TextToImage v1.
+    /// </summary>
+    public ImageGenerationCapability ResolveEffectiveCapability()
+    {
+        var targetWorkflow = Workflow;
+        if (string.IsNullOrWhiteSpace(ReferenceImageUrl) && (string.IsNullOrWhiteSpace(targetWorkflow) || targetWorkflow == "VisualIdentity"))
+        {
+            targetWorkflow = "TextToImage";
+        }
+        return new ImageGenerationCapability(Model ?? string.Empty, targetWorkflow, WorkflowVersion);
+    }
+
+    /// <summary>
+    /// Validates capability compatibility at the Application boundary before submitting to provider.
+    /// </summary>
+    public void ValidateCapability(IEnumerable<string>? customSupportedModels = null)
+    {
+        var capability = ResolveEffectiveCapability();
+        Application.Common.GenerationCapabilityValidator.Validate(capability, customSupportedModels);
+    }
+
     public static ImageGenerationRequest FromSnapshot(
         VisualSnapshot snapshot,
         string compiledPrompt,
