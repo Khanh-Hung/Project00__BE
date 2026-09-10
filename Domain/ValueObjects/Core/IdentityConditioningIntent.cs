@@ -22,12 +22,23 @@ public sealed record IdentityConditioningIntent(
     public static IdentityConditioningIntent None => new(IsRequired: false);
 
     /// <summary>
+    /// Checks whether a canonical character appearance reference is present.
+    /// </summary>
+    public bool HasCanonicalReference => !string.IsNullOrWhiteSpace(CanonicalReferenceUrl);
+
+    /// <summary>
+    /// Checks whether a predecessor scene appearance reference is present.
+    /// </summary>
+    public bool HasPreviousSceneReference => !string.IsNullOrWhiteSpace(PreviousSceneReferenceUrl);
+
+    /// <summary>
     /// Checks whether any visual reference image (canonical or predecessor scene) is present.
     /// </summary>
-    public bool HasReferences => !string.IsNullOrWhiteSpace(CanonicalReferenceUrl) || !string.IsNullOrWhiteSpace(PreviousSceneReferenceUrl);
+    public bool HasReferences => HasCanonicalReference || HasPreviousSceneReference;
 
     /// <summary>
     /// Creates an identity conditioning intent from reference URLs and optional continuity context.
+    /// Consistent semantic: If either canonical reference or previous scene reference exists, conditioning is active/required.
     /// </summary>
     public static IdentityConditioningIntent FromReferences(
         string? canonicalReferenceUrl,
@@ -36,11 +47,14 @@ public sealed record IdentityConditioningIntent(
         Slot2Context context = Slot2Context.ColdStart,
         Slot2ConditioningMode continuityMode = Slot2ConditioningMode.SceneStyleContinuity)
     {
-        var isRequired = !string.IsNullOrWhiteSpace(canonicalReferenceUrl);
+        var hasCanonical = !string.IsNullOrWhiteSpace(canonicalReferenceUrl);
+        var hasPrevious = !string.IsNullOrWhiteSpace(previousSceneReferenceUrl);
+        var isRequired = hasCanonical || hasPrevious;
+
         return new IdentityConditioningIntent(
             IsRequired: isRequired,
-            CanonicalReferenceUrl: isRequired ? canonicalReferenceUrl : null,
-            PreviousSceneReferenceUrl: previousSceneReferenceUrl,
+            CanonicalReferenceUrl: hasCanonical ? canonicalReferenceUrl : null,
+            PreviousSceneReferenceUrl: hasPrevious ? previousSceneReferenceUrl : null,
             PreservationStrength: preservationStrength,
             Context: context,
             ContinuityMode: continuityMode

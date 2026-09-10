@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using Application.Common;
 using Application.DTOs;
 using Application.Enums;
@@ -165,6 +166,8 @@ public sealed class IdentityConditioningTests
         Assert.True(intentWithRef.IsRequired);
         Assert.Equal(canonUrl, intentWithRef.CanonicalReferenceUrl);
         Assert.True(intentWithRef.HasReferences);
+        Assert.True(intentWithRef.HasCanonicalReference);
+        Assert.False(intentWithRef.HasPreviousSceneReference);
 
         // Character without reference image produces inactive intent
         var identityWithoutRef = new CharacterVisualIdentity(
@@ -178,6 +181,74 @@ public sealed class IdentityConditioningTests
         Assert.False(intentWithoutRef.IsRequired);
         Assert.Null(intentWithoutRef.CanonicalReferenceUrl);
         Assert.False(intentWithoutRef.HasReferences);
+        Assert.False(intentWithoutRef.HasCanonicalReference);
+        Assert.False(intentWithoutRef.HasPreviousSceneReference);
+    }
+
+    // =========================================================================
+    // Test 2b: Reference Permutations Semantic Consistency (Review Fix 1)
+    // =========================================================================
+    [Fact]
+    public void Test2b_ReferencePermutations_SemanticConsistency_CanonicalOnly_PreviousOnly_Both_None()
+    {
+        const string canon = "https://cdn.project00.ai/canon.png";
+        const string prev = "https://cdn.project00.ai/prev.png";
+
+        // 1. Canonical reference only
+        var canonOnly = IdentityConditioningIntent.FromReferences(canon, null);
+        Assert.True(canonOnly.IsRequired);
+        Assert.True(canonOnly.HasReferences);
+        Assert.True(canonOnly.HasCanonicalReference);
+        Assert.False(canonOnly.HasPreviousSceneReference);
+        Assert.Equal(canon, canonOnly.CanonicalReferenceUrl);
+        Assert.Null(canonOnly.PreviousSceneReferenceUrl);
+
+        // 2. Previous scene reference only (Review Fix 1 key proof!)
+        var prevOnly = IdentityConditioningIntent.FromReferences(null, prev);
+        Assert.True(prevOnly.IsRequired);
+        Assert.True(prevOnly.HasReferences);
+        Assert.False(prevOnly.HasCanonicalReference);
+        Assert.True(prevOnly.HasPreviousSceneReference);
+        Assert.Null(prevOnly.CanonicalReferenceUrl);
+        Assert.Equal(prev, prevOnly.PreviousSceneReferenceUrl);
+
+        // 3. Both references
+        var both = IdentityConditioningIntent.FromReferences(canon, prev);
+        Assert.True(both.IsRequired);
+        Assert.True(both.HasReferences);
+        Assert.True(both.HasCanonicalReference);
+        Assert.True(both.HasPreviousSceneReference);
+        Assert.Equal(canon, both.CanonicalReferenceUrl);
+        Assert.Equal(prev, both.PreviousSceneReferenceUrl);
+
+        // 4. No references
+        var none = IdentityConditioningIntent.FromReferences(null, null);
+        Assert.False(none.IsRequired);
+        Assert.False(none.HasReferences);
+        Assert.False(none.HasCanonicalReference);
+        Assert.False(none.HasPreviousSceneReference);
+        Assert.Null(none.CanonicalReferenceUrl);
+        Assert.Null(none.PreviousSceneReferenceUrl);
+    }
+
+    // =========================================================================
+    // Test 2c: Snapshot is the Source of Truth and Flows Unchanged (Review Fix 2)
+    // =========================================================================
+    [Fact]
+    public void Test2c_SnapshotIsSourceOfTruth_FlowsDirectlyIntoRequest_WithoutMutation()
+    {
+        const string canonUrl = "https://cdn.project00.ai/canon.png";
+        var snapshot = CreateTestSnapshot(canonicalReferenceUrl: canonUrl);
+
+        Assert.NotNull(snapshot.IdentityConditioning);
+        Assert.True(snapshot.IdentityConditioning.IsRequired);
+        Assert.Equal(canonUrl, snapshot.IdentityConditioning.CanonicalReferenceUrl);
+
+        // FromSnapshot without override: passes the EXACT instance unchanged!
+        var request = ImageGenerationRequest.FromSnapshot(snapshot, "compiled prompt");
+
+        Assert.Same(snapshot.IdentityConditioning, request.IdentityConditioning);
+        Assert.Same(snapshot.IdentityConditioning, request.EffectiveIdentityConditioning);
     }
 
     // =========================================================================
@@ -275,6 +346,62 @@ public sealed class IdentityConditioningTests
         var graphV2 = v2Builder.BuildWorkflow(requestV2, "uploaded_canon.png", "uploaded_prev.png");
         Assert.True(graphV2.ContainsKey("10")); // Slot 1 canonical
         Assert.True(graphV2.ContainsKey("14")); // Slot 2 continuity
+    }
+
+    // =========================================================================
+    // Test 4b: SD1.5 Workflow Regression (Review Fix 4)
+    // Default conditioning produces 100% identical workflow parameters as legacy
+    // =========================================================================
+    [Fact]
+    public void Test4b_SD15WorkflowBuilders_DefaultConditioning_ProducesIdenticalWorkflowGraph_AsBeforePR64()
+    {
+        IComfyUIWorkflowBuilder v1Builder = new VisualIdentityWorkflowV1Builder();
+        IComfyUIWorkflowBuilder v2Builder = new VisualContinuityWorkflowV2Builder();
+        const string canonUrl = "https://cdn.project00.ai/canon.png";
+        const string prevUrl = "https://cdn.project00.ai/prev.png";
+
+        // 1. Legacy request without explicit IdentityConditioning (IdentityScale null, PreservationStrength null)
+        var legacyV1 = new ImageGenerationRequest(
+            Prompt: "masterpiece",
+            Model: "meinamix_meinaV11.safetensors",
+            Workflow: "VisualIdentity",
+            WorkflowVersion: 1,
+            Seed: 42,
+            ReferenceImageUrl: canonUrl
+        );
+
+        // 2. PR64 request with default intent derived from references
+        var defaultIntentV1 = IdentityConditioningIntent.FromReferences(canonUrl, null);
+        var pr64V1 = legacyV1 with { IdentityConditioning = defaultIntentV1 };
+
+        var legacyGraphV1 = v1Builder.BuildWorkflow(legacyV1, "canon.png", null);
+        var pr64GraphV1 = v1Builder.BuildWorkflow(pr64V1, "canon.png", null);
+
+        // Serialize both to JSON and assert bit-for-bit equivalence!
+        var legacyJsonV1 = JsonSerializer.Serialize(legacyGraphV1);
+        var pr64JsonV1 = JsonSerializer.Serialize(pr64GraphV1);
+        Assert.Equal(legacyJsonV1, pr64JsonV1);
+
+        // 3. V2 Continuity default comparison
+        var legacyV2 = new ImageGenerationRequest(
+            Prompt: "masterpiece continuity",
+            Model: "meinamix_meinaV11.safetensors",
+            Workflow: "VisualContinuity",
+            WorkflowVersion: 2,
+            Seed: 99,
+            ReferenceImageUrl: canonUrl,
+            PreviousSceneImageUrl: prevUrl
+        );
+
+        var defaultIntentV2 = IdentityConditioningIntent.FromReferences(canonUrl, prevUrl);
+        var pr64V2 = legacyV2 with { IdentityConditioning = defaultIntentV2 };
+
+        var legacyGraphV2 = v2Builder.BuildWorkflow(legacyV2, "canon.png", "prev.png");
+        var pr64GraphV2 = v2Builder.BuildWorkflow(pr64V2, "canon.png", "prev.png");
+
+        var legacyJsonV2 = JsonSerializer.Serialize(legacyGraphV2);
+        var pr64JsonV2 = JsonSerializer.Serialize(pr64GraphV2);
+        Assert.Equal(legacyJsonV2, pr64JsonV2);
     }
 
     // =========================================================================

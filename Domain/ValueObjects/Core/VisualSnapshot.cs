@@ -66,10 +66,7 @@ public sealed record VisualSnapshot(
             ? Slot2Context.ColdStart
             : Slot2Context.SameScene);
 
-        var resolvedConditioning = identityConditioning ?? visualIdentity?.CreateConditioningIntent(
-            previousSceneReferenceUrl: previousSceneImageUrl,
-            context: resolvedContext
-        ) ?? IdentityConditioningIntent.FromReferences(
+        var resolvedConditioning = identityConditioning ?? IdentityConditioningIntent.FromReferences(
             canonicalReferenceUrl: resolvedIdentityRef,
             previousSceneReferenceUrl: previousSceneImageUrl,
             context: resolvedContext

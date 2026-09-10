@@ -86,14 +86,31 @@ public sealed record ImageGenerationRequest(
     {
         var profile = snapshot.GenerationProfile;
         var previousSceneUrl = previousSceneImageUrlOverride ?? snapshot.PreviousSceneImageUrl;
-        var conditioningIntent = (snapshot.IdentityConditioning ?? IdentityConditioningIntent.FromReferences(
-            canonicalReferenceUrl: snapshot.IdentityReferenceUrl,
-            previousSceneReferenceUrl: previousSceneUrl,
-            context: snapshot.Context
-        )) with
+        IdentityConditioningIntent conditioningIntent;
+        if (snapshot.IdentityConditioning != null)
         {
-            PreviousSceneReferenceUrl = previousSceneUrl
-        };
+            if (previousSceneImageUrlOverride != null && previousSceneImageUrlOverride != snapshot.IdentityConditioning.PreviousSceneReferenceUrl)
+            {
+                var hasAnyRef = !string.IsNullOrWhiteSpace(snapshot.IdentityConditioning.CanonicalReferenceUrl) || !string.IsNullOrWhiteSpace(previousSceneImageUrlOverride);
+                conditioningIntent = snapshot.IdentityConditioning with
+                {
+                    PreviousSceneReferenceUrl = previousSceneImageUrlOverride,
+                    IsRequired = hasAnyRef
+                };
+            }
+            else
+            {
+                conditioningIntent = snapshot.IdentityConditioning;
+            }
+        }
+        else
+        {
+            conditioningIntent = IdentityConditioningIntent.FromReferences(
+                canonicalReferenceUrl: snapshot.IdentityReferenceUrl,
+                previousSceneReferenceUrl: previousSceneUrl,
+                context: snapshot.Context
+            );
+        }
 
         return new ImageGenerationRequest(
             Prompt: compiledPrompt,
