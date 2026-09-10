@@ -152,6 +152,7 @@ public static class CharacterGenerationPrompts
             if (!string.IsNullOrWhiteSpace(visualIdentity.ClothingStyle)) parts.Add($"Clothing / Outfit: {visualIdentity.ClothingStyle}");
             if (!string.IsNullOrWhiteSpace(visualIdentity.Accessories)) parts.Add($"Accessories / Distinctive Marks: {visualIdentity.Accessories}");
             if (!string.IsNullOrWhiteSpace(visualIdentity.VisualTraits)) parts.Add($"Visual Traits: {visualIdentity.VisualTraits}");
+            if (!string.IsNullOrWhiteSpace(visualIdentity.Style)) parts.Add($"Visual Style / Aesthetic: {visualIdentity.Style}");
 
             if (parts.Count > 0)
             {
@@ -175,7 +176,7 @@ public static class CharacterGenerationPrompts
             1. Gender & Core Character (e.g. 1girl/1boy, solo, detailed portrait).
             2. Exact Hair, Eyes, Face, Skin, and Outfit matching the Visual Identity attributes.
             3. Distinctive Accessories and props mentioned in the visual profile.
-            4. Art Quality & Lighting tags: masterpiece, best quality, highly detailed face, expressive eyes, dynamic cinematic lighting, 8k, pixiv trending.
+            4. Art Quality & Lighting tags: masterpiece, best quality, highly detailed face, expressive eyes, dynamic cinematic lighting, 8k.
             
             Output ONLY the raw comma-separated English prompt tags.
             """;
@@ -214,6 +215,7 @@ public static class CharacterGenerationPrompts
             if (!string.IsNullOrWhiteSpace(visualIdentity.ClothingStyle)) parts.Add($"Clothing / Outfit: {visualIdentity.ClothingStyle}");
             if (!string.IsNullOrWhiteSpace(visualIdentity.Accessories)) parts.Add($"Accessories / Distinctive Marks: {visualIdentity.Accessories}");
             if (!string.IsNullOrWhiteSpace(visualIdentity.VisualTraits)) parts.Add($"Visual Traits: {visualIdentity.VisualTraits}");
+            if (!string.IsNullOrWhiteSpace(visualIdentity.Style)) parts.Add($"Visual Style / Aesthetic: {visualIdentity.Style}");
 
             if (parts.Count > 0)
             {
@@ -223,7 +225,7 @@ public static class CharacterGenerationPrompts
 
         var coreGenderTag = (visualIdentity?.Gender?.Equals("Male", StringComparison.OrdinalIgnoreCase) == true)
             ? "1boy, solo"
-            : "1girl, solo";
+            : (visualIdentity?.Gender?.Equals("Female", StringComparison.OrdinalIgnoreCase) == true ? "1girl, solo" : "1person, solo");
 
         return $$"""
             You are an Elite Character Concept Artist & Visual Designer specializing in creating 100% CONSISTENT Character Art Sheets (Close-Up Avatar Portrait + Full-Body Standee).
@@ -247,8 +249,8 @@ public static class CharacterGenerationPrompts
             OUTPUT FORMAT:
             You must output EXACTLY two lines starting with 'AVATAR:' and 'FULLBODY:' containing comma-separated English image prompt tags:
 
-            AVATAR: masterpiece, best quality, {{coreGenderTag}}, close-up face portrait, face focus, expressive luminous eyes, gentle subtle expression, <exact hair>, <exact eyes>, <exact face>, <upper outfit details>, soft painterly anime lighting, ethereal atmospheric glow, pixiv trending, highly detailed, 8k
-            FULLBODY: masterpiece, best quality, {{coreGenderTag}}, waist-up standing portrait, dynamic graceful posture, slight 3/4 turn, looking at viewer, <exact same hair>, <exact same eyes>, <exact same face>, <exact same intricate outfit>, luxurious outfit details, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, luminous expressive eyes, delicate beautiful face, soft painterly anime aesthetic, pixiv trending, sharp focus, 8k
+            AVATAR: masterpiece, best quality, {{coreGenderTag}}, close-up face portrait, face focus, expressive luminous eyes, gentle subtle expression, <exact hair>, <exact eyes>, <exact face>, <upper outfit details>, soft painterly lighting, ethereal atmospheric glow, highly detailed, 8k
+            FULLBODY: masterpiece, best quality, {{coreGenderTag}}, waist-up standing portrait, dynamic graceful posture, slight 3/4 turn, looking at viewer, <exact same hair>, <exact same eyes>, <exact same face>, <exact same intricate outfit>, luxurious outfit details, ethereal magical lighting, cinematic atmospheric glow, soft rim light, glowing floating particles, luminous expressive eyes, delicate face, soft painterly aesthetic, dramatic lighting, sharp focus, 8k
 
             Output ONLY these two lines.
             """;
