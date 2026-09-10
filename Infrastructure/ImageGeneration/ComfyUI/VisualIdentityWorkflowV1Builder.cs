@@ -9,6 +9,7 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
 {
     public string WorkflowName => "VisualIdentity";
     public int WorkflowVersion => 1;
+    public bool SupportsIdentityConditioning => true;
 
     public static readonly IReadOnlySet<string> DefaultSupportedModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {

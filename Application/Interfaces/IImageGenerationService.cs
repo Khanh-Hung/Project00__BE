@@ -63,7 +63,7 @@ public sealed record ImageGenerationRequest(
     }
 
     /// <summary>
-    /// Validates capability compatibility at the Application boundary before submitting to provider.
+    /// Validates capability compatibility and identity conditioning satisfaction at the Application boundary before submitting to provider.
     /// </summary>
     public void ValidateCapability(IImageGenerationCapabilityPolicy capabilityPolicy)
     {
@@ -73,6 +73,13 @@ public sealed record ImageGenerationRequest(
         {
             throw new Application.Exceptions.GpuNonTransientException(
                 $"Generation capability '{capability}' is not supported. Workflow '{capability.Workflow}' v{capability.WorkflowVersion} is not compatible with model '{Model}'.");
+        }
+
+        var conditioning = EffectiveIdentityConditioning;
+        if (conditioning.IsRequired && !capabilityPolicy.SupportsIdentityConditioning(capability))
+        {
+            throw new Application.Exceptions.GpuNonTransientException(
+                $"Generation capability '{capability}' does not support identity conditioning required by this request.");
         }
     }
 
