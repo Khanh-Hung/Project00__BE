@@ -99,7 +99,7 @@ public sealed class AuthoritativeStateSchedulerIntegrationTests : IDisposable
         {
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
-                db, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
+                db, decisionService, fakePipeline, stateReader, new Application.Services.VisualGenerationProfileProvider(), NullLogger<CharacterActivityScheduler>.Instance);
 
             var result = await scheduler.ProcessCharacterAsync(character, morningTime, timeBucket);
             Assert.True(result);

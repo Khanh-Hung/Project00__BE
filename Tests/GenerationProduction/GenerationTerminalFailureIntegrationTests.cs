@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.DTOs;
 using Application.Exceptions;
 using Application.Interfaces;
@@ -117,7 +117,7 @@ public sealed class GenerationTerminalFailureIntegrationTests
             VisualIdentity: visualIdentity,
             SceneState: sceneState,
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 12345L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 12345L)
         );
     }
 

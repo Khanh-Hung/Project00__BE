@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Abstractions.Auth;
 using Application.Features.Chat.Commands.TriggerTurnSceneImage;
 using Domain.Entities;
@@ -46,7 +46,7 @@ public sealed class VisualSnapshotConsistencyTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 1000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 1000L)
         );
 
         var turn = new CharacterTurn(

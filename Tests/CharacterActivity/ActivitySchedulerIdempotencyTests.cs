@@ -59,7 +59,7 @@ public sealed class ActivitySchedulerIdempotencyTests : IDisposable
         {
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
-                db, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
+                db, decisionService, fakePipeline, stateReader, new Application.Services.VisualGenerationProfileProvider(), NullLogger<CharacterActivityScheduler>.Instance);
 
             var processed = await scheduler.ExecuteCycleAsync(currentTime: testTime);
             Assert.Equal(1, processed);
@@ -70,7 +70,7 @@ public sealed class ActivitySchedulerIdempotencyTests : IDisposable
         {
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
-                db, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
+                db, decisionService, fakePipeline, stateReader, new Application.Services.VisualGenerationProfileProvider(), NullLogger<CharacterActivityScheduler>.Instance);
 
             var processed = await scheduler.ExecuteCycleAsync(currentTime: testTime);
             Assert.Equal(0, processed); // Already processed for this time bucket

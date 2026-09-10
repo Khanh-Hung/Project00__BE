@@ -1,4 +1,4 @@
-using Application.DTOs;
+﻿using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
 using Domain.Entities;
@@ -78,7 +78,7 @@ public sealed class GenerationVisualIdentityIntegrationTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("Throne Room", "Standing", "Royal Robes"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 12345L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 12345L)
         );
 
         var request = new ArtifactAcceptanceRequest(

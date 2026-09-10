@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Abstractions.Data;
 using Application.Common;
 using Application.DTOs;
@@ -321,7 +321,7 @@ public sealed class ProductionBenchmarkCompilerExporter
                 VisualIdentity: null,
                 SceneState: new SessionSceneState(req.Location, req.Action),
                 TransientState: null,
-                GenerationProfile: GenerationProfile.CreateDefault(
+                GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors",
                     seed: req.Seed,
                     parametersJson: JsonSerializer.Serialize(new
                     {

@@ -1,4 +1,4 @@
-using Application.DTOs;
+﻿using Application.DTOs;
 using Application.Enums;
 using Application.Exceptions;
 using Application.Interfaces;
@@ -52,7 +52,7 @@ public sealed class GenerationWorkerTests
             VisualIdentity: new CharacterVisualIdentity(Face: "canonical_face", CanonicalReferenceUrl: "https://cdn.project00.ai/face.png"),
             SceneState: new SessionSceneState("active scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var payload = new SceneImageGenerationOutboxPayload(

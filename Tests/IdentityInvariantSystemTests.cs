@@ -76,7 +76,7 @@ public sealed class IdentityInvariantSystemTests
             visualIdentity: identity,
             sceneState: new SessionSceneState("Garden", "Center", "Robes", "Day", null, "Quiet", 1, DateTime.UtcNow),
             transientState: null,
-            generationProfile: GenerationProfile.CreateDefault()
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var positive = _compiler.CompileScenePrompt(snapshot);
@@ -107,7 +107,7 @@ public sealed class IdentityInvariantSystemTests
             visualIdentity: identity,
             sceneState: new SessionSceneState("Armory", "Center", "Armor", "Day", null, "Quiet", 1, DateTime.UtcNow),
             transientState: null,
-            generationProfile: GenerationProfile.CreateDefault()
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var positive = _compiler.CompileScenePrompt(snapshot);
@@ -143,7 +143,7 @@ public sealed class IdentityInvariantSystemTests
             visualIdentity: identity,
             sceneState: new SessionSceneState("Grand Hall", "Throne", "Robes", "Night", null, "Solemn", 5, DateTime.UtcNow),
             transientState: null,
-            generationProfile: GenerationProfile.CreateDefault()
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var positive = _compiler.CompileScenePrompt(snapshot);
@@ -281,6 +281,7 @@ public sealed class IdentityInvariantSystemTests
             Prompt: "1man, knight",
             NegativePrompt: "1girl",
             Seed: 12345,
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: $"{{\"sceneContinuity\":{{\"weight\":0.12,\"endAt\":0.25,\"weightType\":\"{invalidWeightType}\"}}}}"
         );
 
@@ -296,6 +297,7 @@ public sealed class IdentityInvariantSystemTests
             Prompt: "1man, knight",
             NegativePrompt: "1girl",
             Seed: 12345,
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: "{\"sceneContinuity\":{\"weight\":0.12,\"endAt\":0.25,\"weightType\":999}}"
         );
 
@@ -313,6 +315,7 @@ public sealed class IdentityInvariantSystemTests
             Prompt: "1man, knight",
             NegativePrompt: "1girl",
             Seed: 12345,
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: $"{{\"sceneContinuity\":{{\"weight\":{zeroWeight.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"endAt\":0.0,\"weightType\":\"style transfer\"}}}}"
         );
 
@@ -341,6 +344,7 @@ public sealed class IdentityInvariantSystemTests
             Prompt: "1man, knight",
             NegativePrompt: "1girl",
             Seed: 12345,
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: "{\"sceneContinuity\":{\"weight\":0.12,\"endAt\":0.25,\"weightType\":\"style transfer\"}}"
         );
 

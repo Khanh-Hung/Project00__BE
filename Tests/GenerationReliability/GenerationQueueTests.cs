@@ -1,4 +1,4 @@
-using Application.DTOs;
+﻿using Application.DTOs;
 using Domain.ValueObjects;
 using Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,7 +19,7 @@ public sealed class GenerationQueueTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("active scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var payload = new SceneImageGenerationOutboxPayload(

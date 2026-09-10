@@ -13,6 +13,7 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     private const float DefaultEndAt = 0.70f;
     private const int DefaultWorkflowVersion = 1;
     private const string DefaultWorkflow = "VisualIdentity";
+    public const string DefaultModelFallback = "meinamix_meinaV11.safetensors";
 
     private readonly IConfiguration? _configuration;
 
@@ -109,7 +110,20 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             _ => "style transfer"
         };
 
-        // 5. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
+        // 5. Resolve Model from Configuration (AiProviders:ImageGeneration:DefaultModel or AiProviders:ComfyUI:ModelName)
+        string model = DefaultModelFallback;
+        var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
+            ?? _configuration?["AiProviders:ComfyUI:ModelName"];
+        if (configModel != null)
+        {
+            if (string.IsNullOrWhiteSpace(configModel))
+            {
+                throw new InvalidOperationException("Configured model name cannot be empty or whitespace.");
+            }
+            model = configModel.Trim();
+        }
+
+        // 6. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
         var parametersJson = JsonSerializer.Serialize(new
         {
             ipAdapter = new
@@ -126,6 +140,7 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         });
 
         return GenerationProfile.CreateDefault(
+            model: model,
             workflow: workflow,
             workflowVersion: workflowVersion,
             parametersJson: parametersJson

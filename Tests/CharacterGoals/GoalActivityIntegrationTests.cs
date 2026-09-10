@@ -64,7 +64,7 @@ public sealed class GoalActivityIntegrationTests : IDisposable
         {
             var stateReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
             var scheduler = new CharacterActivityScheduler(
-                db, decisionService, fakePipeline, stateReader, NullLogger<CharacterActivityScheduler>.Instance);
+                db, decisionService, fakePipeline, stateReader, new Application.Services.VisualGenerationProfileProvider(), NullLogger<CharacterActivityScheduler>.Instance);
 
             var success = await scheduler.ProcessCharacterAsync(character, forenoonTime, timeBucket);
             Assert.True(success);

@@ -44,6 +44,7 @@ public sealed class CharacterActivityScheduler
         ICharacterActivityDecisionService decisionService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
+        IVisualGenerationProfileProvider profileProvider,
         ILogger<CharacterActivityScheduler> logger)
         : this(
             dbContext,
@@ -54,11 +55,13 @@ public sealed class CharacterActivityScheduler
                 sceneCompositionPipeline,
                 visualStateReader,
                 new Infrastructure.Services.State.CharacterStateTransitionService(dbContext, NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance),
+                profileProvider,
                 NullLogger<Infrastructure.Services.Autonomous.ActivityExecutionService>.Instance),
             visualStateReader,
             logger)
     {
     }
+
 
     public async Task<int> ExecuteCycleAsync(
         DateTime? currentTime = null,

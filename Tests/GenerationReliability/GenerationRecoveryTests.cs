@@ -1,4 +1,4 @@
-using Application.DTOs;
+﻿using Application.DTOs;
 using Application.Services;
 using Domain.Common.DateTimes;
 using Domain.Entities;
@@ -187,7 +187,7 @@ public sealed class GenerationRecoveryTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("active scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -336,7 +336,7 @@ public sealed class GenerationRecoveryTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -422,7 +422,7 @@ public sealed class GenerationRecoveryTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var payload = new SceneImageGenerationOutboxPayload(
@@ -511,7 +511,7 @@ public sealed class GenerationRecoveryTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("scene", "neutral"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault()
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors")
         );
 
         var payload = new SceneImageGenerationOutboxPayload(

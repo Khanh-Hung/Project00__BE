@@ -1,4 +1,4 @@
-using Application.Interfaces;
+﻿using Application.Interfaces;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -142,7 +142,7 @@ public sealed class VisualIdentityFidelityBenchmarkTests
         for (int i = 0; i < 10; i++)
         {
             var seed = rng.NextInt64(100000, 999999999);
-            var profile = GenerationProfile.CreateDefault(
+            var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors",
                 seed: seed,
                 workflow: "VisualIdentity",
                 workflowVersion: 1,
@@ -218,7 +218,7 @@ public sealed class VisualIdentityFidelityBenchmarkTests
             visualIdentity: identity,
             sceneState: new SessionSceneState(CurrentLocation: "Aetheria Workshop", CurrentOutfit: defaultOutfit),
             transientState: new TransientVisualState(Pose: "Standing", Expression: "Gentle smile"),
-            generationProfile: GenerationProfile.CreateDefault(seed: 777888999),
+            generationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 777888999),
             sceneDescription: new VisualSceneDescription(shotType: "medium shot", cameraAngle: "slight 3/4 turn")
         );
 

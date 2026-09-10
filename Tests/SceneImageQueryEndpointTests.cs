@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Abstractions.Auth;
 using Application.Common;
 using Application.DTOs;
@@ -56,7 +56,7 @@ public sealed class SceneImageQueryEndpointTests
 
     private static VisualSnapshot CreateTestSnapshot(Guid sessionId, Guid turnId, Guid characterId)
     {
-        var profile = GenerationProfile.CreateDefault(
+        var profile = GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors",
             workflow: "VisualIdentity",
             workflowVersion: 1,
             parametersJson: "{\"ipAdapter\":{\"weight\":0.45,\"endAt\":0.70}}"

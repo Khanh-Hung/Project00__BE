@@ -113,6 +113,7 @@ public sealed class ComfyUIWorkflowBuilderTests
 
         var request = new ImageGenerationRequest(
             Prompt: "solo, 1girl",
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: "{\"ipAdapter\":{\"weight\":0.55,\"endAt\":0.85}}",
             Seed: 42
         );
@@ -129,7 +130,7 @@ public sealed class ComfyUIWorkflowBuilderTests
     public void VisualIdentityWorkflowV1Builder_GraphTopology_HasExactRequiredNodeConnections()
     {
         var builder = new VisualIdentityWorkflowV1Builder();
-        var request = new ImageGenerationRequest(Prompt: "masterpiece, 1girl", Seed: 42);
+        var request = new ImageGenerationRequest(Prompt: "masterpiece, 1girl", Model: "meinamix_meinaV11.safetensors", Seed: 42);
         var graph = builder.BuildWorkflow(request, "ref_face.png");
 
         // 1. IPAdapter (Node 10) MUST receive Checkpoint Model (Node 4), IPAdapter Model (Node 8), Ref Image (Node 1), CLIP Vision (Node 2)
@@ -162,6 +163,7 @@ public sealed class ComfyUIWorkflowBuilderTests
         var builder = new VisualIdentityWorkflowV1Builder();
         var request = new ImageGenerationRequest(
             Prompt: "masterpiece, 1girl, silver hair, red eyes",
+            Model: "meinamix_meinaV11.safetensors",
             Seed: 987654321,
             ParametersJson: null
         );
@@ -182,6 +184,7 @@ public sealed class ComfyUIWorkflowBuilderTests
         var request = new ImageGenerationRequest(
             Prompt: "masterpiece, 1girl, canonical template prompt",
             NegativePrompt: "2girls, multiple people, bad anatomy, blurry",
+            Model: "meinamix_meinaV11.safetensors",
             Seed: 123456789,
             ParametersJson: null
         );
@@ -226,6 +229,7 @@ public sealed class ComfyUIWorkflowBuilderTests
 
         var request = new ImageGenerationRequest(
             Prompt: "masterpiece, 1girl, silver hair, red eyes, walking in garden",
+            Model: "meinamix_meinaV11.safetensors",
             Seed: 555666777,
             Workflow: "VisualContinuity",
             WorkflowVersion: 2
@@ -267,6 +271,7 @@ public sealed class ComfyUIWorkflowBuilderTests
         var builder = new VisualContinuityWorkflowV2Builder();
         var request = new ImageGenerationRequest(
             Prompt: "masterpiece, 1girl, silver hair, red eyes",
+            Model: "meinamix_meinaV11.safetensors",
             Seed: 111222333,
             Workflow: "VisualContinuity",
             WorkflowVersion: 2
@@ -292,6 +297,7 @@ public sealed class ComfyUIWorkflowBuilderTests
         var request = new ImageGenerationRequest(
             Prompt: "masterpiece, 1girl, canonical template prompt",
             NegativePrompt: "2girls, multiple people, bad anatomy, blurry",
+            Model: "meinamix_meinaV11.safetensors",
             Seed: 123456789,
             ParametersJson: null
         );

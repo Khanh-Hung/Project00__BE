@@ -1,4 +1,4 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs;
 using Application.Interfaces;
 using Domain.Common.DateTimes;
@@ -36,7 +36,7 @@ public sealed class VisualArtifactAcceptanceTests
             VisualIdentity: null,
             SceneState: new SessionSceneState("courtyard", "standing"),
             TransientState: null,
-            GenerationProfile: GenerationProfile.CreateDefault(seed: 5000L)
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors", seed: 5000L)
         );
     }
 

@@ -22,6 +22,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
     private readonly ISceneCompositionPipelineService _sceneCompositionPipeline;
     private readonly ISceneVisualStateReader _visualStateReader;
     private readonly ICharacterStateTransitionStager _stateTransitionService;
+    private readonly IVisualGenerationProfileProvider _profileProvider;
     private readonly ILogger<CharacterReactionExecutionService> _logger;
 
     public CharacterReactionExecutionService(
@@ -31,6 +32,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
         ICharacterStateTransitionStager stateTransitionService,
+        IVisualGenerationProfileProvider profileProvider,
         ILogger<CharacterReactionExecutionService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -39,6 +41,7 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         _sceneCompositionPipeline = sceneCompositionPipeline ?? throw new ArgumentNullException(nameof(sceneCompositionPipeline));
         _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
         _stateTransitionService = stateTransitionService ?? throw new ArgumentNullException(nameof(stateTransitionService));
+        _profileProvider = profileProvider ?? throw new ArgumentNullException(nameof(profileProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -315,9 +318,11 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
 
                 sceneIntentId = sceneIntent.Id;
 
+                var generationProfile = _profileProvider.ResolveProfile(character);
+
                 var pipelineResult = await _sceneCompositionPipeline.ExecuteAsync(
                     intent: sceneIntent,
-                    generationProfile: GenerationProfile.CreateDefault(),
+                    generationProfile: generationProfile,
                     sceneRevision: sceneRevision,
                     ct: ct
                 );

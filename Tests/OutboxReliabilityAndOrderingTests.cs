@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.DTOs;
 using Application.Exceptions;
 using Application.Interfaces;
@@ -162,7 +162,7 @@ public sealed class OutboxReliabilityAndOrderingTests
             VisualIdentity: visualIdentity,
             SceneState: sceneState,
             TransientState: transientState,
-            GenerationProfile: GenerationProfile.CreateDefault(),
+            GenerationProfile: GenerationProfile.CreateDefault("meinamix_meinaV11.safetensors"),
             IdentityReferenceUrl: visualIdentity.CanonicalReferenceUrl,
             PreviousSceneImageUrl: revision > 1 ? $"https://cdn.project00.ai/scenes/rev_{revision - 1}.png" : null,
             CreatedAt: Clock.Now

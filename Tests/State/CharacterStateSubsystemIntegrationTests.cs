@@ -72,9 +72,9 @@ public sealed class CharacterStateSubsystemIntegrationTests : IDisposable
         var goalService = new GoalProgressService(db, NullLogger<GoalProgressService>.Instance);
         var fakePipeline = new FakeSceneCompositionPipelineService();
         var visualReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
-        var activityExecutionService = new ActivityExecutionService(db, goalService, fakePipeline, visualReader, stateTransitionService, NullLogger<ActivityExecutionService>.Instance);
+        var activityExecutionService = new ActivityExecutionService(db, goalService, fakePipeline, visualReader, stateTransitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
         var reactionService = new CharacterReactionExecutionService(
-            db, goalService, activityExecutionService, fakePipeline, visualReader, stateTransitionService, NullLogger<CharacterReactionExecutionService>.Instance);
+            db, goalService, activityExecutionService, fakePipeline, visualReader, stateTransitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<CharacterReactionExecutionService>.Instance);
 
         var execId = Guid.NewGuid();
         var req = new ReactionExecutionRequest(
@@ -117,7 +117,7 @@ public sealed class CharacterStateSubsystemIntegrationTests : IDisposable
         var fakePipeline = new FakeSceneCompositionPipelineService();
         var visualReader = new SceneVisualStateReader(db, NullLogger<SceneVisualStateReader>.Instance);
         var activityExecutionService = new ActivityExecutionService(
-            db, goalService, fakePipeline, visualReader, stateTransitionService, NullLogger<ActivityExecutionService>.Instance);
+            db, goalService, fakePipeline, visualReader, stateTransitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
 
         var execId = Guid.NewGuid();
         var candidate = new CharacterActivityCandidate(
