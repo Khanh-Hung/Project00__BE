@@ -16,7 +16,7 @@ public sealed record GenerationProfile(
     float Cfg = 7.0f,
     string Sampler = "euler_ancestral",
     string Scheduler = "karras",
-    string Workflow = "VisualIdentity",
+    string? Workflow = null,
     int WorkflowVersion = 1,
     string? ParametersJson = null
 )
@@ -24,7 +24,7 @@ public sealed record GenerationProfile(
     /// <summary>
     /// Gets the capability tuple (Model, Workflow, WorkflowVersion) for this profile.
     /// </summary>
-    public ImageGenerationCapability Capability => new(Model, Workflow, WorkflowVersion);
+    public ImageGenerationCapability Capability => new(Model, Workflow ?? string.Empty, WorkflowVersion);
 
     /// <summary>
     /// Immutably creates a copy of this GenerationProfile with overridden conditioning parameters and derived seed.
@@ -145,7 +145,7 @@ public sealed record GenerationProfile(
             Cfg: cfg ?? 7.0f,
             Sampler: sampler ?? "euler_ancestral",
             Scheduler: scheduler ?? "karras",
-            Workflow: workflow ?? "VisualIdentity",
+            Workflow: workflow,
             WorkflowVersion: workflowVersion ?? 1,
             ParametersJson: parametersJson
         );

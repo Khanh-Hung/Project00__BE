@@ -76,9 +76,7 @@ public sealed record ImageGenerationRequest(
         }
 
         var targetWorkflow = Workflow.Trim();
-        var targetVersion = (string.Equals(targetWorkflow, "VisualContinuity", StringComparison.OrdinalIgnoreCase) && WorkflowVersion == 1)
-            ? 2
-            : WorkflowVersion;
+        var targetVersion = WorkflowVersion;
 
         // 2. Backward compatibility: if VisualIdentity was specified but no identity conditioning/reference exists,
         // map to TextToImage v1 (matching PR63 baseline behavior)
@@ -149,15 +147,6 @@ public sealed record ImageGenerationRequest(
             );
         }
 
-        var targetWorkflow = profile.Workflow;
-        var targetWorkflowVersion = profile.WorkflowVersion;
-        if (string.Equals(targetWorkflow, "VisualIdentity", StringComparison.OrdinalIgnoreCase)
-            && conditioningIntent.HasPreviousSceneReference)
-        {
-            targetWorkflow = null;
-            targetWorkflowVersion = 2;
-        }
-
         return new ImageGenerationRequest(
             Prompt: compiledPrompt,
             NegativePrompt: compiledNegative ?? snapshot.NegativeConstraints,
@@ -171,8 +160,8 @@ public sealed record ImageGenerationRequest(
             Model: profile.Model,
             Sampler: profile.Sampler,
             Scheduler: profile.Scheduler,
-            Workflow: targetWorkflow,
-            WorkflowVersion: targetWorkflowVersion,
+            Workflow: profile.Workflow,
+            WorkflowVersion: profile.WorkflowVersion,
             ParametersJson: profile.ParametersJson,
             ProviderJobId: providerJobId,
             OnPromptQueuedAsync: onPromptQueuedAsync,

@@ -331,6 +331,75 @@ public sealed class IdentityConditioningWorkflowResolutionTests
     }
 
     // =========================================================================
+    // Test 7b (CRITICAL): Explicit VisualContinuity v1 MUST NOT Be Silently Overridden to v2
+    // =========================================================================
+    [Fact]
+    public void Test7b_ExplicitVisualContinuityV1_IsNotOverridden_AndFailsValidationWhenUnsupported()
+    {
+        var policy = CreateStandardPolicy();
+        const string prevSceneUrl = "https://cdn.project00.ai/scenes/scene_01.png";
+
+        var intent = IdentityConditioningIntent.FromReferences(
+            canonicalReferenceUrl: null,
+            previousSceneReferenceUrl: prevSceneUrl
+        );
+
+        // Caller explicitly selects VisualContinuity version 1 (mismatch: system only supports v2)
+        var request = new ImageGenerationRequest(
+            Prompt: "Hero continuation with explicit v1",
+            Model: "meinamix_meinaV11.safetensors",
+            Workflow: "VisualContinuity",
+            WorkflowVersion: 1,
+            IdentityConditioning: intent
+        );
+
+        var resolved = request.ResolveEffectiveCapability();
+
+        // NO SILENT OVERRIDE: Must remain exactly VisualContinuity v1!
+        Assert.Equal("VisualContinuity", resolved.Workflow);
+        Assert.Equal(1, resolved.WorkflowVersion);
+
+        // Capability policy does not support VisualContinuity v1, so validation must cleanly reject
+        var ex = Assert.Throws<GpuNonTransientException>(() => request.ValidateCapability(policy));
+        Assert.Contains("is not supported", ex.Message);
+        Assert.Contains("VisualContinuity", ex.Message);
+    }
+
+    // =========================================================================
+    // Test 7c (CRITICAL): Explicit VisualIdentity + Previous Scene -> Remains VisualIdentity v1
+    // =========================================================================
+    [Fact]
+    public void Test7c_ExplicitVisualIdentity_WithPreviousScene_RemainsVisualIdentityV1_PreservingCallerIntent()
+    {
+        var policy = CreateStandardPolicy();
+        const string canonUrl = "https://cdn.project00.ai/characters/hero_canon.png";
+        const string prevSceneUrl = "https://cdn.project00.ai/scenes/scene_01.png";
+
+        var intent = IdentityConditioningIntent.FromReferences(
+            canonicalReferenceUrl: canonUrl,
+            previousSceneReferenceUrl: prevSceneUrl
+        );
+
+        // Caller deliberately wants VisualIdentity even though PreviousScene is present
+        var request = new ImageGenerationRequest(
+            Prompt: "Hero portrait despite having previous scene",
+            Model: "meinamix_meinaV11.safetensors",
+            Workflow: "VisualIdentity",
+            WorkflowVersion: 1,
+            IdentityConditioning: intent
+        );
+
+        var resolved = request.ResolveEffectiveCapability();
+
+        // Must NOT be overridden to VisualContinuity v2!
+        Assert.Equal("VisualIdentity", resolved.Workflow);
+        Assert.Equal(1, resolved.WorkflowVersion);
+
+        // VisualIdentity v1 supports identity conditioning, so validation passes
+        request.ValidateCapability(policy);
+    }
+
+    // =========================================================================
     // Test 8: IdentityConditioning.None + Explicit TextToImage -> Remains TextToImage v1 and Passes
     // =========================================================================
     [Fact]
@@ -355,10 +424,10 @@ public sealed class IdentityConditioningWorkflowResolutionTests
     }
 
     // =========================================================================
-    // Test 9: Snapshot IdentityConditioning is Authoritative During Workflow Resolution
+    // Test 9: Snapshot with Unspecified Workflow Resolves Authoritatively from Conditioning Intent
     // =========================================================================
     [Fact]
-    public void Test9_SnapshotIdentityConditioning_IsAuthoritative_DuringWorkflowResolution()
+    public void Test9_SnapshotWithUnspecifiedWorkflow_ResolvesFromAuthoritativeConditioningIntent()
     {
         var policy = CreateStandardPolicy();
         const string canonUrl = "https://cdn.project00.ai/characters/authoritative_canon.png";
@@ -370,18 +439,20 @@ public sealed class IdentityConditioningWorkflowResolutionTests
             preservationStrength: 0.88f
         );
 
-        // Snapshot created with default profile (Workflow="VisualIdentity"), but has previous scene reference
+        // Snapshot created with unspecified workflow (workflow: null)
         var snapshot = CreateTestSnapshot(
-            workflow: "VisualIdentity",
-            workflowVersion: 1,
+            workflow: null,
             canonicalReferenceUrl: canonUrl,
             previousSceneImageUrl: prevSceneUrl,
             identityConditioning: authoritativeIntent
         );
 
+        Assert.Null(snapshot.GenerationProfile.Workflow);
+
         var request = ImageGenerationRequest.FromSnapshot(snapshot, "Scene continuation prompt");
 
-        // IdentityConditioning is authoritatively mapped from snapshot
+        // Request preserves unspecified workflow from snapshot
+        Assert.Null(request.Workflow);
         Assert.Same(authoritativeIntent, request.IdentityConditioning);
         Assert.Same(authoritativeIntent, request.EffectiveIdentityConditioning);
 
@@ -391,6 +462,46 @@ public sealed class IdentityConditioningWorkflowResolutionTests
         Assert.Equal(2, resolved.WorkflowVersion);
 
         // Validates successfully against capability policy
+        request.ValidateCapability(policy);
+    }
+
+    // =========================================================================
+    // Test 9b: Snapshot with Explicit Workflow Preserves Exact Workflow Even with Previous Scene
+    // =========================================================================
+    [Fact]
+    public void Test9b_SnapshotWithExplicitWorkflow_IsNotMutated_PreservingCallerIntent()
+    {
+        var policy = CreateStandardPolicy();
+        const string canonUrl = "https://cdn.project00.ai/characters/explicit_canon.png";
+        const string prevSceneUrl = "https://cdn.project00.ai/scenes/explicit_prev.png";
+
+        var authoritativeIntent = IdentityConditioningIntent.FromReferences(
+            canonicalReferenceUrl: canonUrl,
+            previousSceneReferenceUrl: prevSceneUrl
+        );
+
+        // Snapshot explicitly configured for VisualIdentity despite having previous scene
+        var snapshot = CreateTestSnapshot(
+            workflow: "VisualIdentity",
+            workflowVersion: 1,
+            canonicalReferenceUrl: canonUrl,
+            previousSceneImageUrl: prevSceneUrl,
+            identityConditioning: authoritativeIntent
+        );
+
+        Assert.Equal("VisualIdentity", snapshot.GenerationProfile.Workflow);
+
+        var request = ImageGenerationRequest.FromSnapshot(snapshot, "Prompt with explicit workflow snapshot");
+
+        // FromSnapshot preserves the snapshot's explicit workflow without mutating it
+        Assert.Equal("VisualIdentity", request.Workflow);
+        Assert.Equal(1, request.WorkflowVersion);
+
+        // ResolveEffectiveCapability honors caller choice: remains VisualIdentity v1!
+        var resolved = request.ResolveEffectiveCapability();
+        Assert.Equal("VisualIdentity", resolved.Workflow);
+        Assert.Equal(1, resolved.WorkflowVersion);
+
         request.ValidateCapability(policy);
     }
 
