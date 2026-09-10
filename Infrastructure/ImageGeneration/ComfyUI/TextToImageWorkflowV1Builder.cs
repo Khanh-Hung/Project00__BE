@@ -8,6 +8,19 @@ public sealed class TextToImageWorkflowV1Builder : IComfyUIWorkflowBuilder
     public string WorkflowName => "TextToImage";
     public int WorkflowVersion => 1;
 
+    public static readonly HashSet<string> SupportedModels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "meinamix_meinaV11.safetensors"
+    };
+
+    public bool CanHandle(string workflow, int workflowVersion, string? model)
+    {
+        return string.Equals(WorkflowName, workflow, StringComparison.OrdinalIgnoreCase)
+            && WorkflowVersion == workflowVersion
+            && !string.IsNullOrWhiteSpace(model)
+            && SupportedModels.Contains(model.Trim());
+    }
+
     public Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName)
     {
         var defaultNegative = "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality, mutated, text, error";

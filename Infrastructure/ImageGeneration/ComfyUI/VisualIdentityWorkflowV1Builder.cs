@@ -9,6 +9,19 @@ public sealed class VisualIdentityWorkflowV1Builder : IComfyUIWorkflowBuilder
     public string WorkflowName => "VisualIdentity";
     public int WorkflowVersion => 1;
 
+    public static readonly HashSet<string> SupportedModels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "meinamix_meinaV11.safetensors"
+    };
+
+    public bool CanHandle(string workflow, int workflowVersion, string? model)
+    {
+        return string.Equals(WorkflowName, workflow, StringComparison.OrdinalIgnoreCase)
+            && WorkflowVersion == workflowVersion
+            && !string.IsNullOrWhiteSpace(model)
+            && SupportedModels.Contains(model.Trim());
+    }
+
     public Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName)
     {
         if (string.IsNullOrWhiteSpace(resolvedReferenceImageName))

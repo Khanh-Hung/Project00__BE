@@ -6,6 +6,7 @@ public interface IComfyUIWorkflowBuilder
 {
     string WorkflowName { get; }
     int WorkflowVersion { get; }
+    bool CanHandle(string workflow, int workflowVersion, string? model);
     Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName);
 
     Dictionary<string, object> BuildWorkflow(
