@@ -44,6 +44,7 @@ public sealed class CharacterActivityScheduler
         ICharacterActivityDecisionService decisionService,
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
+        IVisualGenerationProfileProvider profileProvider,
         ILogger<CharacterActivityScheduler> logger)
         : this(
             dbContext,
@@ -54,9 +55,20 @@ public sealed class CharacterActivityScheduler
                 sceneCompositionPipeline,
                 visualStateReader,
                 new Infrastructure.Services.State.CharacterStateTransitionService(dbContext, NullLogger<Infrastructure.Services.State.CharacterStateTransitionService>.Instance),
+                profileProvider,
                 NullLogger<Infrastructure.Services.Autonomous.ActivityExecutionService>.Instance),
             visualStateReader,
             logger)
+    {
+    }
+
+    public CharacterActivityScheduler(
+        CoreDbContext dbContext,
+        ICharacterActivityDecisionService decisionService,
+        ISceneCompositionPipelineService sceneCompositionPipeline,
+        ISceneVisualStateReader visualStateReader,
+        ILogger<CharacterActivityScheduler> logger)
+        : this(dbContext, decisionService, sceneCompositionPipeline, visualStateReader, new Application.Services.VisualGenerationProfileProvider(), logger)
     {
     }
 

@@ -32,8 +32,8 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         ISceneCompositionPipelineService sceneCompositionPipeline,
         ISceneVisualStateReader visualStateReader,
         ICharacterStateTransitionStager stateTransitionService,
-        ILogger<CharacterReactionExecutionService> logger,
-        IVisualGenerationProfileProvider? profileProvider = null)
+        IVisualGenerationProfileProvider profileProvider,
+        ILogger<CharacterReactionExecutionService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _goalProgressService = goalProgressService ?? throw new ArgumentNullException(nameof(goalProgressService));
@@ -41,8 +41,8 @@ public sealed class CharacterReactionExecutionService : ICharacterReactionExecut
         _sceneCompositionPipeline = sceneCompositionPipeline ?? throw new ArgumentNullException(nameof(sceneCompositionPipeline));
         _visualStateReader = visualStateReader ?? throw new ArgumentNullException(nameof(visualStateReader));
         _stateTransitionService = stateTransitionService ?? throw new ArgumentNullException(nameof(stateTransitionService));
+        _profileProvider = profileProvider ?? throw new ArgumentNullException(nameof(profileProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _profileProvider = profileProvider ?? new VisualGenerationProfileProvider();
     }
 
     public async Task<ReactionExecutionResult> ExecuteReactionAsync(

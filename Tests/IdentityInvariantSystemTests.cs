@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Abstractions.Data;
 using Application.Common;
 using Application.DTOs;
@@ -281,6 +281,7 @@ public sealed class IdentityInvariantSystemTests
             Prompt: "1man, knight",
             NegativePrompt: "1girl",
             Seed: 12345,
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: $"{{\"sceneContinuity\":{{\"weight\":0.12,\"endAt\":0.25,\"weightType\":\"{invalidWeightType}\"}}}}"
         );
 
@@ -296,6 +297,7 @@ public sealed class IdentityInvariantSystemTests
             Prompt: "1man, knight",
             NegativePrompt: "1girl",
             Seed: 12345,
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: "{\"sceneContinuity\":{\"weight\":0.12,\"endAt\":0.25,\"weightType\":999}}"
         );
 
@@ -313,6 +315,7 @@ public sealed class IdentityInvariantSystemTests
             Prompt: "1man, knight",
             NegativePrompt: "1girl",
             Seed: 12345,
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: $"{{\"sceneContinuity\":{{\"weight\":{zeroWeight.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"endAt\":0.0,\"weightType\":\"style transfer\"}}}}"
         );
 
@@ -341,6 +344,7 @@ public sealed class IdentityInvariantSystemTests
             Prompt: "1man, knight",
             NegativePrompt: "1girl",
             Seed: 12345,
+            Model: "meinamix_meinaV11.safetensors",
             ParametersJson: "{\"sceneContinuity\":{\"weight\":0.12,\"endAt\":0.25,\"weightType\":\"style transfer\"}}"
         );
 

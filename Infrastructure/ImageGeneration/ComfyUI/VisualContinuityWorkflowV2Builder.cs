@@ -16,17 +16,27 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
     public string WorkflowName => "VisualContinuity";
     public int WorkflowVersion => 2;
 
-    public static readonly HashSet<string> SupportedModels = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly IReadOnlySet<string> DefaultSupportedModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "meinamix_meinaV11.safetensors"
     };
+
+    private readonly HashSet<string> _supportedModels;
+    public IReadOnlySet<string> SupportedModels => _supportedModels;
+
+    public VisualContinuityWorkflowV2Builder(IEnumerable<string>? supportedModels = null)
+    {
+        _supportedModels = supportedModels != null
+            ? new HashSet<string>(supportedModels, StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(DefaultSupportedModels, StringComparer.OrdinalIgnoreCase);
+    }
 
     public bool CanHandle(string workflow, int workflowVersion, string? model)
     {
         return string.Equals(WorkflowName, workflow, StringComparison.OrdinalIgnoreCase)
             && WorkflowVersion == workflowVersion
             && !string.IsNullOrWhiteSpace(model)
-            && SupportedModels.Contains(model.Trim());
+            && _supportedModels.Contains(model.Trim());
     }
 
     public Dictionary<string, object> BuildWorkflow(ImageGenerationRequest request, string resolvedReferenceImageName)
@@ -44,10 +54,19 @@ public sealed class VisualContinuityWorkflowV2Builder : IComfyUIWorkflowBuilder
             throw new GpuNonTransientException("CanonicalReferenceUrl (tight face crop) is required for VisualContinuity workflow.");
         }
 
+        if (string.IsNullOrWhiteSpace(request.Model))
+        {
+            throw new GpuNonTransientException($"Model is required for {WorkflowName} workflow execution.");
+        }
+
+        var modelName = request.Model.Trim();
+        if (!_supportedModels.Contains(modelName))
+        {
+            throw new GpuNonTransientException($"Model '{modelName}' is not supported by {WorkflowName} workflow v{WorkflowVersion}.");
+        }
+
         var defaultNegative = "2girls, 2boys, multiple people, group, crowd, duo, couple, 2persons, extra person, deformed horns, extra horns, asymmetrical malformed horns, bad anatomy, bad hands, missing fingers, extra digits, cropped, signature, watermark, blurry, low quality, worst quality";
         var negativePrompt = !string.IsNullOrWhiteSpace(request.NegativePrompt) ? request.NegativePrompt : defaultNegative;
-
-        var modelName = !string.IsNullOrWhiteSpace(request.Model) ? request.Model : "meinamix_meinaV11.safetensors";
         var seed = request.Seed ?? throw new GpuNonTransientException("Seed is required for deterministic VisualContinuity workflow execution.");
         var width = request.Width > 0 ? request.Width : 512;
         var height = request.Height > 0 ? request.Height : 768;

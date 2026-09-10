@@ -86,7 +86,7 @@ public sealed class ModelAgnosticFoundationTests
         // 2. Act: resolve profile
         var profile = provider.ResolveProfile(character);
 
-        // 3. Assert profile model
+        // 3. Assert profile model matches configured model
         Assert.Equal(expectedModel, profile.Model);
 
         // 4. Create snapshot with profile
@@ -104,8 +104,14 @@ public sealed class ModelAgnosticFoundationTests
         // 5. Build ImageGenerationRequest from snapshot
         var request = ImageGenerationRequest.FromSnapshot(snapshot, "a peaceful garden");
 
-        // 6. Assert model propagated through entire pipeline
+        // 6. Assert model propagated through entire pipeline without being dropped or altered
+        Assert.Equal(profile.Model, request.Model);
         Assert.Equal(expectedModel, request.Model);
+
+        // 7. Semantics assertion: Configuration alone does NOT automatically mean a workflow can execute it
+        // A standard SD1.5 builder without this model declared in SupportedModels must reject it cleanly
+        var defaultBuilder = new VisualIdentityWorkflowV1Builder();
+        Assert.False(defaultBuilder.CanHandle(request.Workflow, request.WorkflowVersion, request.Model));
     }
 
     [Fact]
@@ -184,6 +190,72 @@ public sealed class ModelAgnosticFoundationTests
 
         var t2iGraph = t2iBuilder.BuildWorkflow(req, "dummy.png");
         Assert.NotEmpty(t2iGraph);
+    }
+
+    [Fact]
+    public void Test2b_WorkflowBuilders_WhenRequestModelMissingOrWhitespace_ThrowsGpuNonTransientException()
+    {
+        // Assert: NO builder may have a hidden fallback to meinamix. Model must be explicitly required.
+        var v1Builder = new VisualIdentityWorkflowV1Builder();
+        var v2Builder = new VisualContinuityWorkflowV2Builder();
+        var t2iBuilder = new TextToImageWorkflowV1Builder();
+
+        var nullModelReq = new ImageGenerationRequest(Prompt: "1girl", Model: null, Seed: 42);
+        var emptyModelReq = new ImageGenerationRequest(Prompt: "1girl", Model: "   ", Seed: 42);
+
+        var ex1 = Assert.Throws<GpuNonTransientException>(() => v1Builder.BuildWorkflow(nullModelReq, "ref.png"));
+        Assert.Contains("Model is required", ex1.Message);
+
+        var ex2 = Assert.Throws<GpuNonTransientException>(() => v2Builder.BuildWorkflow(emptyModelReq, "ref.png", null));
+        Assert.Contains("Model is required", ex2.Message);
+
+        var ex3 = Assert.Throws<GpuNonTransientException>(() => t2iBuilder.BuildWorkflow(nullModelReq, "dummy.png"));
+        Assert.Contains("Model is required", ex3.Message);
+    }
+
+    [Fact]
+    public void Test2c_WorkflowBuilders_WhenRequestModelNotSupported_ThrowsGpuNonTransientException()
+    {
+        var v1Builder = new VisualIdentityWorkflowV1Builder();
+        var v2Builder = new VisualContinuityWorkflowV2Builder();
+        var t2iBuilder = new TextToImageWorkflowV1Builder();
+
+        var unsupportedReq = new ImageGenerationRequest(Prompt: "1girl", Model: "unsupported_checkpoint.safetensors", Seed: 42);
+
+        var ex1 = Assert.Throws<GpuNonTransientException>(() => v1Builder.BuildWorkflow(unsupportedReq, "ref.png"));
+        Assert.Contains("not supported", ex1.Message);
+
+        var ex2 = Assert.Throws<GpuNonTransientException>(() => v2Builder.BuildWorkflow(unsupportedReq, "ref.png", null));
+        Assert.Contains("not supported", ex2.Message);
+
+        var ex3 = Assert.Throws<GpuNonTransientException>(() => t2iBuilder.BuildWorkflow(unsupportedReq, "dummy.png"));
+        Assert.Contains("not supported", ex3.Message);
+    }
+
+    [Fact]
+    public void Test2d_WorkflowBuilders_CanBeExtendedWithSupportedModels_AndGenerateCorrectly()
+    {
+        // Demonstrates true capability semantics: When a workflow builder is declared to support an additional model,
+        // it can handle it and generates the graph using that exact model without fallback.
+        const string customModel = "custom_sd15_checkpoint.safetensors";
+        var customSupported = new[] { "meinamix_meinaV11.safetensors", customModel };
+
+        var customV1Builder = new VisualIdentityWorkflowV1Builder(customSupported);
+        Assert.True(customV1Builder.CanHandle("VisualIdentity", 1, customModel));
+
+        var req = new ImageGenerationRequest(
+            Prompt: "masterpiece, 1girl",
+            Model: customModel,
+            Seed: 12345
+        );
+
+        var graph = customV1Builder.BuildWorkflow(req, "ref.png");
+        Assert.NotEmpty(graph);
+
+        // Verify that the checkpoint node in the graph contains the exact custom model name
+        var ckptNode = (Dictionary<string, object>)graph["4"];
+        var inputs = (Dictionary<string, object>)ckptNode["inputs"];
+        Assert.Equal(customModel, inputs["ckpt_name"]);
     }
 
     [Fact]

@@ -91,7 +91,7 @@ public class CharacterStateAtomicityFailureInjectionTests : IDisposable
             var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
 
             var execService = new ActivityExecutionService(
-                db, goalService, fakePipeline, visualReader, transitionService, NullLogger<ActivityExecutionService>.Instance);
+                db, goalService, fakePipeline, visualReader, transitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
 
             var request = new ActivityExecutionRequest(
                 Character: character,
@@ -162,7 +162,7 @@ public class CharacterStateAtomicityFailureInjectionTests : IDisposable
             var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
 
             var execService = new ActivityExecutionService(
-                db, goalService, fakePipeline, visualReader, transitionService, NullLogger<ActivityExecutionService>.Instance);
+                db, goalService, fakePipeline, visualReader, transitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
 
             var request = new ActivityExecutionRequest(
                 Character: character,
@@ -228,7 +228,7 @@ public class CharacterStateAtomicityFailureInjectionTests : IDisposable
             var transitionService = new CharacterStateTransitionService(db1, NullLogger<CharacterStateTransitionService>.Instance);
 
             var execService = new ActivityExecutionService(
-                db1, goalService, fakePipeline, visualReader, transitionService, NullLogger<ActivityExecutionService>.Instance);
+                db1, goalService, fakePipeline, visualReader, transitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
 
             var request = new ActivityExecutionRequest(
                 Character: character,
@@ -253,7 +253,7 @@ public class CharacterStateAtomicityFailureInjectionTests : IDisposable
             var transitionService = new CharacterStateTransitionService(db2, NullLogger<CharacterStateTransitionService>.Instance);
 
             var execService = new ActivityExecutionService(
-                db2, goalService, fakePipeline, visualReader, transitionService, NullLogger<ActivityExecutionService>.Instance);
+                db2, goalService, fakePipeline, visualReader, transitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
 
             var request = new ActivityExecutionRequest(
                 Character: character,
@@ -333,7 +333,7 @@ public class CharacterStateAtomicityFailureInjectionTests : IDisposable
             var transitionService = new CharacterStateTransitionService(db1, NullLogger<CharacterStateTransitionService>.Instance);
 
             var execService = new ActivityExecutionService(
-                db1, goalService, fakePipeline, visualReader, transitionService, NullLogger<ActivityExecutionService>.Instance);
+                db1, goalService, fakePipeline, visualReader, transitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
 
             var request = new ActivityExecutionRequest(
                 Character: await db1.Characters.FirstAsync(c => c.Id == charId),
@@ -364,7 +364,7 @@ public class CharacterStateAtomicityFailureInjectionTests : IDisposable
             var transitionService = new CharacterStateTransitionService(verifyDb, NullLogger<CharacterStateTransitionService>.Instance);
 
             var execService = new ActivityExecutionService(
-                verifyDb, goalService, fakePipeline, visualReader, transitionService, NullLogger<ActivityExecutionService>.Instance);
+                verifyDb, goalService, fakePipeline, visualReader, transitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
 
             var retryRequest = new ActivityExecutionRequest(
                 Character: character,
@@ -435,7 +435,7 @@ public class CharacterStateAtomicityFailureInjectionTests : IDisposable
             var transitionService = new CharacterStateTransitionService(db, NullLogger<CharacterStateTransitionService>.Instance);
 
             var execService = new ActivityExecutionService(
-                db, goalService, fakePipeline, visualReader, transitionService, NullLogger<ActivityExecutionService>.Instance);
+                db, goalService, fakePipeline, visualReader, transitionService, new Application.Services.VisualGenerationProfileProvider(), NullLogger<ActivityExecutionService>.Instance);
 
             var request = new ActivityExecutionRequest(
                 Character: character,
