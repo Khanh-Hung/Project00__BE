@@ -68,7 +68,8 @@ public sealed class ProductionBenchmarkCompilerExporter
             Skin: "delicate porcelain skin",
             ClothingStyle: "white and gold silk priestess dress",
             CanonicalReferenceUrl: "Lyra_tight_face.png",
-            SignatureFeatures: new[] { lyraHorns }
+            SignatureFeatures: new[] { lyraHorns },
+            VisualStyle: VisualStyle.Anime
         );
         var lyra = new Character("Lyra", "Silver Dragon Saintess", "Lyra_tight_face.png", "Gentle", "Greetings", "Anime", visualIdentity: lyraIdentity);
         await db.Characters.AddAsync(lyra);
@@ -106,7 +107,8 @@ public sealed class ProductionBenchmarkCompilerExporter
             Skin: "fair skin",
             ClothingStyle: "scholarly white and gold academy robes",
             CanonicalReferenceUrl: "Elysia_tight_face.png",
-            SignatureFeatures: new[] { elysiaEars }
+            SignatureFeatures: new[] { elysiaEars },
+            VisualStyle: VisualStyle.Anime
         );
         var elysia = new Character("Elysia", "High Elf Scholar", "Elysia_tight_face.png", "Gentle", "Hello", "Anime", visualIdentity: elysiaIdentity);
         await db.Characters.AddAsync(elysia);

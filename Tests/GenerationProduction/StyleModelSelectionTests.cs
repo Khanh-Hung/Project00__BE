@@ -197,4 +197,33 @@ public sealed class StyleModelSelectionTests
         Assert.Contains("unknown-nonexistent-model", ex.Message);
         Assert.Contains("not registered in ModelRegistry", ex.Message);
     }
+
+    [Fact]
+    public void Test9_CategoryDoesNotInferVisualStyle_WhenVisualIdentityStyleUnspecified_ThrowsInvalidOperationException()
+    {
+        var registry = new ConfigurationModelRegistry();
+        var provider = new VisualGenerationProfileProvider(modelRegistry: registry);
+
+        // Character has category "Anime", but VisualIdentity has VisualStyle.Unspecified
+        var identity = new CharacterVisualIdentity(
+            Hair: "Silver",
+            Eyes: "Crimson",
+            CanonicalReferenceUrl: "https://cdn.project00.ai/aria_face.png",
+            VisualStyle: VisualStyle.Unspecified
+        );
+
+        var character = new Character(
+            name: "Aria_CategoryAnimeOnly",
+            title: "Protagonist",
+            avatarUrl: "https://cdn.project00.ai/avatar.png",
+            personalityPrompt: "Determined warrior",
+            greeting: "Greetings",
+            category: "Anime",
+            visualIdentity: identity
+        );
+
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character));
+        Assert.Contains("Aria_CategoryAnimeOnly", ex.Message);
+        Assert.Contains("does not have an explicit VisualStyle selected", ex.Message);
+    }
 }

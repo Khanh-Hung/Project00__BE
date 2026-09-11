@@ -145,16 +145,10 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
 
     private string ResolveModelForCharacter(Character character)
     {
-        // 1. Resolve style from VisualIdentity, or fall back to character.Category if it maps to a VisualStyle (e.g. "Anime")
+        // 1. Resolve style strictly from VisualIdentity
         var style = character.VisualIdentity?.ResolvedStyle ?? Domain.Enums.VisualStyle.Unspecified;
-        if (style == Domain.Enums.VisualStyle.Unspecified && !string.IsNullOrWhiteSpace(character.Category) &&
-            Enum.TryParse<Domain.Enums.VisualStyle>(character.Category, ignoreCase: true, out var parsedCat) &&
-            parsedCat != Domain.Enums.VisualStyle.Unspecified)
-        {
-            style = parsedCat;
-        }
 
-        // 2. When style is specified (or resolved from Category):
+        // 2. When style is specified:
         if (style != Domain.Enums.VisualStyle.Unspecified)
         {
             // Check configuration override first: AiProviders:ImageGeneration:StyleModels:{Style}
