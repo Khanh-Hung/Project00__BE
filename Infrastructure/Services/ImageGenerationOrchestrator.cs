@@ -27,7 +27,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 {
     private readonly CoreDbContext _dbContext;
     private readonly IVisualPromptCompiler _visualCompiler;
-    private readonly IImageGenerationService _imageService;
+    private readonly IImageGenerationExecutor _executor;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<ImageGenerationOrchestrator> _logger;
     private readonly IIdentityQualityEvaluator _qualityEvaluator;
@@ -39,6 +39,40 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
     private readonly GenerationRetryBudget _retryBudget;
     private readonly IImageGenerationCapabilityPolicy _capabilityPolicy;
 
+    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
+    public ImageGenerationOrchestrator(
+        CoreDbContext dbContext,
+        IVisualPromptCompiler visualCompiler,
+        IImageGenerationExecutor executor,
+        ILogger<ImageGenerationOrchestrator> logger,
+        IDateTimeProvider dateTimeProvider,
+        IIdentityQualityEvaluator qualityEvaluator,
+        IdentityQualityGuardPolicy qualityGuardPolicy,
+        IPredecessorLineageResolver lineageResolver,
+        IArtifactAcceptanceService acceptanceService,
+        IGenerationMetrics? metrics = null,
+        IGenerationFingerprintService? fingerprintService = null,
+        GenerationRetryBudget? retryBudget = null,
+        IImageGenerationCapabilityPolicy? capabilityPolicy = null)
+    {
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
+        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dateTimeProvider = dateTimeProvider ?? throw new ArgumentNullException(nameof(dateTimeProvider));
+        _qualityEvaluator = qualityEvaluator ?? throw new ArgumentNullException(nameof(qualityEvaluator));
+        _qualityGuardPolicy = qualityGuardPolicy ?? throw new ArgumentNullException(nameof(qualityGuardPolicy));
+        _lineageResolver = lineageResolver ?? throw new ArgumentNullException(nameof(lineageResolver));
+        _acceptanceService = acceptanceService ?? throw new ArgumentNullException(nameof(acceptanceService));
+        _metrics = metrics ?? new Infrastructure.Telemetry.GenerationMetrics(NullLogger<Infrastructure.Telemetry.GenerationMetrics>.Instance);
+        _fingerprintService = fingerprintService ?? new GenerationFingerprintService();
+        _retryBudget = retryBudget ?? GenerationRetryBudget.Default;
+        _capabilityPolicy = capabilityPolicy ?? PermissiveCapabilityPolicy.Instance;
+    }
+
+    /// <summary>
+    /// Backward-compatible constructor for callers passing IImageGenerationService with named parameter 'imageService'.
+    /// </summary>
     public ImageGenerationOrchestrator(
         CoreDbContext dbContext,
         IVisualPromptCompiler visualCompiler,
@@ -53,26 +87,28 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         IGenerationFingerprintService? fingerprintService = null,
         GenerationRetryBudget? retryBudget = null,
         IImageGenerationCapabilityPolicy? capabilityPolicy = null)
+        : this(
+            dbContext,
+            visualCompiler,
+            (IImageGenerationExecutor)imageService,
+            logger,
+            dateTimeProvider,
+            qualityEvaluator,
+            qualityGuardPolicy,
+            lineageResolver,
+            acceptanceService,
+            metrics,
+            fingerprintService,
+            retryBudget,
+            capabilityPolicy)
     {
-        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
-        _imageService = imageService ?? throw new ArgumentNullException(nameof(imageService));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _dateTimeProvider = dateTimeProvider ?? throw new ArgumentNullException(nameof(dateTimeProvider));
-        _qualityEvaluator = qualityEvaluator ?? throw new ArgumentNullException(nameof(qualityEvaluator));
-        _qualityGuardPolicy = qualityGuardPolicy ?? throw new ArgumentNullException(nameof(qualityGuardPolicy));
-        _lineageResolver = lineageResolver ?? throw new ArgumentNullException(nameof(lineageResolver));
-        _acceptanceService = acceptanceService ?? throw new ArgumentNullException(nameof(acceptanceService));
-        _metrics = metrics ?? new Infrastructure.Telemetry.GenerationMetrics(NullLogger<Infrastructure.Telemetry.GenerationMetrics>.Instance);
-        _fingerprintService = fingerprintService ?? new GenerationFingerprintService();
-        _retryBudget = retryBudget ?? GenerationRetryBudget.Default;
-        _capabilityPolicy = capabilityPolicy ?? new Infrastructure.ImageGeneration.WorkflowCapabilityPolicy(
-            new Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder[]
-            {
-                new Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder(),
-                new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder(),
-                new Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder()
-            });
+    }
+
+    private sealed class PermissiveCapabilityPolicy : IImageGenerationCapabilityPolicy
+    {
+        public static readonly PermissiveCapabilityPolicy Instance = new();
+        public bool IsSupported(ImageGenerationCapability capability) => true;
+        public bool SupportsIdentityConditioning(ImageGenerationCapability capability) => true;
     }
 
     public async Task<JobExecutionResult> OrchestrateSceneImageGenerationAsync(
@@ -360,7 +396,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         attemptRecord = existingAttempt;
                         genResult = new ImageGenerationResult(
                             ImageUrl: existingAttempt.ImageUrl,
-                            Provider: "ComfyUI",
+                            Provider: job.Provider ?? job.Workflow ?? "ReusedAttempt",
                             ProviderJobId: existingAttempt.ProviderJobId,
                             DurationMs: 0,
                             Seed: derivedSeed
@@ -474,7 +510,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         imageReq.ValidateCapability(_capabilityPolicy);
 
                         var genSw = Stopwatch.StartNew();
-                        genResult = await _imageService.GenerateImageWithResultAsync(imageReq, attemptCt);
+                        genResult = await _executor.ExecuteAsync(imageReq, attemptCt);
                         genSw.Stop();
                         cumulativeGenLatency += genSw.Elapsed;
                         lastSuccessfulGenResult = genResult;

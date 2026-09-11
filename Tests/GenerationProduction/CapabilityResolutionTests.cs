@@ -409,10 +409,17 @@ public sealed class CapabilityResolutionTests
         var acceptanceService = new ArtifactAcceptanceService(db, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
         var qualityEvaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
         var qualityGuardPolicy = new IdentityQualityGuardPolicy();
+        var capabilityPolicy = new WorkflowCapabilityPolicy(new IComfyUIWorkflowBuilder[]
+        {
+            new VisualIdentityWorkflowV1Builder(),
+            new VisualContinuityWorkflowV2Builder(),
+            new TextToImageWorkflowV1Builder()
+        });
 
         var orchestrator = new ImageGenerationOrchestrator(
             db, compiler, spyProviderService, NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService
+            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService,
+            capabilityPolicy: capabilityPolicy
         );
 
         // Snapshot with unsupported capability

@@ -119,6 +119,7 @@ public static class DependencyInjection
         {
             services.AddScoped<IImageGenerationService, Infrastructure.ImageGeneration.DedicatedImageGenerationService>();
         }
+        services.AddScoped<IImageGenerationExecutor>(sp => sp.GetRequiredService<IImageGenerationService>());
 
         // Identity Quality Guard & Reference Authority Policy (PR #24)
         var guardPolicy = Application.Services.IdentityQualityGuardPolicy.FromConfiguration(configuration);

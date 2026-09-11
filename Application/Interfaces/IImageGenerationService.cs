@@ -179,7 +179,7 @@ public sealed record ImageGenerationResult(
     string? MetadataJson = null
 );
 
-public interface IImageGenerationService
+public interface IImageGenerationService : IImageGenerationExecutor
 {
     Task<string> GenerateImageAsync(string prompt, int width = 512, int height = 512, CancellationToken ct = default);
     Task<string> GenerateImageAsync(ImageGenerationRequest request, CancellationToken ct = default);
@@ -194,4 +194,7 @@ public interface IImageGenerationService
             Seed: request.Seed ?? 0
         );
     }
+
+    Task<ImageGenerationResult> IImageGenerationExecutor.ExecuteAsync(ImageGenerationRequest request, CancellationToken ct)
+        => GenerateImageWithResultAsync(request, ct);
 }

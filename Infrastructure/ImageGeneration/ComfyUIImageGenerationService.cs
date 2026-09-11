@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.ImageGeneration;
 
-public sealed class ComfyUIImageGenerationService : IImageGenerationService
+public sealed class ComfyUIImageGenerationService : IImageGenerationService, IImageGenerationExecutor
 {
     private readonly IComfyUIClient _comfyClient;
     private readonly IStorageService _storageService;
@@ -33,6 +33,13 @@ public sealed class ComfyUIImageGenerationService : IImageGenerationService
         _workflowBuilders = workflowBuilders;
         _configuration = configuration;
         _logger = logger;
+    }
+
+    public Task<ImageGenerationResult> ExecuteAsync(
+        ImageGenerationRequest request,
+        CancellationToken ct = default)
+    {
+        return GenerateImageWithResultAsync(request, ct);
     }
 
     public Task<string> GenerateImageAsync(
