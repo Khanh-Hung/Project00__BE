@@ -19,12 +19,7 @@ namespace Tests.IdentityQualityGuard;
 public sealed class AtomicAttemptAcceptanceConcurrencyTests
 {
     private static IImageGenerationCapabilityPolicy CreateDefaultCapabilityPolicy() =>
-        new Infrastructure.ImageGeneration.WorkflowCapabilityPolicy(new Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder[]
-        {
-            new Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder(),
-            new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder(),
-            new Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder()
-        });
+        Infrastructure.ImageGeneration.WorkflowCapabilityPolicy.CreateDefault();
 
     [Fact]
     public async Task ConcurrentAttemptAcceptance_AllowsExactlyOneWorkerToAcceptAndPromoteArtifact()
