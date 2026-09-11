@@ -15,7 +15,7 @@ public sealed class ConfigurationModelRegistry : IModelRegistry
     private static readonly ModelDefinition[] BaselineModels =
     [
         new ModelDefinition("meinamix", ModelFamily.Sd15, "meinamix_meinaV11.safetensors"),
-        new ModelDefinition("epicrealism", ModelFamily.Sd15, "epicrealism_naturalSin.safetensors"),
+        new ModelDefinition("epicrealism", ModelFamily.Sd15, "epicrealism_naturalSinRC1VAE.safetensors"),
         new ModelDefinition("anime3xl", ModelFamily.Sdxl, "animagineXLV3_base.safetensors"),
         new ModelDefinition("flux-dev", ModelFamily.Flux, "flux1-dev.safetensors")
     ];
@@ -29,6 +29,12 @@ public sealed class ConfigurationModelRegistry : IModelRegistry
         foreach (var baseline in BaselineModels)
         {
             RegisterModel(baseline);
+        }
+
+        // Backward compatibility: allow resolving legacy artifact filename to canonical epicrealism definition
+        if (_modelsById.TryGetValue("epicrealism", out var baselineEpic))
+        {
+            _modelsByArtifactName.TryAdd("epicrealism_naturalSin.safetensors", baselineEpic);
         }
 
         // 2. Overlay configured models if configuration section exists
