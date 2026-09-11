@@ -385,7 +385,8 @@ public sealed class IdentityInvariantSystemTests
             Presentation: GenderPresentation.Male,
             Hair: "black hair",
             Eyes: "amber eyes",
-            SignatureFeatures: new[] { hornFeature }
+            SignatureFeatures: new[] { hornFeature },
+            VisualStyle: VisualStyle.Anime
         );
 
         var character = new Character(
@@ -491,7 +492,8 @@ public sealed class IdentityInvariantSystemTests
             Hair: "short black hair",
             Eyes: "golden amber eyes",
             ClothingStyle: "dark plate armor",
-            SignatureFeatures: new[] { crestFeature }
+            SignatureFeatures: new[] { crestFeature },
+            VisualStyle: VisualStyle.Anime
         );
 
         var character = new Character(

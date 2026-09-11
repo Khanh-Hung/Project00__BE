@@ -36,7 +36,7 @@ public class TransactionalOutboxTests
             greeting: "La la la",
             category: "Fantasy",
             voiceProfile: new CharacterVoiceProfile("aria_voice"),
-            visualIdentity: new CharacterVisualIdentity(Hair: "Golden")
+            visualIdentity: new CharacterVisualIdentity(Hair: "Golden", VisualStyle: VisualStyle.Anime)
         ) { Id = charId };
         await context.Characters.AddAsync(character);
 

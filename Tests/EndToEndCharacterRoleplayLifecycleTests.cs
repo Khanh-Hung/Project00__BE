@@ -247,7 +247,8 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             Hair: "Silver, waist-length",
             Eyes: "Luminous Violet",
             Body: "Slender, graceful anime proportions",
-            CanonicalReferenceUrl: "https://cdn.project00.ai/aeloria_canon.png"
+            CanonicalReferenceUrl: "https://cdn.project00.ai/aeloria_canon.png",
+            VisualStyle: VisualStyle.Anime
         );
         var voiceProfile = new CharacterVoiceProfile("en-US-AeloriaNeural", "en-US", "Female", "YoungAdult", "Soft", "Warm", "Normal", "Normal", "Graceful, regal");
 

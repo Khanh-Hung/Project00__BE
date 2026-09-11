@@ -80,7 +80,8 @@ public sealed class ModelAgnosticFoundationTests
             avatarUrl: "https://cdn.project00.ai/avatar.png",
             personalityPrompt: "Friendly",
             greeting: "Hello",
-            category: "Anime"
+            category: "3D",
+            visualIdentity: new CharacterVisualIdentity(VisualStyle: VisualStyle.ThreeDimensional)
         );
 
         // 2. Act: resolve profile
@@ -133,7 +134,8 @@ public sealed class ModelAgnosticFoundationTests
             avatarUrl: "https://cdn.project00.ai/avatar.png",
             personalityPrompt: "Friendly",
             greeting: "Hello",
-            category: "Anime"
+            category: "Watercolor",
+            visualIdentity: new CharacterVisualIdentity(VisualStyle: VisualStyle.Watercolor)
         );
 
         var profile = provider.ResolveProfile(character);
@@ -144,7 +146,7 @@ public sealed class ModelAgnosticFoundationTests
     [Fact]
     public void Test1c_MissingConfiguration_UsesExpectedDefaultFallback()
     {
-        // Arrange: No configuration provided
+        // Arrange: No configuration provided, character with explicit style
         var provider = new VisualGenerationProfileProvider();
         var character = new Character(
             name: "Test Character",
@@ -152,13 +154,27 @@ public sealed class ModelAgnosticFoundationTests
             avatarUrl: "https://cdn.project00.ai/avatar.png",
             personalityPrompt: "Friendly",
             greeting: "Hello",
-            category: "Anime"
+            category: "Anime",
+            visualIdentity: new CharacterVisualIdentity(VisualStyle: VisualStyle.Anime)
         );
 
         var profile = provider.ResolveProfile(character);
 
         Assert.Equal(VisualGenerationProfileProvider.DefaultModelFallback, profile.Model);
-        Assert.Equal("meinamix_meinaV11.safetensors", profile.Model);
+        Assert.Equal(VisualGenerationProfileProvider.DefaultModelId, profile.Model);
+        Assert.Equal("meinamix", profile.Model);
+
+        // Character with Unspecified visual style throws InvalidOperationException
+        var characterWithoutStyle = new Character(
+            name: "Test Character No Style",
+            title: "Tester",
+            avatarUrl: "https://cdn.project00.ai/avatar.png",
+            personalityPrompt: "Friendly",
+            greeting: "Hello",
+            category: "",
+            visualIdentity: new CharacterVisualIdentity(VisualStyle: VisualStyle.Unspecified)
+        );
+        Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(characterWithoutStyle));
     }
 
     [Fact]

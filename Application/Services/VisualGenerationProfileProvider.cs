@@ -12,13 +12,16 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     private const float DefaultWeight = 0.45f;
     private const float DefaultEndAt = 0.70f;
     private const int DefaultWorkflowVersion = 1;
-    public const string DefaultModelFallback = "meinamix_meinaV11.safetensors";
+    public const string DefaultModelId = "meinamix";
+    public const string DefaultModelFallback = DefaultModelId;
 
     private readonly IConfiguration? _configuration;
+    private readonly IModelRegistry? _modelRegistry;
 
-    public VisualGenerationProfileProvider(IConfiguration? configuration = null)
+    public VisualGenerationProfileProvider(IConfiguration? configuration = null, IModelRegistry? modelRegistry = null)
     {
         _configuration = configuration;
+        _modelRegistry = modelRegistry;
     }
 
     /// <summary>
@@ -46,6 +49,10 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             if (!string.IsNullOrWhiteSpace(configWorkflow))
             {
                 workflow = configWorkflow.Trim();
+            }
+            else
+            {
+                workflow = "VisualIdentity";
             }
         }
 
@@ -109,18 +116,8 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             _ => "style transfer"
         };
 
-        // 5. Resolve Model from Configuration (AiProviders:ImageGeneration:DefaultModel or AiProviders:ComfyUI:ModelName)
-        string model = DefaultModelFallback;
-        var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
-            ?? _configuration?["AiProviders:ComfyUI:ModelName"];
-        if (configModel != null)
-        {
-            if (string.IsNullOrWhiteSpace(configModel))
-            {
-                throw new InvalidOperationException("Configured model name cannot be empty or whitespace.");
-            }
-            model = configModel.Trim();
-        }
+        // 5. Resolve Model for Character based on Aesthetic Style Policy and Configuration
+        string model = ResolveModelForCharacter(character);
 
         // 6. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
         var parametersJson = JsonSerializer.Serialize(new
@@ -144,5 +141,84 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             workflowVersion: workflowVersion,
             parametersJson: parametersJson
         );
+    }
+
+    private string ResolveModelForCharacter(Character character)
+    {
+        // 1. Resolve style from VisualIdentity, or fall back to character.Category if it maps to a VisualStyle (e.g. "Anime")
+        var style = character.VisualIdentity?.ResolvedStyle ?? Domain.Enums.VisualStyle.Unspecified;
+        if (style == Domain.Enums.VisualStyle.Unspecified && !string.IsNullOrWhiteSpace(character.Category) &&
+            Enum.TryParse<Domain.Enums.VisualStyle>(character.Category, ignoreCase: true, out var parsedCat) &&
+            parsedCat != Domain.Enums.VisualStyle.Unspecified)
+        {
+            style = parsedCat;
+        }
+
+        // 2. When style is specified (or resolved from Category):
+        if (style != Domain.Enums.VisualStyle.Unspecified)
+        {
+            // Check configuration override first: AiProviders:ImageGeneration:StyleModels:{Style}
+            var configKey = $"AiProviders:ImageGeneration:StyleModels:{style}";
+            var configuredStyleModel = _configuration?[configKey]?.Trim();
+            if (!string.IsNullOrWhiteSpace(configuredStyleModel))
+            {
+                return NormalizeModelId(configuredStyleModel);
+            }
+
+            // Built-in style-to-model baseline mappings
+            if (style == Domain.Enums.VisualStyle.Realistic || style == Domain.Enums.VisualStyle.Cinematic)
+            {
+                return NormalizeModelId("epicrealism");
+            }
+
+            if (style == Domain.Enums.VisualStyle.Anime || style == Domain.Enums.VisualStyle.Manhwa)
+            {
+                return NormalizeModelId("meinamix");
+            }
+
+            // Fallback for other specified styles (e.g. 3D, Watercolor) if global default model is configured
+            var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
+                ?? _configuration?["AiProviders:ComfyUI:ModelName"];
+            if (!string.IsNullOrWhiteSpace(configModel))
+            {
+                return NormalizeModelId(configModel.Trim());
+            }
+
+            throw new InvalidOperationException(
+                $"No image generation model is mapped or configured for VisualStyle '{style}'. " +
+                $"Please configure 'AiProviders:ImageGeneration:StyleModels:{style}' in application settings.");
+        }
+
+        // 3. When style is strictly Unspecified:
+        // If VisualIdentity was provided, visual attributes were supplied but style was omitted/forgotten => FAIL FAST!
+        if (character.VisualIdentity != null)
+        {
+            throw new InvalidOperationException(
+                $"Character '{character.Name}' does not have an explicit VisualStyle selected. " +
+                "A visual style (e.g. Anime, Realistic) must be explicitly selected before image generation.");
+        }
+
+        // 4. For non-visual character instances (e.g. test fixtures without visual identity):
+        var defaultModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
+            ?? _configuration?["AiProviders:ComfyUI:ModelName"]
+            ?? DefaultModelId;
+
+        return NormalizeModelId(defaultModel);
+    }
+
+    private string NormalizeModelId(string modelName)
+    {
+        if (_modelRegistry is null)
+        {
+            return modelName;
+        }
+
+        var definition = _modelRegistry.FindById(modelName);
+        if (definition is null)
+        {
+            throw new InvalidOperationException($"Unknown image generation model '{modelName}'. Model is not registered in ModelRegistry.");
+        }
+
+        return definition.Id;
     }
 }
