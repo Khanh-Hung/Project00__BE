@@ -12,7 +12,6 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     private const float DefaultWeight = 0.45f;
     private const float DefaultEndAt = 0.70f;
     private const int DefaultWorkflowVersion = 1;
-    private const string DefaultWorkflow = "VisualIdentity";
     public const string DefaultModelFallback = "meinamix_meinaV11.safetensors";
 
     private readonly IConfiguration? _configuration;
@@ -32,7 +31,7 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         bool isTransition = false,
         bool isColdStart = false)
     {
-        string workflow = DefaultWorkflow;
+        string? workflow = null;
         if (workflowOverride != null)
         {
             if (string.IsNullOrWhiteSpace(workflowOverride))
