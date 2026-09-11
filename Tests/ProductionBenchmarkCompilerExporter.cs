@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.Abstractions.Data;
 using Application.Common;
 using Application.DTOs;
@@ -144,7 +144,8 @@ public sealed class ProductionBenchmarkCompilerExporter
             Face: "chiseled handsome jawline",
             ClothingStyle: "dark steel knight commander armor with silver trims",
             CanonicalReferenceUrl: "Valerius_tight_face.png",
-            SignatureFeatures: new[] { valeriusArmor }
+            SignatureFeatures: new[] { valeriusArmor },
+            VisualStyle: VisualStyle.Anime
         );
         var valerius = new Character("Valerius", "Shadow Knight Commander", "Valerius_tight_face.png", "Loyal", "Greetings", "Knight", visualIdentity: valeriusIdentity);
         await db.Characters.AddAsync(valerius);

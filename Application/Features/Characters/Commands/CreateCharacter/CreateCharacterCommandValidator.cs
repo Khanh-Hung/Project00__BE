@@ -28,5 +28,12 @@ public sealed class CreateCharacterCommandValidator : AbstractValidator<CreateCh
 
         RuleFor(x => x.Request.DefaultMood)
             .MaximumLength(100).WithMessage("Initial mood cannot exceed 100 characters.");
+
+        When(x => x.Request.VisualIdentity != null, () =>
+        {
+            RuleFor(x => x.Request.VisualIdentity!.ResolvedStyle)
+                .NotEqual(Domain.Enums.VisualStyle.Unspecified)
+                .WithMessage("A valid visual style (e.g. Anime, Realistic) must be selected.");
+        });
     }
 }

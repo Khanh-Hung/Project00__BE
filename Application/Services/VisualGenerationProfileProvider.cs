@@ -50,6 +50,10 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             {
                 workflow = configWorkflow.Trim();
             }
+            else
+            {
+                workflow = "VisualIdentity";
+            }
         }
 
         // 1. Strict validation of WorkflowVersion (missing => default 1; present but invalid => fail-fast)
@@ -141,9 +145,16 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
 
     private string ResolveModelForCharacter(Character character)
     {
+        // 1. Resolve style from VisualIdentity, or fall back to character.Category if it maps to a VisualStyle (e.g. "Anime")
         var style = character.VisualIdentity?.ResolvedStyle ?? Domain.Enums.VisualStyle.Unspecified;
+        if (style == Domain.Enums.VisualStyle.Unspecified && !string.IsNullOrWhiteSpace(character.Category) &&
+            Enum.TryParse<Domain.Enums.VisualStyle>(character.Category, ignoreCase: true, out var parsedCat) &&
+            parsedCat != Domain.Enums.VisualStyle.Unspecified)
+        {
+            style = parsedCat;
+        }
 
-        // 1. Style-based model resolution if style is specified
+        // 2. When style is specified (or resolved from Category):
         if (style != Domain.Enums.VisualStyle.Unspecified)
         {
             // Check configuration override first: AiProviders:ImageGeneration:StyleModels:{Style}
@@ -164,22 +175,35 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             {
                 return NormalizeModelId("meinamix");
             }
-        }
 
-        // 2. Global model configuration: AiProviders:ImageGeneration:DefaultModel or AiProviders:ComfyUI:ModelName
-        var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
-            ?? _configuration?["AiProviders:ComfyUI:ModelName"];
-        if (configModel != null)
-        {
-            if (string.IsNullOrWhiteSpace(configModel))
+            // Fallback for other specified styles (e.g. 3D, Watercolor) if global default model is configured
+            var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
+                ?? _configuration?["AiProviders:ComfyUI:ModelName"];
+            if (!string.IsNullOrWhiteSpace(configModel))
             {
-                throw new InvalidOperationException("Configured model name cannot be empty or whitespace.");
+                return NormalizeModelId(configModel.Trim());
             }
-            return NormalizeModelId(configModel.Trim());
+
+            throw new InvalidOperationException(
+                $"No image generation model is mapped or configured for VisualStyle '{style}'. " +
+                $"Please configure 'AiProviders:ImageGeneration:StyleModels:{style}' in application settings.");
         }
 
-        // 3. Fallback default model
-        return NormalizeModelId(DefaultModelId);
+        // 3. When style is strictly Unspecified:
+        // If VisualIdentity was provided, visual attributes were supplied but style was omitted/forgotten => FAIL FAST!
+        if (character.VisualIdentity != null)
+        {
+            throw new InvalidOperationException(
+                $"Character '{character.Name}' does not have an explicit VisualStyle selected. " +
+                "A visual style (e.g. Anime, Realistic) must be explicitly selected before image generation.");
+        }
+
+        // 4. For non-visual character instances (e.g. test fixtures without visual identity):
+        var defaultModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
+            ?? _configuration?["AiProviders:ComfyUI:ModelName"]
+            ?? DefaultModelId;
+
+        return NormalizeModelId(defaultModel);
     }
 
     private string NormalizeModelId(string modelName)

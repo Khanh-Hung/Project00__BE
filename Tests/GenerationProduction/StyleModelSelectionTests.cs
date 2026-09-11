@@ -83,16 +83,15 @@ public sealed class StyleModelSelectionTests
     }
 
     [Fact]
-    public void Test5_CharacterWithoutVisualIdentity_FallsBackToDefaultModel()
+    public void Test5_CharacterWithUnspecifiedStyle_ThrowsInvalidOperationException()
     {
         var registry = new ConfigurationModelRegistry();
         var provider = new VisualGenerationProfileProvider(modelRegistry: registry);
-        var character = new Character("Hero", "Knight", "avatar.png", "Prompt", "Hello", "Anime");
+        var character = CreateCharacterWithStyle(VisualStyle.Unspecified);
 
-        var profile = provider.ResolveProfile(character);
-
-        Assert.Equal(VisualGenerationProfileProvider.DefaultModelId, profile.Model);
-        Assert.Equal("meinamix", profile.Model);
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character));
+        Assert.Contains("Aria_Unspecified", ex.Message);
+        Assert.Contains("does not have an explicit VisualStyle selected", ex.Message);
     }
 
     [Fact]

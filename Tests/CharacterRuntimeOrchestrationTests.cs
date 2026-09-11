@@ -367,7 +367,7 @@ public class CharacterRuntimeOrchestrationTests
         var character = new Character(
             "Luna", "Starlight Mage", "https://example.com/luna.jpg", "Playful", "Hello!", "Fantasy",
             voiceProfile: new CharacterVoiceProfile("luna_voice"),
-            visualIdentity: new CharacterVisualIdentity(Hair: "Silver")
+            visualIdentity: new CharacterVisualIdentity(Hair: "Silver", VisualStyle: VisualStyle.Anime)
         ) { Id = charId };
         await context.Characters.AddAsync(character);
 

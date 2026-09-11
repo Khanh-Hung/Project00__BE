@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Application.DTOs;
 using Application.Exceptions;
 using Application.Interfaces;
@@ -1094,7 +1094,8 @@ public sealed class VisualIdentityInvariantTests
             ClothingStyle: "robe",
             Accessories: null,
             VisualTraits: null,
-            CanonicalReferenceUrl: "canonical.png"
+            CanonicalReferenceUrl: "canonical.png",
+            VisualStyle: VisualStyle.Anime
         );
         var character = new Character("Aria", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy", visualIdentity: visualIdentity);
         var session = new ChatSession(character.Id, Guid.NewGuid(), "Chat with Aria");
@@ -1187,7 +1188,8 @@ public sealed class VisualIdentityInvariantTests
             ClothingStyle: "starry robe",
             Accessories: null,
             VisualTraits: null,
-            CanonicalReferenceUrl: "canonical.png"
+            CanonicalReferenceUrl: "canonical.png",
+            VisualStyle: VisualStyle.Anime
         );
 
         var character = new Character("Aria", "Mage", "https://example.com/avatar.jpg", "Friendly", "Hello", "Fantasy", visualIdentity: visualIdentity);
