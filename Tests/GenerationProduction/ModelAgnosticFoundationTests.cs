@@ -146,7 +146,7 @@ public sealed class ModelAgnosticFoundationTests
     [Fact]
     public void Test1c_MissingConfiguration_UsesExpectedDefaultFallback()
     {
-        // Arrange: No configuration provided, character with explicit style
+        // 1. Arrange: Unconfigured style (PixelArt) without global default model fails fast
         var provider = new VisualGenerationProfileProvider();
         var character = new Character(
             name: "Test Character",
@@ -154,17 +154,32 @@ public sealed class ModelAgnosticFoundationTests
             avatarUrl: "https://cdn.project00.ai/avatar.png",
             personalityPrompt: "Friendly",
             greeting: "Hello",
-            category: "Anime",
-            visualIdentity: new CharacterVisualIdentity(VisualStyle: VisualStyle.Anime)
+            category: "PixelArt",
+            visualIdentity: new CharacterVisualIdentity(VisualStyle: VisualStyle.PixelArt)
         );
 
-        var profile = provider.ResolveProfile(character);
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character));
+        Assert.Contains("No image generation model is mapped or configured for VisualStyle 'PixelArt'", ex.Message);
 
-        Assert.Equal(VisualGenerationProfileProvider.DefaultModelFallback, profile.Model);
-        Assert.Equal(VisualGenerationProfileProvider.DefaultModelId, profile.Model);
-        Assert.Equal("meinamix", profile.Model);
+        // 2. When DefaultModel is configured in configuration, fallback succeeds
+        var configWithDefault = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiProviders:ImageGeneration:DefaultModel"] = "custom-fallback-model"
+            })
+            .Build();
+        var providerWithDefault = new VisualGenerationProfileProvider(configuration: configWithDefault);
+        var profile = providerWithDefault.ResolveProfile(character);
+        Assert.Equal("custom-fallback-model", profile.Model);
 
-        // Character with Unspecified visual style throws InvalidOperationException
+        // 3. For legacy non-visual character instances (VisualIdentity is null), falls back to DefaultModelFallback
+        var nonVisualChar = new Character("LegacyChar", "Hero", "avatar.png", "Prompt", "Hello", "Anime");
+        var nonVisualProfile = provider.ResolveProfile(nonVisualChar);
+        Assert.Equal(VisualGenerationProfileProvider.DefaultModelFallback, nonVisualProfile.Model);
+        Assert.Equal(VisualGenerationProfileProvider.DefaultModelId, nonVisualProfile.Model);
+        Assert.Equal("meinamix", nonVisualProfile.Model);
+
+        // 4. Character with Unspecified visual style throws InvalidOperationException
         var characterWithoutStyle = new Character(
             name: "Test Character No Style",
             title: "Tester",

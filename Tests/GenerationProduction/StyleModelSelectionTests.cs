@@ -15,6 +15,17 @@ namespace Tests.GenerationProduction;
 
 public sealed class StyleModelSelectionTests
 {
+    private static IConfiguration CreateDefaultStyleConfiguration() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiProviders:ImageGeneration:StyleModels:Anime"] = "meinamix",
+                ["AiProviders:ImageGeneration:StyleModels:Manhwa"] = "meinamix",
+                ["AiProviders:ImageGeneration:StyleModels:Realistic"] = "epicrealism",
+                ["AiProviders:ImageGeneration:StyleModels:Cinematic"] = "epicrealism"
+            })
+            .Build();
+
     private static Character CreateCharacterWithStyle(VisualStyle style)
     {
         var identity = new CharacterVisualIdentity(
@@ -37,8 +48,9 @@ public sealed class StyleModelSelectionTests
     [Fact]
     public void Test1_AnimeCharacter_ResolvesToMeinamix()
     {
+        var config = CreateDefaultStyleConfiguration();
         var registry = new ConfigurationModelRegistry();
-        var provider = new VisualGenerationProfileProvider(modelRegistry: registry);
+        var provider = new VisualGenerationProfileProvider(configuration: config, modelRegistry: registry);
         var character = CreateCharacterWithStyle(VisualStyle.Anime);
 
         var profile = provider.ResolveProfile(character);
@@ -49,8 +61,9 @@ public sealed class StyleModelSelectionTests
     [Fact]
     public void Test2_RealisticCharacter_ResolvesToEpicrealism()
     {
+        var config = CreateDefaultStyleConfiguration();
         var registry = new ConfigurationModelRegistry();
-        var provider = new VisualGenerationProfileProvider(modelRegistry: registry);
+        var provider = new VisualGenerationProfileProvider(configuration: config, modelRegistry: registry);
         var character = CreateCharacterWithStyle(VisualStyle.Realistic);
 
         var profile = provider.ResolveProfile(character);
@@ -61,8 +74,9 @@ public sealed class StyleModelSelectionTests
     [Fact]
     public void Test3_CinematicCharacter_ResolvesToEpicrealism()
     {
+        var config = CreateDefaultStyleConfiguration();
         var registry = new ConfigurationModelRegistry();
-        var provider = new VisualGenerationProfileProvider(modelRegistry: registry);
+        var provider = new VisualGenerationProfileProvider(configuration: config, modelRegistry: registry);
         var character = CreateCharacterWithStyle(VisualStyle.Cinematic);
 
         var profile = provider.ResolveProfile(character);
@@ -73,8 +87,9 @@ public sealed class StyleModelSelectionTests
     [Fact]
     public void Test4_ManhwaCharacter_ResolvesToMeinamix()
     {
+        var config = CreateDefaultStyleConfiguration();
         var registry = new ConfigurationModelRegistry();
-        var provider = new VisualGenerationProfileProvider(modelRegistry: registry);
+        var provider = new VisualGenerationProfileProvider(configuration: config, modelRegistry: registry);
         var character = CreateCharacterWithStyle(VisualStyle.Manhwa);
 
         var profile = provider.ResolveProfile(character);
@@ -117,8 +132,9 @@ public sealed class StyleModelSelectionTests
     [Fact]
     public void Test7_EndToEnd_AnimeAndRealisticCharacters_PropagateThroughToComfyUIWorkflowCheckpoints()
     {
+        var config = CreateDefaultStyleConfiguration();
         var registry = new ConfigurationModelRegistry();
-        var provider = new VisualGenerationProfileProvider(modelRegistry: registry);
+        var provider = new VisualGenerationProfileProvider(configuration: config, modelRegistry: registry);
         var policy = WorkflowCapabilityPolicy.CreateDefault(registry);
         var builder = new VisualIdentityWorkflowV1Builder(registry);
 
@@ -225,5 +241,34 @@ public sealed class StyleModelSelectionTests
         var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character));
         Assert.Contains("Aria_CategoryAnimeOnly", ex.Message);
         Assert.Contains("does not have an explicit VisualStyle selected", ex.Message);
+    }
+
+    [Fact]
+    public void Test10_UnconfiguredStyle_WithoutDefaultModel_ThrowsInvalidOperationException()
+    {
+        var provider = new VisualGenerationProfileProvider();
+        var character = CreateCharacterWithStyle(VisualStyle.PixelArt);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(character));
+        Assert.Contains("No image generation model is mapped or configured for VisualStyle 'PixelArt'", ex.Message);
+        Assert.Contains("AiProviders:ImageGeneration:StyleModels:PixelArt", ex.Message);
+    }
+
+    [Fact]
+    public void Test11_UnconfiguredStyle_FallsBackToGlobalDefaultModel()
+    {
+        // Global default model configured, but specific style has no StyleModels entry
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiProviders:ImageGeneration:DefaultModel"] = "global-fallback-model"
+            })
+            .Build();
+
+        var provider = new VisualGenerationProfileProvider(configuration: config);
+        var character = CreateCharacterWithStyle(VisualStyle.PixelArt);
+
+        var profile = provider.ResolveProfile(character);
+        Assert.Equal("global-fallback-model", profile.Model);
     }
 }

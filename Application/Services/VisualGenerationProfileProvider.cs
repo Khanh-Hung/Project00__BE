@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using Application.Interfaces;
 using Domain.Entities;
@@ -15,12 +16,29 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     public const string DefaultModelId = "meinamix";
     public const string DefaultModelFallback = DefaultModelId;
 
+    private static readonly Lazy<IConfiguration> _defaultConfiguration = new(() =>
+    {
+        var basePath = AppContext.BaseDirectory;
+        var builder = new ConfigurationBuilder();
+        var appsettingsPath = Path.Combine(basePath, "appsettings.json");
+        if (File.Exists(appsettingsPath))
+        {
+            builder.AddJsonFile(appsettingsPath, optional: true);
+        }
+        var devSettingsPath = Path.Combine(basePath, "appsettings.Development.json");
+        if (File.Exists(devSettingsPath))
+        {
+            builder.AddJsonFile(devSettingsPath, optional: true);
+        }
+        return builder.Build();
+    });
+
     private readonly IConfiguration? _configuration;
     private readonly IModelRegistry? _modelRegistry;
 
     public VisualGenerationProfileProvider(IConfiguration? configuration = null, IModelRegistry? modelRegistry = null)
     {
-        _configuration = configuration;
+        _configuration = configuration ?? _defaultConfiguration.Value;
         _modelRegistry = modelRegistry;
     }
 
@@ -153,26 +171,15 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         {
             // Check configuration override first: AiProviders:ImageGeneration:StyleModels:{Style}
             var configKey = $"AiProviders:ImageGeneration:StyleModels:{style}";
-            var configuredStyleModel = _configuration?[configKey]?.Trim();
+            var configuredStyleModel = GetConfigurationValue(configKey)?.Trim();
             if (!string.IsNullOrWhiteSpace(configuredStyleModel))
             {
                 return NormalizeModelId(configuredStyleModel);
             }
 
-            // Built-in style-to-model baseline mappings
-            if (style == Domain.Enums.VisualStyle.Realistic || style == Domain.Enums.VisualStyle.Cinematic)
-            {
-                return NormalizeModelId("epicrealism");
-            }
-
-            if (style == Domain.Enums.VisualStyle.Anime || style == Domain.Enums.VisualStyle.Manhwa)
-            {
-                return NormalizeModelId("meinamix");
-            }
-
-            // Fallback for other specified styles (e.g. 3D, Watercolor) if global default model is configured
-            var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
-                ?? _configuration?["AiProviders:ComfyUI:ModelName"];
+            // Fallback for other specified styles if global default model is configured
+            var configModel = GetConfigurationValue("AiProviders:ImageGeneration:DefaultModel")
+                ?? GetConfigurationValue("AiProviders:ComfyUI:ModelName");
             if (!string.IsNullOrWhiteSpace(configModel))
             {
                 return NormalizeModelId(configModel.Trim());
@@ -193,11 +200,31 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         }
 
         // 4. For non-visual character instances (e.g. test fixtures without visual identity):
-        var defaultModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
-            ?? _configuration?["AiProviders:ComfyUI:ModelName"]
+        var defaultModel = GetConfigurationValue("AiProviders:ImageGeneration:DefaultModel")
+            ?? GetConfigurationValue("AiProviders:ComfyUI:ModelName")
             ?? DefaultModelId;
 
         return NormalizeModelId(defaultModel);
+    }
+
+    private string? GetConfigurationValue(string key)
+    {
+        var val = _configuration?[key];
+        if (!string.IsNullOrWhiteSpace(val))
+        {
+            return val.Trim();
+        }
+
+        if (!ReferenceEquals(_configuration, _defaultConfiguration.Value))
+        {
+            var defVal = _defaultConfiguration.Value?[key];
+            if (!string.IsNullOrWhiteSpace(defVal))
+            {
+                return defVal.Trim();
+            }
+        }
+
+        return null;
     }
 
     private string NormalizeModelId(string modelName)
