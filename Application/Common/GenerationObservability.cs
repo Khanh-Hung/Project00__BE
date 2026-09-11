@@ -82,7 +82,7 @@ public static class GenerationObservability
     public static readonly Histogram<double> GenerationLatencyMs = s_meter.CreateHistogram<double>(
         "generation_generation_latency_ms",
         unit: "ms",
-        description: "Duration of provider generation (ComfyUI GPU execution) in milliseconds");
+        description: "Duration of provider image generation execution in milliseconds");
 
     public static readonly Histogram<double> EvaluationLatencyMs = s_meter.CreateHistogram<double>(
         "generation_evaluation_latency_ms",

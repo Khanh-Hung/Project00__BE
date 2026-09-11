@@ -1,4 +1,4 @@
-﻿using Application.DTOs;
+using Application.DTOs;
 using Application.Enums;
 using Application.Interfaces;
 using Application.Services;
@@ -77,9 +77,17 @@ public sealed class GenerationProductionConcurrencyTests
         var imageService1 = new FakeImageService();
         var evaluator1 = new DevelopmentPassThroughIdentityQualityEvaluator();
 
+        var capabilityPolicy = new Infrastructure.ImageGeneration.WorkflowCapabilityPolicy(new Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder[]
+        {
+            new Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder(),
+            new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder(),
+            new Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder()
+        });
+
         var orchestrator1 = new ImageGenerationOrchestrator(
             dbContext1, compiler1, imageService1, NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider, evaluator1, qualityGuardPolicy, lineageResolver1, acceptanceService1
+            dateTimeProvider, evaluator1, qualityGuardPolicy, lineageResolver1, acceptanceService1,
+            capabilityPolicy: capabilityPolicy
         );
 
         // Worker 2 has its OWN isolated DbContext instance
@@ -91,7 +99,8 @@ public sealed class GenerationProductionConcurrencyTests
 
         var orchestrator2 = new ImageGenerationOrchestrator(
             dbContext2, compiler2, imageService2, NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider, evaluator2, qualityGuardPolicy, lineageResolver2, acceptanceService2
+            dateTimeProvider, evaluator2, qualityGuardPolicy, lineageResolver2, acceptanceService2,
+            capabilityPolicy: capabilityPolicy
         );
 
         // 2. TRUE CONCURRENT EXECUTION across parallel asynchronous tasks
