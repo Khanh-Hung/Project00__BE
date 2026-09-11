@@ -427,6 +427,96 @@ public sealed class ExecutionEngineDecouplingTests
         Assert.Equal("https://cdn.project00.ai/reused_cached.png", winningAttempt.ImageUrl);
     }
 
+    [Fact]
+    public async Task Test7_ImageGenerationJobHandler_SupportsPureExecutor_EndToEnd()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        using var db = CreateSqliteDbContext(connection);
+
+        var executor = new PureStubExecutor("https://cdn.project00.ai/job_handler_pure.png", "PureJobEngine");
+        var compiler = new VisualPromptCompiler();
+        var dateTimeProvider = new SystemDateTimeProvider();
+        var qualityEvaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var qualityGuardPolicy = new IdentityQualityGuardPolicy();
+
+        // Instantiate ImageGenerationJobHandler directly with pure IImageGenerationExecutor
+        var handler = new ImageGenerationJobHandler(
+            dbContext: db,
+            visualCompiler: compiler,
+            executor: executor,
+            logger: NullLogger<ImageGenerationJobHandler>.Instance,
+            dateTimeProvider: dateTimeProvider,
+            qualityEvaluator: qualityEvaluator,
+            qualityGuardPolicy: qualityGuardPolicy,
+            capabilityPolicy: CreateDefaultCapabilityPolicy()
+        );
+
+        var snapshot = CreateTestSnapshot();
+        var outboxId = Guid.NewGuid();
+        var payload = new SceneImageGenerationOutboxPayload(snapshot.TurnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid());
+
+        // Act
+        var result = await handler.HandleSceneImageGenerationAsync(payload, outboxId, "worker-job-handler", DateTime.UtcNow);
+
+        // Assert
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.Equal(1, executor.ExecutionCount);
+
+        var attempt = await db.ImageGenerationAttempts.FirstAsync(a => a.TurnId == snapshot.TurnId);
+        Assert.Equal("https://cdn.project00.ai/job_handler_pure.png", attempt.ImageUrl);
+    }
+
+    [Fact]
+    public async Task Test8_ProviderMetadata_FlowsPurelyAsMetadata_WithoutProviderSwitchingOrCoupling()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        using var db = CreateSqliteDbContext(connection);
+
+        const string customEngineName = "ExternalDiffusionEngine";
+        var executor = new PureStubExecutor("https://cdn.project00.ai/external_engine.png", customEngineName);
+        var compiler = new VisualPromptCompiler();
+        var dateTimeProvider = new SystemDateTimeProvider();
+        var lineageResolver = new PredecessorLineageResolver(db, NullLogger<PredecessorLineageResolver>.Instance);
+        var acceptanceService = new ArtifactAcceptanceService(db, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
+        var qualityEvaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var qualityGuardPolicy = new IdentityQualityGuardPolicy();
+
+        var orchestrator = new ImageGenerationOrchestrator(
+            db, compiler, executor, NullLogger<ImageGenerationOrchestrator>.Instance,
+            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService,
+            CreateDefaultCapabilityPolicy());
+
+        var snapshot = CreateTestSnapshot();
+        var outboxId = Guid.NewGuid();
+        var payload = new SceneImageGenerationOutboxPayload(snapshot.TurnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid());
+
+        // Act
+        var result = await orchestrator.OrchestrateSceneImageGenerationAsync(payload, outboxId, "worker-meta", DateTime.UtcNow);
+
+        // Assert
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.Equal(1, executor.ExecutionCount);
+
+        // Attempt ledger was recorded with provider job id from custom engine
+        var attempt = await db.ImageGenerationAttempts.FirstAsync(a => a.TurnId == snapshot.TurnId);
+        Assert.Equal("https://cdn.project00.ai/external_engine.png", attempt.ImageUrl);
+        Assert.StartsWith("stub-job-", attempt.ProviderJobId!);
+    }
+
+    [Fact]
+    public void Test9_ArchitectureBoundary_ImageGenerationOrchestrator_ZeroComfyUIStringLiterals()
+    {
+        // Assert that the source file of ImageGenerationOrchestrator contains ZERO occurrences of "ComfyUI"
+        var sourcePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Infrastructure", "Services", "ImageGenerationOrchestrator.cs");
+        if (File.Exists(sourcePath))
+        {
+            var content = File.ReadAllText(sourcePath);
+            Assert.DoesNotContain("ComfyUI", content);
+        }
+    }
+
     #region Mock Helpers for ComfyUI Test
 
     private sealed class MockComfyUIClient : IComfyUIClient

@@ -91,7 +91,7 @@ public sealed record ImageGenerationRequest(
     }
 
     /// <summary>
-    /// Validates capability compatibility and identity conditioning satisfaction at the Application boundary before submitting to provider.
+    /// Validates capability compatibility and identity conditioning satisfaction at the Application boundary before executing on the execution engine.
     /// </summary>
     public void ValidateCapability(IImageGenerationCapabilityPolicy capabilityPolicy)
     {
