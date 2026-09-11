@@ -99,7 +99,7 @@ public class VisualContinuity8TurnBenchmarkTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                new VisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx), NullLogger<VisualStateResolver>.Instance),
+                SceneCompositionTestHelper.CreateVisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx)),
                 NullLogger<CharacterRuntime>.Instance
             );
 
@@ -254,6 +254,7 @@ public class VisualContinuity8TurnBenchmarkTests
         var initialConfig = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["AiProviders:ImageGeneration:StyleModels:Anime"] = "meinamix",
                 ["AiProviders:ImageGeneration:SceneContinuity:Weight"] = "0.20",
                 ["AiProviders:ImageGeneration:SceneContinuity:EndAt"] = "0.40"
             })
@@ -296,6 +297,7 @@ public class VisualContinuity8TurnBenchmarkTests
         var updatedConfig = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["AiProviders:ImageGeneration:StyleModels:Anime"] = "meinamix",
                 ["AiProviders:ImageGeneration:SceneContinuity:Weight"] = "0.35",
                 ["AiProviders:ImageGeneration:SceneContinuity:EndAt"] = "0.50"
             })
@@ -361,7 +363,7 @@ public class VisualContinuity8TurnBenchmarkTests
         session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
 
         // 2. Turn 2 Commit: VisualStateResolver resolves and freezes predecessor
-        var resolver = new VisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new CoreDbContext(options)));
+        var resolver = SceneCompositionTestHelper.CreateVisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new CoreDbContext(options)));
         var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(
             character,
             session,
@@ -430,7 +432,7 @@ public class VisualContinuity8TurnBenchmarkTests
         typeof(Domain.Common.BaseEntity).GetProperty("Id")!.SetValue(session, sessionId);
         session.UpdateSceneState(new SessionSceneState("Sanctuary", "Window", "Dress", "Day", null, "Peaceful", 1, DateTime.UtcNow));
 
-        var resolver = new VisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new CoreDbContext(options)));
+        var resolver = SceneCompositionTestHelper.CreateVisualStateResolver(uow, null, SceneCompositionTestHelper.CreatePipeline(new CoreDbContext(options)));
 
         // Transaction 1: Turn 2 Resolves Turn 1 Predecessor
         var (_, _, turn2Snapshot) = await resolver.ResolveTurnVisualStateAsync(character, session, "Action 2", "Reply 2", CharacterMood.Happy, Guid.NewGuid());

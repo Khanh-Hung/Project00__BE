@@ -72,7 +72,7 @@ public sealed class SceneCompositionIntegrationTests : IDisposable
         var pipelineService = SceneCompositionTestHelper.CreatePipeline(db);
 
         var unitOfWork = new UnitOfWork(db);
-        var visualStateResolver = new VisualStateResolver(
+        var visualStateResolver = SceneCompositionTestHelper.CreateVisualStateResolver(
             unitOfWork,
             sceneStateTracker: null,
             sceneCompositionPipeline: pipelineService,

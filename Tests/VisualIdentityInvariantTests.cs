@@ -1012,12 +1012,17 @@ public sealed class VisualIdentityInvariantTests
     [Fact]
     public void VisualGenerationProfileProvider_MissingConfiguration_UsesExpectedDefaults()
     {
-        var provider = new VisualGenerationProfileProvider(); // No configuration provided
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["AiProviders:ImageGeneration:DefaultModel"] = "test-model"
+        }).Build();
+        var provider = new VisualGenerationProfileProvider(config);
         var character = new Character("Aria", "Mage", "avatar.jpg", "Hello", "Friendly", "Fantasy");
 
         var profile = provider.ResolveProfile(character);
         Assert.Equal("VisualIdentity", profile.Workflow);
         Assert.Equal(1, profile.WorkflowVersion);
+        Assert.Equal("test-model", profile.Model);
         Assert.Contains("\"weight\":0.45", profile.ParametersJson);
         Assert.Contains("\"endAt\":0.7", profile.ParametersJson);
     }
@@ -1027,6 +1032,7 @@ public sealed class VisualIdentityInvariantTests
     {
         var inMemoryConfig = new Dictionary<string, string?>
         {
+            ["AiProviders:ImageGeneration:DefaultModel"] = "test-model",
             ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.0",
             ["AiProviders:ImageGeneration:IPAdapter:EndAt"] = "1.0",
             ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = "5"
@@ -1046,6 +1052,7 @@ public sealed class VisualIdentityInvariantTests
     {
         var inMemoryConfig = new Dictionary<string, string?>
         {
+            ["AiProviders:ImageGeneration:DefaultModel"] = "test-model",
             ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.456",
             ["AiProviders:ImageGeneration:IPAdapter:EndAt"] = "0.789"
         };
@@ -1064,6 +1071,7 @@ public sealed class VisualIdentityInvariantTests
         // 1. Initial configuration: Weight = 0.45, EndAt = 0.70
         var configDict = new Dictionary<string, string?>
         {
+            ["AiProviders:ImageGeneration:StyleModels:Anime"] = "meinamix",
             ["AiProviders:ImageGeneration:DefaultWorkflow"] = "VisualIdentity",
             ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = "1",
             ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.45",
@@ -1116,6 +1124,7 @@ public sealed class VisualIdentityInvariantTests
         // 3. Mutate runtime configuration (e.g. administrator reconfigures weights for Turn 2)
         var newConfigDict = new Dictionary<string, string?>
         {
+            ["AiProviders:ImageGeneration:StyleModels:Anime"] = "meinamix",
             ["AiProviders:ImageGeneration:DefaultWorkflow"] = "VisualIdentity",
             ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = "1",
             ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.20",
@@ -1159,6 +1168,7 @@ public sealed class VisualIdentityInvariantTests
         // 1. Setup custom configuration for IP-Adapter weights
         var inMemoryConfig = new Dictionary<string, string?>
         {
+            ["AiProviders:ImageGeneration:StyleModels:Anime"] = "meinamix",
             ["AiProviders:ImageGeneration:DefaultWorkflow"] = "VisualIdentityV2",
             ["AiProviders:ImageGeneration:DefaultWorkflowVersion"] = "2",
             ["AiProviders:ImageGeneration:IPAdapter:Weight"] = "0.35",

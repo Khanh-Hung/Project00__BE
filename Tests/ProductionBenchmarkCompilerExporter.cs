@@ -49,7 +49,7 @@ public sealed class ProductionBenchmarkCompilerExporter
         await using var db = new CoreDbContext(options);
         var unitOfWork = new UnitOfWork(db);
         var compiler = new VisualPromptCompiler();
-        var profileProvider = new VisualGenerationProfileProvider();
+        var profileProvider = SceneCompositionTestHelper.CreateProfileProvider();
 
         var exportedList = new List<ExportableTurnRequest>();
 

@@ -405,7 +405,7 @@ public sealed class IdentityInvariantSystemTests
         await db.SaveChangesAsync();
 
         var stateTracker = new DummySceneStateTracker();
-        var profileProvider = new VisualGenerationProfileProvider();
+        var profileProvider = SceneCompositionTestHelper.CreateProfileProvider();
         var resolver = new VisualStateResolver(unitOfWork, stateTracker, profileProvider, SceneCompositionTestHelper.CreatePipeline(db));
 
         // Turn 1: Cold Start in Armory
@@ -518,7 +518,7 @@ public sealed class IdentityInvariantSystemTests
         await db.SaveChangesAsync();
 
         var stateTracker = new DummySceneStateTracker();
-        var profileProvider = new VisualGenerationProfileProvider();
+        var profileProvider = SceneCompositionTestHelper.CreateProfileProvider();
         var resolver = new VisualStateResolver(unitOfWork, stateTracker, profileProvider, SceneCompositionTestHelper.CreatePipeline(db));
 
         // Resolve Turn 2 (Same-Scene in Armory)

@@ -60,7 +60,7 @@ public class TransactionalOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 

@@ -172,12 +172,15 @@ public sealed class ModelAgnosticFoundationTests
         var profile = providerWithDefault.ResolveProfile(character);
         Assert.Equal("custom-fallback-model", profile.Model);
 
-        // 3. For legacy non-visual character instances (VisualIdentity is null), falls back to DefaultModelFallback
+        // 3. For legacy non-visual character instances (VisualIdentity is null):
+        // When configured with DefaultModel, non-visual character resolves that configured model
         var nonVisualChar = new Character("LegacyChar", "Hero", "avatar.png", "Prompt", "Hello", "Anime");
-        var nonVisualProfile = provider.ResolveProfile(nonVisualChar);
-        Assert.Equal(VisualGenerationProfileProvider.DefaultModelFallback, nonVisualProfile.Model);
-        Assert.Equal(VisualGenerationProfileProvider.DefaultModelId, nonVisualProfile.Model);
-        Assert.Equal("meinamix", nonVisualProfile.Model);
+        var nonVisualProfile = providerWithDefault.ResolveProfile(nonVisualChar);
+        Assert.Equal("custom-fallback-model", nonVisualProfile.Model);
+
+        // When unconfigured, non-visual character fails fast
+        var nonVisualEx = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(nonVisualChar));
+        Assert.Contains("No default image generation model is configured", nonVisualEx.Message);
 
         // 4. Character with Unspecified visual style throws InvalidOperationException
         var characterWithoutStyle = new Character(
@@ -189,7 +192,7 @@ public sealed class ModelAgnosticFoundationTests
             category: "",
             visualIdentity: new CharacterVisualIdentity(VisualStyle: VisualStyle.Unspecified)
         );
-        Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(characterWithoutStyle));
+        Assert.Throws<InvalidOperationException>(() => providerWithDefault.ResolveProfile(characterWithoutStyle));
     }
 
     [Fact]

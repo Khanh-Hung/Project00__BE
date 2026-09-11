@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.IO;
 using System.Text.Json;
 using Application.Interfaces;
 using Domain.Entities;
@@ -13,32 +12,13 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     private const float DefaultWeight = 0.45f;
     private const float DefaultEndAt = 0.70f;
     private const int DefaultWorkflowVersion = 1;
-    public const string DefaultModelId = "meinamix";
-    public const string DefaultModelFallback = DefaultModelId;
-
-    private static readonly Lazy<IConfiguration> _defaultConfiguration = new(() =>
-    {
-        var basePath = AppContext.BaseDirectory;
-        var builder = new ConfigurationBuilder();
-        var appsettingsPath = Path.Combine(basePath, "appsettings.json");
-        if (File.Exists(appsettingsPath))
-        {
-            builder.AddJsonFile(appsettingsPath, optional: true);
-        }
-        var devSettingsPath = Path.Combine(basePath, "appsettings.Development.json");
-        if (File.Exists(devSettingsPath))
-        {
-            builder.AddJsonFile(devSettingsPath, optional: true);
-        }
-        return builder.Build();
-    });
 
     private readonly IConfiguration? _configuration;
     private readonly IModelRegistry? _modelRegistry;
 
     public VisualGenerationProfileProvider(IConfiguration? configuration = null, IModelRegistry? modelRegistry = null)
     {
-        _configuration = configuration ?? _defaultConfiguration.Value;
+        _configuration = configuration;
         _modelRegistry = modelRegistry;
     }
 
@@ -171,15 +151,15 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         {
             // Check configuration override first: AiProviders:ImageGeneration:StyleModels:{Style}
             var configKey = $"AiProviders:ImageGeneration:StyleModels:{style}";
-            var configuredStyleModel = GetConfigurationValue(configKey)?.Trim();
+            var configuredStyleModel = _configuration?[configKey]?.Trim();
             if (!string.IsNullOrWhiteSpace(configuredStyleModel))
             {
                 return NormalizeModelId(configuredStyleModel);
             }
 
             // Fallback for other specified styles if global default model is configured
-            var configModel = GetConfigurationValue("AiProviders:ImageGeneration:DefaultModel")
-                ?? GetConfigurationValue("AiProviders:ComfyUI:ModelName");
+            var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
+                ?? _configuration?["AiProviders:ComfyUI:ModelName"];
             if (!string.IsNullOrWhiteSpace(configModel))
             {
                 return NormalizeModelId(configModel.Trim());
@@ -200,31 +180,17 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         }
 
         // 4. For non-visual character instances (e.g. test fixtures without visual identity):
-        var defaultModel = GetConfigurationValue("AiProviders:ImageGeneration:DefaultModel")
-            ?? GetConfigurationValue("AiProviders:ComfyUI:ModelName")
-            ?? DefaultModelId;
+        var defaultModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
+            ?? _configuration?["AiProviders:ComfyUI:ModelName"];
 
-        return NormalizeModelId(defaultModel);
-    }
-
-    private string? GetConfigurationValue(string key)
-    {
-        var val = _configuration?[key];
-        if (!string.IsNullOrWhiteSpace(val))
+        if (string.IsNullOrWhiteSpace(defaultModel))
         {
-            return val.Trim();
+            throw new InvalidOperationException(
+                "No default image generation model is configured. " +
+                "Please configure 'AiProviders:ImageGeneration:DefaultModel' in application settings.");
         }
 
-        if (!ReferenceEquals(_configuration, _defaultConfiguration.Value))
-        {
-            var defVal = _defaultConfiguration.Value?[key];
-            if (!string.IsNullOrWhiteSpace(defVal))
-            {
-                return defVal.Trim();
-            }
-        }
-
-        return null;
+        return NormalizeModelId(defaultModel.Trim());
     }
 
     private string NormalizeModelId(string modelName)
