@@ -1,4 +1,5 @@
 using Application.Interfaces;
+using Domain.Enums;
 using Domain.ValueObjects;
 
 namespace Infrastructure.ImageGeneration.ComfyUI;
@@ -7,6 +8,7 @@ public interface IComfyUIWorkflowBuilder
 {
     string WorkflowName { get; }
     int WorkflowVersion { get; }
+    ModelFamily SupportedFamily => ModelFamily.Sd15;
     IReadOnlySet<string> SupportedModels { get; }
     bool CanHandle(string workflow, int workflowVersion, string? model);
 
