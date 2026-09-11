@@ -15,10 +15,12 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     public const string DefaultModelFallback = "meinamix_meinaV11.safetensors";
 
     private readonly IConfiguration? _configuration;
+    private readonly IModelRegistry? _modelRegistry;
 
-    public VisualGenerationProfileProvider(IConfiguration? configuration = null)
+    public VisualGenerationProfileProvider(IConfiguration? configuration = null, IModelRegistry? modelRegistry = null)
     {
         _configuration = configuration;
+        _modelRegistry = modelRegistry;
     }
 
     /// <summary>
@@ -109,18 +111,8 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             _ => "style transfer"
         };
 
-        // 5. Resolve Model from Configuration (AiProviders:ImageGeneration:DefaultModel or AiProviders:ComfyUI:ModelName)
-        string model = DefaultModelFallback;
-        var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
-            ?? _configuration?["AiProviders:ComfyUI:ModelName"];
-        if (configModel != null)
-        {
-            if (string.IsNullOrWhiteSpace(configModel))
-            {
-                throw new InvalidOperationException("Configured model name cannot be empty or whitespace.");
-            }
-            model = configModel.Trim();
-        }
+        // 5. Resolve Model for Character based on Aesthetic Style Policy and Configuration
+        string model = ResolveModelForCharacter(character);
 
         // 6. Invariant: ParametersJson is built strictly from validated typed parameters using deterministic JSON serialization
         var parametersJson = JsonSerializer.Serialize(new
@@ -144,5 +136,62 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
             workflowVersion: workflowVersion,
             parametersJson: parametersJson
         );
+    }
+
+    private string ResolveModelForCharacter(Character character)
+    {
+        var style = character.VisualIdentity?.ResolvedStyle ?? Domain.Enums.VisualStyle.Unspecified;
+
+        // 1. Style-based model resolution if style is specified
+        if (style != Domain.Enums.VisualStyle.Unspecified)
+        {
+            // Check configuration override first: AiProviders:ImageGeneration:StyleModels:{Style}
+            var configKey = $"AiProviders:ImageGeneration:StyleModels:{style}";
+            var configuredStyleModel = _configuration?[configKey]?.Trim();
+            if (!string.IsNullOrWhiteSpace(configuredStyleModel))
+            {
+                return NormalizeModelId(configuredStyleModel);
+            }
+
+            // Built-in style-to-model baseline mappings
+            if (style == Domain.Enums.VisualStyle.Realistic || style == Domain.Enums.VisualStyle.Cinematic)
+            {
+                return NormalizeModelId("epicrealism");
+            }
+
+            if (style == Domain.Enums.VisualStyle.Anime || style == Domain.Enums.VisualStyle.Manhwa)
+            {
+                return NormalizeModelId("meinamix");
+            }
+        }
+
+        // 2. Global model configuration: AiProviders:ImageGeneration:DefaultModel or AiProviders:ComfyUI:ModelName
+        var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
+            ?? _configuration?["AiProviders:ComfyUI:ModelName"];
+        if (configModel != null)
+        {
+            if (string.IsNullOrWhiteSpace(configModel))
+            {
+                throw new InvalidOperationException("Configured model name cannot be empty or whitespace.");
+            }
+            return NormalizeModelId(configModel.Trim());
+        }
+
+        // 3. Fallback default model
+        return DefaultModelFallback;
+    }
+
+    private string NormalizeModelId(string modelName)
+    {
+        if (_modelRegistry != null)
+        {
+            var def = _modelRegistry.FindById(modelName);
+            if (def != null)
+            {
+                return def.Id;
+            }
+        }
+
+        return modelName;
     }
 }
