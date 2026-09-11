@@ -1,4 +1,4 @@
-﻿using Application.Abstractions.Auth;
+using Application.Abstractions.Auth;
 using Application.Common;
 using Application.DTOs;
 using Application.Interfaces;
@@ -46,7 +46,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 Skin: "Fair skin",
                 Body: "Slender athletic build",
                 ClothingStyle: "White Dress",
-                CanonicalReferenceUrl: "https://cloud.storage/elysia_canonical.png"
+                CanonicalReferenceUrl: "https://cloud.storage/elysia_canonical.png",
+                VisualStyle: VisualStyle.Anime
             )
         ) { Id = charId };
         await context.Characters.AddAsync(character);
@@ -189,7 +190,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             VisualIdentity: new CharacterVisualIdentity(
                 Hair: "platinum blonde hair",
                 ClothingStyle: "White Dress",
-                CanonicalReferenceUrl: "https://cloud.storage/elysia_canonical.png"
+                CanonicalReferenceUrl: "https://cloud.storage/elysia_canonical.png",
+                VisualStyle: VisualStyle.Anime
             ),
             SceneState: new SessionSceneState(
                 CurrentLocation: "Living Room",
@@ -266,7 +268,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             personalityPrompt: "Gentle and loving",
             greeting: "Hi there!",
             category: "Anime",
-            visualIdentity: new CharacterVisualIdentity(ClothingStyle: "White Dress")
+            visualIdentity: new CharacterVisualIdentity(ClothingStyle: "White Dress", VisualStyle: VisualStyle.Anime)
         ) { Id = charId };
         await context.Characters.AddAsync(character);
 
@@ -350,7 +352,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 Gender: "Female",
                 Hair: "Pink",
                 ClothingStyle: "Holy Silk Dress",
-                CanonicalReferenceUrl: "https://cloud.storage/canonical.png"
+                CanonicalReferenceUrl: "https://cloud.storage/canonical.png",
+                VisualStyle: VisualStyle.Anime
             )
         ) { Id = charId };
 
@@ -453,7 +456,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 category: "Anime",
                 visualIdentity: new CharacterVisualIdentity(
                     ClothingStyle: "White Dress",
-                    CanonicalReferenceUrl: "https://cloud.storage/elysia_canonical.png"
+                    CanonicalReferenceUrl: "https://cloud.storage/elysia_canonical.png",
+                    VisualStyle: VisualStyle.Anime
                 )
             ) { Id = charId };
             await ctx.Characters.AddAsync(character);
@@ -790,7 +794,8 @@ public class TurnCommitVisualSnapshotOutboxTests
                 Body: "Slender",
                 ClothingStyle: "Pastel Pink Sundress",
                 VisualTraits: "(small black dragon horns on head:1.3)",
-                CanonicalReferenceUrl: "https://cloud.storage/Lyra_tight_face.png"
+                CanonicalReferenceUrl: "https://cloud.storage/Lyra_tight_face.png",
+                VisualStyle: VisualStyle.Anime
             )
         ) { Id = charId };
         await context.Characters.AddAsync(character);
@@ -846,7 +851,8 @@ public class TurnCommitVisualSnapshotOutboxTests
             tags: character.Tags,
             visualIdentity: new CharacterVisualIdentity(
                 Gender: "Female",
-                ClothingStyle: "Black Dragon Heavy Armor"
+                ClothingStyle: "Black Dragon Heavy Armor",
+                VisualStyle: VisualStyle.Anime
             ),
             updateVisualIdentity: true
         );

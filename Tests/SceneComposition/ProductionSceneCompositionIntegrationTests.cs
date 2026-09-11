@@ -118,7 +118,8 @@ public sealed class ProductionSceneCompositionIntegrationTests : IDisposable
             Eyes: "Deep Violet",
             Skin: "Porcelain",
             ClothingStyle: "Emerald Academic Robes",
-            CanonicalReferenceUrl: canonicalRef.ReferenceUrl
+            CanonicalReferenceUrl: canonicalRef.ReferenceUrl,
+            VisualStyle: VisualStyle.Anime
         ));
 
         var session = new ChatSession(lyraId, userId, "Roleplay Session");
