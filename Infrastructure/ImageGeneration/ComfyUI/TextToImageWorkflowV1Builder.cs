@@ -17,7 +17,6 @@ public sealed class TextToImageWorkflowV1Builder : IComfyUIWorkflowBuilder
         "meinamix_meinaV11.safetensors",
         "meinamix",
         "epicrealism_naturalSin.safetensors",
-        "epicrealism_naturalSinRC1VAE.safetensors",
         "epicrealism"
     };
 

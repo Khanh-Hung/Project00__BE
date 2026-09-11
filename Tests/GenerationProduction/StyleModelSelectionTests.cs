@@ -192,7 +192,7 @@ public sealed class StyleModelSelectionTests
         var realisticGraph = builder.BuildWorkflow(realisticRequest, "face.png");
         var realisticNode4 = (Dictionary<string, object>)realisticGraph["4"];
         var realisticInputs = (Dictionary<string, object>)realisticNode4["inputs"];
-        Assert.Equal("epicrealism_naturalSin.safetensors", realisticInputs["ckpt_name"]);
+        Assert.Equal("epicrealism_naturalSinRC1VAE.safetensors", realisticInputs["ckpt_name"]);
     }
 
     [Fact]

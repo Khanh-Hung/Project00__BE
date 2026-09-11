@@ -25,7 +25,7 @@ public sealed class ModelRegistryTests
     [Theory]
     [InlineData("meinamix", ModelFamily.Sd15, "meinamix_meinaV11.safetensors")]
     [InlineData("MEINAMIX", ModelFamily.Sd15, "meinamix_meinaV11.safetensors")]
-    [InlineData("epicrealism", ModelFamily.Sd15, "epicrealism_naturalSin.safetensors")]
+    [InlineData("epicrealism", ModelFamily.Sd15, "epicrealism_naturalSinRC1VAE.safetensors")]
     [InlineData("anime3xl", ModelFamily.Sdxl, "animagineXLV3_base.safetensors")]
     [InlineData("flux-dev", ModelFamily.Flux, "flux1-dev.safetensors")]
     public void Test2_FindById_ResolvesCanonicalModelId(string modelId, ModelFamily expectedFamily, string expectedArtifact)
@@ -40,24 +40,25 @@ public sealed class ModelRegistryTests
     }
 
     [Theory]
-    [InlineData("meinamix_meinaV11.safetensors", "meinamix", ModelFamily.Sd15)]
-    [InlineData("MEINAMIX_MEINAV11.SAFETENSORS", "meinamix", ModelFamily.Sd15)]
-    [InlineData("epicrealism_naturalSin.safetensors", "epicrealism", ModelFamily.Sd15)]
-    [InlineData("animagineXLV3_base.safetensors", "anime3xl", ModelFamily.Sdxl)]
-    [InlineData("flux1-dev.safetensors", "flux-dev", ModelFamily.Flux)]
+    [InlineData("meinamix_meinaV11.safetensors", "meinamix", ModelFamily.Sd15, "meinamix_meinaV11.safetensors")]
+    [InlineData("MEINAMIX_MEINAV11.SAFETENSORS", "meinamix", ModelFamily.Sd15, "meinamix_meinaV11.safetensors")]
+    [InlineData("epicrealism_naturalSinRC1VAE.safetensors", "epicrealism", ModelFamily.Sd15, "epicrealism_naturalSinRC1VAE.safetensors")]
+    [InlineData("epicrealism_naturalSin.safetensors", "epicrealism", ModelFamily.Sd15, "epicrealism_naturalSinRC1VAE.safetensors")]
+    [InlineData("animagineXLV3_base.safetensors", "anime3xl", ModelFamily.Sdxl, "animagineXLV3_base.safetensors")]
+    [InlineData("flux1-dev.safetensors", "flux-dev", ModelFamily.Flux, "flux1-dev.safetensors")]
     public void Test3_FindById_WithLegacyArtifactName_ResolvesViaFallbackSecondaryIndex(
-        string artifactName, string expectedId, ModelFamily expectedFamily)
+        string artifactName, string expectedId, ModelFamily expectedFamily, string expectedCanonicalArtifact)
     {
         IModelRegistry registry = new ConfigurationModelRegistry();
 
-        // Calling FindById with the physical artifact filename (legacy behavior)
+        // Calling FindById with the physical artifact filename (legacy or direct filename behavior)
         var model = registry.FindById(artifactName);
 
         Assert.NotNull(model);
         // The resolved model maintains its canonical ModelId, proving artifact name is decoupled from ModelId
         Assert.Equal(expectedId, model.Id);
         Assert.Equal(expectedFamily, model.Family);
-        Assert.Equal(artifactName, model.ArtifactName, ignoreCase: true);
+        Assert.Equal(expectedCanonicalArtifact, model.ArtifactName, ignoreCase: true);
     }
 
     [Theory]
@@ -140,7 +141,7 @@ public sealed class ModelRegistryTests
     {
         var m1 = new ModelDefinition("meinamix", ModelFamily.Sd15, "meinamix_meinaV11.safetensors");
         var m2 = new ModelDefinition("meinamix", ModelFamily.Sd15, "meinamix_meinaV11.safetensors");
-        var m3 = new ModelDefinition("epicrealism", ModelFamily.Sd15, "epicrealism_naturalSin.safetensors");
+        var m3 = new ModelDefinition("epicrealism", ModelFamily.Sd15, "epicrealism_naturalSinRC1VAE.safetensors");
 
         Assert.Equal(m1, m2);
         Assert.NotEqual(m1, m3);
@@ -154,7 +155,7 @@ public sealed class ModelRegistryTests
             {
                 ["AiProviders:ImageGeneration:Models:0:Id"] = "epicrealism",
                 ["AiProviders:ImageGeneration:Models:0:Family"] = "Sd15",
-                ["AiProviders:ImageGeneration:Models:0:ArtifactName"] = "epicrealism_naturalSinRC1VAE.safetensors"
+                ["AiProviders:ImageGeneration:Models:0:ArtifactName"] = "epicrealism_pureInstinct.safetensors"
             })
             .Build();
 
@@ -164,12 +165,12 @@ public sealed class ModelRegistryTests
         Assert.NotNull(model);
         Assert.Equal("epicrealism", model.Id);
         Assert.Equal(ModelFamily.Sd15, model.Family);
-        Assert.Equal("epicrealism_naturalSinRC1VAE.safetensors", model.ArtifactName);
+        Assert.Equal("epicrealism_pureInstinct.safetensors", model.ArtifactName);
 
         // Resolves via direct artifact name lookup as well
-        var legacyLookup = registry.FindById("epicrealism_naturalSinRC1VAE.safetensors");
+        var legacyLookup = registry.FindById("epicrealism_pureInstinct.safetensors");
         Assert.NotNull(legacyLookup);
         Assert.Equal("epicrealism", legacyLookup.Id);
-        Assert.Equal("epicrealism_naturalSinRC1VAE.safetensors", legacyLookup.ArtifactName);
+        Assert.Equal("epicrealism_pureInstinct.safetensors", legacyLookup.ArtifactName);
     }
 }
