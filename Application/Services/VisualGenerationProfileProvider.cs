@@ -12,7 +12,8 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     private const float DefaultWeight = 0.45f;
     private const float DefaultEndAt = 0.70f;
     private const int DefaultWorkflowVersion = 1;
-    public const string DefaultModelFallback = "meinamix_meinaV11.safetensors";
+    public const string DefaultModelId = "meinamix";
+    public const string DefaultModelFallback = DefaultModelId;
 
     private readonly IConfiguration? _configuration;
     private readonly IModelRegistry? _modelRegistry;
@@ -178,20 +179,22 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
         }
 
         // 3. Fallback default model
-        return DefaultModelFallback;
+        return NormalizeModelId(DefaultModelId);
     }
 
     private string NormalizeModelId(string modelName)
     {
-        if (_modelRegistry != null)
+        if (_modelRegistry is null)
         {
-            var def = _modelRegistry.FindById(modelName);
-            if (def != null)
-            {
-                return def.Id;
-            }
+            return modelName;
         }
 
-        return modelName;
+        var definition = _modelRegistry.FindById(modelName);
+        if (definition is null)
+        {
+            throw new InvalidOperationException($"Unknown image generation model '{modelName}'. Model is not registered in ModelRegistry.");
+        }
+
+        return definition.Id;
     }
 }

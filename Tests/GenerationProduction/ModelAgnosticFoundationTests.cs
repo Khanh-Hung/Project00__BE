@@ -158,7 +158,8 @@ public sealed class ModelAgnosticFoundationTests
         var profile = provider.ResolveProfile(character);
 
         Assert.Equal(VisualGenerationProfileProvider.DefaultModelFallback, profile.Model);
-        Assert.Equal("meinamix_meinaV11.safetensors", profile.Model);
+        Assert.Equal(VisualGenerationProfileProvider.DefaultModelId, profile.Model);
+        Assert.Equal("meinamix", profile.Model);
     }
 
     [Fact]

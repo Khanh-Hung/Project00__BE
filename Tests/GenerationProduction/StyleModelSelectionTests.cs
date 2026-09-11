@@ -91,8 +91,8 @@ public sealed class StyleModelSelectionTests
 
         var profile = provider.ResolveProfile(character);
 
-        Assert.Equal(VisualGenerationProfileProvider.DefaultModelFallback, profile.Model);
-        Assert.Equal("meinamix_meinaV11.safetensors", profile.Model);
+        Assert.Equal(VisualGenerationProfileProvider.DefaultModelId, profile.Model);
+        Assert.Equal("meinamix", profile.Model);
     }
 
     [Fact]
@@ -178,5 +178,24 @@ public sealed class StyleModelSelectionTests
         var realisticNode4 = (Dictionary<string, object>)realisticGraph["4"];
         var realisticInputs = (Dictionary<string, object>)realisticNode4["inputs"];
         Assert.Equal("epicrealism_naturalSin.safetensors", realisticInputs["ckpt_name"]);
+    }
+
+    [Fact]
+    public void Test8_NormalizeModelId_WithRegistry_WhenUnknownModelConfigured_ThrowsInvalidOperationException()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiProviders:ImageGeneration:StyleModels:Realistic"] = "unknown-nonexistent-model"
+            })
+            .Build();
+
+        var registry = new ConfigurationModelRegistry();
+        var provider = new VisualGenerationProfileProvider(configuration: config, modelRegistry: registry);
+        var realisticChar = CreateCharacterWithStyle(VisualStyle.Realistic);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.ResolveProfile(realisticChar));
+        Assert.Contains("unknown-nonexistent-model", ex.Message);
+        Assert.Contains("not registered in ModelRegistry", ex.Message);
     }
 }
