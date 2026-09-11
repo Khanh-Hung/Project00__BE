@@ -12,8 +12,6 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
     private const float DefaultWeight = 0.45f;
     private const float DefaultEndAt = 0.70f;
     private const int DefaultWorkflowVersion = 1;
-    public const string DefaultModelId = "meinamix";
-    public const string DefaultModelFallback = DefaultModelId;
 
     private readonly IConfiguration? _configuration;
     private readonly IModelRegistry? _modelRegistry;
@@ -159,18 +157,7 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
                 return NormalizeModelId(configuredStyleModel);
             }
 
-            // Built-in style-to-model baseline mappings
-            if (style == Domain.Enums.VisualStyle.Realistic || style == Domain.Enums.VisualStyle.Cinematic)
-            {
-                return NormalizeModelId("epicrealism");
-            }
-
-            if (style == Domain.Enums.VisualStyle.Anime || style == Domain.Enums.VisualStyle.Manhwa)
-            {
-                return NormalizeModelId("meinamix");
-            }
-
-            // Fallback for other specified styles (e.g. 3D, Watercolor) if global default model is configured
+            // Fallback for other specified styles if global default model is configured
             var configModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
                 ?? _configuration?["AiProviders:ComfyUI:ModelName"];
             if (!string.IsNullOrWhiteSpace(configModel))
@@ -194,10 +181,16 @@ public sealed class VisualGenerationProfileProvider : IVisualGenerationProfilePr
 
         // 4. For non-visual character instances (e.g. test fixtures without visual identity):
         var defaultModel = _configuration?["AiProviders:ImageGeneration:DefaultModel"]
-            ?? _configuration?["AiProviders:ComfyUI:ModelName"]
-            ?? DefaultModelId;
+            ?? _configuration?["AiProviders:ComfyUI:ModelName"];
 
-        return NormalizeModelId(defaultModel);
+        if (string.IsNullOrWhiteSpace(defaultModel))
+        {
+            throw new InvalidOperationException(
+                "No default image generation model is configured. " +
+                "Please configure 'AiProviders:ImageGeneration:DefaultModel' in application settings.");
+        }
+
+        return NormalizeModelId(defaultModel.Trim());
     }
 
     private string NormalizeModelId(string modelName)

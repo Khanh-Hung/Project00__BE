@@ -310,7 +310,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            new VisualStateResolver(unitOfWork, sceneTracker, SceneCompositionTestHelper.CreatePipeline(db), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, sceneTracker, SceneCompositionTestHelper.CreatePipeline(db)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -616,7 +616,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            new VisualStateResolver(unitOfWork, sceneTracker, SceneCompositionTestHelper.CreatePipeline(db), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, sceneTracker, SceneCompositionTestHelper.CreatePipeline(db)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -673,7 +673,7 @@ public sealed class EndToEndCharacterRoleplayLifecycleTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            new VisualStateResolver(unitOfWork, sceneTracker, SceneCompositionTestHelper.CreatePipeline(db), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, sceneTracker, SceneCompositionTestHelper.CreatePipeline(db)),
             NullLogger<CharacterRuntime>.Instance
         );
 

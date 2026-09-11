@@ -73,7 +73,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -311,7 +311,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -375,7 +375,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(new UnitOfWork(ctx1), tracker1, SceneCompositionTestHelper.CreatePipeline(ctx1), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(new UnitOfWork(ctx1), tracker1, SceneCompositionTestHelper.CreatePipeline(ctx1)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -401,7 +401,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(new UnitOfWork(ctx2), tracker2, SceneCompositionTestHelper.CreatePipeline(ctx2), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(new UnitOfWork(ctx2), tracker2, SceneCompositionTestHelper.CreatePipeline(ctx2)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -483,7 +483,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                new VisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx), NullLogger<VisualStateResolver>.Instance),
+                SceneCompositionTestHelper.CreateVisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx)),
                 NullLogger<CharacterRuntime>.Instance
             );
 
@@ -512,7 +512,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                new VisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx), NullLogger<VisualStateResolver>.Instance),
+                SceneCompositionTestHelper.CreateVisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx)),
                 NullLogger<CharacterRuntime>.Instance
             );
 
@@ -543,7 +543,7 @@ public class TurnCommitVisualSnapshotOutboxTests
                 new MockVoiceService(),
                 new VisualPromptCompiler(),
                 dynamicImageService,
-                new VisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx), NullLogger<VisualStateResolver>.Instance),
+                SceneCompositionTestHelper.CreateVisualStateResolver(uow, tracker, SceneCompositionTestHelper.CreatePipeline(ctx)),
                 NullLogger<CharacterRuntime>.Instance
             );
 
@@ -820,7 +820,7 @@ public class TurnCommitVisualSnapshotOutboxTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, sequentialTracker, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 

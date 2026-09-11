@@ -54,7 +54,7 @@ public class CharacterRuntimeOrchestrationTests
             mockVoiceService,
             visualCompiler,
             mockImageService,
-            new VisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -143,7 +143,7 @@ public class CharacterRuntimeOrchestrationTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork1, null, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork1, null, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -177,7 +177,7 @@ public class CharacterRuntimeOrchestrationTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork2, null, SceneCompositionTestHelper.CreatePipeline(context2), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork2, null, SceneCompositionTestHelper.CreatePipeline(context2)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -236,7 +236,7 @@ public class CharacterRuntimeOrchestrationTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -339,7 +339,7 @@ public class CharacterRuntimeOrchestrationTests
             new MockVoiceService(),
             new VisualPromptCompiler(),
             new MockImageService(),
-            new VisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 
@@ -395,7 +395,7 @@ public class CharacterRuntimeOrchestrationTests
             failingVoiceService,
             visualCompiler,
             failingImageService,
-            new VisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance),
+            SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context)),
             NullLogger<CharacterRuntime>.Instance
         );
 

@@ -77,7 +77,7 @@ public sealed class ProductionSceneCompositionIntegrationTests : IDisposable
         var visualStateResolver = new VisualStateResolver(
             unitOfWork,
             sceneStateTracker: null,
-            profileProvider: new VisualGenerationProfileProvider(),
+            profileProvider: SceneCompositionTestHelper.CreateProfileProvider(),
             sceneCompositionPipeline: pipelineService,
             logger: NullLogger<VisualStateResolver>.Instance
         );
@@ -244,7 +244,7 @@ public sealed class ProductionSceneCompositionIntegrationTests : IDisposable
         var visualStateResolver = new VisualStateResolver(
             unitOfWork,
             sceneStateTracker: null,
-            profileProvider: new VisualGenerationProfileProvider(),
+            profileProvider: SceneCompositionTestHelper.CreateProfileProvider(),
             sceneCompositionPipeline: failingPipeline,
             logger: NullLogger<VisualStateResolver>.Instance
         );

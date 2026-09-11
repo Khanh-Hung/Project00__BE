@@ -332,7 +332,7 @@ public class CharacterMemoryTests
             currentUserProvider,
             NullLogger<RoleplayContextEngine>.Instance
         );
-        var visualResolver = new VisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context), NullLogger<VisualStateResolver>.Instance);
+        var visualResolver = SceneCompositionTestHelper.CreateVisualStateResolver(unitOfWork, null, SceneCompositionTestHelper.CreatePipeline(context));
         var runtime = new CharacterRuntime(
             unitOfWork,
             contextEngine,
