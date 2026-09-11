@@ -152,7 +152,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
             return new JobExecutionResult(JobExecutionStatus.Deferred, deferReason);
         }
 
-        // 3. Lease-based Atomic Job Claim Before GPU Invocation
+        // 3. Lease-based Atomic Job Claim Before Execution Engine Invocation
         var workflow = snapshot.GenerationProfile?.Workflow ?? "VisualIdentity";
         var workflowVersion = snapshot.GenerationProfile?.WorkflowVersion ?? 1;
         var leaseDuration = TimeSpan.FromMinutes(4); // 240s safety lease
@@ -171,7 +171,6 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                 generationRequestId: generationRequestId,
                 userId: payload.UserId,
                 outboxMessageId: outboxId,
-                provider: "ComfyUI",
                 workflow: workflow,
                 workflowVersion: workflowVersion,
                 generationMetadataJson: JsonSerializer.Serialize(payload)
@@ -499,7 +498,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 
                     try
                     {
-                        // Authoritative Application-boundary capability validation: fail fast before provider submission!
+                        // Authoritative Application-boundary capability validation: fail fast before execution!
                         imageReq.ValidateCapability(_capabilityPolicy);
 
                         var genSw = Stopwatch.StartNew();
@@ -562,9 +561,9 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                     if (string.IsNullOrWhiteSpace(genResult.ImageUrl))
                     {
                         var emptyFailTime = _dateTimeProvider.UtcNow;
-                        attemptRecord.MarkFailed(GenerationFailureCategory.InvalidWorkflow, "Provider returned empty ImageUrl", emptyFailTime, workerId, emptyFailTime);
+                        attemptRecord.MarkFailed(GenerationFailureCategory.InvalidWorkflow, "Executor returned empty ImageUrl", emptyFailTime, workerId, emptyFailTime);
                         await _dbContext.SaveChangesAsync(ct);
-                        _logger.LogError("[SceneGenerationFailed] Provider returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
+                        _logger.LogError("[SceneGenerationFailed] Executor returned empty ImageUrl for JobId={JobId}, Attempt={Attempt}.", job.Id, attempt);
                         throw new GpuNonTransientException("Image generation completed without producing an image URL.");
                     }
                 }

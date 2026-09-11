@@ -20,13 +20,10 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
     }
 
-    /// <summary>
-    /// Backwards-compatible constructor allowing direct instantiation in tests.
-    /// </summary>
     public ImageGenerationJobHandler(
         CoreDbContext dbContext,
         IVisualPromptCompiler visualCompiler,
-        IImageGenerationService imageService,
+        IImageGenerationExecutor executor,
         ILogger<ImageGenerationJobHandler> logger,
         IDateTimeProvider dateTimeProvider,
         IIdentityQualityEvaluator qualityEvaluator,
@@ -36,7 +33,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         _orchestrator = new ImageGenerationOrchestrator(
             dbContext: dbContext,
             visualCompiler: visualCompiler,
-            imageService: imageService,
+            executor: executor,
             logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageGenerationOrchestrator>.Instance,
             dateTimeProvider: dateTimeProvider,
             qualityEvaluator: qualityEvaluator,
@@ -51,6 +48,30 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     new Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder()
                 })
         );
+    }
+
+    /// <summary>
+    /// Backwards-compatible constructor allowing direct instantiation in tests.
+    /// </summary>
+    public ImageGenerationJobHandler(
+        CoreDbContext dbContext,
+        IVisualPromptCompiler visualCompiler,
+        IImageGenerationService imageService,
+        ILogger<ImageGenerationJobHandler> logger,
+        IDateTimeProvider dateTimeProvider,
+        IIdentityQualityEvaluator qualityEvaluator,
+        IdentityQualityGuardPolicy? qualityGuardPolicy = null,
+        IImageGenerationCapabilityPolicy? capabilityPolicy = null)
+        : this(
+            dbContext,
+            visualCompiler,
+            (IImageGenerationExecutor)imageService,
+            logger,
+            dateTimeProvider,
+            qualityEvaluator,
+            qualityGuardPolicy,
+            capabilityPolicy)
+    {
     }
 
     public Task<JobExecutionResult> HandleSceneImageGenerationAsync(
