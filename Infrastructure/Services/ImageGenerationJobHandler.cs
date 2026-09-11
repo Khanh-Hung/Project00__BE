@@ -30,7 +30,8 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         ILogger<ImageGenerationJobHandler> logger,
         IDateTimeProvider dateTimeProvider,
         IIdentityQualityEvaluator qualityEvaluator,
-        IdentityQualityGuardPolicy? qualityGuardPolicy = null)
+        IdentityQualityGuardPolicy? qualityGuardPolicy = null,
+        IImageGenerationCapabilityPolicy? capabilityPolicy = null)
     {
         _orchestrator = new ImageGenerationOrchestrator(
             dbContext: dbContext,
@@ -41,7 +42,14 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
             qualityEvaluator: qualityEvaluator,
             qualityGuardPolicy: qualityGuardPolicy ?? IdentityQualityGuardPolicy.Default,
             lineageResolver: new PredecessorLineageResolver(dbContext, Microsoft.Extensions.Logging.Abstractions.NullLogger<PredecessorLineageResolver>.Instance),
-            acceptanceService: new ArtifactAcceptanceService(dbContext, dateTimeProvider, Microsoft.Extensions.Logging.Abstractions.NullLogger<ArtifactAcceptanceService>.Instance)
+            acceptanceService: new ArtifactAcceptanceService(dbContext, dateTimeProvider, Microsoft.Extensions.Logging.Abstractions.NullLogger<ArtifactAcceptanceService>.Instance),
+            capabilityPolicy: capabilityPolicy ?? new Infrastructure.ImageGeneration.WorkflowCapabilityPolicy(
+                new Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder[]
+                {
+                    new Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder(),
+                    new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder(),
+                    new Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder()
+                })
         );
     }
 

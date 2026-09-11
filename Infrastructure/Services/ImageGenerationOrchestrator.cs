@@ -50,10 +50,10 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         IdentityQualityGuardPolicy qualityGuardPolicy,
         IPredecessorLineageResolver lineageResolver,
         IArtifactAcceptanceService acceptanceService,
+        IImageGenerationCapabilityPolicy capabilityPolicy,
         IGenerationMetrics? metrics = null,
         IGenerationFingerprintService? fingerprintService = null,
-        GenerationRetryBudget? retryBudget = null,
-        IImageGenerationCapabilityPolicy? capabilityPolicy = null)
+        GenerationRetryBudget? retryBudget = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
@@ -64,10 +64,10 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         _qualityGuardPolicy = qualityGuardPolicy ?? throw new ArgumentNullException(nameof(qualityGuardPolicy));
         _lineageResolver = lineageResolver ?? throw new ArgumentNullException(nameof(lineageResolver));
         _acceptanceService = acceptanceService ?? throw new ArgumentNullException(nameof(acceptanceService));
+        _capabilityPolicy = capabilityPolicy ?? throw new ArgumentNullException(nameof(capabilityPolicy));
         _metrics = metrics ?? new Infrastructure.Telemetry.GenerationMetrics(NullLogger<Infrastructure.Telemetry.GenerationMetrics>.Instance);
         _fingerprintService = fingerprintService ?? new GenerationFingerprintService();
         _retryBudget = retryBudget ?? GenerationRetryBudget.Default;
-        _capabilityPolicy = capabilityPolicy ?? PermissiveCapabilityPolicy.Instance;
     }
 
     /// <summary>
@@ -83,10 +83,10 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         IdentityQualityGuardPolicy qualityGuardPolicy,
         IPredecessorLineageResolver lineageResolver,
         IArtifactAcceptanceService acceptanceService,
+        IImageGenerationCapabilityPolicy capabilityPolicy,
         IGenerationMetrics? metrics = null,
         IGenerationFingerprintService? fingerprintService = null,
-        GenerationRetryBudget? retryBudget = null,
-        IImageGenerationCapabilityPolicy? capabilityPolicy = null)
+        GenerationRetryBudget? retryBudget = null)
         : this(
             dbContext,
             visualCompiler,
@@ -97,18 +97,11 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
             qualityGuardPolicy,
             lineageResolver,
             acceptanceService,
+            capabilityPolicy,
             metrics,
             fingerprintService,
-            retryBudget,
-            capabilityPolicy)
+            retryBudget)
     {
-    }
-
-    private sealed class PermissiveCapabilityPolicy : IImageGenerationCapabilityPolicy
-    {
-        public static readonly PermissiveCapabilityPolicy Instance = new();
-        public bool IsSupported(ImageGenerationCapability capability) => true;
-        public bool SupportsIdentityConditioning(ImageGenerationCapability capability) => true;
     }
 
     public async Task<JobExecutionResult> OrchestrateSceneImageGenerationAsync(

@@ -57,6 +57,14 @@ public sealed class ExecutionEngineDecouplingTests
         );
     }
 
+    private static IImageGenerationCapabilityPolicy CreateDefaultCapabilityPolicy() =>
+        new WorkflowCapabilityPolicy(new IComfyUIWorkflowBuilder[]
+        {
+            new VisualIdentityWorkflowV1Builder(),
+            new VisualContinuityWorkflowV2Builder(),
+            new TextToImageWorkflowV1Builder()
+        });
+
     /// <summary>
     /// A pure implementation of IImageGenerationExecutor that does NOT implement IImageGenerationService.
     /// Proves that ImageGenerationOrchestrator and Core have no hard dependency on IImageGenerationService or ComfyUI.
@@ -177,7 +185,8 @@ public sealed class ExecutionEngineDecouplingTests
             qualityEvaluator,
             qualityGuardPolicy,
             lineageResolver,
-            acceptanceService
+            acceptanceService,
+            CreateDefaultCapabilityPolicy()
         );
 
         var snapshot = CreateTestSnapshot();
@@ -257,7 +266,8 @@ public sealed class ExecutionEngineDecouplingTests
         var engineA = new PureStubExecutor("https://cdn.project00.ai/engine_a.png", "EngineAlpha");
         var orchestratorA = new ImageGenerationOrchestrator(
             db, compiler, engineA, NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService);
+            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService,
+            CreateDefaultCapabilityPolicy());
 
         var snapshotA = CreateTestSnapshot();
         var payloadA = new SceneImageGenerationOutboxPayload(snapshotA.TurnId, snapshotA.CharacterId, Guid.NewGuid(), snapshotA, Guid.NewGuid());
@@ -270,7 +280,8 @@ public sealed class ExecutionEngineDecouplingTests
         var engineB = new PureStubExecutor("https://cdn.project00.ai/engine_b.png", "EngineBeta");
         var orchestratorB = new ImageGenerationOrchestrator(
             db, compiler, engineB, NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService);
+            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService,
+            CreateDefaultCapabilityPolicy());
 
         var snapshotB = CreateTestSnapshot();
         var payloadB = new SceneImageGenerationOutboxPayload(snapshotB.TurnId, snapshotB.CharacterId, Guid.NewGuid(), snapshotB, Guid.NewGuid());
@@ -359,6 +370,7 @@ public sealed class ExecutionEngineDecouplingTests
         var orchestrator = new ImageGenerationOrchestrator(
             db, compiler, executor, NullLogger<ImageGenerationOrchestrator>.Instance,
             dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService,
+            CreateDefaultCapabilityPolicy(),
             fingerprintService: fingerprintService);
 
         var snapshot = CreateTestSnapshot();

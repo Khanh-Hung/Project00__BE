@@ -370,7 +370,8 @@ public sealed class CapabilityResolutionTests
 
         var orchestrator = new ImageGenerationOrchestrator(
             db, compiler, comfyService, NullLogger<ImageGenerationOrchestrator>.Instance,
-            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService
+            dateTimeProvider, qualityEvaluator, qualityGuardPolicy, lineageResolver, acceptanceService,
+            capabilityPolicy: new WorkflowCapabilityPolicy(builders)
         );
 
         // Snapshot with unsupported model
