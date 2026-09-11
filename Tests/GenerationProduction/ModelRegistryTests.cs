@@ -145,4 +145,31 @@ public sealed class ModelRegistryTests
         Assert.Equal(m1, m2);
         Assert.NotEqual(m1, m3);
     }
+
+    [Fact]
+    public void Test9_ConfigurationModelRegistry_OverridingEpicrealismArtifact_ResolvesNewCheckpoint()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiProviders:ImageGeneration:Models:0:Id"] = "epicrealism",
+                ["AiProviders:ImageGeneration:Models:0:Family"] = "Sd15",
+                ["AiProviders:ImageGeneration:Models:0:ArtifactName"] = "epicrealism_naturalSinRC1VAE.safetensors"
+            })
+            .Build();
+
+        IModelRegistry registry = new ConfigurationModelRegistry(config);
+
+        var model = registry.FindById("epicrealism");
+        Assert.NotNull(model);
+        Assert.Equal("epicrealism", model.Id);
+        Assert.Equal(ModelFamily.Sd15, model.Family);
+        Assert.Equal("epicrealism_naturalSinRC1VAE.safetensors", model.ArtifactName);
+
+        // Resolves via direct artifact name lookup as well
+        var legacyLookup = registry.FindById("epicrealism_naturalSinRC1VAE.safetensors");
+        Assert.NotNull(legacyLookup);
+        Assert.Equal("epicrealism", legacyLookup.Id);
+        Assert.Equal("epicrealism_naturalSinRC1VAE.safetensors", legacyLookup.ArtifactName);
+    }
 }
