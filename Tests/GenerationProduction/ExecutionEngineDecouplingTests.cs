@@ -58,12 +58,7 @@ public sealed class ExecutionEngineDecouplingTests
     }
 
     private static IImageGenerationCapabilityPolicy CreateDefaultCapabilityPolicy() =>
-        new WorkflowCapabilityPolicy(new IComfyUIWorkflowBuilder[]
-        {
-            new VisualIdentityWorkflowV1Builder(),
-            new VisualContinuityWorkflowV2Builder(),
-            new TextToImageWorkflowV1Builder()
-        });
+        WorkflowCapabilityPolicy.CreateDefault();
 
     /// <summary>
     /// A pure implementation of IImageGenerationExecutor that does NOT implement IImageGenerationService.

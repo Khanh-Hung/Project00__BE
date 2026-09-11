@@ -77,12 +77,7 @@ public sealed class GenerationProductionConcurrencyTests
         var imageService1 = new FakeImageService();
         var evaluator1 = new DevelopmentPassThroughIdentityQualityEvaluator();
 
-        var capabilityPolicy = new Infrastructure.ImageGeneration.WorkflowCapabilityPolicy(new Infrastructure.ImageGeneration.ComfyUI.IComfyUIWorkflowBuilder[]
-        {
-            new Infrastructure.ImageGeneration.ComfyUI.VisualIdentityWorkflowV1Builder(),
-            new Infrastructure.ImageGeneration.ComfyUI.VisualContinuityWorkflowV2Builder(),
-            new Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder()
-        });
+        var capabilityPolicy = Infrastructure.ImageGeneration.WorkflowCapabilityPolicy.CreateDefault();
 
         var orchestrator1 = new ImageGenerationOrchestrator(
             dbContext1, compiler1, imageService1, NullLogger<ImageGenerationOrchestrator>.Instance,

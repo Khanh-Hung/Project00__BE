@@ -32,4 +32,16 @@ public sealed class WorkflowCapabilityPolicy : IImageGenerationCapabilityPolicy
 
         return _builders.Any(b => b.CanHandle(capability) && b.SupportsIdentityConditioning);
     }
+
+    /// <summary>
+    /// Creates a default capability policy populated with the built-in standard workflow builders.
+    /// Provides a single authoritative default for test fixtures and composition fallbacks.
+    /// </summary>
+    public static WorkflowCapabilityPolicy CreateDefault() =>
+        new(new IComfyUIWorkflowBuilder[]
+        {
+            new VisualIdentityWorkflowV1Builder(),
+            new VisualContinuityWorkflowV2Builder(),
+            new TextToImageWorkflowV1Builder()
+        });
 }
