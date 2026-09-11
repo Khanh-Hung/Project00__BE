@@ -23,7 +23,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
     public ImageGenerationJobHandler(
         CoreDbContext dbContext,
         IVisualPromptCompiler visualCompiler,
-        IImageGenerationExecutor executor,
+        IImageGenerationExecutorSelector executorSelector,
         ILogger<ImageGenerationJobHandler> logger,
         IDateTimeProvider dateTimeProvider,
         IIdentityQualityEvaluator qualityEvaluator,
@@ -33,7 +33,7 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
         _orchestrator = new ImageGenerationOrchestrator(
             dbContext: dbContext,
             visualCompiler: visualCompiler,
-            executor: executor,
+            executorSelector: executorSelector,
             logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageGenerationOrchestrator>.Instance,
             dateTimeProvider: dateTimeProvider,
             qualityEvaluator: qualityEvaluator,
@@ -48,6 +48,27 @@ public sealed class ImageGenerationJobHandler : IImageGenerationJobHandler
                     new Infrastructure.ImageGeneration.ComfyUI.TextToImageWorkflowV1Builder()
                 })
         );
+    }
+
+    public ImageGenerationJobHandler(
+        CoreDbContext dbContext,
+        IVisualPromptCompiler visualCompiler,
+        IImageGenerationExecutor executor,
+        ILogger<ImageGenerationJobHandler> logger,
+        IDateTimeProvider dateTimeProvider,
+        IIdentityQualityEvaluator qualityEvaluator,
+        IdentityQualityGuardPolicy? qualityGuardPolicy = null,
+        IImageGenerationCapabilityPolicy? capabilityPolicy = null)
+        : this(
+            dbContext,
+            visualCompiler,
+            new ImageGenerationExecutorSelector(executor),
+            logger,
+            dateTimeProvider,
+            qualityEvaluator,
+            qualityGuardPolicy,
+            capabilityPolicy)
+    {
     }
 
     /// <summary>

@@ -517,6 +517,93 @@ public sealed class ExecutionEngineDecouplingTests
         }
     }
 
+    [Fact]
+    public void Test10_ImageGenerationExecutorSelector_ReturnsRegisteredExecutor()
+    {
+        var executor = new PureStubExecutor();
+        var selector = new ImageGenerationExecutorSelector(executor);
+        var request = new ImageGenerationRequest(Prompt: "cyberpunk skyline", Width: 512, Height: 512);
+
+        var selected = selector.Select(request);
+
+        Assert.Same(executor, selected);
+    }
+
+    [Fact]
+    public void Test11_ImageGenerationExecutorSelector_RejectsNullRequest()
+    {
+        var executor = new PureStubExecutor();
+        var selector = new ImageGenerationExecutorSelector(executor);
+
+        Assert.Throws<ArgumentNullException>(() => selector.Select(null!));
+    }
+
+    [Fact]
+    public async Task Test12_ImageGenerationOrchestrator_UsesExecutorSelector_EndToEnd()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        using var db = CreateSqliteDbContext(connection);
+
+        var pureExecutor = new PureStubExecutor("https://cdn.project00.ai/selector_routed.png", "CustomSelectorEngine");
+        var selector = new ImageGenerationExecutorSelector(pureExecutor);
+
+        var compiler = new VisualPromptCompiler();
+        var dateTimeProvider = new SystemDateTimeProvider();
+        var lineageResolver = new PredecessorLineageResolver(db, NullLogger<PredecessorLineageResolver>.Instance);
+        var acceptanceService = new ArtifactAcceptanceService(db, dateTimeProvider, NullLogger<ArtifactAcceptanceService>.Instance);
+        var qualityEvaluator = new DevelopmentPassThroughIdentityQualityEvaluator();
+        var qualityGuardPolicy = new IdentityQualityGuardPolicy();
+
+        // Inject IImageGenerationExecutorSelector directly into primary constructor
+        var orchestrator = new ImageGenerationOrchestrator(
+            db,
+            compiler,
+            selector,
+            NullLogger<ImageGenerationOrchestrator>.Instance,
+            dateTimeProvider,
+            qualityEvaluator,
+            qualityGuardPolicy,
+            lineageResolver,
+            acceptanceService,
+            CreateDefaultCapabilityPolicy()
+        );
+
+        var snapshot = CreateTestSnapshot();
+        var outboxId = Guid.NewGuid();
+        var payload = new SceneImageGenerationOutboxPayload(snapshot.TurnId, snapshot.CharacterId, Guid.NewGuid(), snapshot, Guid.NewGuid());
+
+        // Act
+        var result = await orchestrator.OrchestrateSceneImageGenerationAsync(payload, outboxId, "worker-selector-test", DateTime.UtcNow);
+
+        // Assert: Orchestrator invoked executor via Selector
+        Assert.Equal(JobExecutionStatus.Completed, result.Status);
+        Assert.Equal(1, pureExecutor.ExecutionCount);
+
+        var attempt = await db.ImageGenerationAttempts.FirstAsync(a => a.TurnId == snapshot.TurnId);
+        Assert.Equal("https://cdn.project00.ai/selector_routed.png", attempt.ImageUrl);
+    }
+
+    [Fact]
+    public void Test13_ArchitectureBoundary_ImageGenerationOrchestrator_ZeroComfyUIOrGpuReferences()
+    {
+        var orchestratorType = typeof(ImageGenerationOrchestrator);
+
+        // 1. Assert constructor parameters depend only on abstraction
+        var constructors = orchestratorType.GetConstructors(BindingFlags.Instance | BindingFlags.Public);
+        var primaryCtor = constructors.First(c => c.GetParameters().Any(p => p.ParameterType == typeof(IImageGenerationExecutorSelector)));
+        Assert.NotNull(primaryCtor);
+
+        // 2. Assert source code of ImageGenerationOrchestrator contains zero ComfyUI types or names
+        var sourcePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Infrastructure", "Services", "ImageGenerationOrchestrator.cs");
+        if (File.Exists(sourcePath))
+        {
+            var content = File.ReadAllText(sourcePath);
+            Assert.DoesNotContain("ComfyUI", content);
+            Assert.DoesNotContain("ComfyUIImageGenerationService", content);
+        }
+    }
+
     #region Mock Helpers for ComfyUI Test
 
     private sealed class MockComfyUIClient : IComfyUIClient

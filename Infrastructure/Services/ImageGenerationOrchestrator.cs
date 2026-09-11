@@ -27,7 +27,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
 {
     private readonly CoreDbContext _dbContext;
     private readonly IVisualPromptCompiler _visualCompiler;
-    private readonly IImageGenerationExecutor _executor;
+    private readonly IImageGenerationExecutorSelector _executorSelector;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<ImageGenerationOrchestrator> _logger;
     private readonly IIdentityQualityEvaluator _qualityEvaluator;
@@ -43,7 +43,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
     public ImageGenerationOrchestrator(
         CoreDbContext dbContext,
         IVisualPromptCompiler visualCompiler,
-        IImageGenerationExecutor executor,
+        IImageGenerationExecutorSelector executorSelector,
         ILogger<ImageGenerationOrchestrator> logger,
         IDateTimeProvider dateTimeProvider,
         IIdentityQualityEvaluator qualityEvaluator,
@@ -57,7 +57,7 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _visualCompiler = visualCompiler ?? throw new ArgumentNullException(nameof(visualCompiler));
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
+        _executorSelector = executorSelector ?? throw new ArgumentNullException(nameof(executorSelector));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _dateTimeProvider = dateTimeProvider ?? throw new ArgumentNullException(nameof(dateTimeProvider));
         _qualityEvaluator = qualityEvaluator ?? throw new ArgumentNullException(nameof(qualityEvaluator));
@@ -68,6 +68,40 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
         _metrics = metrics ?? new Infrastructure.Telemetry.GenerationMetrics(NullLogger<Infrastructure.Telemetry.GenerationMetrics>.Instance);
         _fingerprintService = fingerprintService ?? new GenerationFingerprintService();
         _retryBudget = retryBudget ?? GenerationRetryBudget.Default;
+    }
+
+    /// <summary>
+    /// Backward-compatible constructor for callers passing IImageGenerationExecutor directly.
+    /// </summary>
+    public ImageGenerationOrchestrator(
+        CoreDbContext dbContext,
+        IVisualPromptCompiler visualCompiler,
+        IImageGenerationExecutor executor,
+        ILogger<ImageGenerationOrchestrator> logger,
+        IDateTimeProvider dateTimeProvider,
+        IIdentityQualityEvaluator qualityEvaluator,
+        IdentityQualityGuardPolicy qualityGuardPolicy,
+        IPredecessorLineageResolver lineageResolver,
+        IArtifactAcceptanceService acceptanceService,
+        IImageGenerationCapabilityPolicy capabilityPolicy,
+        IGenerationMetrics? metrics = null,
+        IGenerationFingerprintService? fingerprintService = null,
+        GenerationRetryBudget? retryBudget = null)
+        : this(
+            dbContext,
+            visualCompiler,
+            new ImageGenerationExecutorSelector(executor),
+            logger,
+            dateTimeProvider,
+            qualityEvaluator,
+            qualityGuardPolicy,
+            lineageResolver,
+            acceptanceService,
+            capabilityPolicy,
+            metrics,
+            fingerprintService,
+            retryBudget)
+    {
     }
 
     /// <summary>
@@ -501,8 +535,11 @@ public sealed class ImageGenerationOrchestrator : IImageGenerationOrchestrator
                         // Authoritative Application-boundary capability validation: fail fast before execution!
                         imageReq.ValidateCapability(_capabilityPolicy);
 
+                        // Select execution implementation capable of handling this request
+                        var executor = _executorSelector.Select(imageReq);
+
                         var genSw = Stopwatch.StartNew();
-                        genResult = await _executor.ExecuteAsync(imageReq, attemptCt);
+                        genResult = await executor.ExecuteAsync(imageReq, attemptCt);
                         genSw.Stop();
                         cumulativeGenLatency += genSw.Elapsed;
                         lastSuccessfulGenResult = genResult;
